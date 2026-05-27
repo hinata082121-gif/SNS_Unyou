@@ -21,7 +21,7 @@ const REQUIRED_COLUMNS = [
 ];
 
 const ALLOWED_VALUES = {
-  業態: ["美容院", "ネイル/アイラッシュ", "整体", "カフェ・飲食"],
+  業態: ["美容室", "ネイル/アイラッシュ", "整体", "カフェ・飲食"],
   相性スコア: ["A", "B", "C"],
   出典種別: ["SNS", "公式サイト", "予約フォーム"],
   ステータス: [
@@ -80,6 +80,13 @@ function normalizeRow(row, index) {
 
   if (normalized["ステータス"].trim() === "") {
     normalized["ステータス"] = "未検収";
+  }
+
+  if (normalized["業態"] === "美容院") {
+    console.warn(
+      `Warning: rows[${index}] の 業態 "美容院" は非推奨のため "美容室" に変換しました。`,
+    );
+    normalized["業態"] = "美容室";
   }
 
   for (const [column, allowedValues] of Object.entries(ALLOWED_VALUES)) {
