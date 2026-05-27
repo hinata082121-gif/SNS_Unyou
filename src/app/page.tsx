@@ -303,7 +303,7 @@ function ConsultationLink({
   children,
   variant = "primary",
   className = "",
-  plan = "",
+  plan = "未定",
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "inverse";

@@ -8,7 +8,7 @@ export const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
 const CONTACT_SUBJECT = "【ICHI Social】無料相談の希望";
 
-export function createContactHref(plan = "") {
+export function createContactHref(plan = "未定") {
   const body = [
     "お名前：",
     "会社名・店舗名：",

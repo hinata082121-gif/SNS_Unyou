@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage, LegalSection } from "@/components/legal-page";
-import { SITE_NAME } from "@/lib/site";
+import { CONTACT_EMAIL, SITE_NAME } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: `サービス提供条件 | ${SITE_NAME}`,
@@ -55,6 +55,11 @@ export default function TermsPage() {
       <LegalSection title="解約・変更">
         <p>
           解約、プラン変更、対応範囲の変更は、契約内容に応じて個別に相談します。
+        </p>
+      </LegalSection>
+      <LegalSection title="問い合わせ・連絡先">
+        <p>
+          サービス内容や契約条件に関するお問い合わせは、{CONTACT_EMAIL} までご連絡ください。
         </p>
       </LegalSection>
     </LegalPage>
