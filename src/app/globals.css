@@ -2,30 +2,34 @@
 
 :root {
   --background: #ffffff;
-  --section-background: #f6f9fc;
-  --main-text: #0f172a;
-  --sub-text: #475569;
-  --primary-blue: #2563eb;
-  --primary-blue-dark: #1d4ed8;
-  --accent-green: #10b981;
-  --border: #e2e8f0;
-  --soft-warning: #fef3c7;
-  --soft-blue: #eff6ff;
-  --soft-green: #ecfdf5;
+  --foreground: #0a0a0a;
+  --muted-background: #f5f5f5;
+  --card-background: #ffffff;
+  --card-border: #e5e5e5;
+  --text-primary: #0a0a0a;
+  --text-secondary: #525252;
+  --text-muted: #737373;
+  --black: #000000;
+  --off-black: #171717;
+  --soft-black: #262626;
+  --line: #e5e5e5;
+  --focus-ring: #111111;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-section: var(--section-background);
-  --color-main: var(--main-text);
-  --color-sub: var(--sub-text);
-  --color-primary: var(--primary-blue);
-  --color-primary-dark: var(--primary-blue-dark);
-  --color-accent: var(--accent-green);
-  --color-border: var(--border);
-  --color-warning: var(--soft-warning);
-  --color-soft-blue: var(--soft-blue);
-  --color-soft-green: var(--soft-green);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted-background);
+  --color-card: var(--card-background);
+  --color-card-border: var(--card-border);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted-text: var(--text-muted);
+  --color-black: var(--black);
+  --color-off-black: var(--off-black);
+  --color-soft-black: var(--soft-black);
+  --color-line: var(--line);
+  --color-focus: var(--focus-ring);
   --font-sans: "Noto Sans JP", "Noto Sans JP Fallback", system-ui, sans-serif;
   --font-number: "Inter", "Inter Fallback", ui-sans-serif, system-ui, sans-serif;
 }
@@ -40,8 +44,9 @@ html {
 
 body {
   margin: 0;
+  overflow-x: clip;
   font-family: var(--font-noto-sans-jp), "Noto Sans JP", system-ui, sans-serif;
-  color: var(--main-text);
+  color: var(--text-primary);
   background: var(--background);
 }
 
@@ -51,5 +56,5 @@ a {
 
 ::selection {
   color: #ffffff;
-  background: var(--primary-blue);
+  background: var(--black);
 }

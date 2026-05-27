@@ -13,48 +13,24 @@ const navItems = [
 
 const problems = [
   {
+    label: "01 / 継続",
     title: "投稿が続かない",
     body: "忙しくて、SNS投稿が後回しになってしまう。",
   },
   {
+    label: "02 / 企画",
     title: "ネタがない",
     body: "毎月何を投稿すればよいか分からず、発信が止まる。",
   },
   {
+    label: "03 / 改善",
     title: "効果が見えない",
     body: "反応は見ているが、次の改善に繋がっていない。",
   },
   {
+    label: "04 / 予算",
     title: "外注は高い",
     body: "本格的なSNS代理店は予算的に厳しい。",
-  },
-];
-
-const solutionRoles = [
-  {
-    name: "Manus",
-    role: "競合・トレンド調査",
-    body: "投稿テーマや市場の動きを整理し、企画の材料を集めます。",
-  },
-  {
-    name: "ChatGPT / Claude",
-    role: "投稿案・原稿作成",
-    body: "業種・トンマナに合わせた投稿文や見出し案を作成します。",
-  },
-  {
-    name: "Hermes Agent",
-    role: "運用手順・定期タスク管理",
-    body: "顧客ごとの運用方針や定期作業を管理し、継続運用を支援します。",
-  },
-  {
-    name: "Codex",
-    role: "集計・レポート自動化補助",
-    body: "必要に応じてデータ整理やレポート生成用の補助スクリプトを作成します。",
-  },
-  {
-    name: "Human Review",
-    role: "最終確認・品質管理",
-    body: "AI任せにせず、人が確認してから納品・投稿します。",
   },
 ];
 
@@ -63,8 +39,6 @@ const pricingPlans = [
     name: "ライト",
     price: "¥38,000",
     tag: "まず始めたい個人・小規模向け",
-    description:
-      "投稿作業はお客様側で実施。簡易代行をご希望の場合は要相談です。",
     features: [
       "1SNS対応",
       "投稿企画 月8本",
@@ -78,15 +52,13 @@ const pricingPlans = [
   {
     name: "スタンダード",
     price: "¥78,000",
-    tag: "本気で伸ばしたい中小向け",
-    description:
-      "投稿代行と改善提案まで含めた、継続改善の主力プランです。",
+    tag: "投稿代行と改善提案まで任せたい方向け",
     features: [
       "2SNS対応",
       "投稿フル代行 月16本",
       "コメント監視",
       "月次レポート＋改善提案",
-      "Manusによるリサーチ補助",
+      "リサーチ補助",
       "運用フロー最適化",
     ],
     cta: "スタンダードで相談する",
@@ -96,8 +68,6 @@ const pricingPlans = [
     name: "プレミアム",
     price: "¥140,000",
     tag: "集客・採用を本格化したい方向け",
-    description:
-      "採用・集客・キャンペーン運用まで踏み込んで支援します。",
     features: [
       "3SNSまで対応",
       "投稿フル代行 月30本〜",
@@ -108,6 +78,78 @@ const pricingPlans = [
     ],
     cta: "プレミアムで相談する",
     highlighted: false,
+  },
+];
+
+const pricingDetails = [
+  {
+    name: "ライト詳細",
+    suited: [
+      "SNS運用を始めたい",
+      "投稿ネタを安定して作りたい",
+      "まずは低コストで試したい",
+    ],
+    included: ["月8本の投稿企画", "投稿文作成", "簡易レポート", "チャット相談"],
+    notes: [
+      "投稿作業は顧客側実施、または簡易代行は要相談",
+      "撮影・高度な画像制作は含まない",
+    ],
+  },
+  {
+    name: "スタンダード詳細",
+    suited: [
+      "投稿作成から投稿代行まで任せたい",
+      "2つのSNSを継続的に運用したい",
+      "月次改善まで回したい",
+    ],
+    included: [
+      "月16本の投稿フル代行",
+      "2SNS対応",
+      "コメント監視",
+      "月次レポート",
+      "改善提案",
+      "競合・投稿テーマのリサーチ補助",
+    ],
+    notes: ["DM完全代行、炎上対応、広告運用は標準外"],
+  },
+  {
+    name: "プレミアム詳細",
+    suited: [
+      "採用・集客を本格化したい",
+      "投稿量を増やしたい",
+      "戦略MTGも含めて相談したい",
+    ],
+    included: [
+      "月30本以上の投稿フル代行",
+      "3SNSまで対応",
+      "エンゲージメント運用",
+      "月1回の戦略MTG",
+      "優先的な改善提案",
+    ],
+    notes: ["成果連動は個別相談", "広告費・撮影費・高度な動画編集は別途"],
+  },
+];
+
+const operationRoles = [
+  {
+    title: "リサーチ",
+    body: "競合・トレンド・過去投稿を確認し、投稿テーマの材料を整理します。",
+  },
+  {
+    title: "原稿作成",
+    body: "業種やトンマナに合わせて、投稿文や見出し案を作成します。",
+  },
+  {
+    title: "運用管理",
+    body: "月間投稿カレンダー、確認状況、定期タスクを整理します。",
+  },
+  {
+    title: "レポート",
+    body: "投稿結果を整理し、次月の改善方針につなげます。",
+  },
+  {
+    title: "人の確認",
+    body: "AI任せにせず、投稿前の最終確認と方針判断を行います。",
   },
 ];
 
@@ -170,6 +212,14 @@ const workflowSteps = [
   },
 ];
 
+const reportMetrics = [
+  { label: "投稿本数", value: "16本", bar: "70%" },
+  { label: "インプレッション", value: "28,400", bar: "88%" },
+  { label: "いいね数", value: "780", bar: "62%" },
+  { label: "保存数", value: "126", bar: "46%" },
+  { label: "プロフィールアクセス", value: "340", bar: "55%" },
+];
+
 const trustItems = [
   {
     title: "投稿前確認",
@@ -184,8 +234,8 @@ const trustItems = [
     body: "投稿して終わりではなく、毎月改善案を提示します。",
   },
   {
-    title: "人が最終確認",
-    body: "リサーチ・原稿作成・分析に支援ツールを活用し、人間が最終確認します。",
+    title: "AI丸投げではない",
+    body: "下書きや分析にはAIツールも活用しますが、投稿前に人が確認します。",
   },
   {
     title: "小規模対応",
@@ -211,7 +261,7 @@ const faqs = [
   {
     question: "AIで作った投稿をそのまま出しますか？",
     answer:
-      "いいえ。AIで下書き・分析を行い、人間が最終確認します。",
+      "いいえ。下書きや分析にはAIツールも活用しますが、投稿前に人が確認します。",
   },
   {
     question: "炎上対応やDM返信も含まれますか？",
@@ -225,36 +275,29 @@ const faqs = [
   },
 ];
 
-const reportMetrics = [
-  { label: "投稿本数", value: "16本" },
-  { label: "インプレッション", value: "28,400" },
-  { label: "いいね数", value: "780" },
-  { label: "保存数", value: "126" },
-  { label: "プロフィールアクセス", value: "340" },
-];
-
 function ConsultationLink({
   children,
   variant = "primary",
   className = "",
 }: {
   children: ReactNode;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "inverse";
   className?: string;
 }) {
   const base =
-    "inline-flex min-h-12 items-center justify-center rounded-full px-5 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+    "inline-flex min-h-12 items-center justify-center rounded-lg px-5 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
   const variants = {
-    primary:
-      "bg-primary text-white shadow-sm shadow-blue-600/20 hover:bg-primary-dark",
+    primary: "bg-black text-white hover:bg-soft-black",
     secondary:
-      "border border-border bg-white text-main hover:border-primary hover:text-primary",
+      "border border-card-border bg-white text-primary hover:border-black hover:bg-muted",
+    inverse:
+      "border border-white bg-white text-black hover:bg-line focus-visible:outline-white",
   };
 
   return (
     <a
       href={`mailto:${CONTACT_EMAIL}`}
-      aria-label={`${children}、メールで問い合わせる`}
+      aria-label={`${String(children)}、メールで問い合わせる`}
       className={`${base} ${variants[variant]} ${className}`}
     >
       {children}
@@ -266,21 +309,29 @@ function SectionHeading({
   eyebrow,
   title,
   body,
+  align = "center",
 }: {
   eyebrow?: string;
   title: string;
   body?: string;
+  align?: "center" | "left";
 }) {
   return (
-    <div className="mx-auto mb-8 max-w-3xl text-center sm:mb-12">
+    <div
+      className={`mb-9 max-w-3xl sm:mb-12 ${
+        align === "center" ? "mx-auto text-center" : ""
+      }`}
+    >
       {eyebrow ? (
-        <p className="mb-3 text-sm font-bold text-primary">{eyebrow}</p>
+        <p className="mb-3 font-number text-xs font-bold uppercase tracking-[0.16em] text-muted-text">
+          {eyebrow}
+        </p>
       ) : null}
-      <h2 className="text-balance text-2xl font-bold tracking-normal text-main sm:text-3xl">
+      <h2 className="text-balance text-2xl font-black leading-[1.35] tracking-normal text-primary sm:text-4xl">
         {title}
       </h2>
       {body ? (
-        <p className="mx-auto mt-4 max-w-2xl text-base leading-8 text-sub">
+        <p className="mt-4 max-w-2xl text-base leading-8 text-secondary">
           {body}
         </p>
       ) : null}
@@ -290,29 +341,29 @@ function SectionHeading({
 
 function Header() {
   return (
-    <header className="sticky top-0 z-50 border-b border-border bg-white/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:h-18 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-50 border-b border-line bg-white/95 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <a
           href="#"
           aria-label={`${SERVICE_NAME}（${SERVICE_LABEL}）トップへ`}
-          className="shrink-0"
+          className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus"
         >
-          <p className="text-base font-extrabold leading-none text-main">
+          <p className="text-base font-black leading-none text-primary">
             {SERVICE_NAME}
           </p>
-          <p className="mt-1 text-[11px] font-medium text-sub">
+          <p className="mt-1 text-[11px] font-medium text-secondary">
             {SERVICE_LABEL}
           </p>
         </a>
         <nav
           aria-label="主要ナビゲーション"
-          className="hidden items-center gap-6 md:flex"
+          className="hidden items-center gap-7 md:flex"
         >
           {navItems.map((item) => (
             <a
               key={item.href}
               href={item.href}
-              className="text-sm font-bold text-sub transition hover:text-primary"
+              className="text-sm font-bold text-secondary transition hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus"
             >
               {item.label}
             </a>
@@ -328,47 +379,47 @@ function Header() {
 
 function HeroDashboard() {
   return (
-    <div className="relative rounded-[28px] border border-blue-100 bg-gradient-to-br from-soft-blue via-white to-soft-green p-4 shadow-2xl shadow-blue-900/10 sm:p-6">
-      <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-sm sm:p-5">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-bold text-sub">今月の運用サマリー</p>
-            <p className="mt-1 text-xs text-sub">下書き作成 → 人が確認 → 投稿予約</p>
-          </div>
-          <span className="rounded-full bg-soft-green px-3 py-1 text-xs font-bold text-emerald-700">
-            作成済み
-          </span>
+    <div className="rounded-xl border border-card-border bg-card p-4 sm:p-5">
+      <div className="mb-5 flex items-start justify-between gap-4 border-b border-line pb-5">
+        <div>
+          <p className="text-sm font-black text-primary">今月の運用サマリー</p>
+          <p className="mt-1 text-xs leading-6 text-muted-text">
+            下書き作成 → 人が確認 → 投稿予約
+          </p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            ["投稿予定", "16件"],
-            ["改善提案", "5件"],
-            ["月次レポート", "作成済み"],
-            ["次月テーマ案", "12件"],
-          ].map(([label, value]) => (
-            <div
-              key={label}
-              className="rounded-2xl border border-border bg-white p-3"
-            >
-              <p className="text-xs font-medium text-sub">{label}</p>
-              <p className="mt-2 font-number text-2xl font-extrabold text-main">
-                {value}
-              </p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 rounded-2xl bg-section p-4">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-full bg-primary text-sm font-bold text-white">
-              確認
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-main">投稿文の品質確認中</p>
-              <div className="mt-2 h-2 rounded-full bg-border">
-                <div className="h-2 w-4/5 rounded-full bg-accent" />
-              </div>
-            </div>
+        <span className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-xs font-bold text-secondary">
+          <span className="size-2 rounded-full bg-black" aria-hidden="true" />
+          作成済み
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          ["投稿予定", "16件"],
+          ["改善提案", "5件"],
+          ["月次レポート", "作成済み"],
+          ["次月テーマ案", "12件"],
+          ["確認待ち", "3件"],
+        ].map(([label, value], index) => (
+          <div
+            key={label}
+            className={`rounded-lg border border-line bg-white p-4 ${
+              index === 4 ? "col-span-2" : ""
+            }`}
+          >
+            <p className="text-xs font-bold text-muted-text">{label}</p>
+            <p className="mt-2 font-number text-2xl font-black text-primary">
+              {value}
+            </p>
           </div>
+        ))}
+      </div>
+      <div className="mt-5 rounded-lg bg-muted p-4">
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm font-bold text-primary">投稿文の品質確認中</p>
+          <p className="font-number text-xs font-bold text-muted-text">80%</p>
+        </div>
+        <div className="mt-3 h-2 rounded-full bg-line">
+          <div className="h-2 w-4/5 rounded-full bg-black" />
         </div>
       </div>
     </div>
@@ -377,70 +428,49 @@ function HeroDashboard() {
 
 function Hero() {
   return (
-    <section className="overflow-hidden bg-white">
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1.02fr_0.98fr] lg:px-8 lg:py-24">
+    <section className="overflow-hidden bg-background">
+      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-24">
         <div>
-          <p className="mb-4 inline-flex rounded-full border border-blue-100 bg-soft-blue px-4 py-2 text-sm font-bold text-primary">
-            小規模事業者向けSNS運用パートナー
+          <p className="mb-5 inline-flex rounded-full border border-line px-4 py-2 text-sm font-bold text-secondary">
+            {SERVICE_LABEL}
           </p>
-          <h1 className="text-balance text-4xl font-black leading-[1.18] tracking-normal text-main sm:text-5xl lg:text-[56px]">
+          <h1 className="text-balance text-4xl font-black leading-[1.18] tracking-normal text-primary sm:text-5xl lg:text-[56px]">
             SNS運用を、止めない。
             <br />
             発信を整え、
             <br />
             毎月改善する。
           </h1>
-          <p className="mt-6 max-w-2xl text-base leading-8 text-sub sm:text-lg">
+          <p className="mt-6 max-w-2xl text-base leading-8 text-secondary sm:text-lg">
             小規模事業者・個人事業主向けに、投稿企画・原稿作成・投稿代行・月次レポートまでを一括サポート。効率的な制作体制と人の確認を組み合わせ、続けやすいSNS運用を実現します。
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <ConsultationLink>無料相談する</ConsultationLink>
             <a
               href="#pricing"
-              className="inline-flex min-h-12 items-center justify-center rounded-full border border-border bg-white px-5 text-sm font-bold text-main transition hover:border-primary hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="inline-flex min-h-12 items-center justify-center rounded-lg border border-card-border bg-white px-5 text-sm font-bold text-primary transition hover:border-black hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >
               料金プランを見る
             </a>
           </div>
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            {[
-              "月額 ¥38,000〜",
-              "先着3社 初期設計費 ¥0",
-              "投稿企画 / 投稿代行 / 月次レポート対応",
-              "人が最終確認する運用体制",
-            ].map((item) => (
-              <div
-                key={item}
-                className="flex items-start gap-3 rounded-2xl border border-border bg-white p-3 text-sm font-bold text-main"
-              >
-                <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-soft-green text-xs text-emerald-700">
-                  ✓
-                </span>
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
         </div>
         <HeroDashboard />
       </div>
-    </section>
-  );
-}
-
-function Problem() {
-  return (
-    <section className="bg-section px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading title="SNS運用、こんな状態で止まっていませんか？" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {problems.map((item) => (
-            <article
-              key={item.title}
-              className="rounded-2xl border border-border bg-white p-5 shadow-sm"
+      <div className="mx-auto max-w-6xl px-4 pb-14 sm:px-6 lg:px-8">
+        <div className="grid gap-3 border-y border-line py-5 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            "初期設計費 先着3社 ¥0",
+            "月額 ¥38,000〜",
+            "月次レポート対応",
+            "人が最終確認",
+          ].map((item) => (
+            <p
+              key={item}
+              className="flex items-center gap-3 text-sm font-bold text-primary"
             >
-              <h3 className="text-lg font-bold text-main">{item.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-sub">{item.body}</p>
-            </article>
+              <span className="size-1.5 rounded-full bg-black" aria-hidden="true" />
+              {item}
+            </p>
           ))}
         </div>
       </div>
@@ -448,25 +478,24 @@ function Problem() {
   );
 }
 
-function Solution() {
+function Problem() {
   return (
-    <section id="solution" className="bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
-        <SectionHeading
-          title="効率的な制作体制と人の確認で、続けやすいSNS運用"
-          body="裏側では、リサーチ・原稿作成・レポート作成にAIツールを活用し、最終確認は人が行います。"
-        />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          {solutionRoles.map((item) => (
+        <SectionHeading title="SNS運用、こんな状態で止まっていませんか？" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {problems.map((item) => (
             <article
-              key={item.name}
-              className="rounded-2xl border border-border bg-white p-5 shadow-sm"
+              key={item.title}
+              className="rounded-xl border border-card-border bg-card p-5"
             >
-              <p className="font-number text-sm font-extrabold text-primary">
-                {item.name}
+              <p className="font-number text-xs font-bold uppercase tracking-[0.12em] text-muted-text">
+                {item.label}
               </p>
-              <h3 className="mt-3 text-base font-bold text-main">{item.role}</h3>
-              <p className="mt-3 text-sm leading-7 text-sub">{item.body}</p>
+              <h3 className="mt-5 text-lg font-black text-primary">
+                {item.title}
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-secondary">{item.body}</p>
             </article>
           ))}
         </div>
@@ -477,71 +506,122 @@ function Solution() {
 
 function Pricing() {
   return (
-    <section id="pricing" className="bg-section px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="pricing" className="bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading
           title="料金プラン"
-          body="まずは小さく始めたい方から、本格的に集客・採用を伸ばしたい方まで、運用目的に合わせて選べます。"
+          body="目的や運用量に合わせて選べる3つのプラン。まずは比較しやすいよう、主要な違いを一覧で整理しています。"
         />
-        <div className="mb-6 rounded-3xl border border-amber-200 bg-warning p-5 shadow-sm sm:p-6">
-          <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="-mx-4 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-visible">
+          <div className="flex snap-x snap-mandatory gap-4 lg:grid lg:grid-cols-3 lg:items-stretch">
+            {pricingPlans.map((plan) => (
+              <article
+                key={plan.name}
+                className={`relative flex min-w-[82vw] snap-center flex-col rounded-xl border p-5 sm:min-w-[360px] lg:min-w-0 ${
+                  plan.highlighted
+                    ? "border-black bg-black text-white"
+                    : "border-card-border bg-card text-primary"
+                }`}
+              >
+                {plan.highlighted ? (
+                  <span className="absolute right-4 top-4 rounded-full border border-white/30 px-3 py-1 text-xs font-bold text-white">
+                    おすすめ
+                  </span>
+                ) : null}
+                <h3 className="text-xl font-black">{plan.name}</h3>
+                <p
+                  className={`mt-3 min-h-12 text-sm leading-6 ${
+                    plan.highlighted ? "text-neutral-200" : "text-secondary"
+                  }`}
+                >
+                  {plan.tag}
+                </p>
+                <p className="mt-5">
+                  <span className="font-number text-4xl font-black tracking-normal">
+                    {plan.price}
+                  </span>
+                  <span
+                    className={`ml-2 text-sm font-bold ${
+                      plan.highlighted ? "text-neutral-300" : "text-muted-text"
+                    }`}
+                  >
+                    / 月
+                  </span>
+                </p>
+                <ul className="mt-6 space-y-3">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex gap-3 text-sm">
+                      <span
+                        className={`mt-1 size-1.5 shrink-0 rounded-full ${
+                          plan.highlighted ? "bg-white" : "bg-black"
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                <ConsultationLink
+                  className="mt-6 w-full"
+                  variant={plan.highlighted ? "inverse" : "primary"}
+                >
+                  {plan.cta}
+                </ConsultationLink>
+              </article>
+            ))}
+          </div>
+        </div>
+        <div className="mt-6 rounded-xl border border-black bg-white p-5 sm:p-6">
+          <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-center">
             <div>
-              <p className="text-sm font-bold text-amber-800">
-                初回のみ / アカウント診断・戦略設計・トンマナ設計・運用基盤セットアップ
+              <p className="text-sm font-bold text-secondary">
+                アカウント診断・戦略設計・トンマナ設計・運用基盤セットアップを含みます。
               </p>
-              <p className="mt-2 text-base font-bold text-main">
+              <p className="mt-2 text-base font-black text-primary">
                 通常 初期設計フィー{" "}
                 <span className="font-number">¥120,000</span>
               </p>
             </div>
-            <p className="rounded-2xl bg-white px-4 py-3 text-center text-lg font-black text-primary shadow-sm">
+            <p className="rounded-lg bg-black px-4 py-3 text-center text-lg font-black text-white">
               先着3社限定：初期設計費{" "}
               <span className="font-number">¥0</span>
             </p>
           </div>
         </div>
-        <div className="grid gap-5 lg:grid-cols-3 lg:items-stretch">
-          {pricingPlans.map((plan) => (
+      </div>
+    </section>
+  );
+}
+
+function PricingDetail() {
+  return (
+    <section className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        <SectionHeading
+          title="各プランの詳細"
+          body="比較カードでは概要を確認し、詳細カードでは向いている方・含まれるもの・注意点を整理しています。"
+        />
+        <div className="space-y-5">
+          {pricingDetails.map((detail) => (
             <article
-              key={plan.name}
-              className={`relative flex flex-col rounded-3xl border bg-white p-6 shadow-sm ${
-                plan.highlighted
-                  ? "border-primary shadow-xl shadow-blue-900/10 lg:-mt-3 lg:mb-3"
-                  : "border-border"
-              }`}
+              key={detail.name}
+              className="rounded-xl border border-card-border bg-card p-5 sm:p-6"
             >
-              {plan.highlighted ? (
-                <span className="absolute right-5 top-5 rounded-full bg-primary px-3 py-1 text-xs font-bold text-white">
-                  おすすめ
-                </span>
-              ) : null}
-              <h3 className="text-xl font-black text-main">{plan.name}</h3>
-              <p className="mt-3 text-sm font-bold text-primary">{plan.tag}</p>
-              <p className="mt-5">
-                <span className="font-number text-4xl font-black tracking-normal text-main sm:text-5xl">
-                  {plan.price}
-                </span>
-                <span className="ml-2 text-sm font-bold text-sub">/ 月</span>
-              </p>
-              <p className="mt-4 min-h-14 text-sm leading-7 text-sub">
-                {plan.description}
-              </p>
-              <ul className="mt-5 space-y-3">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex gap-3 text-sm text-main">
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-soft-green text-xs font-bold text-emerald-700">
-                      ✓
-                    </span>
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <ConsultationLink
-                className="mt-6 w-full"
-                variant={plan.highlighted ? "primary" : "secondary"}
-              >
-                {plan.cta}
-              </ConsultationLink>
+              <div className="grid gap-6 lg:grid-cols-[0.8fr_1fr_1fr]">
+                <div>
+                  <p className="font-number text-xs font-bold uppercase tracking-[0.14em] text-muted-text">
+                    Plan Detail
+                  </p>
+                  <h3 className="mt-3 text-xl font-black text-primary">
+                    {detail.name}
+                  </h3>
+                </div>
+                <ListBlock title="向いている人" items={detail.suited} />
+                <ListBlock title="含まれるもの" items={detail.included} />
+              </div>
+              <div className="mt-5 rounded-lg border border-line bg-muted p-4">
+                <ListBlock title="注意" items={detail.notes} compact />
+              </div>
             </article>
           ))}
         </div>
@@ -550,9 +630,65 @@ function Pricing() {
   );
 }
 
+function ListBlock({
+  title,
+  items,
+  compact = false,
+}: {
+  title: string;
+  items: string[];
+  compact?: boolean;
+}) {
+  return (
+    <div>
+      <h4 className="text-sm font-black text-primary">{title}</h4>
+      <ul className={compact ? "mt-3 space-y-2" : "mt-3 space-y-3"}>
+        {items.map((item) => (
+          <li key={item} className="flex gap-3 text-sm leading-7 text-secondary">
+            <span className="mt-3 size-1.5 shrink-0 rounded-full bg-black" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Solution() {
+  return (
+    <section id="solution" className="bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        <SectionHeading
+          title="効率化と人の確認で、続けやすい運用へ"
+          body="リサーチ・原稿作成・レポート作成は効率化し、投稿前の確認や方針判断は人が行います。スピードと品質管理を両立する運用体制です。"
+        />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {operationRoles.map((item, index) => (
+            <article
+              key={item.title}
+              className="rounded-xl border border-card-border bg-card p-5"
+            >
+              <p className="font-number text-xs font-black text-muted-text">
+                {String(index + 1).padStart(2, "0")}
+              </p>
+              <h3 className="mt-4 text-lg font-black text-primary">
+                {item.title}
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-secondary">{item.body}</p>
+            </article>
+          ))}
+        </div>
+        <p className="mx-auto mt-6 max-w-3xl rounded-lg border border-line bg-muted p-4 text-center text-sm leading-7 text-secondary">
+          裏側では、リサーチ・原稿作成・レポート作成にAIツールを活用し、最終確認は人が行います。
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function PricingReport() {
   return (
-    <section className="bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading
           title="なぜ、この価格で提供できるのか"
@@ -562,12 +698,17 @@ function PricingReport() {
           {pricingReports.map((item, index) => (
             <article
               key={item.title}
-              className={`rounded-2xl border border-border bg-white p-5 shadow-sm ${
+              className={`rounded-xl border border-card-border bg-card p-5 ${
                 index === pricingReports.length - 1 ? "md:col-span-2" : ""
               }`}
             >
-              <h3 className="text-base font-bold text-main">{item.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-sub">{item.body}</p>
+              <p className="font-number text-xs font-black text-muted-text">
+                {String(index + 1).padStart(2, "0")}
+              </p>
+              <h3 className="mt-3 text-base font-black text-primary">
+                {item.title}
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-secondary">{item.body}</p>
             </article>
           ))}
         </div>
@@ -578,20 +719,26 @@ function PricingReport() {
 
 function Workflow() {
   return (
-    <section id="workflow" className="bg-section px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="workflow" className="bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading title="ご契約から運用開始までの流れ" />
-        <div className="grid gap-4 lg:grid-cols-5">
+        <div className="relative grid gap-4 lg:grid-cols-5">
+          <div
+            className="absolute left-0 right-0 top-10 hidden h-px bg-line lg:block"
+            aria-hidden="true"
+          />
           {workflowSteps.map((step) => (
             <article
               key={step.number}
-              className="rounded-2xl border border-border bg-white p-5 shadow-sm"
+              className="relative rounded-xl border border-card-border bg-card p-5"
             >
-              <p className="font-number text-sm font-black text-primary">
+              <p className="font-number text-4xl font-black text-primary">
                 {step.number}
               </p>
-              <h3 className="mt-3 text-base font-bold text-main">{step.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-sub">{step.body}</p>
+              <h3 className="mt-4 text-base font-black text-primary">
+                {step.title}
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-secondary">{step.body}</p>
             </article>
           ))}
         </div>
@@ -602,58 +749,54 @@ function Workflow() {
 
 function MonthlyReport() {
   return (
-    <section className="bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading
           title="毎月、数字と改善案をレポートで共有"
           body="数値の確認だけで終わらず、次月の投稿方針まで整理します。"
         />
-        <div className="rounded-3xl border border-border bg-white p-4 shadow-xl shadow-blue-900/10 sm:p-6">
-          <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="rounded-xl border border-card-border bg-card p-5 sm:p-6">
+          <div className="mb-6 flex flex-col gap-2 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-sm font-bold text-primary">Sample Monthly Report</p>
-              <h3 className="mt-2 text-xl font-black text-main">
+              <p className="font-number text-xs font-bold uppercase tracking-[0.16em] text-muted-text">
+                Sample Monthly Report
+              </p>
+              <h3 className="mt-2 text-xl font-black text-primary">
                 月次レポートサンプル
               </h3>
             </div>
-            <p className="text-sm font-bold text-sub">対象月：2026年5月</p>
+            <p className="text-sm font-bold text-secondary">対象月：2026年5月</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {reportMetrics.map((metric) => (
               <div
                 key={metric.label}
-                className="rounded-2xl border border-border bg-section p-4"
+                className="rounded-lg border border-line bg-white p-4"
               >
-                <p className="text-xs font-bold text-sub">{metric.label}</p>
-                <p className="mt-2 font-number text-3xl font-black text-main">
+                <p className="text-xs font-bold text-muted-text">{metric.label}</p>
+                <p className="mt-2 font-number text-3xl font-black text-primary">
                   {metric.value}
                 </p>
+                <div className="mt-3 h-1.5 rounded-full bg-line">
+                  <div
+                    className="h-1.5 rounded-full bg-black"
+                    style={{ width: metric.bar }}
+                  />
+                </div>
               </div>
             ))}
           </div>
           <div className="mt-5 grid gap-4 lg:grid-cols-3">
-            <div className="rounded-2xl border border-border p-5">
-              <h3 className="text-base font-bold text-main">
-                反応が良かった投稿
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-sub">
-                Before/After投稿、キャンペーン告知、スタッフ紹介
-              </p>
-            </div>
-            <div className="rounded-2xl border border-border p-5">
-              <h3 className="text-base font-bold text-main">次月の改善方針</h3>
-              <p className="mt-3 text-sm leading-7 text-sub">
-                保存されやすいノウハウ投稿を増やす
-              </p>
-            </div>
-            <div className="rounded-2xl border border-border p-5">
-              <h3 className="text-base font-bold text-main">
-                次月の投稿テーマ案
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-sub">
-                12件作成済み
-              </p>
-            </div>
+            {[
+              ["反応が良かった投稿", "Before/After投稿、キャンペーン告知、スタッフ紹介"],
+              ["次月の改善方針", "保存されやすいノウハウ投稿を増やす"],
+              ["次月の投稿テーマ案", "12件作成済み"],
+            ].map(([title, body]) => (
+              <div key={title} className="rounded-lg border border-line p-5">
+                <h3 className="text-base font-black text-primary">{title}</h3>
+                <p className="mt-3 text-sm leading-7 text-secondary">{body}</p>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -663,17 +806,22 @@ function MonthlyReport() {
 
 function Trust() {
   return (
-    <section className="bg-section px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section className="bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading title="安心して任せられる運用体制" />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          {trustItems.map((item) => (
+          {trustItems.map((item, index) => (
             <article
               key={item.title}
-              className="rounded-2xl border border-border bg-white p-5 shadow-sm"
+              className="rounded-xl border border-card-border bg-card p-5"
             >
-              <h3 className="text-base font-bold text-main">{item.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-sub">{item.body}</p>
+              <p className="font-number text-xs font-black text-muted-text">
+                {String(index + 1).padStart(2, "0")}
+              </p>
+              <h3 className="mt-4 text-base font-black text-primary">
+                {item.title}
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-secondary">{item.body}</p>
             </article>
           ))}
         </div>
@@ -684,25 +832,25 @@ function Trust() {
 
 function FAQ() {
   return (
-    <section id="faq" className="bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="faq" className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-4xl">
         <SectionHeading title="よくある質問" />
-        <div className="space-y-4">
+        <div className="space-y-3">
           {faqs.map((faq) => (
             <details
               key={faq.question}
-              className="group rounded-2xl border border-border bg-white p-5 shadow-sm"
+              className="group rounded-xl border border-card-border bg-card p-5"
             >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-bold text-main focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-black text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus">
                 {faq.question}
                 <span
                   aria-hidden="true"
-                  className="grid size-7 shrink-0 place-items-center rounded-full bg-soft-blue text-primary transition group-open:rotate-45"
+                  className="grid size-7 shrink-0 place-items-center rounded-full border border-line text-primary transition group-open:rotate-45"
                 >
                   +
                 </span>
               </summary>
-              <p className="mt-4 text-sm leading-7 text-sub">{faq.answer}</p>
+              <p className="mt-4 text-sm leading-7 text-secondary">{faq.answer}</p>
             </details>
           ))}
         </div>
@@ -713,23 +861,17 @@ function FAQ() {
 
 function FinalCTA() {
   return (
-    <section className="bg-primary px-4 py-16 text-white sm:px-6 sm:py-20 lg:px-8">
+    <section className="bg-black px-4 py-16 text-white sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-4xl text-center">
         <h2 className="text-balance text-2xl font-black tracking-normal sm:text-4xl">
           まずは、今のSNS運用状況を無料で確認します。
         </h2>
-        <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-blue-50">
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-neutral-200">
           投稿が止まっている、何を発信すればよいか分からない、外注費を抑えて運用を始めたい。そんな方に向けて、現在のSNS状況を確認し、最適な始め方をご提案します。
         </p>
         <div className="mt-8 flex flex-col items-center gap-4">
-          <a
-            href={`mailto:${CONTACT_EMAIL}`}
-            aria-label="無料相談する、メールで問い合わせる"
-            className="inline-flex min-h-12 items-center justify-center rounded-full bg-white px-6 text-sm font-bold text-primary transition hover:bg-soft-blue focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-          >
-            無料相談する
-          </a>
-          <p className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/20">
+          <ConsultationLink variant="inverse">無料相談する</ConsultationLink>
+          <p className="rounded-lg border border-white/20 px-4 py-2 text-sm font-bold text-white">
             先着3社限定：通常{" "}
             <span className="font-number">¥120,000</span>{" "}
             の初期設計費を無料
@@ -742,12 +884,12 @@ function FinalCTA() {
 
 function Footer() {
   return (
-    <footer className="border-t border-border bg-white px-4 py-10 sm:px-6 lg:px-8">
+    <footer className="bg-off-black px-4 py-10 text-white sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[1fr_auto]">
         <div>
-          <p className="text-lg font-extrabold text-main">{SERVICE_NAME}</p>
-          <p className="mt-2 text-sm text-sub">{SERVICE_LABEL}</p>
-          <p className="mt-4 text-xs text-sub">
+          <p className="text-lg font-black">{SERVICE_NAME}</p>
+          <p className="mt-2 text-sm text-neutral-300">{SERVICE_LABEL}</p>
+          <p className="mt-4 text-xs text-neutral-400">
             © 2026 {SERVICE_NAME}. All rights reserved.
           </p>
         </div>
@@ -756,7 +898,7 @@ function Footer() {
             <a
               key={item.href}
               href={item.href}
-              className="text-sm font-bold text-sub hover:text-primary"
+              className="text-sm font-bold text-neutral-300 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
             >
               {item.label}
             </a>
@@ -764,7 +906,7 @@ function Footer() {
           {/* TODO: 公開前に正式メールアドレスへ差し替え */}
           <a
             href={`mailto:${CONTACT_EMAIL}`}
-            className="text-sm font-bold text-sub hover:text-primary"
+            className="text-sm font-bold text-neutral-300 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
           >
             お問い合わせ
           </a>
@@ -781,8 +923,9 @@ export default function Home() {
       <main>
         <Hero />
         <Problem />
-        <Solution />
         <Pricing />
+        <PricingDetail />
+        <Solution />
         <PricingReport />
         <Workflow />
         <MonthlyReport />

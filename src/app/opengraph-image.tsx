@@ -15,50 +15,54 @@ export default function Image() {
           width: "100%",
           height: "100%",
           display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
           background: "#ffffff",
-          color: "#0f172a",
-          padding: "72px",
+          color: "#0a0a0a",
+          padding: "64px",
           fontFamily: "Inter, Arial, sans-serif",
         }}
       >
         <div
           style={{
-            display: "flex",
             width: "100%",
             height: "100%",
+            display: "flex",
             flexDirection: "column",
             justifyContent: "space-between",
-            border: "2px solid #e2e8f0",
-            borderRadius: "40px",
-            background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 55%, #ecfdf5 100%)",
-            padding: "64px",
+            border: "2px solid #0a0a0a",
+            borderRadius: "28px",
+            padding: "56px",
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <div
               style={{
                 display: "flex",
-                width: "auto",
-                borderRadius: "999px",
-                background: "#2563eb",
-                color: "#ffffff",
-                padding: "14px 24px",
+                color: "#525252",
                 fontSize: 30,
                 fontWeight: 700,
               }}
             >
-              SNS Operation Partner
+              小規模事業者向けSNS運用パートナー
             </div>
-            <div style={{ fontSize: 86, fontWeight: 900, letterSpacing: -1 }}>
+            <div style={{ fontSize: 92, fontWeight: 900 }}>
               ICHI Social
             </div>
           </div>
-          <div style={{ display: "flex", gap: "24px", fontSize: 34, fontWeight: 700 }}>
-            <span>Planning</span>
-            <span style={{ color: "#10b981" }}>Human Review</span>
-            <span>Monthly Report</span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderTop: "2px solid #e5e5e5",
+              paddingTop: "36px",
+              fontSize: 42,
+              fontWeight: 900,
+            }}
+          >
+            <span>SNS運用を、止めない。</span>
+            <span style={{ color: "#737373", fontSize: 28 }}>
+              Planning / Report / Review
+            </span>
           </div>
         </div>
       </div>

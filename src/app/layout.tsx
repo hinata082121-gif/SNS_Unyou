@@ -17,7 +17,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://ichi-social.vercel.app",
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://ichisocial.vercel.app",
   ),
   title: "ICHI Social | 小規模事業者向けSNS運用パートナー",
   description:
