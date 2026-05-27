@@ -1,14 +1,23 @@
 import type { ReactNode } from "react";
-
-const SERVICE_NAME = "ICHI Social";
-const SERVICE_LABEL = "小規模事業者向けSNS運用パートナー";
-const CONTACT_EMAIL = "contact@example.com";
+import {
+  CONTACT_EMAIL,
+  SITE_LABEL,
+  SITE_NAME,
+  createContactHref,
+} from "@/lib/site";
 
 const navItems = [
   { label: "サービス内容", href: "#solution" },
   { label: "料金", href: "#pricing" },
   { label: "運用フロー", href: "#workflow" },
   { label: "FAQ", href: "#faq" },
+];
+
+const footerLinks = [
+  ...navItems,
+  { label: "プライバシーポリシー", href: "/privacy" },
+  { label: "運営者情報", href: "/operator" },
+  { label: "サービス提供条件", href: "/terms" },
 ];
 
 const problems = [
@@ -273,16 +282,33 @@ const faqs = [
     answer:
       "はい。まずは無料相談で、現在のSNS状況と目的を確認します。",
   },
+  {
+    question: "問い合わせはどこからできますか？",
+    answer:
+      "現在はメールで無料相談を受け付けています。各CTAボタンから必要事項を記入して送信できます。",
+  },
+  {
+    question: "成果は保証されますか？",
+    answer:
+      "フォロワー数や売上の増加を保証するものではありません。投稿の継続、内容改善、月次レポートを通じて運用改善を支援します。",
+  },
+  {
+    question: "専用の問い合わせフォームはありますか？",
+    answer:
+      "初期段階ではメールで受け付けています。今後、必要に応じて専用フォームを整備予定です。",
+  },
 ];
 
 function ConsultationLink({
   children,
   variant = "primary",
   className = "",
+  plan = "",
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "inverse";
   className?: string;
+  plan?: string;
 }) {
   const base =
     "inline-flex min-h-12 items-center justify-center rounded-lg px-5 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
@@ -296,7 +322,7 @@ function ConsultationLink({
 
   return (
     <a
-      href={`mailto:${CONTACT_EMAIL}`}
+      href={createContactHref(plan)}
       aria-label={`${String(children)}、メールで問い合わせる`}
       className={`${base} ${variants[variant]} ${className}`}
     >
@@ -345,14 +371,14 @@ function Header() {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <a
           href="#"
-          aria-label={`${SERVICE_NAME}（${SERVICE_LABEL}）トップへ`}
+          aria-label={`${SITE_NAME}（${SITE_LABEL}）トップへ`}
           className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus"
         >
           <p className="text-base font-black leading-none text-primary">
-            {SERVICE_NAME}
+            {SITE_NAME}
           </p>
           <p className="mt-1 text-[11px] font-medium text-secondary">
-            {SERVICE_LABEL}
+            {SITE_LABEL}
           </p>
         </a>
         <nav
@@ -432,7 +458,7 @@ function Hero() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-24">
         <div>
           <p className="mb-5 inline-flex rounded-full border border-line px-4 py-2 text-sm font-bold text-secondary">
-            {SERVICE_LABEL}
+            {SITE_LABEL}
           </p>
           <h1 className="text-balance text-4xl font-black leading-[1.18] tracking-normal text-primary sm:text-5xl lg:text-[56px]">
             SNS運用を、止めない。
@@ -453,16 +479,20 @@ function Hero() {
               料金プランを見る
             </a>
           </div>
+          <p className="mt-4 text-sm leading-7 text-muted-text">
+            フォーム入力なしで、メールから簡単に相談できます。
+          </p>
         </div>
         <HeroDashboard />
       </div>
       <div className="mx-auto max-w-6xl px-4 pb-14 sm:px-6 lg:px-8">
-        <div className="grid gap-3 border-y border-line py-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 border-y border-line py-5 sm:grid-cols-2 lg:grid-cols-5">
           {[
             "初期設計費 先着3社 ¥0",
             "月額 ¥38,000〜",
             "月次レポート対応",
-            "人が最終確認",
+            "投稿前に人が確認",
+            "Gmailで無料相談受付中",
           ].map((item) => (
             <p
               key={item}
@@ -564,6 +594,7 @@ function Pricing() {
                 <ConsultationLink
                   className="mt-6 w-full"
                   variant={plan.highlighted ? "inverse" : "primary"}
+                  plan={plan.name}
                 >
                   {plan.cta}
                 </ConsultationLink>
@@ -887,14 +918,14 @@ function Footer() {
     <footer className="bg-off-black px-4 py-10 text-white sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[1fr_auto]">
         <div>
-          <p className="text-lg font-black">{SERVICE_NAME}</p>
-          <p className="mt-2 text-sm text-neutral-300">{SERVICE_LABEL}</p>
+          <p className="text-lg font-black">{SITE_NAME}</p>
+          <p className="mt-2 text-sm text-neutral-300">{SITE_LABEL}</p>
           <p className="mt-4 text-xs text-neutral-400">
-            © 2026 {SERVICE_NAME}. All rights reserved.
+            © 2026 {SITE_NAME}. All rights reserved.
           </p>
         </div>
         <nav aria-label="フッターナビゲーション" className="flex flex-wrap gap-4">
-          {navItems.map((item) => (
+          {footerLinks.map((item) => (
             <a
               key={item.href}
               href={item.href}
@@ -903,15 +934,17 @@ function Footer() {
               {item.label}
             </a>
           ))}
-          {/* TODO: 公開前に正式メールアドレスへ差し替え */}
           <a
-            href={`mailto:${CONTACT_EMAIL}`}
+            href={createContactHref()}
             className="text-sm font-bold text-neutral-300 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
           >
             お問い合わせ
           </a>
         </nav>
       </div>
+      <p className="mx-auto mt-8 max-w-6xl text-xs leading-6 text-neutral-500">
+        メールで無料相談受付中：{CONTACT_EMAIL}
+      </p>
     </footer>
   );
 }
