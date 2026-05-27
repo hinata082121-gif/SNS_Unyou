@@ -4,7 +4,7 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://ichisocial.vercel.app";
 export const CONTACT_EMAIL =
   process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "hinata082121@gmail.com";
-export const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+export const GA_ID = process.env.NEXT_PUBLIC_GA_ID ?? "G-Z66RTC04WC";
 
 const CONTACT_SUBJECT = "【ICHI Social】無料相談の希望";
 

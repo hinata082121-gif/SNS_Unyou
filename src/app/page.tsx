@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ContactLink } from "@/components/contact-link";
 import {
   CONTACT_EMAIL,
   SITE_LABEL,
@@ -89,6 +90,12 @@ const pricingPlans = [
     highlighted: false,
   },
 ];
+
+const planEventMap: Record<string, "light" | "standard" | "premium"> = {
+  ライト: "light",
+  スタンダード: "standard",
+  プレミアム: "premium",
+};
 
 const pricingDetails = [
   {
@@ -304,11 +311,15 @@ function ConsultationLink({
   variant = "primary",
   className = "",
   plan = "未定",
+  eventLocation,
+  eventPlan = "general",
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "inverse";
   className?: string;
   plan?: string;
+  eventLocation: string;
+  eventPlan?: "general" | "light" | "standard" | "premium";
 }) {
   const base =
     "inline-flex min-h-12 items-center justify-center rounded-lg px-5 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
@@ -321,13 +332,16 @@ function ConsultationLink({
   };
 
   return (
-    <a
+    <ContactLink
       href={createContactHref(plan)}
+      eventLocation={eventLocation}
+      eventPlan={eventPlan}
+      eventLabel={String(children)}
       aria-label={`${String(children)}、メールで問い合わせる`}
       className={`${base} ${variants[variant]} ${className}`}
     >
       {children}
-    </a>
+    </ContactLink>
   );
 }
 
@@ -395,7 +409,10 @@ function Header() {
             </a>
           ))}
         </nav>
-        <ConsultationLink className="min-w-28 px-4 sm:min-w-32">
+        <ConsultationLink
+          className="min-w-28 px-4 sm:min-w-32"
+          eventLocation="header"
+        >
           無料相談
         </ConsultationLink>
       </div>
@@ -471,7 +488,9 @@ function Hero() {
             小規模事業者・個人事業主向けに、投稿企画・原稿作成・投稿代行・月次レポートまでを一括サポート。効率的な制作体制と人の確認を組み合わせ、続けやすいSNS運用を実現します。
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <ConsultationLink>無料相談する</ConsultationLink>
+            <ConsultationLink eventLocation="hero">
+              無料相談する
+            </ConsultationLink>
             <a
               href="#pricing"
               className="inline-flex min-h-12 items-center justify-center rounded-lg border border-card-border bg-white px-5 text-sm font-bold text-primary transition hover:border-black hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
@@ -595,6 +614,8 @@ function Pricing() {
                   className="mt-6 w-full"
                   variant={plan.highlighted ? "inverse" : "primary"}
                   plan={plan.name}
+                  eventLocation="pricing"
+                  eventPlan={planEventMap[plan.name]}
                 >
                   {plan.cta}
                 </ConsultationLink>
@@ -901,7 +922,9 @@ function FinalCTA() {
           投稿が止まっている、何を発信すればよいか分からない、外注費を抑えて運用を始めたい。そんな方に向けて、現在のSNS状況を確認し、最適な始め方をご提案します。
         </p>
         <div className="mt-8 flex flex-col items-center gap-4">
-          <ConsultationLink variant="inverse">無料相談する</ConsultationLink>
+          <ConsultationLink variant="inverse" eventLocation="final-cta">
+            無料相談する
+          </ConsultationLink>
           <p className="rounded-lg border border-white/20 px-4 py-2 text-sm font-bold text-white">
             先着3社限定：通常{" "}
             <span className="font-number">¥120,000</span>{" "}
@@ -934,12 +957,15 @@ function Footer() {
               {item.label}
             </a>
           ))}
-          <a
+          <ContactLink
             href={createContactHref()}
+            eventLocation="footer"
+            eventPlan="general"
+            eventLabel="お問い合わせ"
             className="text-sm font-bold text-neutral-300 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
           >
             お問い合わせ
-          </a>
+          </ContactLink>
         </nav>
       </div>
       <p className="mx-auto mt-8 max-w-6xl text-xs leading-6 text-neutral-500">
