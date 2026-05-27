@@ -2,25 +2,54 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --section-background: #f6f9fc;
+  --main-text: #0f172a;
+  --sub-text: #475569;
+  --primary-blue: #2563eb;
+  --primary-blue-dark: #1d4ed8;
+  --accent-green: #10b981;
+  --border: #e2e8f0;
+  --soft-warning: #fef3c7;
+  --soft-blue: #eff6ff;
+  --soft-green: #ecfdf5;
 }
 
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-section: var(--section-background);
+  --color-main: var(--main-text);
+  --color-sub: var(--sub-text);
+  --color-primary: var(--primary-blue);
+  --color-primary-dark: var(--primary-blue-dark);
+  --color-accent: var(--accent-green);
+  --color-border: var(--border);
+  --color-warning: var(--soft-warning);
+  --color-soft-blue: var(--soft-blue);
+  --color-soft-green: var(--soft-green);
+  --font-sans: "Noto Sans JP", "Noto Sans JP Fallback", system-ui, sans-serif;
+  --font-number: "Inter", "Inter Fallback", ui-sans-serif, system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
 }
 
 body {
+  margin: 0;
+  font-family: var(--font-noto-sans-jp), "Noto Sans JP", system-ui, sans-serif;
+  color: var(--main-text);
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+a {
+  text-decoration: none;
+}
+
+::selection {
+  color: #ffffff;
+  background: var(--primary-blue);
 }
