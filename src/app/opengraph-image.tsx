@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "AI SNS Partner";
+export const alt = "ICHI Social";
 export const size = {
   width: 1200,
   height: 630,
@@ -52,7 +52,7 @@ export default function Image() {
               SNS Operation Partner
             </div>
             <div style={{ fontSize: 86, fontWeight: 900, letterSpacing: -1 }}>
-              AI SNS Partner
+              ICHI Social
             </div>
           </div>
           <div style={{ display: "flex", gap: "24px", fontSize: 34, fontWeight: 700 }}>

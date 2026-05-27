@@ -17,22 +17,22 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ?? "https://ai-sns-partner.vercel.app",
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://ichi-social.vercel.app",
   ),
-  title: "AI SNS Partner | 小規模事業者向けAI SNS運用代行",
+  title: "ICHI Social | 小規模事業者向けSNS運用パートナー",
   description:
-    "投稿企画・原稿作成・投稿代行・月次レポートまで対応。AIと人の確認を組み合わせ、小規模事業者のSNS運用を継続的に支援します。",
+    "投稿企画・原稿作成・投稿代行・月次レポートまで対応。小規模事業者のSNS運用を継続的に支援します。",
   openGraph: {
-    title: "AI SNS Partner | 小規模事業者向けAI SNS運用代行",
+    title: "ICHI Social | 小規模事業者向けSNS運用パートナー",
     description:
-      "投稿企画・原稿作成・投稿代行・月次レポートまで対応。AIと人の確認を組み合わせ、小規模事業者のSNS運用を継続的に支援します。",
+      "投稿企画・原稿作成・投稿代行・月次レポートまで対応。小規模事業者のSNS運用を継続的に支援します。",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "AI SNS Partner | 小規模事業者向けAI SNS運用代行",
+    title: "ICHI Social | 小規模事業者向けSNS運用パートナー",
     description:
-      "投稿企画・原稿作成・投稿代行・月次レポートまで対応。AIと人の確認を組み合わせ、小規模事業者のSNS運用を継続的に支援します。",
+      "投稿企画・原稿作成・投稿代行・月次レポートまで対応。小規模事業者のSNS運用を継続的に支援します。",
   },
 };
 

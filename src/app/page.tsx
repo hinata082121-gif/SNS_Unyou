@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-const SERVICE_NAME = "AI SNS Partner";
-const SERVICE_LABEL = "AI SNS運用パートナー";
+const SERVICE_NAME = "ICHI Social";
+const SERVICE_LABEL = "小規模事業者向けSNS運用パートナー";
 const CONTACT_EMAIL = "contact@example.com";
 
 const navItems = [
@@ -87,7 +87,7 @@ const pricingPlans = [
       "コメント監視",
       "月次レポート＋改善提案",
       "Manusによるリサーチ補助",
-      "AI運用フロー最適化",
+      "運用フロー最適化",
     ],
     cta: "スタンダードで相談する",
     highlighted: true,
@@ -130,7 +130,7 @@ const pricingReports = [
   },
   {
     title: "初期設計費について",
-    body: "通常はアカウント診断、投稿方針の整理、トンマナ設計、競合調査、AI運用基盤のセットアップを行うため、初期設計費として¥120,000を設定しています。ローンチ初期は実績作成のため、先着3社限定で無料にしています。",
+    body: "通常はアカウント診断、投稿方針の整理、トンマナ設計、競合調査、運用基盤のセットアップを行うため、初期設計費として¥120,000を設定しています。ローンチ初期は実績作成のため、先着3社限定で無料にしています。",
   },
   {
     title: "対応範囲",
@@ -184,8 +184,8 @@ const trustItems = [
     body: "投稿して終わりではなく、毎月改善案を提示します。",
   },
   {
-    title: "AI丸投げではない",
-    body: "AIで下書き・分析を行い、人間が最終確認します。",
+    title: "人が最終確認",
+    body: "リサーチ・原稿作成・分析に支援ツールを活用し、人間が最終確認します。",
   },
   {
     title: "小規模対応",
@@ -301,7 +301,7 @@ function Header() {
             {SERVICE_NAME}
           </p>
           <p className="mt-1 text-[11px] font-medium text-sub">
-            小規模事業者向けSNS運用代行
+            {SERVICE_LABEL}
           </p>
         </a>
         <nav
@@ -333,7 +333,7 @@ function HeroDashboard() {
         <div className="mb-5 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-bold text-sub">今月の運用サマリー</p>
-            <p className="mt-1 text-xs text-sub">AI下書き → 人が確認 → 投稿予約</p>
+            <p className="mt-1 text-xs text-sub">下書き作成 → 人が確認 → 投稿予約</p>
           </div>
           <span className="rounded-full bg-soft-green px-3 py-1 text-xs font-bold text-emerald-700">
             作成済み
@@ -360,7 +360,7 @@ function HeroDashboard() {
         <div className="mt-5 rounded-2xl bg-section p-4">
           <div className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-full bg-primary text-sm font-bold text-white">
-              AI
+              確認
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-bold text-main">投稿文の品質確認中</p>
@@ -381,17 +381,17 @@ function Hero() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1.02fr_0.98fr] lg:px-8 lg:py-24">
         <div>
           <p className="mb-4 inline-flex rounded-full border border-blue-100 bg-soft-blue px-4 py-2 text-sm font-bold text-primary">
-            AIで効率化し、人が品質確認するSNS運用代行
+            小規模事業者向けSNS運用パートナー
           </p>
           <h1 className="text-balance text-4xl font-black leading-[1.18] tracking-normal text-main sm:text-5xl lg:text-[56px]">
-            SNS投稿を、止めない。
+            SNS運用を、止めない。
             <br />
-            AI運用で、
+            発信を整え、
             <br />
             毎月改善する。
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-8 text-sub sm:text-lg">
-            小規模事業者・個人事業主向けに、投稿企画・原稿作成・投稿代行・月次レポートまでを一括サポート。AIによる効率化と人の確認を組み合わせ、続けやすいSNS運用を実現します。
+            小規模事業者・個人事業主向けに、投稿企画・原稿作成・投稿代行・月次レポートまでを一括サポート。効率的な制作体制と人の確認を組み合わせ、続けやすいSNS運用を実現します。
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <ConsultationLink>無料相談する</ConsultationLink>
@@ -407,7 +407,7 @@ function Hero() {
               "月額 ¥38,000〜",
               "先着3社 初期設計費 ¥0",
               "投稿企画 / 投稿代行 / 月次レポート対応",
-              "人が最終確認するAI活用型運用",
+              "人が最終確認する運用体制",
             ].map((item) => (
               <div
                 key={item}
@@ -453,8 +453,8 @@ function Solution() {
     <section id="solution" className="bg-white px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading
-          title="AIと人の確認を組み合わせた、続けやすいSNS運用"
-          body="AIで調査・下書き・分析を効率化し、人が最終確認を行うことで、低コストでも安定したSNS運用を目指します。"
+          title="効率的な制作体制と人の確認で、続けやすいSNS運用"
+          body="裏側では、リサーチ・原稿作成・レポート作成にAIツールを活用し、最終確認は人が行います。"
         />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           {solutionRoles.map((item) => (
@@ -487,7 +487,7 @@ function Pricing() {
           <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <p className="text-sm font-bold text-amber-800">
-                初回のみ / アカウント診断・戦略設計・トンマナ設計・AI運用基盤セットアップ
+                初回のみ / アカウント診断・戦略設計・トンマナ設計・運用基盤セットアップ
               </p>
               <p className="mt-2 text-base font-bold text-main">
                 通常 初期設計フィー{" "}
@@ -746,7 +746,7 @@ function Footer() {
       <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[1fr_auto]">
         <div>
           <p className="text-lg font-extrabold text-main">{SERVICE_NAME}</p>
-          <p className="mt-2 text-sm text-sub">小規模事業者向けSNS運用代行</p>
+          <p className="mt-2 text-sm text-sub">{SERVICE_LABEL}</p>
           <p className="mt-4 text-xs text-sub">
             © 2026 {SERVICE_NAME}. All rights reserved.
           </p>
