@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "send:prospects:test": "node scripts/sheets/send-prospects.mjs data/prospects/test-prospect.json"
   },
   "dependencies": {
     "next": "16.2.6",
