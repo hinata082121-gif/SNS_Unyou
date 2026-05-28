@@ -12,6 +12,8 @@ ICHI Socialの営業管理をHermes Agentに連携するための手順書です
 - Hermes AgentはWSL2上で動かす想定
 - 営業メールやSNS DMの自動送信は行わない
 - 送信前の最終確認と実送信は人間が行う
+- 初期段階では、送信以外の営業準備とリサーチをHermes Agentで定期化する
+- チェーン、FC、多店舗ブランド、本部運営色が強い店舗は初期営業では除外または後回しにする
 
 ## 3. Hermes Agentのインストール概要
 
@@ -73,13 +75,26 @@ node scripts/sheets/send-prospects.mjs data/prospects/test-prospect.json
 node scripts/sheets/send-prospects.mjs data/prospects/YYYY-MM-DD-area-a.json
 ```
 
-## 9. セキュリティ注意
+## 9. 定期タスク設定
+
+送信以外の営業作業は、以下の手順書とプロンプトを使ってHermes Agentに登録します。
+
+- `docs/hermes-scheduled-automation.md`
+- `hermes/prompts/scheduled-daily-sales-candidates.md`
+- `hermes/prompts/scheduled-research-refill-mon-wed.md`
+- `hermes/prompts/expanded-area-research-rules.md`
+
+毎朝9:00は、その日に人間が確認・手動送信する候補10件を整理します。毎週月曜・水曜は、川口市周辺に加えて東京都北区・板橋区などの拡大地域から候補JSONを作成します。
+
+## 10. セキュリティ注意
 
 - `SHEETS_SECRET_TOKEN` をGitHubにコミットしない
 - Webhook URLを公開しない
 - `.env` 系ファイルは `.gitignore` に入っているか確認する
 - `.env.hermes.example` はサンプルであり、実際のURLやトークンは入れない
+- `SHEETS_SECRET_TOKEN` をログ出力しない
 - GmailやSNS DMの完全自動送信は初期段階では行わない
+- 問い合わせフォーム送信を自動化しない
 - スパム的な一斉送信をしない
 - 1日10〜20件程度の小ロットから開始する
 - 送信前に相手の公式サイト・SNS・問い合わせ可否を確認する

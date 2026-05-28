@@ -14,8 +14,13 @@ Googleスプレッドシート投入用JSONとして、A評価の見込み客候
   - 整体
   - カフェ・飲食
 - 地域:
-  - 初期は川口市周辺
-  - 必要に応じてさいたま市、蕨市、戸田市も候補に含める
+  - 川口市
+  - 蕨市
+  - 戸田市
+  - さいたま市南区
+  - さいたま市浦和区
+  - 東京都北区
+  - 東京都板橋区
 - 相性スコア:
   - すべて `A`
 - ステータス:
@@ -25,24 +30,31 @@ Googleスプレッドシート投入用JSONとして、A評価の見込み客候
 
 - `hermes/prompts/prospect-json-rules.md` の列定義とプルダウン値に従う
 - 既存候補と重複しないように、店名・出典URL・問い合わせフォームURLを確認する
+- 個人店・小規模店舗・単独店舗を優先する
+- 店舗単独の公式サイトまたはInstagramがある候補を優先する
+- 問い合わせフォーム、メール、Instagram DM、LINE、電話などの連絡導線を確認する
+- チェーン、FC、多店舗ブランド、本部運営色が強い店舗は除外または後回しにする
+- ブランド全体・他地域店舗込みの総合SNSしかない店舗は除外する
 - 架空URLや架空実績は入れない
 - 出典URLには実際に確認した公開ページを入れる
+- 一覧ページだけでは候補確定にしない
 - 問い合わせ不可、営業不可の記載がある候補は除外する
 - ICHI Socialの営業入口は「無料簡易診断」として考える
 - 営業DM/メール送信は行わない
+- 候補不足の場合は不足と報告する
 
 ## 出力
 
 スプレッドシート投入用JSONを以下のファイル名で保存してください。
 
 ```text
-data/prospects/YYYY-MM-DD-kawaguchi-a-30.json
+data/prospects/YYYY-MM-DD-expanded-area-a.json
 ```
 
-保存後、送信する場合は以下を実行するよう案内してください。
+保存後、必ず人間に確認を求めてください。人間から明示的な許可があった場合のみ、以下を実行するよう案内してください。
 
 ```bash
-node scripts/sheets/send-prospects.mjs data/prospects/YYYY-MM-DD-kawaguchi-a-30.json
+node scripts/sheets/send-prospects.mjs data/prospects/YYYY-MM-DD-expanded-area-a.json
 ```
 
 送信してもステータスは `未検収` のまま追加してください。営業DM/メールの自動送信は禁止です。
