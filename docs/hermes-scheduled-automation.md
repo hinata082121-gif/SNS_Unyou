@@ -54,10 +54,50 @@ data/prospects/YYYY-MM-DD-expanded-area-a.json
 node scripts/sheets/send-prospects.mjs data/prospects/YYYY-MM-DD-expanded-area-a.json
 ```
 
+## ICHI Social 週次市場・競合分析
+
+- 毎週金曜17:00
+- 市場分析、競合分析、営業改善、サービス改善レポートを作成する
+- `docs/reports/marketing/YYYY-MM-DD-weekly-market-analysis.md` に保存する
+- 送信やGoogleスプレッドシート更新は行わない
+- 競合情報は公開情報のみを使い、出典URLを残す
+- 不明な情報は推測せず `不明` と書く
+
+Hermes CLIに貼る登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 週次市場・競合分析
+
+スケジュール:
+毎週金曜 17:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/weekly-market-competitor-analysis.md のルールに従い、ICHI Socialの市場分析・競合分析・営業改善・サービス改善レポートを作成してください。
+
+出力:
+docs/reports/marketing/YYYY-MM-DD-weekly-market-analysis.md
+
+重要ルール:
+- 営業メール、SNS DM、問い合わせフォーム送信は行わない
+- Googleスプレッドシートの自動更新は行わない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報は表示しない
+- 公開情報のみを使う
+- 出典URLを残す
+- 不明な情報は推測せず「不明」と書く
+- 翌週の営業方針、リサーチ地域、文面改善、サービス改善案まで出す
+
+この内容を毎週金曜17:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
 - 問い合わせフォーム送信を自動化しない
+- Googleスプレッドシートを勝手に更新しない
+- `SECRET_TOKEN`、Webhook URL、APIキー、認証情報を表示しない
 - スパム的な一斉送信をしない
 - 1日10〜20件程度の小ロットから開始する
 - 送信前に相手の公式サイト・SNS・問い合わせ可否を確認する

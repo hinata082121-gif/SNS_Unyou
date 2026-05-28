@@ -67,6 +67,19 @@ node scripts/sheets/send-prospects.mjs data/prospects/YYYY-MM-DD-expanded-area-a
 - 翌日の次アクションを決める
 - 文面の改善案を残す
 
+## 毎週金曜 17:00
+
+- 市場分析、競合分析、営業改善、サービス改善レポートを作成する
+- レポート保存先:
+
+```text
+docs/reports/marketing/YYYY-MM-DD-weekly-market-analysis.md
+```
+
+- 翌週の重点地域、重点業態、検索キーワード、文面改善、サービス改善案を整理する
+- 営業メール、SNS DM、問い合わせフォーム送信は行わない
+- Googleスプレッドシートの自動更新は行わない
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
