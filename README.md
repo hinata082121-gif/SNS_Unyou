@@ -1,4 +1,13 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This repository contains the ICHI Social landing page and internal operation docs for sales, deal management, and delivery workflows.
+
+## Operation Docs
+
+- Sales automation: `docs/hermes-daily-sales-workflow.md`
+- Deal/proposal workflow: `docs/deals/`
+- Delivery/content operation workflow: `docs/delivery/`
+- Hermes prompts: `hermes/prompts/`
+
+Do not commit API keys, passwords, SNS login details, `SHEETS_SECRET_TOKEN`, or real webhook URLs.
 
 ## Getting Started
 
