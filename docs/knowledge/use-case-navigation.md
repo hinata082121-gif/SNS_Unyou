@@ -45,3 +45,11 @@
 | 外注成果物をレビューしたい | `docs/outsourcing/quality-checklist.md` | `docs/quality/ai-output-review-rules.md` | `vendor-quality-review.md` | `docs/reports/outsourcing/reviews/` | 採用/差し戻し |
 | 外注リスクを確認したい | `docs/outsourcing/outsourcing-risk-notes.md` | `docs/outsourcing/confidentiality-rules.md` | `outsourcing-risk-check.md` | `docs/reports/outsourcing/risks/` | 依頼停止/継続 |
 | 外注先を終了したい | `docs/outsourcing/offboarding-checklist.md` | `docs/outsourcing/payment-and-invoice-rules.md` | `vendor-quality-review.md` | `docs/reports/outsourcing/reviews/` | 終了/再依頼可否 |
+| AI出力の品質を評価したい | `docs/ai-ops/output-evaluation-scorecard.md` | `docs/quality/ai-output-review-rules.md` | `ai-output-evaluation.md` | `docs/reports/ai-ops/evaluations/` | 採用/差し戻し |
+| プロンプトを改善したい | `docs/ai-ops/prompt-design-rules.md` | `docs/ai-ops/prompt-versioning-rules.md` | `ai-ops-prompt-review.md` | `docs/reports/ai-ops/reviews/` | 改訂可否 |
+| プロンプト変更後の回帰テストをしたい | `docs/ai-ops/test-case-library.md` | `docs/ai-ops/prompt-evaluation-framework.md` | `prompt-regression-test.md` | `docs/reports/ai-ops/evaluations/` | 本番反映可否 |
+| AIが失敗した原因を分析したい | `docs/ai-ops/failure-analysis-rules.md` | `docs/ai-ops/ai-ops-risk-notes.md` | `ai-failure-analysis.md` | `docs/reports/ai-ops/failures/` | 修正方針 |
+| どのモデル/ツールを使うべきか判断したい | `docs/ai-ops/model-usage-policy.md` | `docs/ai-ops/agent-routing-rules.md` | `model-selection-review.md` | `docs/reports/ai-ops/reviews/` | モデル変更 |
+| quota/credit不足が起きた | `docs/ai-ops/cost-and-quota-management.md` | `docs/ai-ops/model-fallback-rules.md` | `ai-cost-quota-review.md` | `docs/reports/ai-ops/costs/` | 課金/頻度判断 |
+| AIに渡すコンテキストを整理したい | `docs/ai-ops/context-management-rules.md` | `docs/ai-ops/memory-and-history-rules.md` | `context-quality-review.md` | `docs/reports/ai-ops/reviews/` | 参照情報確定 |
+| AI自動化の範囲を見直したい | `docs/ai-ops/human-in-the-loop-rules.md` | `docs/quality/no-automation-boundary.md` | `monthly-ai-ops-improvement-review.md` | `docs/reports/ai-ops/improvements/` | 自動化範囲変更 |

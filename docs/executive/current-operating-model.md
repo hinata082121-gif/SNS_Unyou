@@ -27,6 +27,9 @@
 - 価格/作業範囲チェック
 - 外注タスクブリーフ下書き
 - 外注候補者/トライアル/品質レビュー下書き
+- AIプロンプトレビュー
+- AI出力評価/失敗分析
+- モデル/コスト/クォータ見直し
 
 ## 手動
 
@@ -62,6 +65,7 @@
 - ツール/インフラ管理: `docs/infra/`, `docs/reports/infra/`
 - 商品開発・パッケージ改善: `docs/product/`, `docs/reports/product/`
 - 外注・採用管理: `docs/outsourcing/`, `docs/reports/outsourcing/`
+- AI運用改善: `docs/ai-ops/`, `docs/reports/ai-ops/`
 
 ## ナレッジ管理で整備済みのこと
 
@@ -95,6 +99,15 @@
 - 外注先に渡す情報を制限する部門: `docs/outsourcing/confidentiality-rules.md`, `docs/outsourcing/client-info-sharing-rules.md`
 - 品質管理・法務・請求との接続: `docs/outsourcing/delivery-and-review-flow.md`, `docs/outsourcing/payment-and-invoice-rules.md`
 - 外注は現時点では将来準備であり、募集、採用、契約、支払いは自動化しない
+
+## AI運用改善で整備済みのこと
+
+- Hermes/Codex/ChatGPTの使い分け: `docs/ai-ops/agent-routing-rules.md`
+- プロンプト改善: `docs/ai-ops/prompt-design-rules.md`, `docs/ai-ops/prompt-versioning-rules.md`
+- 失敗分析: `docs/ai-ops/failure-analysis-rules.md`
+- モデル/コスト/クォータ管理: `docs/ai-ops/model-usage-policy.md`, `docs/ai-ops/cost-and-quota-management.md`
+- 人間介在: `docs/ai-ops/human-in-the-loop-rules.md`
+- 品質管理部門は生成物の送付/公開前チェック、AI運用改善部門はAIの使い方と改善サイクルを扱う
 
 ## 今日時点の運用上の弱点
 

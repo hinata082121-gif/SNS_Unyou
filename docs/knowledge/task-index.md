@@ -48,3 +48,6 @@
 | 月次外注先レビュー | 毎月25日16:00 | `monthly-vendor-review.md` | `docs/reports/outsourcing/reviews/` | 外注先発生後 |
 | 外注リスクチェック | 外注依頼前に手動 | `outsourcing-risk-check.md` | `docs/reports/outsourcing/risks/` | 外注依頼前 |
 | 外注タスクブリーフ作成 | 必要時手動 | `outsourcing-task-brief-builder.md` | `docs/reports/outsourcing/briefs/` | 外注切り出し時 |
+| 月次AI運用改善レビュー | 月末22:00 | `monthly-ai-ops-improvement-review.md` | `docs/reports/ai-ops/improvements/` | AI運用レポート蓄積後 |
+| プロンプト品質レビュー | 必要時手動 | `ai-ops-prompt-review.md` | `docs/reports/ai-ops/reviews/` | プロンプト変更前後 |
+| AI失敗分析 | 必要時手動 | `ai-failure-analysis.md` | `docs/reports/ai-ops/failures/` | AI出力失敗時 |

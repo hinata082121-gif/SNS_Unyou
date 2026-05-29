@@ -100,3 +100,11 @@
 - 使うプロンプト: `outsourcing-task-brief-builder.md`, `vendor-candidate-review.md`, `outsourcing-risk-check.md`, `monthly-vendor-review.md`
 - 関連レポート: `docs/reports/outsourcing/briefs/`, `docs/reports/outsourcing/reviews/`, `docs/reports/outsourcing/vendors/`, `docs/reports/outsourcing/risks/`
 - 注意点: 自動募集、自動採用、自動契約、自動支払い、クライアント情報の自動共有はしない
+
+## AI運用改善部門
+
+- 見るファイル: `docs/ai-ops/`
+- 作るファイル: `docs/reports/ai-ops/**/*.md`
+- 使うプロンプト: `ai-ops-prompt-review.md`, `prompt-regression-test.md`, `ai-output-evaluation.md`, `ai-failure-analysis.md`
+- 関連レポート: `docs/reports/ai-ops/reviews/`, `docs/reports/ai-ops/evaluations/`, `docs/reports/ai-ops/failures/`, `docs/reports/ai-ops/costs/`, `docs/reports/ai-ops/improvements/`
+- 注意点: モデル変更、本番プロンプト大幅変更、設定変更、外部送信は人間判断とする

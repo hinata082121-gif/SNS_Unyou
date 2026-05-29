@@ -1242,6 +1242,95 @@ docs/reports/outsourcing/briefs/YYYY-MM-DD-outsourcing-task-brief.md
 - 募集、採用、契約、支払いは人間判断としてください
 ```
 
+## ICHI Social 月次AI運用改善レビュー
+
+将来的なAI運用改善部門タスク案です。現時点では営業9:00自動実行の安定確認中のため、すぐ登録しない前提です。
+
+- 毎月末日 22:00
+- AI活用、失敗、プロンプト改善、モデル/ツール課題、コスト/クォータ、自動化境界を整理する
+- 自動でモデル変更やプロンプト大幅変更はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 月次AI運用改善レビュー
+
+スケジュール:
+毎月末日 22:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/monthly-ai-ops-improvement-review.md のルールに従い、AI活用、失敗、プロンプト改善、モデル/ツール課題、コスト/クォータ、自動化境界を整理してください。
+
+出力:
+docs/reports/ai-ops/improvements/YYYY-MM-ai-ops-improvement-review.md
+
+重要ルール:
+- 自動でモデル変更、本番プロンプト大幅変更、Hermesタスク登録/削除を行わないでください
+- 外部送信、SNS投稿、請求送付、契約判断、価格変更、採用判断、支払い判断は行わないでください
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しないでください
+
+この内容を毎月末日22:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social プロンプト品質レビュー
+
+AI運用改善部門の手動実行タスク案です。
+
+- 必要時に手動実行する
+- 指定プロンプトの目的、入力、出力、禁止事項、人間確認事項、改善案を整理する
+- 自動で本番プロンプトを書き換えない
+
+Hermes CLIに貼る手動実行文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentの手動レビュー依頼です。
+
+タスク名:
+ICHI Social プロンプト品質レビュー
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/ai-ops-prompt-review.md のルールに従い、指定プロンプトの目的、入力、出力、禁止事項、人間確認事項、改善案を整理してください。
+
+出力:
+docs/reports/ai-ops/reviews/YYYY-MM-DD-ai-ops-prompt-review.md
+
+重要ルール:
+- 本番プロンプトを自動で書き換えないでください
+- モデル変更、タスク登録/削除、設定変更は行わないでください
+- 改善案と人間判断事項を分けてください
+```
+
+## ICHI Social AI失敗分析
+
+AI運用改善部門の手動実行タスク案です。
+
+- 必要時に手動実行する
+- 失敗内容、期待結果、出力結果、原因、修正案、再発防止を整理する
+- 自動で外部送信や設定変更はしない
+
+Hermes CLIに貼る手動実行文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentの手動分析依頼です。
+
+タスク名:
+ICHI Social AI失敗分析
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/ai-failure-analysis.md のルールに従い、失敗内容、実行したプロンプト、出力結果、期待結果、エラーやログをもとに原因候補、修正方針、修正プロンプト案、再発防止を整理してください。
+
+出力:
+docs/reports/ai-ops/failures/YYYY-MM-DD-ai-failure-analysis.md
+
+重要ルール:
+- 秘密情報の値は再表示しないでください
+- 外部送信、設定変更、モデル変更、本番プロンプト反映は行わないでください
+- 人間が判断すべきことを明記してください
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -1267,6 +1356,9 @@ docs/reports/outsourcing/briefs/YYYY-MM-DD-outsourcing-task-brief.md
 - 外注先への自動連絡、外注募集の自動掲載、外注候補の自動採用を行わない
 - 業務委託契約の自動締結、支払い実行、請求書自動処理を行わない
 - クライアント情報、SNSログイン情報、秘密情報を外注先へ自動共有しない
+- モデルの自動変更、本番プロンプトの自動大幅変更を行わない
+- AI改善案の自動本番反映、Hermesタスクの自動登録/削除を行わない
+- .env、GitHub Secrets、Vercel環境変数を自動変更しない
 - 自動修正後の自動公開、自動修正後の自動送信を行わない
 - 秘密情報や口座情報を自動入力しない
 - 秘密情報の自動表示/保存を行わない

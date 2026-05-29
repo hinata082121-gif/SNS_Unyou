@@ -141,3 +141,16 @@
 | `vendor-onboarding-prep.md` | 外注先オンボーディング準備 | ロール/初回タスク | `docs/reports/outsourcing/vendors/` | 手動 | ログイン情報共有禁止 |
 | `monthly-vendor-review.md` | 月次外注先レビュー | 依頼件数/品質/コスト | `docs/reports/outsourcing/reviews/` | 将来案 | 自動支払い禁止 |
 | `recruiting-copy-builder.md` | 外注募集文下書き | 募集ロール/条件 | `docs/reports/outsourcing/vendors/` | 手動 | 自動掲載禁止 |
+
+## AI運用改善
+
+| ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認/禁止事項 |
+|---|---|---|---|---|---|
+| `ai-ops-prompt-review.md` | プロンプト品質レビュー | 対象プロンプト/用途 | `docs/reports/ai-ops/reviews/` | 手動 | 本番自動反映禁止 |
+| `prompt-regression-test.md` | プロンプト回帰テスト | テストケース/期待出力 | `docs/reports/ai-ops/evaluations/` | 手動 | 人間判断前提 |
+| `ai-output-evaluation.md` | AI出力評価 | 評価対象ファイル | `docs/reports/ai-ops/evaluations/` | 手動 | 外部送信禁止 |
+| `ai-failure-analysis.md` | AI失敗分析 | 失敗内容/ログ | `docs/reports/ai-ops/failures/` | 手動 | 秘密情報再表示禁止 |
+| `model-selection-review.md` | モデル選定レビュー | タスク種別/要件 | `docs/reports/ai-ops/reviews/` | 手動 | 自動モデル変更禁止 |
+| `ai-cost-quota-review.md` | コスト/クォータレビュー | 利用状況メモ | `docs/reports/ai-ops/costs/` | 手動/将来案 | 推測料金禁止 |
+| `context-quality-review.md` | コンテキスト品質レビュー | 前提/参照ファイル | `docs/reports/ai-ops/reviews/` | 手動 | 秘密情報入力禁止 |
+| `monthly-ai-ops-improvement-review.md` | 月次AI運用改善レビュー | 各AI運用レポート | `docs/reports/ai-ops/improvements/` | 将来案 | 設定変更禁止 |
