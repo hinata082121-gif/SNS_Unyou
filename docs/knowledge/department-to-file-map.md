@@ -77,3 +77,10 @@
 - 使うプロンプト: `knowledge-index-builder.md`, `document-finder.md`
 - 注意点: 未追跡ファイルの自動削除/コミットはしない
 
+## ツール/インフラ管理部門
+
+- 見るファイル: `docs/infra/`
+- 作るファイル: `docs/reports/infra/**/*.md`
+- 使うプロンプト: `infra-health-check.md`, `hermes-cron-health-check.md`, `infra-incident-triage.md`
+- 関連レポート: `docs/reports/infra/health-checks/`, `docs/reports/infra/incidents/`, `docs/reports/infra/deployments/`, `docs/reports/infra/maintenance/`
+- 注意点: 環境変数やSecretsの自動変更、Apps Script自動デプロイ、送信系スクリプト実行はしない

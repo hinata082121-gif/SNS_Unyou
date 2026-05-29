@@ -16,6 +16,6 @@
 | `docs/reports/quality/` | 品質レビュー、AI監査 | `YYYY-MM-DD-...md` | 送付/公開前、週次 | 人間 | 可 | 秘密情報はマスク |
 | `docs/reports/cs/` | CSチェック、継続提案 | `YYYY-MM-DD-client-name-...md` | 7/14/30日、月次 | 人間 | 個別判断 | クライアント情報注意 |
 | `docs/reports/knowledge/` | 索引、棚卸し、トラブル対応 | `YYYY-MM-DD-...md` | 週次/月次/必要時 | 人間 | 可 | 未追跡ファイルは勝手に編集しない |
+| `docs/reports/infra/` | インフラヘルスチェック、障害対応、デプロイ確認、バックアップレビュー | `YYYY-MM-DD-...md` | 週次/月次/障害時 | 人間 | 可 | 秘密情報の実値は記載しない |
 
 すべてのレポートに、`SECRET_TOKEN`、Webhook URLの実値、APIキー、認証情報、口座情報、登録番号、実クライアント個人情報を入れないでください。
-

@@ -22,3 +22,13 @@
 - 店舗URL不一致は人間確認必須
 - 契約/税務判断は専門家確認推奨
 - 自動化禁止作業をAIが提案した場合はインシデント記録
+
+## インフラ系リスクの追加基準
+
+- SECRET_TOKEN漏えい疑い: Level 4
+- Webhook URL漏えい疑い: Level 4
+- Gitに秘密情報混入: Level 4
+- 9:00タスク未実行: Level 1〜2
+- Sheets誤投入: Level 2
+- Vercel本番障害: Level 2〜3
+- Apps Script誤デプロイ: Level 2

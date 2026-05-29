@@ -924,6 +924,144 @@ docs/reports/knowledge/troubleshooting/YYYY-MM-DD-troubleshooting.md
 - 自動削除、自動コミット、外部送信は行わないでください
 ```
 
+## ICHI Social Hermes cronヘルスチェック
+
+将来的なツール/インフラ管理部門タスク案です。現時点では営業9:00自動実行の安定確認中のため、すぐに登録せず、必要になった段階で登録します。
+
+- 毎日 8:50
+- Gateway状態、cron状態、9:00タスクのnext_run、前回実行、missed run有無を確認する
+- レポートのみ作成する
+- タスク登録/削除はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social Hermes cronヘルスチェック
+
+スケジュール:
+毎日 8:50
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/hermes-cron-health-check.md のルールに従い、Gateway状態、cron状態、9:00タスクのnext_run、前回実行、missed run有無、daily-sales-candidates作成状況を確認してください。
+
+出力:
+docs/reports/infra/health-checks/YYYY-MM-DD-hermes-cron-health-check.md
+
+重要ルール:
+- タスク登録/削除は行わない
+- 営業送信、SNS投稿、Sheets投入は行わない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しない
+- 人間が確認すべきことを分けてください
+
+この内容を毎日8:50のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social インフラ週次ヘルスチェック
+
+将来的なツール/インフラ管理部門タスク案です。
+
+- 毎週土曜 11:00
+- Git状態、未追跡ファイル、lint/build、Hermes cron、Sheets Webhook、Vercel確認項目、ログを整理する
+- 外部送信やSheets投入はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social インフラ週次ヘルスチェック
+
+スケジュール:
+毎週土曜 11:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/infra-health-check.md のルールに従い、Git状態、未追跡ファイル、lint/build、Hermes cron、Sheets Webhook、Vercel確認項目、ログを整理してください。
+
+出力:
+docs/reports/infra/health-checks/YYYY-MM-DD-infra-health-check.md
+
+重要ルール:
+- 外部送信やSheets投入は行わない
+- send-prospects.mjsは人間許可なしに実行しない
+- 実運用レポートを勝手にコミットしない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しない
+
+この内容を毎週土曜11:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 秘密情報/環境変数レビュー
+
+将来的なツール/インフラ管理部門タスク案です。
+
+- 毎週土曜 11:30
+- docs/reports/data/git diffに秘密情報らしきものがないか確認する
+- 実値は表示せず、疑いだけ報告する
+- 自動削除や自動ローテーションはしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 秘密情報/環境変数レビュー
+
+スケジュール:
+毎週土曜 11:30
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/secrets-and-env-review.md のルールに従い、docs/reports/data/git diffに秘密情報らしきものがないか確認してください。
+
+出力:
+docs/reports/infra/health-checks/YYYY-MM-DD-secrets-and-env-review.md
+
+重要ルール:
+- 実値は表示せず、疑いだけ報告してください
+- 自動削除や自動ローテーションは行わない
+- 環境変数、Vercel環境変数、GitHub Secretsを自動変更しない
+- 人間がローテーション判断すべき項目を分けてください
+
+この内容を毎週土曜11:30のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 月次バックアップレビュー
+
+将来的なツール/インフラ管理部門タスク案です。
+
+- 毎月末日 21:00
+- GitHub、Google Sheets、Apps Script、Hermes jobs、docs/reports、data/prospectsのバックアップ状態を確認する
+- 実値や秘密情報は保存しない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 月次バックアップレビュー
+
+スケジュール:
+毎月末日 21:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/backup-review.md のルールに従い、GitHub、Google Sheets、Apps Script、Hermes jobs、docs/reports、data/prospectsのバックアップ状態を確認してください。
+
+出力:
+docs/reports/infra/maintenance/YYYY-MM-DD-backup-review.md
+
+重要ルール:
+- 実値や秘密情報は保存しない
+- .env実値はバックアップ方法のみ記載し、値は記載しない
+- 自動削除、自動コミット、外部送信は行わない
+- 人間が行うバックアップ/復旧作業を分けてください
+
+この内容を毎月末日21:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -945,6 +1083,11 @@ docs/reports/knowledge/troubleshooting/YYYY-MM-DD-troubleshooting.md
 - 架空実績、架空数値、実績の無断掲載、スクリーンショットの無断利用を行わない
 - 自動修正後の自動公開、自動修正後の自動送信を行わない
 - 秘密情報や口座情報を自動入力しない
+- 秘密情報の自動表示/保存を行わない
+- 環境変数、Vercel環境変数、GitHub Secretsを自動変更しない
+- Apps Scriptの自動デプロイを行わない
+- Webhook URLの自動再発行を行わない
+- SHEETS_SECRET_TOKENの自動ローテーションを行わない
 - `SECRET_TOKEN`、Webhook URL、APIキー、認証情報を表示しない
 - スパム的な一斉送信をしない
 - 1日10〜20件程度の小ロットから開始する

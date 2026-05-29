@@ -19,6 +19,9 @@
 - ナレッジ索引作成
 - 目的別ファイル案内
 - トラブルシューティング初動整理
+- インフラヘルスチェック
+- Hermes cron状態整理
+- デプロイ前後チェック
 
 ## 手動
 
@@ -51,6 +54,7 @@
 - KPI: `docs/management/`, `data/management/`
 - 全体統括: `docs/executive/`, `docs/reports/executive/`
 - ナレッジ管理: `docs/knowledge/`, `docs/reports/knowledge/`
+- ツール/インフラ管理: `docs/infra/`, `docs/reports/infra/`
 
 ## ナレッジ管理で整備済みのこと
 
@@ -61,6 +65,15 @@
 - 日次/週次/月次ガイド: `docs/knowledge/daily-operations-guide.md`, `weekly-operations-guide.md`, `monthly-operations-guide.md`
 - 未追跡ファイル扱い: `docs/knowledge/untracked-files-policy.md`
 - トラブルシューティング索引: `docs/knowledge/troubleshooting-index.md`
+
+## ツール/インフラ管理で整備済みのこと
+
+- Hermes/GitHub/Vercel/Sheets/Webhook/WSL2を支える部門: `docs/infra/overview.md`
+- 9:00自動実行の安定性確認: `docs/infra/hermes-cron-monitoring.md`
+- 秘密情報管理: `docs/infra/environment-variables.md`, `docs/infra/secrets-management.md`
+- デプロイ確認: `docs/infra/deployment-checklist.md`, `docs/infra/vercel-deployment.md`
+- 障害対応: `docs/infra/incident-response.md`
+- バックアップ: `docs/infra/backup-and-recovery.md`
 
 ## 今日時点の運用上の弱点
 

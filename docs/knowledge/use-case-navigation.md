@@ -20,4 +20,12 @@
 | KPIを確認したい | `docs/management/kpi-definitions.md` | `data/management/kpi-input-template.md` | `weekly-kpi-review.md` | `docs/reports/management/weekly/` | 数値入力 |
 | 全体の優先順位を見たい | `docs/executive/priority-matrix.md` | `docs/executive/ceo-dashboard-template.md` | `priority-planner.md` | `docs/reports/executive/daily/` | 実行順 |
 | Hermesのスケジュールタスクを確認したい | `docs/hermes-scheduled-automation.md` | `docs/knowledge/task-index.md` | `document-finder.md` | 任意 | 登録/変更判断 |
-
+| Hermes cronが動かない | `docs/infra/hermes-cron-monitoring.md` | `docs/infra/wsl2-windows-operations.md` | `hermes-cron-health-check.md` | `docs/reports/infra/health-checks/` | 手動実行/設定変更 |
+| 9:00営業候補が作られない | `docs/infra/hermes-cron-monitoring.md` | `docs/knowledge/troubleshooting-index.md` | `infra-incident-triage.md` | `docs/reports/infra/incidents/` | 補完実行 |
+| Sheets投入に失敗した | `docs/infra/google-sheets-webhook.md` | `docs/infra/apps-script-webhook-rules.md` | `sheets-webhook-health-check.md` | `docs/reports/infra/health-checks/` | 再送信可否 |
+| Vercel buildが失敗した | `docs/infra/vercel-deployment.md` | `docs/infra/deployment-checklist.md` | `vercel-deployment-review.md` | `docs/reports/infra/deployments/` | rollback/修正 |
+| Git pushが失敗した | `docs/infra/github-workflow.md` | `docs/knowledge/troubleshooting-index.md` | `infra-incident-triage.md` | `docs/reports/infra/incidents/` | 再認証/再push |
+| SECRET_TOKEN漏えいが疑われる | `docs/infra/secrets-management.md` | `docs/quality/confidential-info-rules.md` | `secrets-and-env-review.md` | `docs/reports/infra/health-checks/` | ローテーション |
+| Webhook URLを再発行した | `docs/infra/apps-script-webhook-rules.md` | `docs/infra/environment-variables.md` | `sheets-webhook-health-check.md` | `docs/reports/infra/health-checks/` | env更新 |
+| 未追跡ファイルをどう扱うか迷った | `docs/knowledge/untracked-files-policy.md` | `docs/infra/github-workflow.md` | `document-finder.md` | 任意 | コミット可否 |
+| 本番公開前にチェックしたい | `docs/infra/deployment-checklist.md` | `docs/infra/production-readiness-checklist.md` | `deployment-readiness-review.md` | `docs/reports/infra/deployments/` | デプロイ可否 |

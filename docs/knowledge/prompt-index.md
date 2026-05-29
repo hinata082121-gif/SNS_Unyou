@@ -102,3 +102,16 @@
 | `troubleshooting-helper.md` | トラブル対応支援 | エラー/ログ | `docs/reports/knowledge/troubleshooting/` | 手動 | 秘密情報を再表示しない |
 | `next-action-router.md` | 次アクション振り分け | 現状/困りごと | local/レポート | 手動 | 最終判断は人間 |
 
+## ツール/インフラ管理
+
+| ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認/禁止事項 |
+|---|---|---|---|---|---|
+| `infra-health-check.md` | インフラ全体ヘルスチェック | Git/npm/Hermes/Vercel/Sheets状態 | `docs/reports/infra/health-checks/` | 将来案 | send-prospects実行禁止 |
+| `hermes-cron-health-check.md` | Hermes cron監視 | Gateway/cron/jobs/logs | `docs/reports/infra/health-checks/` | 将来案 | job登録/削除禁止 |
+| `deployment-readiness-review.md` | デプロイ前確認 | 変更差分、lint/build | `docs/reports/infra/deployments/` | 手動 | 実運用ファイルを勝手にコミットしない |
+| `vercel-deployment-review.md` | Vercelデプロイ後確認 | push/deployment状態 | `docs/reports/infra/deployments/` | 手動 | env実値表示禁止 |
+| `sheets-webhook-health-check.md` | Sheets Webhook確認 | env状態、JSON、スクリプト | `docs/reports/infra/health-checks/` | 手動 | test再送信は人間許可 |
+| `secrets-and-env-review.md` | 秘密情報/環境変数レビュー | docs/reports/data/diff/status | `docs/reports/infra/health-checks/` | 将来案 | 実値はマスキング |
+| `infra-incident-triage.md` | インフラ障害トリアージ | 障害内容、ログ | `docs/reports/infra/incidents/` | 手動 | 実設定変更禁止 |
+| `dependency-maintenance-review.md` | 依存関係レビュー | package/lockfile | `docs/reports/infra/maintenance/` | 手動 | 自動update禁止 |
+| `backup-review.md` | バックアップレビュー | GitHub/Sheets/Apps Script/Hermes jobs | `docs/reports/infra/maintenance/` | 手動 | 秘密情報そのものを保存しない |

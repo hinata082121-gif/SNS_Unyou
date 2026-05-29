@@ -28,3 +28,13 @@
 | 連絡遅延 | 未評価 | 返信が遅い | 進行停止 | 連絡方法見直し | 優先対応 |
 | 解約リスク | 未評価 | 終了示唆、不満、未払い | MRR低下 | churn review | 解約/縮小判断 |
 | 継続提案不足 | 未評価 | 月次後の次方針がない | 継続率低下 | renewal proposal | 提案可否 |
+| Hermes cron未実行 | 未評価 | daily report未生成、missed run | 営業候補作成漏れ | cron health check | 手動実行/設定見直し |
+| Gateway停止 | 未評価 | Hermesタスク停止 | 定期実行停止 | Gateway確認 | 再起動判断 |
+| PCスリープ | 未評価 | 予定時刻に実行されない | missed run | 電源/WSL確認 | 運用方法変更 |
+| Webhook token mismatch | 未評価 | Unauthorized | Sheets投入不可 | env確認 | token再設定 |
+| Sheets validation error | 未評価 | 入力規則違反 | 行追加失敗 | JSON/許可値確認 | シート/スクリプト修正 |
+| Vercel build失敗 | 未評価 | deployment failed | LP更新不可 | build log確認 | rollback/修正 |
+| Git push失敗 | 未評価 | timeout/auth error | 変更反映遅延 | 認証/通信確認 | 再実行 |
+| 秘密情報漏えい | 未評価 | 実値混入疑い | セキュリティ事故 | 共有停止/ローテーション検討 | 対応範囲 |
+| 未追跡ファイル誤コミット | 未評価 | 実運用ファイル混入 | 情報漏えい | 差分確認 | revert/履歴対応 |
+| Apps Script redeploy忘れ | 未評価 | 修正が反映されない | Webhook失敗 | deploy確認 | 再デプロイ |

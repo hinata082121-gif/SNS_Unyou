@@ -10,6 +10,7 @@
 | 納品・制作部門 | 受注後の運用、投稿、レポート | `docs/delivery/`, `docs/reports/content-calendars/`, `docs/reports/monthly-reports/` | `weekly-client-operation-review.md`, `monthly-report-builder.md` | 週次運用レビュー案 | 投稿確認、クライアント連絡 | KPI、法務請求 |
 | カスタマーサクセス部門 | 初月フォロー、継続提案、解約リスク検知 | `docs/cs/`, `docs/reports/cs/` | `client-success-weekly-review.md`, `monthly-client-success-review.md`, `churn-risk-review.md` | 週次CS/初月チェック/月次継続レビューは将来案 | クライアント連絡、継続/解約/プラン変更判断 | 納品、KPI、法務請求 |
 | ナレッジ管理部門 | 部門横断の索引、運用ガイド、トラブル支援 | `docs/knowledge/`, `docs/reports/knowledge/` | `knowledge-index-builder.md`, `document-finder.md`, `weekly-knowledge-review.md` | 週次ナレッジレビュー/月次棚卸し/トラブル支援は将来案 | 索引採用判断、未追跡ファイルの扱い、スケジュール変更判断 | 全部門 |
+| ツール/インフラ管理部門 | GitHub/Vercel/Hermes/Sheets/WSL2/環境変数/障害対応の標準化 | `docs/infra/`, `docs/reports/infra/` | `infra-health-check.md`, `hermes-cron-health-check.md`, `infra-incident-triage.md` | cronヘルスチェック/週次ヘルスチェック/秘密情報レビュー/バックアップレビューは将来案 | 実設定変更、env変更、復旧判断、タスク登録/削除 | 営業、ナレッジ、品質、全体統括 |
 | 法務・契約・請求部門 | 申込、契約、請求、支払い管理 | `docs/admin/`, `docs/reports/admin/` | `agreement-prep.md`, `invoice-builder.md`, `billing-review.md` | 月次請求レビュー案 | 契約判断、請求送付、入金確認 | 商談、納品、KPI |
 | KPI・経営管理部門 | 数値、売上、リスク管理 | `docs/management/`, `data/management/` | `weekly-kpi-review.md`, `monthly-management-report.md` | 週次/月次レビュー案 | 数値入力、意思決定 | 全部門 |
 | 全体統括部門 | 優先順位、ボトルネック、意思決定 | `docs/executive/`, `docs/reports/executive/` | `daily-executive-briefing.md`, `weekly-executive-review.md` | 将来案 | 最終判断 | 全部門 |
@@ -59,3 +60,14 @@
 - 秘密情報を含む可能性があるファイルの自動公開
 - スケジュールタスクの勝手な登録/削除
 - 営業送信、SNS投稿、請求送付、契約判断、価格変更、クライアント連絡
+
+## ツール/インフラ管理部門で自動化しないこと
+
+- 秘密情報の自動表示/保存
+- 環境変数、Vercel環境変数、GitHub Secretsの自動変更
+- Apps Scriptの自動デプロイ
+- Webhook URLの自動再発行
+- SHEETS_SECRET_TOKENの自動ローテーション
+- 未追跡ファイルの自動削除
+- 実運用レポートの自動コミット
+- スケジュールタスクの勝手な登録/削除

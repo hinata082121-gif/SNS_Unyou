@@ -38,4 +38,7 @@
 | 週次ナレッジレビュー | 日曜20:00 | `weekly-knowledge-review.md` | `docs/reports/knowledge/reviews/` | docs更新が増えたら |
 | 月次ドキュメント棚卸し | 月末20:00 | `outdated-docs-review.md` | `docs/reports/knowledge/reviews/` | 部門運用が増えたら |
 | トラブルシューティング支援 | 必要時 | `troubleshooting-helper.md` | `docs/reports/knowledge/troubleshooting/` | エラー発生時 |
-
+| Hermes cronヘルスチェック | 毎日8:50 | `hermes-cron-health-check.md` | `docs/reports/infra/health-checks/` | 9:00タスク安定化後 |
+| インフラ週次ヘルスチェック | 土曜11:00 | `infra-health-check.md` | `docs/reports/infra/health-checks/` | インフラ運用開始後 |
+| 秘密情報/環境変数レビュー | 土曜11:30 | `secrets-and-env-review.md` | `docs/reports/infra/health-checks/` | docs/reports/dataが増えたら |
+| 月次バックアップレビュー | 月末21:00 | `backup-review.md` | `docs/reports/infra/maintenance/` | 実運用資産が増えたら |

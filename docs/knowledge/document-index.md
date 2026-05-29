@@ -13,4 +13,4 @@
 | 品質管理・AI運用監査部門 | AI生成物、表現、秘密情報、自動化境界の確認 | `docs/quality/` | `ai-output-review-rules.md`, `confidential-info-rules.md`, `no-automation-boundary.md` | 送付/公開前、週次監査 | `ai-output-quality-review.md`, `confidential-info-scan.md` | `docs/reports/quality/` |
 | カスタマーサクセス部門 | 初月フォロー、継続提案、解約リスク検知 | `docs/cs/` | `client-success-flow.md`, `client-health-score.md`, `churn-risk-rules.md` | 受注後、月次レビュー | `client-success-weekly-review.md`, `monthly-client-success-review.md` | `docs/reports/cs/` |
 | ナレッジ管理部門 | 索引、運用ガイド、トラブル支援 | `docs/knowledge/` | `document-index.md`, `use-case-navigation.md`, `troubleshooting-index.md` | 迷った時、棚卸し時 | `document-finder.md`, `weekly-knowledge-review.md` | `docs/reports/knowledge/` |
-
+| ツール/インフラ管理部門 | GitHub/Vercel/Hermes/Sheets/WSL2/環境変数/障害対応 | `docs/infra/` | `tool-inventory.md`, `environment-variables.md`, `incident-response.md` | デプロイ、障害、環境確認時 | `infra-health-check.md`, `infra-incident-triage.md` | `docs/reports/infra/` |

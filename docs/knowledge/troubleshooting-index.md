@@ -18,3 +18,12 @@
 | 未追跡ファイルが残る | git statusに?? | `docs/knowledge/untracked-files-policy.md` | 実運用ファイル | 触るか確認 | 勝手に削除/コミットしない |
 | 秘密情報混入疑い | token等が見える | `docs/quality/confidential-info-rules.md` | 誤保存 | 値を再表示せず隔離判断 | そのままpushしない |
 
+## インフラ系トラブルの参照先
+
+- Hermes cron/Gateway: `docs/infra/hermes-cron-monitoring.md`, `docs/infra/hermes-operations.md`
+- WSL2/Windows: `docs/infra/wsl2-windows-operations.md`
+- Sheets Webhook: `docs/infra/google-sheets-webhook.md`, `docs/infra/apps-script-webhook-rules.md`
+- Vercel: `docs/infra/vercel-deployment.md`
+- GitHub: `docs/infra/github-workflow.md`
+- 秘密情報/環境変数: `docs/infra/environment-variables.md`, `docs/infra/secrets-management.md`
+- 障害対応: `docs/infra/incident-response.md`

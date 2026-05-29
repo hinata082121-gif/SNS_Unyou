@@ -6,6 +6,7 @@ This repository contains the ICHI Social landing page and internal operation doc
 - Deal/proposal workflow: `docs/deals/`
 - Delivery/content operation workflow: `docs/delivery/`
 - Knowledge index and operations navigation: `docs/knowledge/`
+- Infrastructure and operations troubleshooting: `docs/infra/` and `docs/knowledge/troubleshooting-index.md`
 - Hermes prompts: `hermes/prompts/`
 
 Do not commit API keys, passwords, SNS login details, `SHEETS_SECRET_TOKEN`, or real webhook URLs.
