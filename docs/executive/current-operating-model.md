@@ -16,6 +16,9 @@
 - 月次レポート下書き
 - 契約/請求書下書き
 - KPI/経営レビュー下書き
+- ナレッジ索引作成
+- 目的別ファイル案内
+- トラブルシューティング初動整理
 
 ## 手動
 
@@ -47,6 +50,17 @@
 - 法務請求: `docs/admin/`, `docs/reports/admin/`
 - KPI: `docs/management/`, `data/management/`
 - 全体統括: `docs/executive/`, `docs/reports/executive/`
+- ナレッジ管理: `docs/knowledge/`, `docs/reports/knowledge/`
+
+## ナレッジ管理で整備済みのこと
+
+- 部門横断の索引: `docs/knowledge/document-index.md`
+- Hermesプロンプト索引: `docs/knowledge/prompt-index.md`
+- レポート保存先索引: `docs/knowledge/report-index.md`
+- 目的別ナビゲーション: `docs/knowledge/use-case-navigation.md`
+- 日次/週次/月次ガイド: `docs/knowledge/daily-operations-guide.md`, `weekly-operations-guide.md`, `monthly-operations-guide.md`
+- 未追跡ファイル扱い: `docs/knowledge/untracked-files-policy.md`
+- トラブルシューティング索引: `docs/knowledge/troubleshooting-index.md`
 
 ## 今日時点の運用上の弱点
 

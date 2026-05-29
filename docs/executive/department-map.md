@@ -9,6 +9,7 @@
 | 商談・提案部門 | 返信対応、診断、提案 | `docs/deals/`, `docs/reports/audits/`, `docs/reports/proposals/` | `daily-reply-and-deal-review.md`, `proposal-builder.md` | 毎日返信レビュー案 | 返信、商談、提案送付 | 法務請求、納品 |
 | 納品・制作部門 | 受注後の運用、投稿、レポート | `docs/delivery/`, `docs/reports/content-calendars/`, `docs/reports/monthly-reports/` | `weekly-client-operation-review.md`, `monthly-report-builder.md` | 週次運用レビュー案 | 投稿確認、クライアント連絡 | KPI、法務請求 |
 | カスタマーサクセス部門 | 初月フォロー、継続提案、解約リスク検知 | `docs/cs/`, `docs/reports/cs/` | `client-success-weekly-review.md`, `monthly-client-success-review.md`, `churn-risk-review.md` | 週次CS/初月チェック/月次継続レビューは将来案 | クライアント連絡、継続/解約/プラン変更判断 | 納品、KPI、法務請求 |
+| ナレッジ管理部門 | 部門横断の索引、運用ガイド、トラブル支援 | `docs/knowledge/`, `docs/reports/knowledge/` | `knowledge-index-builder.md`, `document-finder.md`, `weekly-knowledge-review.md` | 週次ナレッジレビュー/月次棚卸し/トラブル支援は将来案 | 索引採用判断、未追跡ファイルの扱い、スケジュール変更判断 | 全部門 |
 | 法務・契約・請求部門 | 申込、契約、請求、支払い管理 | `docs/admin/`, `docs/reports/admin/` | `agreement-prep.md`, `invoice-builder.md`, `billing-review.md` | 月次請求レビュー案 | 契約判断、請求送付、入金確認 | 商談、納品、KPI |
 | KPI・経営管理部門 | 数値、売上、リスク管理 | `docs/management/`, `data/management/` | `weekly-kpi-review.md`, `monthly-management-report.md` | 週次/月次レビュー案 | 数値入力、意思決定 | 全部門 |
 | 全体統括部門 | 優先順位、ボトルネック、意思決定 | `docs/executive/`, `docs/reports/executive/` | `daily-executive-briefing.md`, `weekly-executive-review.md` | 将来案 | 最終判断 | 全部門 |
@@ -50,3 +51,11 @@
 - 価格変更
 - 請求書送付
 - 入金確認
+
+## ナレッジ管理部門で自動化しないこと
+
+- 未追跡ファイルの自動削除
+- 実運用レポートの自動コミット
+- 秘密情報を含む可能性があるファイルの自動公開
+- スケジュールタスクの勝手な登録/削除
+- 営業送信、SNS投稿、請求送付、契約判断、価格変更、クライアント連絡

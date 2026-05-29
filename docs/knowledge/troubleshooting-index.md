@@ -1,0 +1,20 @@
+# トラブルシューティング索引
+
+| トラブル | 症状 | 確認するファイル/ログ | よくある原因 | 初動 | やってはいけないこと |
+|---|---|---|---|---|---|
+| 9:00タスクが実行されない | レポートがない | Hermes local、`docs/hermes-scheduled-automation.md` | WSL2停止、Gateway未起動 | Hermes状態確認 | 勝手に再登録しない |
+| daily-sales-candidatesが作成されない | `docs/reports/sales/daily/` に当日分がない | `scheduled-daily-sales-candidates.md` | 保存ルール未反映 | 手動実行で確認 | 送信しない |
+| 候補が0件になる | 候補不足 | 日次レポート、`data/prospects/` | 連絡導線不足、Web補助未実行 | 取得ソース確認 | 架空候補を作らない |
+| Sheets投入に失敗する | Apps Scriptエラー | `docs/sheets-webhook-usage.md` | URL/トークン/入力規則 | envとJSON確認 | tokenをログ表示しない |
+| Unauthorizedになる | 認証エラー | Apps Script設定 | SECRET_TOKEN不一致 | 人間がtoken確認 | tokenを共有しない |
+| 業態プルダウン不一致 | B列入力規則違反 | `send-prospects.mjs`, JSON | `美容室`以外 | 値を正規化 | シート側を無断変更しない |
+| Webhook URL未設定 | env missing | `check-sales-env.mjs` | 環境変数未設定 | PowerShellで設定 | 実値をコミットしない |
+| Gmail/IMAP認証エラー | メール取得失敗 | Hermes設定 | 認証/権限 | 人間が設定確認 | 認証情報を書かない |
+| Gemini quota exhausted | モデル上限 | Hermesログ | quota不足 | 時間を置く/モデル確認 | 無理な連続実行 |
+| モデルクレジット不足 | 実行失敗 | Hermesログ | 残高不足 | 人間が確認 | APIキー共有 |
+| push失敗 | timeout/auth error | Git output | 認証/ネットワーク | 再認証後push | resetしない |
+| build失敗 | `npm run build`失敗 | buildログ | TS/Nextエラー | 該当ファイル確認 | 関係ない変更を戻さない |
+| lint失敗 | ESLintエラー | lintログ | 記法/未使用 | 該当行修正 | ルール無効化を乱用しない |
+| 未追跡ファイルが残る | git statusに?? | `docs/knowledge/untracked-files-policy.md` | 実運用ファイル | 触るか確認 | 勝手に削除/コミットしない |
+| 秘密情報混入疑い | token等が見える | `docs/quality/confidential-info-rules.md` | 誤保存 | 値を再表示せず隔離判断 | そのままpushしない |
+

@@ -829,6 +829,101 @@ docs/reports/cs/renewal/YYYY-MM-DD-client-name-renewal-proposal.md
 この内容を毎月20日15:00のcronスケジュールとして登録し、登録結果を表示してください。
 ```
 
+## ICHI Social 週次ナレッジレビュー
+
+将来的なナレッジ管理部門タスク案です。現時点では営業9:00自動実行の安定確認中のため、すぐに登録せず、docs/prompts/reportsの更新が増えてから登録します。
+
+- 毎週日曜 20:00
+- 今週追加/更新されたdocs、prompts、reportsを確認する
+- 索引ズレ、古い情報、未整理ファイル、未追跡ファイルを整理する
+- 自動コミットや自動削除はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 週次ナレッジレビュー
+
+スケジュール:
+毎週日曜 20:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/weekly-knowledge-review.md のルールに従い、今週追加/更新されたdocs、prompts、reportsを確認し、索引ズレ、古い情報、重複、未整理ファイル、未追跡ファイルを整理してください。
+
+出力:
+docs/reports/knowledge/reviews/YYYY-MM-DD-weekly-knowledge-review.md
+
+重要ルール:
+- 自動コミットは行わない
+- 自動削除は行わない
+- 未追跡ファイルを勝手に追加しない
+- 秘密情報を含む可能性があるファイルを自動公開しない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しない
+- 人間が確認すべき更新、索引反映、アーカイブ候補を分けてください
+
+この内容を毎週日曜20:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 月次ドキュメント棚卸し
+
+将来的なナレッジ管理部門タスク案です。
+
+- 毎月末日 20:00
+- 古くなったドキュメント、重複、矛盾、更新が必要な索引を確認する
+- 自動削除はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 月次ドキュメント棚卸し
+
+スケジュール:
+毎月末日 20:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/outdated-docs-review.md のルールに従い、古くなったドキュメント、重複、矛盾、更新が必要な索引を確認してください。
+
+出力:
+docs/reports/knowledge/reviews/YYYY-MM-DD-outdated-docs-review.md
+
+重要ルール:
+- 自動削除は行わない
+- 自動コミットは行わない
+- 最新方針と矛盾する可能性がある箇所を人間確認事項として整理してください
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しない
+
+この内容を毎月末日20:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social トラブルシューティング支援
+
+必要時に手動実行するナレッジ管理部門タスク案です。
+
+- エラーログや失敗内容をもとに確認ファイルと初動を整理する
+- コマンド実行は人間確認前提
+- 秘密情報の値は再表示しない
+
+Hermes CLIに貼る手動実行文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのトラブルシューティング支援タスクです。
+
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/troubleshooting-helper.md のルールに従い、入力したエラーログや失敗内容から、症状、可能性の高い原因、確認するファイル、確認するコマンド、初動、やってはいけないこと、人間判断が必要なことを整理してください。
+
+出力:
+docs/reports/knowledge/troubleshooting/YYYY-MM-DD-troubleshooting.md
+
+重要ルール:
+- コマンド実行は人間確認前提にしてください
+- 秘密情報を見つけても値を再表示しないでください
+- 自動削除、自動コミット、外部送信は行わないでください
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -840,6 +935,9 @@ docs/reports/cs/renewal/YYYY-MM-DD-client-name-renewal-proposal.md
 - クライアントへの自動連絡を行わない
 - 継続提案、アップセル提案を自動送信しない
 - 解約処理、契約変更を自動化しない
+- 未追跡ファイルの自動削除を行わない
+- 実運用レポートの自動コミットを行わない
+- スケジュールタスクの勝手な登録/削除を行わない
 - 投稿操作を自動化しない
 - SNS権限操作を自動化しない
 - 法務判断、税務判断を自動化しない
