@@ -92,6 +92,39 @@ docs/reports/marketing/YYYY-MM-DD-weekly-market-analysis.md
 この内容を毎週金曜17:00のcronスケジュールとして登録し、登録結果を表示してください。
 ```
 
+## ICHI Social 毎日返信・商談レビュー
+
+- 毎日18:30
+- 返信あり・商談化候補を整理する
+- 次の返信文、無料SNS診断、商談準備、次アクションを出す
+- 送信やGoogleスプレッドシート更新は行わない
+- `SECRET_TOKEN`、Webhook URL、APIキー、認証情報を表示しない
+
+Hermes CLIに貼る登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 毎日返信・商談レビュー
+
+スケジュール:
+毎日 18:30
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/daily-reply-and-deal-review.md のルールに従い、その日の返信あり・商談化候補を整理してください。
+
+重要ルール:
+- 営業メール送信は行わない
+- SNS DM送信は行わない
+- 問い合わせフォーム送信は行わない
+- Googleスプレッドシートの自動更新は行わない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報は表示しない
+- 次の返信文案、無料SNS診断方針、商談準備、次アクションだけを出す
+
+この内容を毎日18:30のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
