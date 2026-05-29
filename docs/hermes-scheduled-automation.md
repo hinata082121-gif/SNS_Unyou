@@ -396,6 +396,118 @@ docs/reports/management/monthly/YYYY-MM-monthly-management-report.md
 この内容を毎月末日18:00のcronスケジュールとして登録し、登録結果を表示してください。
 ```
 
+## ICHI Social 日次全体ブリーフィング
+
+将来的な全体統括部門タスク案です。現時点では営業部門の9:00自動実行安定性を確認中のため、すぐに登録せず、日次営業レポートが安定してから登録します。
+
+- 毎日8:30
+- 各部門の状況を横断し、今日の最重要タスク、ボトルネック、リスク、推奨アクションを出す
+- 自動送信、自動ステータス更新、自動請求、自動連絡はしない
+- Hermesには整理・要約・提案・レポート下書きまでを任せる
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 日次全体ブリーフィング
+
+スケジュール:
+毎日 8:30
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/daily-executive-briefing.md のルールに従い、ICHI Socialの各部門状況を横断して、今日の最重要タスク、ボトルネック、リスク、推奨アクションを整理してください。
+
+出力:
+docs/reports/executive/daily/YYYY-MM-DD-daily-executive-briefing.md
+
+重要ルール:
+- 営業メール送信、SNS DM送信、問い合わせフォーム送信は行わない
+- Googleスプレッドシートの自動更新は行わない
+- 請求書送付、入金確認、契約判断、価格変更は行わない
+- クライアントへの自動連絡、投稿操作、SNS権限操作は行わない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しない
+- 不明な情報は「未確認」と書き、人間が判断すべきことを分けてください
+
+この内容を毎日8:30のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 週次全体レビュー
+
+将来的な全体統括部門タスク案です。現時点ではすぐに登録せず、週次KPIレビューが安定してから登録します。
+
+- 毎週日曜 19:00
+- 部門別進捗、KPI、リスク、翌週方針、意思決定候補を整理する
+- 自動実行はレポート作成のみ
+- 人間が判断すべきことを明確に分ける
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 週次全体レビュー
+
+スケジュール:
+毎週日曜 19:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/weekly-executive-review.md のルールに従い、ICHI Social全体の部門別進捗、KPI、リスク、翌週方針、意思決定候補を整理してください。
+
+出力:
+docs/reports/executive/weekly/YYYY-MM-DD-weekly-executive-review.md
+
+重要ルール:
+- 営業送信、SNS DM送信、問い合わせフォーム送信は行わない
+- Googleスプレッドシートの自動更新は行わない
+- 請求送付、入金確認、契約判断、価格変更は行わない
+- クライアントへの自動連絡、投稿操作、SNS権限操作は行わない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しない
+- 翌週の重点テーマ、やめること、意思決定候補、人間が判断すべきことを出してください
+
+この内容を毎週日曜19:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 月次全体レビュー
+
+将来的な全体統括部門タスク案です。現時点ではすぐに登録せず、月次経営レポートが安定してから登録します。
+
+- 毎月末日 19:00
+- 月次の部門横断レビュー、売上見込み、MRR、受注/失注、来月方針を整理する
+- 自動送付や外部連絡はしない
+- 法務判断、税務判断、価格変更は人間が行う
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 月次全体レビュー
+
+スケジュール:
+毎月末日 19:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/monthly-executive-review.md のルールに従い、ICHI Social全体の月次部門横断レビュー、売上見込み、MRR、受注/失注、来月方針、意思決定候補を整理してください。
+
+出力:
+docs/reports/executive/monthly/YYYY-MM-monthly-executive-review.md
+
+重要ルール:
+- 営業送信、SNS DM送信、問い合わせフォーム送信は行わない
+- Googleスプレッドシートの自動更新は行わない
+- 請求送付、入金確認、契約判断、価格変更は行わない
+- クライアントへの自動連絡、投稿操作、SNS権限操作は行わない
+- 法務判断、税務判断は行わない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しない
+- 来月方針、リスク、意思決定候補、人間が判断すべきことを出してください
+
+この内容を毎月末日19:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -405,6 +517,9 @@ docs/reports/management/monthly/YYYY-MM-monthly-management-report.md
 - 入金確認を自動化しない
 - 契約判断や価格変更を自動決定しない
 - クライアントへの自動連絡を行わない
+- 投稿操作を自動化しない
+- SNS権限操作を自動化しない
+- 法務判断、税務判断を自動化しない
 - 秘密情報や口座情報を自動入力しない
 - `SECRET_TOKEN`、Webhook URL、APIキー、認証情報を表示しない
 - スパム的な一斉送信をしない
