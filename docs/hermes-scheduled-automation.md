@@ -720,6 +720,115 @@ docs/reports/quality/reviews/YYYY-MM-DD-pr-content-quality-review.md
 この内容を毎週金曜16:30のcronスケジュールとして登録し、登録結果を表示してください。
 ```
 
+## ICHI Social 週次カスタマーサクセスレビュー
+
+将来的なカスタマーサクセス部門タスク案です。現時点では実クライアントがいないため、すぐに登録せず、契約クライアントが発生してから登録します。
+
+- 毎週木曜 17:00
+- 契約中クライアントのヘルススコア、素材待ち、確認待ち、解約リスク、継続提案、アップセル余地を整理する
+- 自動連絡はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 週次カスタマーサクセスレビュー
+
+スケジュール:
+毎週木曜 17:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/client-success-weekly-review.md のルールに従い、契約中クライアントのヘルススコア、素材待ち、確認待ち、解約リスク、継続提案、アップセル余地を整理してください。
+
+出力:
+docs/reports/cs/YYYY-MM-DD-client-success-weekly-review.md
+
+重要ルール:
+- クライアントへの自動連絡は行わない
+- 継続提案やアップセル提案の自動送信は行わない
+- 契約変更、価格変更、解約処理は行わない
+- 請求書送付、入金確認、SNS投稿、SNS権限操作は行わない
+- 秘密情報、認証情報、口座情報は表示しない
+
+この内容を毎週木曜17:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 初月クライアントチェック
+
+将来的なカスタマーサクセス部門タスク案です。現時点では実クライアントがいないため、すぐに登録せず、初回受注後に登録します。
+
+- 毎営業日 16:00
+- 契約開始から7日/14日/30日のクライアントがいないか確認する
+- 必要なチェックレポートと連絡文面案を作成する
+- 自動送信はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 初月クライアントチェック
+
+スケジュール:
+平日 16:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、契約開始から7日/14日/30日のクライアントがいないか確認し、必要に応じて hermes/prompts/client-7-day-check.md、hermes/prompts/client-14-day-check.md、hermes/prompts/client-30-day-check.md のルールに従ってチェックレポートと連絡文面案を作成してください。
+
+出力:
+docs/reports/cs/checks/YYYY-MM-DD-client-name-7-day-check.md
+docs/reports/cs/checks/YYYY-MM-DD-client-name-14-day-check.md
+docs/reports/cs/checks/YYYY-MM-DD-client-name-30-day-check.md
+
+重要ルール:
+- クライアントへの自動送信は行わない
+- 契約変更、価格変更、解約処理は行わない
+- 数値が取れない場合は未取得と書く
+- 成果保証、集客保証、売上保証はしない
+- 秘密情報、認証情報、口座情報は表示しない
+
+この内容を平日16:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 月次継続提案レビュー
+
+将来的なカスタマーサクセス部門タスク案です。
+
+- 毎月20日 15:00
+- 月次レポート後の継続提案、プラン変更、解約リスクを整理する
+- 自動連絡や契約変更はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 月次継続提案レビュー
+
+スケジュール:
+毎月20日 15:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/monthly-client-success-review.md と hermes/prompts/renewal-proposal-builder.md のルールに従い、月次レポート後の継続提案、プラン変更、解約リスクを整理してください。
+
+出力:
+docs/reports/cs/monthly/YYYY-MM-client-name-success-review.md
+docs/reports/cs/renewal/YYYY-MM-DD-client-name-renewal-proposal.md
+
+重要ルール:
+- クライアントへの自動連絡は行わない
+- 継続提案やアップセル提案の自動送信は行わない
+- 契約変更、価格変更、解約処理は行わない
+- 請求書送付、入金確認は行わない
+- 秘密情報、認証情報、口座情報は表示しない
+
+この内容を毎月20日15:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -729,6 +838,8 @@ docs/reports/quality/reviews/YYYY-MM-DD-pr-content-quality-review.md
 - 入金確認を自動化しない
 - 契約判断や価格変更を自動決定しない
 - クライアントへの自動連絡を行わない
+- 継続提案、アップセル提案を自動送信しない
+- 解約処理、契約変更を自動化しない
 - 投稿操作を自動化しない
 - SNS権限操作を自動化しない
 - 法務判断、税務判断を自動化しない
