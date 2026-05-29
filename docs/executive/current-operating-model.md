@@ -22,6 +22,9 @@
 - インフラヘルスチェック
 - Hermes cron状態整理
 - デプロイ前後チェック
+- 商品パッケージレビュー
+- 提案プラン選定
+- 価格/作業範囲チェック
 
 ## 手動
 
@@ -55,6 +58,7 @@
 - 全体統括: `docs/executive/`, `docs/reports/executive/`
 - ナレッジ管理: `docs/knowledge/`, `docs/reports/knowledge/`
 - ツール/インフラ管理: `docs/infra/`, `docs/reports/infra/`
+- 商品開発・パッケージ改善: `docs/product/`, `docs/reports/product/`
 
 ## ナレッジ管理で整備済みのこと
 
@@ -74,6 +78,13 @@
 - デプロイ確認: `docs/infra/deployment-checklist.md`, `docs/infra/vercel-deployment.md`
 - 障害対応: `docs/infra/incident-response.md`
 - バックアップ: `docs/infra/backup-and-recovery.md`
+
+## 商品開発・パッケージ改善で整備済みのこと
+
+- プラン/価格/作業範囲を支える部門: `docs/product/plan-definition.md`, `docs/product/pricing-rules.md`, `docs/product/service-scope.md`
+- 営業/提案/納品/請求/CSの整合: `docs/product/proposal-matching-rules.md`, `docs/product/pricing-scope-check.md`
+- LP反映候補コピー: `docs/product/lp-copy-draft.md`
+- LP自体は自動変更しない
 
 ## 今日時点の運用上の弱点
 

@@ -42,3 +42,6 @@
 | インフラ週次ヘルスチェック | 土曜11:00 | `infra-health-check.md` | `docs/reports/infra/health-checks/` | インフラ運用開始後 |
 | 秘密情報/環境変数レビュー | 土曜11:30 | `secrets-and-env-review.md` | `docs/reports/infra/health-checks/` | docs/reports/dataが増えたら |
 | 月次バックアップレビュー | 月末21:00 | `backup-review.md` | `docs/reports/infra/maintenance/` | 実運用資産が増えたら |
+| 月次商品改善レビュー | 月末17:00 | `monthly-product-improvement-review.md` | `docs/reports/product/reviews/` | 営業/商談/CSデータ蓄積後 |
+| 価格/作業範囲チェック | 提案/見積/契約/請求前に手動 | `pricing-scope-check.md` | `docs/reports/product/reviews/` | 案件発生時 |
+| 業態別パッケージ改善 | 必要時手動 | `industry-package-builder.md` | `docs/reports/product/packages/` | 業態別反応が見えた時 |

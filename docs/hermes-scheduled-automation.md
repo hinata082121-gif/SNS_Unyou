@@ -1062,6 +1062,97 @@ docs/reports/infra/maintenance/YYYY-MM-DD-backup-review.md
 この内容を毎月末日21:00のcronスケジュールとして登録し、登録結果を表示してください。
 ```
 
+## ICHI Social 月次商品改善レビュー
+
+将来的な商品開発・パッケージ改善部門タスク案です。
+
+- 毎月末日 17:00
+- 営業/商談/受注/失注/CS/KPIをもとに、プラン・価格・作業範囲・LPコピーの改善候補を整理する
+- 自動で価格変更、プラン変更、LP変更、契約変更、請求変更はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 月次商品改善レビュー
+
+スケジュール:
+毎月末日 17:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/monthly-product-improvement-review.md のルールに従い、営業/商談/受注/失注/CS/KPIをもとに、ICHI Socialのプラン・価格・作業範囲・LPコピーの改善候補を整理してください。
+
+出力:
+docs/reports/product/reviews/YYYY-MM-product-improvement-review.md
+
+重要ルール:
+- 価格変更、プラン内容変更、LP変更、契約変更、請求金額変更は行わない
+- 成果保証、集客保証、売上保証に見える表現は追加しない
+- 改善案は人間判断前提で整理する
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報、登録番号は表示しない
+
+この内容を毎月末日17:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 価格/作業範囲チェック
+
+商品開発・パッケージ改善部門の手動実行タスク案です。
+
+- 提案書・見積・契約書・請求書を作る前に手動実行する
+- 現行プラン、初期設計費、キャンペーン、対象外業務と矛盾していないか確認する
+- 自動送付はしない
+
+Hermes CLIに貼る手動実行文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentの手動レビュー依頼です。
+
+タスク名:
+ICHI Social 価格/作業範囲チェック
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/pricing-scope-check.md のルールに従い、提案書・見積・契約書たたき台・請求書・商談メモの価格と作業範囲を確認してください。
+
+出力:
+docs/reports/product/reviews/YYYY-MM-DD-pricing-scope-check.md
+
+重要ルール:
+- 現行価格、初期設計費、キャンペーン、オプション、対象外業務との整合を確認してください
+- 自動送付、自動請求、自動契約変更は行わないでください
+- 不明点は未確認と書き、人間確認事項に分けてください
+```
+
+## ICHI Social 業態別パッケージ改善
+
+商品開発・パッケージ改善部門の手動実行タスク案です。
+
+- 必要時に手動実行する
+- 美容室/ネイル/整体/カフェごとの訴求・投稿テーマ・提案文言を見直す
+- 自動で営業文面やLPを変更しない
+
+Hermes CLIに貼る手動実行文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentの手動レビュー依頼です。
+
+タスク名:
+ICHI Social 業態別パッケージ改善
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/industry-package-builder.md のルールに従い、美容室、ネイル/アイラッシュ、整体、カフェ・飲食向けの訴求、投稿テーマ、提案文言、アップセル候補を整理してください。
+
+出力:
+docs/reports/product/packages/YYYY-MM-DD-industry-package.md
+
+重要ルール:
+- 自動で営業文面、LP、契約、請求、価格を変更しないでください
+- 成果保証、集客保証、売上保証は書かないでください
+- 整体/美容/飲食の表現注意を守ってください
+- 人間が最終判断すべきことを分けてください
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -1070,6 +1161,8 @@ docs/reports/infra/maintenance/YYYY-MM-DD-backup-review.md
 - 請求書を自動送付しない
 - 入金確認を自動化しない
 - 契約判断や価格変更を自動決定しない
+- 価格変更の自動決定、プラン内容の自動変更を行わない
+- LPの自動変更、契約内容の自動変更、請求金額の自動変更を行わない
 - クライアントへの自動連絡を行わない
 - 継続提案、アップセル提案を自動送信しない
 - 解約処理、契約変更を自動化しない
@@ -1081,6 +1174,7 @@ docs/reports/infra/maintenance/YYYY-MM-DD-backup-review.md
 - 法務判断、税務判断を自動化しない
 - SNSへの自動投稿を行わない
 - 架空実績、架空数値、実績の無断掲載、スクリーンショットの無断利用を行わない
+- 成果保証表現の追加、実績/数値の捏造を行わない
 - 自動修正後の自動公開、自動修正後の自動送信を行わない
 - 秘密情報や口座情報を自動入力しない
 - 秘密情報の自動表示/保存を行わない

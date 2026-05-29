@@ -29,3 +29,11 @@
 | Webhook URLを再発行した | `docs/infra/apps-script-webhook-rules.md` | `docs/infra/environment-variables.md` | `sheets-webhook-health-check.md` | `docs/reports/infra/health-checks/` | env更新 |
 | 未追跡ファイルをどう扱うか迷った | `docs/knowledge/untracked-files-policy.md` | `docs/infra/github-workflow.md` | `document-finder.md` | 任意 | コミット可否 |
 | 本番公開前にチェックしたい | `docs/infra/deployment-checklist.md` | `docs/infra/production-readiness-checklist.md` | `deployment-readiness-review.md` | `docs/reports/infra/deployments/` | デプロイ可否 |
+| プラン内容を確認したい | `docs/product/plan-definition.md` | `docs/product/plan-comparison-table.md` | `document-finder.md` | 任意 | 提案可否 |
+| 提案するプランを選びたい | `docs/product/proposal-matching-rules.md` | `docs/product/target-customer.md` | `proposal-plan-matcher.md` | `docs/reports/product/packages/` | 推奨プラン確定 |
+| 見積/提案書の価格と範囲を確認したい | `docs/product/pricing-rules.md` | `docs/product/service-scope.md` | `pricing-scope-check.md` | `docs/reports/product/reviews/` | 金額/範囲確定 |
+| 初期設計費無料キャンペーンの扱いを確認したい | `docs/product/initial-setup-fee-rules.md` | `docs/product/campaign-rules.md` | `pricing-scope-check.md` | `docs/reports/product/reviews/` | 適用可否 |
+| 業態別の提案文言を作りたい | `docs/product/industry-package-rules.md` | `docs/product/use-case-packages.md` | `industry-package-builder.md` | `docs/reports/product/packages/` | 文言採用 |
+| LPに載せる商品説明文案を作りたい | `docs/product/lp-copy-draft.md` | `docs/product/service-positioning.md` | `lp-copy-for-offer-builder.md` | `docs/reports/product/lp-copy/` | LP反映可否 |
+| アップセル/ダウンセルを検討したい | `docs/product/upsell-path.md` | `docs/product/downsell-retention-rules.md` | `upsell-path-review.md` | `docs/reports/product/reviews/` | 提案可否 |
+| 商品改善案を整理したい | `docs/product/product-improvement-rules.md` | `docs/product/product-feedback-log.md` | `monthly-product-improvement-review.md` | `docs/reports/product/reviews/` | 改善採用 |

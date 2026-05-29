@@ -84,3 +84,11 @@
 - 使うプロンプト: `infra-health-check.md`, `hermes-cron-health-check.md`, `infra-incident-triage.md`
 - 関連レポート: `docs/reports/infra/health-checks/`, `docs/reports/infra/incidents/`, `docs/reports/infra/deployments/`, `docs/reports/infra/maintenance/`
 - 注意点: 環境変数やSecretsの自動変更、Apps Script自動デプロイ、送信系スクリプト実行はしない
+
+## 商品開発・パッケージ改善部門
+
+- 見るファイル: `docs/product/`
+- 作るファイル: `docs/reports/product/**/*.md`
+- 使うプロンプト: `product-package-review.md`, `proposal-plan-matcher.md`, `pricing-scope-check.md`
+- 関連レポート: `docs/reports/product/reviews/`, `docs/reports/product/feedback/`, `docs/reports/product/lp-copy/`, `docs/reports/product/packages/`
+- 注意点: 価格変更、プラン変更、LP変更、契約/請求変更は人間が判断する

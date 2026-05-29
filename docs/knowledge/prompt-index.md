@@ -115,3 +115,16 @@
 | `infra-incident-triage.md` | インフラ障害トリアージ | 障害内容、ログ | `docs/reports/infra/incidents/` | 手動 | 実設定変更禁止 |
 | `dependency-maintenance-review.md` | 依存関係レビュー | package/lockfile | `docs/reports/infra/maintenance/` | 手動 | 自動update禁止 |
 | `backup-review.md` | バックアップレビュー | GitHub/Sheets/Apps Script/Hermes jobs | `docs/reports/infra/maintenance/` | 手動 | 秘密情報そのものを保存しない |
+
+## 商品開発・パッケージ改善
+
+| ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認/禁止事項 |
+|---|---|---|---|---|---|
+| `product-package-review.md` | 商品パッケージレビュー | プラン/営業/商談/CS反応 | `docs/reports/product/reviews/` | 将来案 | 価格/LP自動変更禁止 |
+| `proposal-plan-matcher.md` | 商談内容から推奨プラン選定 | 店舗情報/課題/予算 | `docs/reports/product/packages/` | 手動 | 人間確認前提 |
+| `pricing-scope-check.md` | 価格/作業範囲チェック | 提案/見積/契約/請求 | `docs/reports/product/reviews/` | 手動 | 請求金額自動変更禁止 |
+| `lp-copy-for-offer-builder.md` | LP反映候補コピー作成 | 商品設計 | `docs/reports/product/lp-copy/` | 手動 | LP自動変更禁止 |
+| `product-feedback-summary.md` | 商品フィードバック要約 | 営業/商談/CS反応 | `docs/reports/product/feedback/` | 手動 | 推測で判断しない |
+| `monthly-product-improvement-review.md` | 月次商品改善レビュー | 営業/商談/受注/CS/KPI | `docs/reports/product/reviews/` | 将来案 | 価格変更は人間 |
+| `industry-package-builder.md` | 業態別パッケージ作成 | 業態/課題/反応 | `docs/reports/product/packages/` | 手動 | 表現注意 |
+| `upsell-path-review.md` | アップセル導線レビュー | CS/月次/課題 | `docs/reports/product/reviews/` | 手動 | 自動送信禁止 |

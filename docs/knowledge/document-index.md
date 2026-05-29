@@ -14,3 +14,4 @@
 | カスタマーサクセス部門 | 初月フォロー、継続提案、解約リスク検知 | `docs/cs/` | `client-success-flow.md`, `client-health-score.md`, `churn-risk-rules.md` | 受注後、月次レビュー | `client-success-weekly-review.md`, `monthly-client-success-review.md` | `docs/reports/cs/` |
 | ナレッジ管理部門 | 索引、運用ガイド、トラブル支援 | `docs/knowledge/` | `document-index.md`, `use-case-navigation.md`, `troubleshooting-index.md` | 迷った時、棚卸し時 | `document-finder.md`, `weekly-knowledge-review.md` | `docs/reports/knowledge/` |
 | ツール/インフラ管理部門 | GitHub/Vercel/Hermes/Sheets/WSL2/環境変数/障害対応 | `docs/infra/` | `tool-inventory.md`, `environment-variables.md`, `incident-response.md` | デプロイ、障害、環境確認時 | `infra-health-check.md`, `infra-incident-triage.md` | `docs/reports/infra/` |
+| 商品開発・パッケージ改善部門 | プラン、価格、作業範囲、オプション、商品改善 | `docs/product/` | `plan-definition.md`, `pricing-rules.md`, `proposal-matching-rules.md` | 提案、見積、商品改善時 | `product-package-review.md`, `pricing-scope-check.md` | `docs/reports/product/` |
