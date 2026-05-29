@@ -25,6 +25,8 @@
 - 商品パッケージレビュー
 - 提案プラン選定
 - 価格/作業範囲チェック
+- 外注タスクブリーフ下書き
+- 外注候補者/トライアル/品質レビュー下書き
 
 ## 手動
 
@@ -59,6 +61,7 @@
 - ナレッジ管理: `docs/knowledge/`, `docs/reports/knowledge/`
 - ツール/インフラ管理: `docs/infra/`, `docs/reports/infra/`
 - 商品開発・パッケージ改善: `docs/product/`, `docs/reports/product/`
+- 外注・採用管理: `docs/outsourcing/`, `docs/reports/outsourcing/`
 
 ## ナレッジ管理で整備済みのこと
 
@@ -85,6 +88,13 @@
 - 営業/提案/納品/請求/CSの整合: `docs/product/proposal-matching-rules.md`, `docs/product/pricing-scope-check.md`
 - LP反映候補コピー: `docs/product/lp-copy-draft.md`
 - LP自体は自動変更しない
+
+## 外注・採用管理で整備済みのこと
+
+- クライアント増加時の制作負荷を支える部門: `docs/outsourcing/overview.md`
+- 外注先に渡す情報を制限する部門: `docs/outsourcing/confidentiality-rules.md`, `docs/outsourcing/client-info-sharing-rules.md`
+- 品質管理・法務・請求との接続: `docs/outsourcing/delivery-and-review-flow.md`, `docs/outsourcing/payment-and-invoice-rules.md`
+- 外注は現時点では将来準備であり、募集、採用、契約、支払いは自動化しない
 
 ## 今日時点の運用上の弱点
 

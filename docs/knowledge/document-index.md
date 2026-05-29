@@ -15,3 +15,4 @@
 | ナレッジ管理部門 | 索引、運用ガイド、トラブル支援 | `docs/knowledge/` | `document-index.md`, `use-case-navigation.md`, `troubleshooting-index.md` | 迷った時、棚卸し時 | `document-finder.md`, `weekly-knowledge-review.md` | `docs/reports/knowledge/` |
 | ツール/インフラ管理部門 | GitHub/Vercel/Hermes/Sheets/WSL2/環境変数/障害対応 | `docs/infra/` | `tool-inventory.md`, `environment-variables.md`, `incident-response.md` | デプロイ、障害、環境確認時 | `infra-health-check.md`, `infra-incident-triage.md` | `docs/reports/infra/` |
 | 商品開発・パッケージ改善部門 | プラン、価格、作業範囲、オプション、商品改善 | `docs/product/` | `plan-definition.md`, `pricing-rules.md`, `proposal-matching-rules.md` | 提案、見積、商品改善時 | `product-package-review.md`, `pricing-scope-check.md` | `docs/reports/product/` |
+| 外注・採用管理部門 | 外注範囲、採用基準、品質、秘密情報、支払い確認 | `docs/outsourcing/` | `role-definitions.md`, `task-scope-rules.md`, `quality-checklist.md` | 外注検討、依頼前、成果物レビュー時 | `outsourcing-task-brief-builder.md`, `vendor-quality-review.md` | `docs/reports/outsourcing/` |

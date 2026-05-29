@@ -12,6 +12,7 @@
 | ナレッジ管理部門 | 部門横断の索引、運用ガイド、トラブル支援 | `docs/knowledge/`, `docs/reports/knowledge/` | `knowledge-index-builder.md`, `document-finder.md`, `weekly-knowledge-review.md` | 週次ナレッジレビュー/月次棚卸し/トラブル支援は将来案 | 索引採用判断、未追跡ファイルの扱い、スケジュール変更判断 | 全部門 |
 | ツール/インフラ管理部門 | GitHub/Vercel/Hermes/Sheets/WSL2/環境変数/障害対応の標準化 | `docs/infra/`, `docs/reports/infra/` | `infra-health-check.md`, `hermes-cron-health-check.md`, `infra-incident-triage.md` | cronヘルスチェック/週次ヘルスチェック/秘密情報レビュー/バックアップレビューは将来案 | 実設定変更、env変更、復旧判断、タスク登録/削除 | 営業、ナレッジ、品質、全体統括 |
 | 商品開発・パッケージ改善部門 | プラン、価格、作業範囲、オプション、商品改善の標準化 | `docs/product/`, `docs/reports/product/` | `product-package-review.md`, `proposal-plan-matcher.md`, `pricing-scope-check.md` | 月次商品改善/価格範囲チェック/業態別改善は将来案 | 価格/プラン/LP/契約/請求変更判断 | 営業、商談、納品、法務請求、CS、KPI |
+| 外注・採用管理部門 | 制作負荷を分散するための外注範囲、採用基準、品質、秘密情報管理を標準化 | `docs/outsourcing/`, `docs/reports/outsourcing/` | `outsourcing-task-brief-builder.md`, `vendor-candidate-review.md`, `monthly-vendor-review.md` | 月次外注先レビュー/外注リスクチェック/タスクブリーフ作成は将来案 | 募集、採用、契約、報酬、支払い、情報共有判断 | 納品、品質、法務請求、KPI |
 | 法務・契約・請求部門 | 申込、契約、請求、支払い管理 | `docs/admin/`, `docs/reports/admin/` | `agreement-prep.md`, `invoice-builder.md`, `billing-review.md` | 月次請求レビュー案 | 契約判断、請求送付、入金確認 | 商談、納品、KPI |
 | KPI・経営管理部門 | 数値、売上、リスク管理 | `docs/management/`, `data/management/` | `weekly-kpi-review.md`, `monthly-management-report.md` | 週次/月次レビュー案 | 数値入力、意思決定 | 全部門 |
 | 全体統括部門 | 優先順位、ボトルネック、意思決定 | `docs/executive/`, `docs/reports/executive/` | `daily-executive-briefing.md`, `weekly-executive-review.md` | 将来案 | 最終判断 | 全部門 |
@@ -81,3 +82,13 @@
 - 契約内容/請求金額の自動変更
 - クライアントへの自動連絡
 - 成果保証表現や架空実績/数値の追加
+
+## 外注・採用管理部門で自動化しないこと
+
+- 外注先への自動連絡
+- 外注募集の自動掲載
+- 外注候補の自動採用
+- 業務委託契約の自動締結
+- 支払い実行、請求書自動処理
+- クライアント情報、SNSログイン情報、秘密情報の自動共有
+- 法務/税務/労務判断

@@ -45,3 +45,6 @@
 | 月次商品改善レビュー | 月末17:00 | `monthly-product-improvement-review.md` | `docs/reports/product/reviews/` | 営業/商談/CSデータ蓄積後 |
 | 価格/作業範囲チェック | 提案/見積/契約/請求前に手動 | `pricing-scope-check.md` | `docs/reports/product/reviews/` | 案件発生時 |
 | 業態別パッケージ改善 | 必要時手動 | `industry-package-builder.md` | `docs/reports/product/packages/` | 業態別反応が見えた時 |
+| 月次外注先レビュー | 毎月25日16:00 | `monthly-vendor-review.md` | `docs/reports/outsourcing/reviews/` | 外注先発生後 |
+| 外注リスクチェック | 外注依頼前に手動 | `outsourcing-risk-check.md` | `docs/reports/outsourcing/risks/` | 外注依頼前 |
+| 外注タスクブリーフ作成 | 必要時手動 | `outsourcing-task-brief-builder.md` | `docs/reports/outsourcing/briefs/` | 外注切り出し時 |

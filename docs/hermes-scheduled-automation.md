@@ -1153,6 +1153,95 @@ docs/reports/product/packages/YYYY-MM-DD-industry-package.md
 - 人間が最終判断すべきことを分けてください
 ```
 
+## ICHI Social 月次外注先レビュー
+
+将来的な外注・採用管理部門タスク案です。現時点では外注先がいないため、すぐ登録しない前提です。
+
+- 毎月25日 16:00
+- 外注先別の品質、納期、修正回数、コスト、継続可否を整理する
+- 自動連絡や支払いはしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 月次外注先レビュー
+
+スケジュール:
+毎月25日 16:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/monthly-vendor-review.md のルールに従い、外注先別の品質、納期、修正回数、コスト、継続可否、リスク、次月方針を整理してください。
+
+出力:
+docs/reports/outsourcing/reviews/YYYY-MM-vendor-review.md
+
+重要ルール:
+- 外注先への自動連絡は行わない
+- 支払い実行、契約変更、採用判断は行わない
+- クライアント情報、SNSログイン情報、SECRET_TOKEN、Webhook URL、APIキー、口座情報は表示しない
+
+この内容を毎月25日16:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 外注リスクチェック
+
+外注・採用管理部門の手動実行タスク案です。
+
+- 外注依頼前に手動実行する
+- 秘密情報、クライアント情報、SNSログイン共有、権利、契約条件、支払い条件を確認する
+- 自動依頼はしない
+
+Hermes CLIに貼る手動実行文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentの手動レビュー依頼です。
+
+タスク名:
+ICHI Social 外注リスクチェック
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/outsourcing-risk-check.md のルールに従い、外注依頼前に、秘密情報、クライアント情報、SNSログイン共有、著作権/素材権利、成果保証表現、契約条件、支払い条件、再委託、品質リスクを確認してください。
+
+出力:
+docs/reports/outsourcing/risks/YYYY-MM-DD-outsourcing-risk-check.md
+
+重要ルール:
+- 外注依頼、自動連絡、契約判断、支払い判断は行わないでください
+- 秘密情報の値は表示せず、リスクの種類だけを記録してください
+- 人間が判断すべきことを分けてください
+```
+
+## ICHI Social 外注タスクブリーフ作成
+
+外注・採用管理部門の手動実行タスク案です。
+
+- 必要時に手動実行する
+- 外注依頼内容、成果物、納期、品質基準、禁止事項を整理する
+- 自動送信はしない
+
+Hermes CLIに貼る手動実行文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentの手動下書き依頼です。
+
+タスク名:
+ICHI Social 外注タスクブリーフ作成
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/outsourcing-task-brief-builder.md のルールに従い、外注依頼内容、成果物、使用してよい情報、使用してはいけない情報、品質基準、納期、修正ルール、人間確認事項を整理してください。
+
+出力:
+docs/reports/outsourcing/briefs/YYYY-MM-DD-outsourcing-task-brief.md
+
+重要ルール:
+- 外注先へ自動送信しないでください
+- クライアント秘密情報、SNSログイン情報、SECRET_TOKEN、Webhook URL、APIキー、口座情報は含めないでください
+- 募集、採用、契約、支払いは人間判断としてください
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -1175,6 +1264,9 @@ docs/reports/product/packages/YYYY-MM-DD-industry-package.md
 - SNSへの自動投稿を行わない
 - 架空実績、架空数値、実績の無断掲載、スクリーンショットの無断利用を行わない
 - 成果保証表現の追加、実績/数値の捏造を行わない
+- 外注先への自動連絡、外注募集の自動掲載、外注候補の自動採用を行わない
+- 業務委託契約の自動締結、支払い実行、請求書自動処理を行わない
+- クライアント情報、SNSログイン情報、秘密情報を外注先へ自動共有しない
 - 自動修正後の自動公開、自動修正後の自動送信を行わない
 - 秘密情報や口座情報を自動入力しない
 - 秘密情報の自動表示/保存を行わない

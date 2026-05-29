@@ -128,3 +128,16 @@
 | `monthly-product-improvement-review.md` | 月次商品改善レビュー | 営業/商談/受注/CS/KPI | `docs/reports/product/reviews/` | 将来案 | 価格変更は人間 |
 | `industry-package-builder.md` | 業態別パッケージ作成 | 業態/課題/反応 | `docs/reports/product/packages/` | 手動 | 表現注意 |
 | `upsell-path-review.md` | アップセル導線レビュー | CS/月次/課題 | `docs/reports/product/reviews/` | 手動 | 自動送信禁止 |
+
+## 外注・採用管理
+
+| ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認/禁止事項 |
+|---|---|---|---|---|---|
+| `outsourcing-task-brief-builder.md` | 外注タスクブリーフ作成 | タスク名/業務/納期/成果物 | `docs/reports/outsourcing/briefs/` | 手動 | 自動依頼禁止 |
+| `vendor-candidate-review.md` | 外注候補者レビュー | 応募情報/ポートフォリオ | `docs/reports/outsourcing/vendors/` | 手動 | 自動採用禁止 |
+| `trial-task-review.md` | トライアル課題レビュー | 成果物/評価基準 | `docs/reports/outsourcing/reviews/` | 手動 | 契約判断禁止 |
+| `vendor-quality-review.md` | 外注先品質レビュー | 依頼内容/納期/品質 | `docs/reports/outsourcing/reviews/` | 手動 | 自動連絡禁止 |
+| `outsourcing-risk-check.md` | 外注リスク確認 | 依頼内容/共有情報/条件 | `docs/reports/outsourcing/risks/` | 手動 | 秘密情報共有禁止 |
+| `vendor-onboarding-prep.md` | 外注先オンボーディング準備 | ロール/初回タスク | `docs/reports/outsourcing/vendors/` | 手動 | ログイン情報共有禁止 |
+| `monthly-vendor-review.md` | 月次外注先レビュー | 依頼件数/品質/コスト | `docs/reports/outsourcing/reviews/` | 将来案 | 自動支払い禁止 |
+| `recruiting-copy-builder.md` | 外注募集文下書き | 募集ロール/条件 | `docs/reports/outsourcing/vendors/` | 手動 | 自動掲載禁止 |

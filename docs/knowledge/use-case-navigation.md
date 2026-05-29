@@ -37,3 +37,11 @@
 | LPに載せる商品説明文案を作りたい | `docs/product/lp-copy-draft.md` | `docs/product/service-positioning.md` | `lp-copy-for-offer-builder.md` | `docs/reports/product/lp-copy/` | LP反映可否 |
 | アップセル/ダウンセルを検討したい | `docs/product/upsell-path.md` | `docs/product/downsell-retention-rules.md` | `upsell-path-review.md` | `docs/reports/product/reviews/` | 提案可否 |
 | 商品改善案を整理したい | `docs/product/product-improvement-rules.md` | `docs/product/product-feedback-log.md` | `monthly-product-improvement-review.md` | `docs/reports/product/reviews/` | 改善採用 |
+| 外注を検討したい | `docs/outsourcing/overview.md` | `docs/outsourcing/role-definitions.md` | `document-finder.md` | 任意 | 外注開始可否 |
+| 外注できる業務を確認したい | `docs/outsourcing/task-scope-rules.md` | `docs/outsourcing/client-info-sharing-rules.md` | `outsourcing-risk-check.md` | `docs/reports/outsourcing/risks/` | 依頼可否 |
+| 外注タスクブリーフを作りたい | `docs/outsourcing/task-brief-template.md` | `docs/outsourcing/quality-checklist.md` | `outsourcing-task-brief-builder.md` | `docs/reports/outsourcing/briefs/` | 送付可否 |
+| 外注候補者を評価したい | `docs/outsourcing/hiring-criteria.md` | `docs/outsourcing/interview-questions.md` | `vendor-candidate-review.md` | `docs/reports/outsourcing/vendors/` | 採用可否 |
+| トライアル課題を作りたい | `docs/outsourcing/trial-task-template.md` | `docs/outsourcing/hiring-criteria.md` | `recruiting-copy-builder.md` | `docs/reports/outsourcing/vendors/` | 課題実施可否 |
+| 外注成果物をレビューしたい | `docs/outsourcing/quality-checklist.md` | `docs/quality/ai-output-review-rules.md` | `vendor-quality-review.md` | `docs/reports/outsourcing/reviews/` | 採用/差し戻し |
+| 外注リスクを確認したい | `docs/outsourcing/outsourcing-risk-notes.md` | `docs/outsourcing/confidentiality-rules.md` | `outsourcing-risk-check.md` | `docs/reports/outsourcing/risks/` | 依頼停止/継続 |
+| 外注先を終了したい | `docs/outsourcing/offboarding-checklist.md` | `docs/outsourcing/payment-and-invoice-rules.md` | `vendor-quality-review.md` | `docs/reports/outsourcing/reviews/` | 終了/再依頼可否 |

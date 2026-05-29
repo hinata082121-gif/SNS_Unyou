@@ -92,3 +92,11 @@
 - 使うプロンプト: `product-package-review.md`, `proposal-plan-matcher.md`, `pricing-scope-check.md`
 - 関連レポート: `docs/reports/product/reviews/`, `docs/reports/product/feedback/`, `docs/reports/product/lp-copy/`, `docs/reports/product/packages/`
 - 注意点: 価格変更、プラン変更、LP変更、契約/請求変更は人間が判断する
+
+## 外注・採用管理部門
+
+- 見るファイル: `docs/outsourcing/`
+- 作るファイル: `docs/reports/outsourcing/**/*.md`
+- 使うプロンプト: `outsourcing-task-brief-builder.md`, `vendor-candidate-review.md`, `outsourcing-risk-check.md`, `monthly-vendor-review.md`
+- 関連レポート: `docs/reports/outsourcing/briefs/`, `docs/reports/outsourcing/reviews/`, `docs/reports/outsourcing/vendors/`, `docs/reports/outsourcing/risks/`
+- 注意点: 自動募集、自動採用、自動契約、自動支払い、クライアント情報の自動共有はしない
