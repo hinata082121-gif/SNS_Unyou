@@ -12,6 +12,29 @@ Hermes Agentは候補作成、JSON整形、営業準備、レビューの補助�
 - 店舗単独SNSまたは問い合わせ導線がある候補を優先する
 - 候補の質が低い場合は、無理に10件出さず `候補不足` と報告する
 - 店舗ごとに送信前確認ポイント、営業切り口、DM文面案、メール文面案、推奨送信順を出す
+- Hermes local出力に加えて、Markdownレポートとして保存する
+
+## 毎朝9:00の出力確認場所
+
+毎朝の営業候補は、以下の2箇所で確認する。
+
+1. Hermes local出力
+2. Markdown保存先:
+
+```text
+docs/reports/sales/daily/YYYY-MM-DD-daily-sales-candidates.md
+```
+
+## 人間の確認手順
+
+1. 9:00以降に `docs/reports/sales/daily/` を確認
+2. 当日の日付の `YYYY-MM-DD-daily-sales-candidates.md` を開く
+3. 候補10件を確認
+4. 公式サイト/SNS/営業不可表記を確認
+5. 問題なければスプレッドシートを `検収済` に変更
+6. 人間がDM/メール/フォーム送信を行う
+7. 送信後に `送信済` に変更
+8. 送信日を入力
 
 ## 毎週月曜・水曜 10:30
 
