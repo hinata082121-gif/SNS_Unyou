@@ -508,6 +508,112 @@ docs/reports/executive/monthly/YYYY-MM-monthly-executive-review.md
 この内容を毎月末日19:00のcronスケジュールとして登録し、登録結果を表示してください。
 ```
 
+## ICHI Social 自社SNS月間カレンダー作成
+
+将来的な自社SNS・広報部門タスク案です。現時点では営業9:00自動実行の安定確認中のため、すぐに登録せず、投稿運用を始める段階で登録します。
+
+- 毎月1日 10:00
+- 自社SNSの月間投稿カレンダーを作成する
+- 架空実績や架空数値を使わない
+- 自動投稿はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 自社SNS月間カレンダー作成
+
+スケジュール:
+毎月1日 10:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/self-sns-monthly-calendar-builder.md のルールに従い、ICHI Socialの自社SNS月間投稿カレンダーを作成してください。
+
+出力:
+docs/reports/pr/calendars/YYYY-MM-ichisocial-pr-calendar.md
+
+重要ルール:
+- SNSへの自動投稿は行わない
+- 外部SNSアカウント操作は行わない
+- 架空実績、架空数値、成果保証表現を使わない
+- 実績掲載やスクリーンショット掲載は許可がある場合のみ扱う
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報は表示しない
+
+この内容を毎月1日10:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 自社SNS週次レビュー
+
+将来的な自社SNS・広報部門タスク案です。
+
+- 毎週金曜 18:00
+- 今週の自社SNS投稿案、反応、改善点、翌週テーマを整理する
+- 自動投稿や外部連絡はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 自社SNS週次レビュー
+
+スケジュール:
+毎週金曜 18:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/pr-weekly-content-review.md のルールに従い、自社SNSの投稿案、実施状況、反応、改善点、翌週テーマを整理してください。
+
+出力:
+docs/reports/pr/reviews/YYYY-MM-DD-pr-weekly-review.md
+
+重要ルール:
+- SNSへの自動投稿は行わない
+- 外部SNSアカウント操作やクライアント連絡は行わない
+- 反応が未入力の場合は推測しない
+- 架空実績や架空数値を作らない
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報は表示しない
+
+この内容を毎週金曜18:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social ショート動画台本作成
+
+将来的な自社SNS・広報部門タスク案です。
+
+- 毎週火曜 15:00
+- TikTok/Reels/YouTube Shorts向けの短尺台本案を作成する
+- 動画投稿はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social ショート動画台本作成
+
+スケジュール:
+毎週火曜 15:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/short-video-script-builder.md のルールに従い、TikTok/Reels/YouTube Shorts向けの短尺台本案を作成してください。
+
+出力:
+docs/reports/pr/scripts/YYYY-MM-DD-ichisocial-short-video-script.md
+
+重要ルール:
+- 動画投稿は行わない
+- 外部SNSアカウント操作は行わない
+- 成果保証、集客保証、売上保証をしない
+- 医療/整体/美容/飲食の表現に注意する
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報は表示しない
+
+この内容を毎週火曜15:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -520,6 +626,8 @@ docs/reports/executive/monthly/YYYY-MM-monthly-executive-review.md
 - 投稿操作を自動化しない
 - SNS権限操作を自動化しない
 - 法務判断、税務判断を自動化しない
+- SNSへの自動投稿を行わない
+- 架空実績、架空数値、実績の無断掲載、スクリーンショットの無断利用を行わない
 - 秘密情報や口座情報を自動入力しない
 - `SECRET_TOKEN`、Webhook URL、APIキー、認証情報を表示しない
 - スパム的な一斉送信をしない
