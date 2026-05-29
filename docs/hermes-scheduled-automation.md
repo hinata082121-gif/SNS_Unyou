@@ -614,6 +614,112 @@ docs/reports/pr/scripts/YYYY-MM-DD-ichisocial-short-video-script.md
 この内容を毎週火曜15:00のcronスケジュールとして登録し、登録結果を表示してください。
 ```
 
+## ICHI Social 週次AI運用監査
+
+将来的な品質管理・AI運用監査部門タスク案です。現時点では営業9:00自動実行の安定確認中のため、すぐに登録せず、AI生成物が増えてから登録します。
+
+- 毎週土曜 10:00
+- 今週作成されたAI生成物、禁止自動化違反、秘密情報混入、成果保証表現、架空実績、Hermes実行失敗を確認する
+- レポートのみ作成する
+- 自動修正や外部送信はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 週次AI運用監査
+
+スケジュール:
+毎週土曜 10:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/weekly-ai-ops-audit.md のルールに従い、今週作成されたAI生成物、禁止自動化違反、秘密情報混入、成果保証表現、架空実績、Hermes実行失敗を確認してください。
+
+出力:
+docs/reports/quality/audits/YYYY-MM-DD-weekly-ai-ops-audit.md
+
+重要ルール:
+- 自動修正後の自動公開/送信は行わない
+- 営業送信、SNS投稿、請求送付、契約判断、価格変更は行わない
+- 秘密情報を見つけても値を再表示せず、種類だけをマスキングして記録してください
+- Level 4相当の問題はインシデント記録候補として整理してください
+
+この内容を毎週土曜10:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 営業送信前品質レビュー
+
+将来的な品質管理・AI運用監査部門タスク案です。
+
+- 毎営業日 8:45
+- 当日送信予定の営業候補と文面を確認する
+- 送信可否、条件付き、除外を整理する
+- 実際の送信はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 営業送信前品質レビュー
+
+スケジュール:
+平日 8:45
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/pre-send-sales-review.md のルールに従い、当日送信予定の営業候補と文面を確認し、送信可否、条件付き、除外を整理してください。
+
+出力:
+docs/reports/quality/reviews/YYYY-MM-DD-pre-send-sales-review.md
+
+重要ルール:
+- 実際の営業送信は行わない
+- SNS DM送信や問い合わせフォーム送信は行わない
+- Googleスプレッドシートの自動更新は行わない
+- 営業不可、予約専用フォーム、チェーン/FC、本部運営の可能性を確認してください
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報は表示しない
+
+この内容を平日8:45のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 自社SNS公開前レビュー
+
+将来的な品質管理・AI運用監査部門タスク案です。
+
+- 毎週金曜 16:30
+- 自社SNS投稿案・ショート動画台本を確認する
+- 架空実績/成果保証/権利リスクを確認する
+- 実際の投稿はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 自社SNS公開前レビュー
+
+スケジュール:
+毎週金曜 16:30
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/pr-content-quality-review.md のルールに従い、自社SNS投稿案・ショート動画台本を確認し、架空実績、成果保証、権利リスク、秘密情報混入を確認してください。
+
+出力:
+docs/reports/quality/reviews/YYYY-MM-DD-pr-content-quality-review.md
+
+重要ルール:
+- 実際のSNS投稿は行わない
+- 外部SNSアカウント操作は行わない
+- 架空実績、架空数値、実績の無断掲載、スクリーンショットの無断利用を止めてください
+- SECRET_TOKEN、Webhook URL、APIキー、認証情報、口座情報は表示しない
+
+この内容を毎週金曜16:30のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない
@@ -628,6 +734,7 @@ docs/reports/pr/scripts/YYYY-MM-DD-ichisocial-short-video-script.md
 - 法務判断、税務判断を自動化しない
 - SNSへの自動投稿を行わない
 - 架空実績、架空数値、実績の無断掲載、スクリーンショットの無断利用を行わない
+- 自動修正後の自動公開、自動修正後の自動送信を行わない
 - 秘密情報や口座情報を自動入力しない
 - `SECRET_TOKEN`、Webhook URL、APIキー、認証情報を表示しない
 - スパム的な一斉送信をしない

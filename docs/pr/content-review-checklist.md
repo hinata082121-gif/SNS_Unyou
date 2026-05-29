@@ -20,3 +20,7 @@
 - 医療/美容/飲食の断定表現がある
 - 実在店舗の批判に見える
 - 認証情報や内部情報が含まれる
+
+## 品質管理部門との接続
+
+公開前には `docs/quality/pre-publication-checklist.md` も確認する。架空実績、成果保証、権利不明素材、秘密情報混入が疑われる場合は、`hermes/prompts/pr-content-quality-review.md` でレビューし、人間が公開可否を判断する。

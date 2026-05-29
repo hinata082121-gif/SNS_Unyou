@@ -5,6 +5,7 @@
 | 営業部門 | 候補作成、検収、手動送信準備 | `data/prospects/`, `docs/sales/` | `scheduled-daily-sales-candidates.md`, `scheduled-research-refill-mon-wed.md` | 毎朝候補作成、月水リサーチ | 検収、送信、ステータス更新 | 商談、KPI |
 | マーケティング部門 | 市場/競合分析、訴求改善 | `docs/hermes-weekly-marketing-analysis.md`, `docs/reports/marketing/` | `weekly-market-competitor-analysis.md` | 金曜週次分析 | 改善採用判断 | 営業、KPI、LP改善 |
 | 自社SNS・広報部門 | 自社発信、信頼形成、営業補助コンテンツ | `docs/pr/`, `docs/reports/pr/` | `self-sns-monthly-calendar-builder.md`, `short-video-script-builder.md`, `pr-weekly-content-review.md` | 月間カレンダー/週次レビュー/動画台本は将来案 | 投稿可否判断、SNS投稿操作、実績掲載許可確認 | 営業、マーケティング、KPI |
+| 品質管理・AI運用監査部門 | AI生成物の品質確認、秘密情報/表現/自動化境界の監査 | `docs/quality/`, `docs/reports/quality/` | `ai-output-quality-review.md`, `pre-send-sales-review.md`, `weekly-ai-ops-audit.md` | 週次AI監査/送信前レビュー/公開前レビューは将来案 | 送付/公開可否、インシデント対応、専門家確認要否 | 全部門 |
 | 商談・提案部門 | 返信対応、診断、提案 | `docs/deals/`, `docs/reports/audits/`, `docs/reports/proposals/` | `daily-reply-and-deal-review.md`, `proposal-builder.md` | 毎日返信レビュー案 | 返信、商談、提案送付 | 法務請求、納品 |
 | 納品・制作部門 | 受注後の運用、投稿、レポート | `docs/delivery/`, `docs/reports/content-calendars/`, `docs/reports/monthly-reports/` | `weekly-client-operation-review.md`, `monthly-report-builder.md` | 週次運用レビュー案 | 投稿確認、クライアント連絡 | KPI、法務請求 |
 | 法務・契約・請求部門 | 申込、契約、請求、支払い管理 | `docs/admin/`, `docs/reports/admin/` | `agreement-prep.md`, `invoice-builder.md`, `billing-review.md` | 月次請求レビュー案 | 契約判断、請求送付、入金確認 | 商談、納品、KPI |
@@ -25,3 +26,15 @@
 - 架空実績作成
 - 実績の無断掲載
 - スクリーンショットの無断利用
+
+## 品質管理・AI運用監査部門で自動化しないこと
+
+- 外部送信
+- SNS投稿
+- 請求書送付
+- 契約判断
+- 価格変更
+- 法務判断
+- 税務判断
+- 自動修正後の自動公開
+- 自動修正後の自動送信
