@@ -20,10 +20,55 @@ const REQUIRED_COLUMNS = [
   "次アクション日",
 ];
 
+const OPTIONAL_COLUMNS = [
+  "Instagram URL",
+  "Instagramユーザー名",
+  "Instagramフォロワー数",
+  "フォロワー区分",
+  "最終投稿確認日",
+  "Instagram運用課題",
+  "Instagram営業優先度",
+  "Instagram営業切り口",
+  "手動DM文案",
+  "手動コメント案",
+  "自社コンテンツ提案余地",
+];
+
+const ALL_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS];
+
+const JSON_FIELD_TO_COLUMN = {
+  name: "店名",
+  businessType: "業態",
+  area: "地域",
+  summary: "概要",
+  fitScore: "相性スコア",
+  fitReason: "スコア理由",
+  issueHypothesis: "課題仮説",
+  contactFormUrl: "問い合わせフォームURL",
+  contactMethod: "連絡手段",
+  sourceUrl: "出典URL",
+  sourceType: "出典種別",
+  status: "ステータス",
+  sentDate: "送信日",
+  response: "反応",
+  nextActionDate: "次アクション日",
+  instagramUrl: "Instagram URL",
+  instagramUsername: "Instagramユーザー名",
+  instagramFollowers: "Instagramフォロワー数",
+  followerSegment: "フォロワー区分",
+  instagramLastPostCheckedAt: "最終投稿確認日",
+  instagramIssueHypothesis: "Instagram運用課題",
+  instagramSalesPriority: "Instagram営業優先度",
+  instagramSalesAngle: "Instagram営業切り口",
+  manualDmDraft: "手動DM文案",
+  manualCommentDraft: "手動コメント案",
+  selfContentOpportunity: "自社コンテンツ提案余地",
+};
+
 const ALLOWED_VALUES = {
   業態: ["美容室", "ネイル/アイラッシュ", "整体", "カフェ・飲食"],
   相性スコア: ["A", "B", "C"],
-  出典種別: ["SNS", "公式サイト", "予約フォーム"],
+  出典種別: ["SNS", "公式サイト", "予約フォーム", "Instagram"],
   ステータス: [
     "未検収",
     "検収済",
@@ -33,6 +78,8 @@ const ALLOWED_VALUES = {
     "商談化",
     "反応なしクローズ",
   ],
+  フォロワー区分: ["under_500", "500_999", "1000_1999", "2000_4999", "5000_over", "unknown"],
+  Instagram営業優先度: ["A", "B", "C", "除外"],
 };
 
 function fail(message) {
@@ -56,12 +103,50 @@ function assertPlainObject(value, label) {
   }
 }
 
+function toCanonicalRow(row) {
+  const canonical = {};
+
+  for (const [key, value] of Object.entries(row)) {
+    const column = JSON_FIELD_TO_COLUMN[key] ?? key;
+    canonical[column] = value;
+  }
+
+  return canonical;
+}
+
+function normalizeInstagramFollowers(value, index) {
+  if (value == null || value === "") {
+    return "";
+  }
+
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) {
+      fail(`rows[${index}] の Instagramフォロワー数 は0以上の数値またはnullである必要があります。`);
+    }
+
+    return String(Math.trunc(value));
+  }
+
+  const normalized = String(value).replaceAll(",", "").trim();
+
+  if (normalized === "") {
+    return "";
+  }
+
+  if (!/^\d+$/.test(normalized)) {
+    fail(`rows[${index}] の Instagramフォロワー数 は数値またはnullである必要があります。推測値や単位付き文字列は使わないでください。`);
+  }
+
+  return normalized;
+}
+
 function normalizeRow(row, index) {
   assertPlainObject(row, `rows[${index}]`);
+  const canonicalRow = toCanonicalRow(row);
 
-  const rowKeys = Object.keys(row);
-  const missingColumns = REQUIRED_COLUMNS.filter((column) => !(column in row));
-  const unknownColumns = rowKeys.filter((column) => !REQUIRED_COLUMNS.includes(column));
+  const rowKeys = Object.keys(canonicalRow);
+  const missingColumns = REQUIRED_COLUMNS.filter((column) => !(column in canonicalRow));
+  const unknownColumns = rowKeys.filter((column) => !ALL_COLUMNS.includes(column));
 
   if (missingColumns.length > 0) {
     fail(`rows[${index}] に必須列がありません: ${missingColumns.join(", ")}`);
@@ -73,9 +158,14 @@ function normalizeRow(row, index) {
 
   const normalized = {};
 
-  for (const column of REQUIRED_COLUMNS) {
-    const value = row[column];
-    normalized[column] = value == null ? "" : String(value);
+  for (const column of ALL_COLUMNS) {
+    const value = canonicalRow[column];
+    normalized[column] =
+      column === "Instagramフォロワー数"
+        ? normalizeInstagramFollowers(value, index)
+        : value == null
+          ? ""
+          : String(value);
   }
 
   if (normalized["ステータス"].trim() === "") {
@@ -91,6 +181,10 @@ function normalizeRow(row, index) {
 
   for (const [column, allowedValues] of Object.entries(ALLOWED_VALUES)) {
     const value = normalized[column];
+
+    if (value.trim() === "" && OPTIONAL_COLUMNS.includes(column)) {
+      continue;
+    }
 
     if (!allowedValues.includes(value)) {
       fail(

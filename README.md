@@ -10,9 +10,12 @@ This repository contains the ICHI Social landing page and internal operation doc
 - Product packaging and pricing rules: `docs/product/`
 - Outsourcing and hiring workflow rules: `docs/outsourcing/`
 - AI operations improvement rules: `docs/ai-ops/`
+- Instagram-first sales prospecting: `docs/sales-targeting-rules.md` and `hermes/prompts/instagram-sales-list-builder.md`
+- Self SNS content generation: `docs/pr/` and `hermes/prompts/weekly-self-content-builder.md`
 - Hermes prompts: `hermes/prompts/`
 
 Do not commit API keys, passwords, SNS login details, `SHEETS_SECRET_TOKEN`, or real webhook URLs.
+Do not automate Instagram DMs, comments, follows, likes, or self SNS posting; generate drafts for human review and manual posting only.
 
 ## Getting Started
 

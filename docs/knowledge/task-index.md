@@ -51,3 +51,6 @@
 | 月次AI運用改善レビュー | 月末22:00 | `monthly-ai-ops-improvement-review.md` | `docs/reports/ai-ops/improvements/` | AI運用レポート蓄積後 |
 | プロンプト品質レビュー | 必要時手動 | `ai-ops-prompt-review.md` | `docs/reports/ai-ops/reviews/` | プロンプト変更前後 |
 | AI失敗分析 | 必要時手動 | `ai-failure-analysis.md` | `docs/reports/ai-ops/failures/` | AI出力失敗時 |
+| Instagram営業候補リサーチ | 毎週月曜10:00 | `instagram-sales-list-builder.md` | `data/prospects/`, `docs/reports/sales/research/` | Instagram営業運用開始後 |
+| 自社SNS週次コンテンツ生成 | 毎週月曜11:00 | `weekly-self-content-builder.md` | `docs/reports/pr/content/` | 手動投稿体制決定後 |
+| 自社SNS追加投稿生成 | 毎週木曜15:00 | `self-content-post-ready-builder.md` | `docs/reports/pr/content/` | 週2投稿を試す時 |

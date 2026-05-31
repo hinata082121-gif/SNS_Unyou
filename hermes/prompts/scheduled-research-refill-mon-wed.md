@@ -20,6 +20,15 @@
 - さいたま市浦和区
 - 東京都北区
 - 東京都板橋区
+- 赤羽
+- 足立区
+- 荒川区
+- 豊島区
+- 練馬区
+- 和光
+- 朝霞
+- 草加
+- 越谷
 
 ## 対象業態
 
@@ -31,6 +40,11 @@
 ## リサーチ条件
 
 - 個人店・小規模店舗を優先
+- Instagramを起点に探し、店舗単独Instagramが確認できる候補を優先
+- フォロワー数2,000人未満をA候補として優先
+- フォロワー数2,000〜5,000人程度はB候補として扱う
+- フォロワー数が確認できない場合は `unknown` とし、推測で埋めない
+- Instagram運用課題、手動DM文案、手動コメント案を記録する
 - 公式サイトまたは店舗単独Instagramが確認できる
 - 問い合わせフォーム、メール、Instagram DM、LINE、電話などの連絡導線が確認できる
 - チェーン、FC、多店舗ブランド、本部運営色が強い店舗は除外
@@ -55,6 +69,7 @@ data/prospects/YYYY-MM-DD-expanded-area-a.json
 - 送信日、反応、次アクション日は空欄
 - 架空URLや架空実績は入れない
 - `hermes/prompts/prospect-json-rules.md` の列定義とプルダウン値に従う
+- Instagram関連項目が確認できる場合は、`instagramUrl`, `instagramUsername`, `instagramFollowers`, `followerSegment`, `instagramIssueHypothesis`, `instagramSalesPriority`, `instagramSalesAngle`, `manualDmDraft`, `manualCommentDraft`, `selfContentOpportunity` を入れる
 
 ## リスト更新
 

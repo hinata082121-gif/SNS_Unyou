@@ -8,6 +8,15 @@
 - 無料SNS診断への自然導線を入れる
 - Instagram/X/TikTok/YouTube Shortsへ転用しやすくする
 
+## Instagram優先の週1〜2本運用
+
+初期はInstagramを最優先にし、最低週1本、余力があれば週2本を手動投稿する。AIは投稿原稿、タイトル、カルーセル構成、ハッシュタグ、CTA、画像/デザイン指示を生成するが、自動投稿は行わない。
+
+- 週1運用: 水曜に小規模店舗向けノウハウ投稿
+- 週2運用: 水曜にノウハウ投稿、金曜に無料SNS診断/告知投稿
+- 月曜: `hermes/prompts/weekly-self-content-builder.md` で週次投稿案を作成
+- 木曜: `hermes/prompts/self-content-post-ready-builder.md` で追加投稿案を作成
+
 ## 30日間の投稿テーマ
 
 | Day | 投稿テーマ | 狙い | CTA | 投稿形式 | ショート動画化 | 注意点 |

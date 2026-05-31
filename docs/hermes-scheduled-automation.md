@@ -1331,6 +1331,111 @@ docs/reports/ai-ops/failures/YYYY-MM-DD-ai-failure-analysis.md
 - 人間が判断すべきことを明記してください
 ```
 
+## ICHI Social Instagram営業候補リサーチ
+
+将来的な営業部門タスク案です。実際の登録は人間確認後に行います。
+
+- 毎週月曜 10:00
+- Instagram起点でフォロワー2,000人未満の小規模店舗候補を抽出する
+- 営業候補JSONとリサーチレポートを作成する
+- Google Sheets投入、Instagram DM送信、コメント投稿、フォーム送信はしない
+- Instagramログイン、Cookie利用、大量スクレイピングはしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social Instagram営業候補リサーチ
+
+スケジュール:
+毎週月曜 10:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/instagram-sales-list-builder.md のルールに従い、Instagram起点でフォロワー2,000人未満の小規模店舗候補を抽出し、営業候補JSONとレポートを作成してください。
+
+出力:
+data/prospects/YYYY-MM-DD-instagram-prospects.json
+docs/reports/sales/research/YYYY-MM-DD-instagram-sales-list.md
+
+重要ルール:
+- Google Sheets投入、Instagram DM送信、コメント投稿、営業メール送信、問い合わせフォーム送信は行わない
+- Instagramログイン、Cookie利用、大量スクレイピングは行わない
+- フォロワー数は公開情報で確認できる場合のみ記録し、不明ならnull/unknownにする
+- SECRET_TOKEN、Webhook URL、APIキー、SNSログイン情報は表示しない
+
+この内容を毎週月曜10:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 自社SNS週次コンテンツ生成
+
+将来的な自社SNS・広報部門タスク案です。実際の登録は人間確認後に行います。
+
+- 毎週月曜 11:00
+- ICHI Socialの自社SNS投稿を週1〜2本分作成する
+- Instagramキャプション、カルーセル構成、タイトル、ハッシュタグ、CTA、手動投稿チェックリストを生成する
+- 自動投稿はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 自社SNS週次コンテンツ生成
+
+スケジュール:
+毎週月曜 11:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/weekly-self-content-builder.md のルールに従い、ICHI Socialの自社SNS投稿を週1〜2本分作成してください。
+
+出力:
+docs/reports/pr/content/YYYY-MM-DD-weekly-self-content.md
+
+重要ルール:
+- Instagram投稿、Threads/X投稿、SNSログイン、予約投稿は行わない
+- 架空実績、成果保証、集客保証、売上保証は使わない
+- 人間が手動投稿できる原稿、構成、ハッシュタグ、CTA、チェックリストを作成してください
+
+この内容を毎週月曜11:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
+## ICHI Social 自社SNS追加投稿生成
+
+将来的な自社SNS・広報部門タスク案です。余力がある週の2本目作成に使います。
+
+- 毎週木曜 15:00
+- 余力がある週に2本目の投稿原稿を作成する
+- 手動投稿用の完成原稿のみ生成する
+- 自動投稿はしない
+
+Hermes CLIに貼る将来登録文:
+
+```text
+これは通常の依頼ではなく、Hermes Agentのスケジュールタスクとして登録してください。
+
+タスク名:
+ICHI Social 自社SNS追加投稿生成
+
+スケジュール:
+毎週木曜 15:00
+
+実行内容:
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/self-content-post-ready-builder.md のルールに従い、ICHI Socialの手動投稿用SNS原稿を1本作成してください。
+
+出力:
+docs/reports/pr/content/YYYY-MM-DD-post-ready-content.md
+
+重要ルール:
+- 自動投稿、SNSログイン、クライアント連絡は行わない
+- 架空実績、架空数値、成果保証表現を使わない
+- Instagramを最優先に、Threads/Xにも転用できる原稿にしてください
+
+この内容を毎週木曜15:00のcronスケジュールとして登録し、登録結果を表示してください。
+```
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない

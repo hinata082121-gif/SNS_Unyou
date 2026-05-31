@@ -36,9 +36,17 @@ docs/reports/sales/daily/YYYY-MM-DD-daily-sales-candidates.md
    - 送信前確認URL/SNS
    - 営業不可・DM不可・問い合わせ不可の確認状況
    - DM文面案
+   - 手動コメント案
    - メール件名案
    - メール本文案
    - スプレッドシート上の推奨ステータス
+   - Instagram URL
+   - Instagramユーザー名
+   - Instagramフォロワー数
+   - フォロワー区分
+   - Instagram運用課題
+   - Instagram営業優先度
+   - Instagram営業切り口
 7. 今日の推奨送信順
 8. 人間が送信前に確認するチェックリスト
 9. 候補不足がある場合の理由
@@ -50,12 +58,16 @@ docs/reports/sales/daily/YYYY-MM-DD-daily-sales-candidates.md
 毎朝9:00の候補作成では、以下の順番で確認する。
 
 1. `data/prospects/*.json` を横断確認する
-2. ファイル名に `expanded-area` が含まれるJSONを優先する
+2. ファイル名に `instagram` または `expanded-area` が含まれるJSONを優先する
 3. 更新日が新しいJSONを優先する
 4. `docs/reports/sales/research/*.md` の直近リサーチレポートも確認する
 5. 既存JSONとリサーチレポートだけで10件に満たない場合はWeb補助リサーチを行う
 
 Web補助リサーチで見つけた候補は `新規候補` として扱う。スプレッドシートには自動投入しない。営業送信も自動化しない。
+
+Instagramアカウントが確認できる候補を優先する。A候補はフォロワー2,000人未満で、店舗単独アカウント、連絡導線、プロフィール/投稿/予約導線の改善余地が確認できる小規模店舗を中心にする。
+
+フォロワー数が不明な場合は `未確認` / `unknown` と記録し、推測で埋めない。Instagram DM文案やコメント案は人間が手動送信/投稿するための下書きに限定し、自動送信や自動コメントは行わない。
 
 ## 候補分類
 

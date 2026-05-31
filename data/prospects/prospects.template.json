@@ -15,7 +15,18 @@
       "ステータス": "未検収",
       "送信日": "",
       "反応": "",
-      "次アクション日": ""
+      "次アクション日": "",
+      "instagramUrl": "",
+      "instagramUsername": "",
+      "instagramFollowers": null,
+      "followerSegment": "unknown",
+      "instagramLastPostCheckedAt": "",
+      "instagramIssueHypothesis": "",
+      "instagramSalesPriority": "A",
+      "instagramSalesAngle": "",
+      "manualDmDraft": "",
+      "manualCommentDraft": "",
+      "selfContentOpportunity": ""
     }
   ]
 }
