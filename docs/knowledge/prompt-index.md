@@ -159,7 +159,7 @@
 
 | ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認/禁止事項 |
 |---|---|---|---|---|---|
-| `instagram-sales-list-builder.md` | Instagram起点でフォロワー2,000人未満の小規模店舗候補を抽出 | 対象エリア/業態/公開Instagram情報 | `data/prospects/`, `docs/reports/sales/research/` | 将来案 | 自動DM/自動コメント/Sheets投入禁止 |
-| `instagram-prospect-scoring-review.md` | Instagram営業候補のA/B/C/除外判定を確認 | 候補JSON/リサーチレポート | `docs/reports/sales/research/` | 手動 | フォロワー数推測禁止 |
+| `instagram-sales-list-builder.md` | Instagram起点でフォロワー5,000人未満の地域密着型候補を抽出 | 対象エリア/業態/公開Instagram情報 | `data/prospects/`, `docs/reports/sales/research/` | 将来案 | 自動DM/自動コメント/Sheets投入禁止 |
+| `instagram-prospect-scoring-review.md` | Instagram営業候補のA/B/C/除外判定を確認 | 候補JSON/リサーチレポート | `docs/reports/sales/research/` | 手動 | フォロワー数推測禁止、5,000人以上は原則C/除外 |
 | `weekly-self-content-builder.md` | 自社SNS投稿を週1〜2本分作成 | 自社SNS戦略/商品/営業ルール | `docs/reports/pr/content/` | 将来案 | 自動投稿禁止 |
 | `self-content-post-ready-builder.md` | 単発の手動投稿用SNS原稿を作成 | 投稿テーマ/業態/CTA | `docs/reports/pr/content/` | 手動 | SNSログイン禁止 |

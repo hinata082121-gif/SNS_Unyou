@@ -1336,7 +1336,7 @@ docs/reports/ai-ops/failures/YYYY-MM-DD-ai-failure-analysis.md
 将来的な営業部門タスク案です。実際の登録は人間確認後に行います。
 
 - 毎週月曜 10:00
-- Instagram起点でフォロワー2,000人未満の小規模店舗候補を抽出する
+- Instagram起点でフォロワー5,000人未満の地域密着型店舗・小規模〜中小規模事業者候補を抽出する
 - 営業候補JSONとリサーチレポートを作成する
 - Google Sheets投入、Instagram DM送信、コメント投稿、フォーム送信はしない
 - Instagramログイン、Cookie利用、大量スクレイピングはしない
@@ -1353,7 +1353,7 @@ ICHI Social Instagram営業候補リサーチ
 毎週月曜 10:00
 
 実行内容:
-作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/instagram-sales-list-builder.md のルールに従い、Instagram起点でフォロワー2,000人未満の小規模店舗候補を抽出し、営業候補JSONとレポートを作成してください。
+作業ディレクトリ /mnt/c/Users/hinat/Documents/Codex/2026-05-27/next-js-react-typescript-tailwind-css で、hermes/prompts/instagram-sales-list-builder.md のルールに従い、Instagram起点でフォロワー5,000人未満の地域密着型店舗・小規模〜中小規模事業者候補を抽出し、営業候補JSONとレポートを作成してください。
 
 出力:
 data/prospects/YYYY-MM-DD-instagram-prospects.json

@@ -118,7 +118,7 @@
 | KPI | 定義 | 計算式 | 参照元 | 更新頻度 | 注意点 | 未入力時 |
 |---|---|---|---|---|---|---|
 | Instagram起点候補数 | Instagramを出典にした候補数 | 件数 | `data/prospects/*instagram*.json`, research reports | 週次 | 推測候補を含めない | 未集計 |
-| フォロワー2,000人未満候補数 | 公開情報で2,000人未満と確認できた候補数 | `instagramFollowers < 2000` の件数 | Instagram営業候補JSON | 週次 | 不明は含めない | 未集計 |
+| フォロワー5,000人未満候補数 | 公開情報で5,000人未満と確認できた候補数 | `instagramFollowers < 5000` の件数 | Instagram営業候補JSON | 週次 | 不明は含めない | 未集計 |
 | A評価候補数 | Instagram営業優先度Aの候補数 | A候補件数 | Instagram営業候補JSON | 週次 | 人間検収前は暫定 | 未集計 |
 | Instagram URL確認率 | Instagram URLが入っている割合 | URLあり ÷ Instagram起点候補数 | JSON/reports | 週次 | URL不明は未確認 | 未入力 |
 | フォロワー数確認率 | フォロワー数が数値で入っている割合 | 数値入力あり ÷ Instagram起点候補数 | JSON/reports | 週次 | 推測値は禁止 | 未入力 |

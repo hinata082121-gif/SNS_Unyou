@@ -1,4 +1,24 @@
 {
+  "_rules": {
+    "followerSegmentAllowedValues": [
+      "under_2000",
+      "under_5000",
+      "over_5000",
+      "unknown"
+    ],
+    "instagramSalesPriorityAllowedValues": [
+      "A",
+      "B",
+      "C"
+    ],
+    "fitScoreAllowedValues": [
+      "A",
+      "B",
+      "C"
+    ],
+    "followerPolicy": "A判定はunder_2000またはunder_5000で、かつ改善余地が明確な場合。unknownは原則B。over_5000は原則Cまたは除外。フォロワー数は公開情報で確認できた場合のみ記録し、推測しない。",
+    "dedupePolicy": "候補生成前にGoogle Sheets CSVまたは重複除外台帳、既存JSON、既存レポートを照合し、既存候補を再出力しない。緊急時以外はCSV未設置で候補生成しない。"
+  },
   "rows": [
     {
       "店名": "",
@@ -11,7 +31,7 @@
       "問い合わせフォームURL": "",
       "連絡手段": "",
       "出典URL": "",
-      "出典種別": "公式サイト",
+      "出典種別": "Instagram",
       "ステータス": "未検収",
       "送信日": "",
       "反応": "",
@@ -22,7 +42,7 @@
       "followerSegment": "unknown",
       "instagramLastPostCheckedAt": "",
       "instagramIssueHypothesis": "",
-      "instagramSalesPriority": "A",
+      "instagramSalesPriority": "B",
       "instagramSalesAngle": "",
       "manualDmDraft": "",
       "manualCommentDraft": "",

@@ -54,7 +54,7 @@
 | AIに渡すコンテキストを整理したい | `docs/ai-ops/context-management-rules.md` | `docs/ai-ops/memory-and-history-rules.md` | `context-quality-review.md` | `docs/reports/ai-ops/reviews/` | 参照情報確定 |
 | AI自動化の範囲を見直したい | `docs/ai-ops/human-in-the-loop-rules.md` | `docs/quality/no-automation-boundary.md` | `monthly-ai-ops-improvement-review.md` | `docs/reports/ai-ops/improvements/` | 自動化範囲変更 |
 | Instagram中心で営業候補を探したい | `docs/sales-targeting-rules.md` | `hermes/prompts/instagram-sales-list-builder.md` | `instagram-sales-list-builder.md` | `data/prospects/`, `docs/reports/sales/research/` | 候補採否/Sheets投入/手動DM |
-| フォロワー2,000人未満の店舗を抽出したい | `docs/sales-targeting-rules.md` | `docs/sales/daily-sales-candidates-output.md` | `instagram-sales-list-builder.md` | `docs/reports/sales/research/` | フォロワー数確認/A判定 |
+| フォロワー5,000人未満の店舗を抽出したい | `docs/sales-targeting-rules.md` | `docs/sales/daily-sales-candidates-output.md` | `instagram-sales-list-builder.md` | `docs/reports/sales/research/` | フォロワー数確認/A判定 |
 | Instagram営業候補をスプシ投入前に確認したい | `hermes/prompts/instagram-prospect-scoring-review.md` | `docs/infra/google-sheets-webhook.md` | `instagram-prospect-scoring-review.md` | `docs/reports/sales/research/` | 投入可否/除外判断 |
 | 自社SNS投稿を週1本作りたい | `docs/pr/self-sns-strategy.md` | `docs/pr/monthly-pr-calendar-template.md` | `weekly-self-content-builder.md` | `docs/reports/pr/content/` | 水曜の手動投稿 |
 | 自社SNS投稿を週2本作りたい | `docs/pr/self-sns-strategy.md` | `hermes/prompts/self-content-post-ready-builder.md` | `weekly-self-content-builder.md`, `self-content-post-ready-builder.md` | `docs/reports/pr/content/` | 金曜の告知投稿 |
