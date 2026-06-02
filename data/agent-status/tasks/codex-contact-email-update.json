@@ -1,0 +1,27 @@
+{
+  "id": "codex-contact-email-update",
+  "agent": "Codex",
+  "avatar": "codex-engineer",
+  "title": "公開問い合わせメール変更",
+  "category": "infra",
+  "status": "success",
+  "phase": "push完了",
+  "progress": 100,
+  "priority": "normal",
+  "startedAt": "2026-06-01T15:00:00+09:00",
+  "updatedAt": "2026-06-01T16:00:00+09:00",
+  "summary": "公開問い合わせ先メールを更新。commit e1c8c20。",
+  "artifacts": [
+    "src/lib/site.ts",
+    "docs/reports/infra/maintenance/2026-06-01-contact-email-update.md"
+  ],
+  "metrics": {
+    "changedFiles": 2
+  },
+  "nextAction": "公開表示の確認",
+  "safeToAct": true,
+  "notes": [
+    "Git author email変更なし",
+    "認証設定変更なし"
+  ]
+}

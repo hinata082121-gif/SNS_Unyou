@@ -1,0 +1,30 @@
+{
+  "id": "daily-sales-2026-06-02",
+  "agent": "Hermes",
+  "avatar": "sales-scout",
+  "title": "2026-06-02 12:00営業候補生成",
+  "category": "sales",
+  "status": "blocked",
+  "phase": "候補不足",
+  "progress": 35,
+  "priority": "high",
+  "startedAt": "2026-06-02T12:04:47+09:00",
+  "updatedAt": "2026-06-02T13:23:00+09:00",
+  "summary": "12:00ジョブは実行済みだが候補0件。緊急補完が必要。",
+  "artifacts": [
+    "docs/reports/sales/daily/2026-06-02-daily-sales-candidates.md"
+  ],
+  "metrics": {
+    "targetCount": 10,
+    "actualCount": 0,
+    "aCandidates": 0,
+    "bCandidates": 0,
+    "blockedReasons": 1
+  },
+  "nextAction": "緊急補完モードで候補10件を再生成",
+  "safeToAct": false,
+  "notes": [
+    "Google Sheets投入なし",
+    "営業送信なし"
+  ]
+}

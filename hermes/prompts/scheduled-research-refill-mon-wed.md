@@ -116,6 +116,12 @@
 
 0件の場合は `emergency_refill_mode` を提案する。CSVがない場合でも中止せず、`CSV未設置のため完全照合未実施` と明記し、ローカルJSON、既存レポート、台帳で最大限重複除外する。ただし、Google Sheets投入、営業送信、Instagram DM、コメント、フォーム送信は行わない。
 
+## Agent Operations Dashboard更新
+
+作業開始時に `scripts/agent-status/update.mjs` で該当タスクを `running` にする。候補数に応じて `success`、`partial`、`needs_review`、`blocked` を設定する。候補0件はsuccessにしない。
+
+notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報はstatus JSONに入れない。
+
 ## 重複除外
 
 候補生成前にGoogle Sheets CSVまたは重複除外台帳、既存JSON、既存レポートを照合する。ステータスが `未検収`、`検収済`、`除外`、`送信済`、`返信あり`、`商談化`、`反応なしクローズ`、`未送信` の店舗は再出力しない。

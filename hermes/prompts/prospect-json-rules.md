@@ -173,6 +173,12 @@ Instagram営業候補JSONでは、以下の英語キーも使用できます。`
 - 10件以上: 完了
 
 JSON内に件数メタデータを入れる必要はないが、対応するMarkdownレポートには候補数、A候補数、B候補数、C/除外候補数、フォロワー数不明件数、使用した探索Tierを必ず記録する。
+
+## Agent Operations Dashboard連携
+
+営業候補JSONを作成またはレビューするタスクでは、`scripts/agent-status/update.mjs` を使って作業開始時に `running` または `checking` を記録する。候補数に応じて `success`、`partial`、`needs_review`、`blocked` を設定し、候補0件はsuccessにしない。
+
+notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報はstatus JSONに入れない。
 - Instagram運用課題、営業切り口、手動DM文案、手動コメント案を記録する
 - 問い合わせフォーム、メール、Instagram DM、LINE、電話などの連絡導線が確認できる候補を優先する
 - チェーン、FC、多店舗ブランド、本部運営色が強い店舗は除外または後回しにする

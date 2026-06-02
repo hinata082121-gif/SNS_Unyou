@@ -1442,6 +1442,8 @@ docs/reports/pr/content/YYYY-MM-DD-post-ready-content.md
 
 毎日12:00の日次営業候補生成で、候補0件のレポートが出ても成功扱いにしない。12:30 / 14:00補完チェックでは、ファイル存在ではなく候補件数を確認する。
 
+補完チェックの状態は、ローカル用の `Agent Operations Dashboard` にも記録できる。詳細は `docs/ops/agent-operations-dashboard.md` を参照する。
+
 ### 成功条件
 
 - 目標: A/B候補10件
@@ -1464,6 +1466,16 @@ docs/reports/pr/content/YYYY-MM-DD-post-ready-content.md
 - 重複候補がないか
 - 使用した探索Tier
 - `emergency_refill_mode` の要否
+
+### Agent Operations Dashboard連携
+
+- cron開始時: `running`
+- 候補10件以上: `success`
+- 候補8〜9件: `partial`
+- 候補1〜7件: `needs_review`
+- 候補0件: `blocked`
+- Sheets投入なし、営業送信なしをnotesに残す
+- dashboard HTMLは `tmp/agent-dashboard.html` に生成し、公開サイトには出さない
 
 ### 既存タスク修正文
 

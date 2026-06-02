@@ -117,6 +117,16 @@
 
 - `docs/reports/infra/incidents/YYYY-MM-DD-sales-candidate-zero-output-incident.md`
 
+## Agent Operations Dashboard連携
+
+営業候補生成、12:30/14:00補完チェック、0件インシデント対応の進捗は、`data/agent-status/tasks/*.json` に記録し、`tmp/agent-dashboard.html` でローカル確認できる。詳細は `docs/ops/agent-operations-dashboard.md` を参照する。
+
+- 候補10件以上: `success`
+- 候補8〜9件: `partial`
+- 候補1〜7件: `needs_review`
+- 候補0件: `blocked`
+- Google Sheets投入なし、営業送信なしをnotesに残す
+
 ## 人間検収で確認すべきこと
 
 - フォロワー数不明B候補が5,000人未満に近いか

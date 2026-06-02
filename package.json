@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "send:prospects:test": "node scripts/sheets/send-prospects.mjs data/prospects/test-prospect.json",
-    "check:sales-env": "node scripts/hermes/check-sales-env.mjs"
+    "check:sales-env": "node scripts/hermes/check-sales-env.mjs",
+    "agent:status:seed": "node scripts/agent-status/seed.mjs",
+    "agent:status:validate": "node scripts/agent-status/validate.mjs",
+    "agent:status:render": "node scripts/agent-status/render-dashboard.mjs",
+    "agent:status:open": "node scripts/agent-status/render-dashboard.mjs && echo \"Open tmp/agent-dashboard.html in your browser\""
   },
   "dependencies": {
     "next": "16.2.6",

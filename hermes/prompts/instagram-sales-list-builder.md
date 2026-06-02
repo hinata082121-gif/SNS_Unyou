@@ -267,3 +267,9 @@ A/B候補が0件の場合は `emergency_refill_mode` を有効にする。
 ## レポート必須項目
 
 候補数、A候補数、B候補数、C/除外候補数、フォロワー5,000人未満確認済み件数、フォロワー数不明件数、Instagram URL確認率、重複除外件数、使用した探索Tier、候補不足の有無、候補不足時に試した拡張条件、CSV有無、Sheets投入していないこと、営業送信していないこと、人間検収で確認すべきことを必ず書く。
+
+## Agent Operations Dashboard更新
+
+作業開始時に `scripts/agent-status/update.mjs` で `running` を記録する。候補10件以上は `success`、8〜9件は `partial`、1〜7件は `needs_review`、0件は `blocked` にする。
+
+metricsには `targetCount`、`actualCount`、`aCandidates`、`bCandidates`、`excludedCandidates` を可能な範囲で記録する。notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報はstatus JSONに入れない。

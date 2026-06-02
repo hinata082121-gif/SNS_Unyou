@@ -9,6 +9,18 @@
 | `hermes/prompts/instagram-prospect-scoring-review.md` | Instagram候補JSONをスコアリング確認し、0件/候補不足を差し戻す | 候補JSON、候補レポート | `docs/reports/sales/research/YYYY-MM-DD-instagram-prospect-scoring-review.md` | レビューのみ | A/B候補数、C混入、フォロワー数不明B候補 | 外部送信、候補自動投入 |
 | `hermes/prompts/prospect-json-rules.md` | 営業候補JSONのA/B/C判定とフォロワー数不明B候補の扱いを定義 | 候補JSON案 | ルール参照 | ルール参照のみ | JSONがA/Bのみか | C候補の営業JSON混入 |
 
+## Agent Operations Dashboard関連
+
+既存の営業候補生成/レビュー系プロンプトは、作業開始時と終了時に `scripts/agent-status/update.mjs` でstatus JSONを更新する運用に接続する。
+
+- `scheduled-daily-sales-candidates.md`
+- `scheduled-research-refill-mon-wed.md`
+- `instagram-sales-list-builder.md`
+- `instagram-prospect-scoring-review.md`
+- `prospect-json-rules.md`
+
+候補0件は `success` にしない。Google Sheets投入なし、営業送信なしをnotesに残し、秘密情報はstatus JSONに入れない。
+
 ## 営業・リサーチ
 
 | ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認/禁止事項 |

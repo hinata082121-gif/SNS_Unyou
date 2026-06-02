@@ -20,6 +20,23 @@
 - 使うタイミング: 候補0件、1〜7件、8〜9件、12:30/14:00補完チェック未達時
 - 注意点: ファイル存在だけで完了扱いにしない。候補数、A/B候補数、探索Tier、`emergency_refill_mode` の有無を確認する。
 
+## Agent Operations Dashboard
+
+- 目的: Codex/Hermes Agentのタスク状態をローカルHTMLで可視化する
+- 主要ファイル:
+  - `docs/ops/agent-operations-dashboard.md`
+  - `scripts/agent-status/update.mjs`
+  - `scripts/agent-status/validate.mjs`
+  - `scripts/agent-status/render-dashboard.mjs`
+  - `scripts/agent-status/seed.mjs`
+- データ保存先:
+  - `data/agent-status/tasks/*.json`
+  - `data/agent-status/archive/`
+- レポート:
+  - `docs/reports/infra/maintenance/2026-06-02-agent-operations-dashboard-mvp.md`
+- 使うタイミング: Codex作業開始/終了、Hermes cron開始/終了、営業候補0件、補完チェック、lint/build、commit/push確認
+- 注意点: `tmp/agent-dashboard.html` はローカル生成物であり、公開サイトやVercel本番に出さない
+
 | 部門 | 目的 | 主要ディレクトリ | 主要ファイル | 使うタイミング | 関連Hermesプロンプト | レポート保存先 |
 |---|---|---|---|---|---|---|
 | 営業部門 | 候補作成、検収、手動送信準備 | `docs/sales/`, `data/prospects/` | `docs/sales/daily-sales-candidates-output.md`, `docs/sales-targeting-rules.md` | 営業候補を作る/送る前 | `scheduled-daily-sales-candidates.md`, `scheduled-research-refill-mon-wed.md` | `docs/reports/sales/` |

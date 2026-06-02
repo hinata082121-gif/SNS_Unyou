@@ -368,3 +368,14 @@ docs/reports/sales/daily/YYYY-MM-DD-daily-sales-candidates.md
 ### レポート必須項目
 
 候補数、A候補数、B候補数、C/除外候補数、フォロワー5,000人未満確認済み件数、フォロワー数不明件数、Instagram URL確認率、重複除外件数、使用した探索Tier、候補不足の有無、候補不足時に試した拡張条件、CSV有無、Sheets投入していないこと、営業送信していないこと、人間検収で確認すべきことを記録する。
+
+## Agent Operations Dashboard更新
+
+作業開始時に `scripts/agent-status/update.mjs` で該当タスクを `running` にする。候補数に応じて終了時のstatusを更新する。
+
+- 候補10件以上: `success`
+- 候補8〜9件: `partial`
+- 候補1〜7件: `needs_review`
+- 候補0件: `blocked`
+
+notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報、認証情報、Webhook URL実値、Cookie、SNSログイン情報はstatus JSONに入れない。

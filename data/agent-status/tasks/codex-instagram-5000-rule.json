@@ -1,0 +1,27 @@
+{
+  "id": "codex-instagram-5000-rule",
+  "agent": "Codex",
+  "avatar": "codex-engineer",
+  "title": "5,000人未満ルール変更",
+  "category": "sales",
+  "status": "success",
+  "phase": "commit完了",
+  "progress": 100,
+  "priority": "high",
+  "startedAt": "2026-06-01T10:00:00+09:00",
+  "updatedAt": "2026-06-01T11:00:00+09:00",
+  "summary": "Instagram営業候補のフォロワー5,000人未満ルールを反映。commit d3c1397。",
+  "artifacts": [
+    "docs/sales-targeting-rules.md",
+    "hermes/prompts/instagram-sales-list-builder.md"
+  ],
+  "metrics": {
+    "changedFiles": 0
+  },
+  "nextAction": "日次候補生成で運用確認",
+  "safeToAct": true,
+  "notes": [
+    "Google Sheets投入なし",
+    "営業送信なし"
+  ]
+}

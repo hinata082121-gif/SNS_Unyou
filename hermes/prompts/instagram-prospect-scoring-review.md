@@ -60,6 +60,12 @@ docs/reports/sales/research/YYYY-MM-DD-instagram-prospect-scoring-review.md
 - C/除外候補が営業候補JSONに混入している場合は差し戻す
 
 レビュー結果には、候補数、A候補数、B候補数、C/除外候補数、フォロワー5,000人未満確認済み件数、フォロワー数不明件数、Instagram URL確認率、重複除外件数、使用した探索Tier、候補不足の有無を必ず書く。
+
+## Agent Operations Dashboard更新
+
+レビュー開始時に `scripts/agent-status/update.mjs` で `checking` を記録する。レビュー結果に応じて、問題なしは `success`、補完余地ありは `partial`、人間検収が必要なら `needs_review`、候補0件やC混入など重大問題は `blocked` にする。
+
+notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報はstatus JSONに入れない。
 - 人間確認が必要な候補
 - 修正すべきJSON項目
 - Google Sheets投入前の確認事項

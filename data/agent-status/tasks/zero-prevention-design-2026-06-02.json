@@ -1,0 +1,27 @@
+{
+  "id": "zero-prevention-design-2026-06-02",
+  "agent": "Codex",
+  "avatar": "ops-monitor",
+  "title": "0件防止設計",
+  "category": "ops",
+  "status": "needs_review",
+  "phase": "設計反映",
+  "progress": 80,
+  "priority": "high",
+  "startedAt": "2026-06-02T13:00:00+09:00",
+  "updatedAt": "2026-06-02T13:40:52+09:00",
+  "summary": "候補0件を成功扱いしない設計を反映。人間確認待ち。",
+  "artifacts": [
+    "docs/reports/infra/maintenance/2026-06-02-sales-prospect-zero-prevention-design.md"
+  ],
+  "metrics": {
+    "targetCount": 10,
+    "minimumUsableCount": 8
+  },
+  "nextAction": "Hermes既存タスクへ修正指示を貼る",
+  "safeToAct": false,
+  "notes": [
+    "Sheets投入なし",
+    "Hermesタスク変更なし"
+  ]
+}

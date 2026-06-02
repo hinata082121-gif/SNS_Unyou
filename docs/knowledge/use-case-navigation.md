@@ -1,5 +1,23 @@
 # 目的別ナビゲーション
 
+## Codex/Hermesのタスク進捗を見たい
+
+- 最初に見るファイル: `docs/ops/agent-operations-dashboard.md`
+- 次に見るファイル: `data/agent-status/tasks/*.json`
+- 使うコマンド: `npm run agent:status:render`
+- 出力先: `tmp/agent-dashboard.html`
+- 人間が判断すること: blocked/failed/needs_reviewの次アクション
+- 注意点: ローカルHTMLを公開サイトやVercel本番に出さない
+
+## Agent Operations DashboardのJSONを更新したい
+
+- 最初に見るファイル: `docs/ops/agent-operations-dashboard.md`
+- 使うコマンド: `node scripts/agent-status/update.mjs ...`
+- 検証コマンド: `npm run agent:status:validate`
+- 出力先: `data/agent-status/tasks/*.json`
+- 人間が判断すること: status、safeToAct、nextAction
+- 注意点: 秘密情報、Webhook URL実値、Cookie、SNSログイン情報を入れない
+
 ## 日次営業候補が0件になった
 
 - 最初に見るファイル: `docs/reports/sales/daily/YYYY-MM-DD-instagram-sales-candidates.md`
