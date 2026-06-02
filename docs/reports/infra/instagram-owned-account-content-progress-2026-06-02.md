@@ -199,3 +199,26 @@ Hermes Agent / Agent Officeから見て、方針、投稿案、制作物、実�
 - 自動フォロー/いいねは行っていない。
 - 営業データの詳細表示は行っていない。
 - 秘密情報の表示は行っていない。
+
+## 2026-06-02 初回投稿セット制作フェーズ
+
+2026-06-02に、以下の初回投稿準備物を追加作成した。
+
+- `docs/pr/instagram-initial-post-set-2026-06-02.md`
+- `docs/pr/instagram-reels-scripts-2026-06-02.md`
+- `docs/pr/instagram-caption-hashtag-bank-2026-06-02.md`
+- `docs/pr/instagram-two-week-calendar-2026-06-02.md`
+- `data/agent-status/tasks/instagram-initial-post-set-2026-06-02.json`
+
+これにより、自社Instagramコンテンツ制作は **B: 企画途中** から **C候補: 制作準備中** へ進められる状態になった。
+ただし、実投稿、予約投稿、DM、コメント、Google Sheets再送信、営業候補生成は行っていない。
+
+公開前には、人間が以下を確認する。
+
+- プロフィール文
+- 問い合わせ/無料SNS診断の導線
+- 固定投稿3本の投稿順
+- リール2本のテロップと音源
+- CTAの強さ
+- Canva等の画像素材と権利
+- 成果保証や誇大表現に見えないか

@@ -1,0 +1,40 @@
+{
+  "id": "instagram-initial-post-set-2026-06-02",
+  "agent": "Hermes",
+  "avatar": "pr-writer",
+  "title": "Instagram初回投稿セット制作",
+  "category": "content",
+  "status": "needs_review",
+  "phase": "初回投稿セット制作完了・人間確認待ち",
+  "progress": 75,
+  "priority": "medium",
+  "createdAt": "2026-06-02T18:40:00+09:00",
+  "updatedAt": "2026-06-02T18:40:00+09:00",
+  "summary": "自社Instagram運用の初回固定投稿3本、リール2本、キャプション・ハッシュタグ、2週間投稿カレンダーを制作。投稿実行前に人間確認が必要。",
+  "artifacts": [
+    "docs/pr/instagram-initial-post-set-2026-06-02.md",
+    "docs/pr/instagram-reels-scripts-2026-06-02.md",
+    "docs/pr/instagram-caption-hashtag-bank-2026-06-02.md",
+    "docs/pr/instagram-two-week-calendar-2026-06-02.md"
+  ],
+  "metrics": {
+    "pinnedPostsDrafted": 3,
+    "reelsScriptsDrafted": 2,
+    "captionTemplates": 5,
+    "ctaExamples": 10,
+    "calendarWeeks": 2,
+    "publishedPosts": 0,
+    "scheduledPosts": 0
+  },
+  "nextAction": "人間がプロフィール文、固定投稿3本、リール2本、CTA、投稿開始日を確認し、投稿可否を判断する",
+  "safeToAct": true,
+  "notes": [
+    "Instagram投稿なし",
+    "Instagram予約投稿なし",
+    "Instagram DM/コメントなし",
+    "営業候補生成なし",
+    "Google Sheets再送信なし",
+    "営業データは使用しない",
+    "投稿前に人間確認が必要"
+  ]
+}
