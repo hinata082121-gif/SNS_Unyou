@@ -1,0 +1,38 @@
+{
+  "id": "instagram-pre-publish-review-2026-06-02",
+  "agent": "Hermes",
+  "avatar": "pr-writer",
+  "title": "Instagram初回投稿セット 投稿前レビュー",
+  "category": "content",
+  "status": "needs_review",
+  "phase": "投稿前レビュー完了・人間判断待ち",
+  "progress": 85,
+  "priority": "medium",
+  "createdAt": "2026-06-03T00:00:00+09:00",
+  "updatedAt": "2026-06-03T01:15:37+09:00",
+  "summary": "初回固定投稿3本、リール2本、キャプション、ハッシュタグ、2週間投稿カレンダーを投稿前レビューし、Canva制作指示書と投稿可否判断ボードを作成。実投稿前に人間確認が必要。",
+  "artifacts": [
+    "docs/pr/instagram-initial-post-review-2026-06-02.md",
+    "docs/pr/instagram-canva-production-brief-2026-06-02.md",
+    "docs/pr/instagram-posting-decision-board-2026-06-02.md"
+  ],
+  "metrics": {
+    "reviewedPinnedPosts": 3,
+    "reviewedReels": 2,
+    "reviewedCalendarWeeks": 2,
+    "canvaBriefs": 5,
+    "publishedPosts": 0,
+    "scheduledPosts": 0
+  },
+  "nextAction": "人間が投稿可否、Canva制作方針、CTA、初回投稿日を確認し、素材化に進むか判断する",
+  "safeToAct": true,
+  "notes": [
+    "Instagram投稿なし",
+    "Instagram予約投稿なし",
+    "Instagram DM/コメントなし",
+    "営業候補生成なし",
+    "Google Sheets再送信なし",
+    "営業データは使用しない",
+    "投稿前に人間確認が必要"
+  ]
+}

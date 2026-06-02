@@ -83,6 +83,9 @@ Agent Officeに表示する場合も、追加DM、予約投稿、自動投稿、
 初回投稿セットを制作した場合は、`data/agent-status/tasks/instagram-initial-post-set-2026-06-02.json` のように別タスクとして記録し、固定投稿、リール、キャプション、カレンダーの制作状況をAgent Officeで確認できるようにします。
 この状態でも、投稿実行は人間確認後の手動操作に限定します。
 
+投稿前レビューを行った場合は、`data/agent-status/tasks/instagram-pre-publish-review-2026-06-02.json` のように別タスクとして記録し、レビュー結果、Canva制作指示、投稿可否判断ボードをAgent Officeで確認します。
+この段階でも、投稿実行や予約投稿は行いません。
+
 ## 運用注意
 
 - `git add .` は使わない

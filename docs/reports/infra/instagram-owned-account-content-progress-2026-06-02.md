@@ -222,3 +222,16 @@ Hermes Agent / Agent Officeから見て、方針、投稿案、制作物、実�
 - CTAの強さ
 - Canva等の画像素材と権利
 - 成果保証や誇大表現に見えないか
+
+## 2026-06-03 投稿前レビュー完了
+
+2026-06-03に、初回投稿セットの投稿前レビュー、Canva制作指示書、投稿可否判断ボードを作成した。
+
+- `docs/pr/instagram-initial-post-review-2026-06-02.md`
+- `docs/pr/instagram-canva-production-brief-2026-06-02.md`
+- `docs/pr/instagram-posting-decision-board-2026-06-02.md`
+- `data/agent-status/tasks/instagram-pre-publish-review-2026-06-02.json`
+
+これにより、状態は **C: 制作準備中・人間確認待ち** と判断できる。
+実投稿前に、人間が投稿可否、Canva制作方針、CTA、初回投稿日を確認する必要がある。
+Instagram投稿、予約投稿、DM、コメント、営業候補生成、Google Sheets再送信は行っていない。
