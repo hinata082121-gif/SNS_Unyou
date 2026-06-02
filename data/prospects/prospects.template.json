@@ -17,7 +17,9 @@
       "C"
     ],
     "followerPolicy": "A判定はunder_2000またはunder_5000で、かつ改善余地が明確な場合。unknownは原則B。over_5000は原則Cまたは除外。フォロワー数は公開情報で確認できた場合のみ記録し、推測しない。",
-    "dedupePolicy": "候補生成前にGoogle Sheets CSVまたは重複除外台帳、既存JSON、既存レポートを照合し、既存候補を再出力しない。緊急時以外はCSV未設置で候補生成しない。"
+    "dedupePolicy": "候補生成前にGoogle Sheets CSVまたは重複除外台帳、既存JSON、既存レポートを照合し、既存候補を再出力しない。0件時のemergency_refill_modeではCSV未設置でも中止せず、CSV未設置のため完全照合未実施と明記する。",
+    "successPolicy": "日次候補生成はA/B候補10件を目標、8件以上を最低実用ラインにする。8件未満は候補不足、0件は失敗/未達として扱う。ファイル存在だけで完了扱いにしない。",
+    "searchTierPolicy": "10件未満の場合は探索Tierを広げる。Tier 1は業種拡張、Tier 2はエリア拡張、Tier 3はフォロワー数不明B候補の許容、Tier 4は近接条件の地域密着候補の許容。"
   },
   "rows": [
     {

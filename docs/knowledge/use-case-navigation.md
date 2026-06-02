@@ -1,5 +1,32 @@
 # 目的別ナビゲーション
 
+## 日次営業候補が0件になった
+
+- 最初に見るファイル: `docs/reports/sales/daily/YYYY-MM-DD-instagram-sales-candidates.md`
+- 次に見るファイル: `docs/sales/daily-sales-candidates-output.md`, `docs/sales-targeting-rules.md`
+- 使うHermesプロンプト: `hermes/prompts/scheduled-daily-sales-candidates.md`, `hermes/prompts/instagram-sales-list-builder.md`
+- 出力先: `docs/reports/sales/daily/YYYY-MM-DD-instagram-emergency-sales-candidates.md`, `data/prospects/YYYY-MM-DD-instagram-prospects-emergency-10.json`
+- 人間が判断すること: フォロワー数不明B候補の検収、重複除外、営業可否
+- 注意点: ファイル存在だけで完了扱いにせず、候補数、A/B候補数、探索Tier、`emergency_refill_mode` の有無を見る
+
+## 12:30/14:00補完チェックをしたい
+
+- 最初に見るファイル: 当日の日次候補レポート
+- 次に見るファイル: `docs/hermes-scheduled-automation.md`
+- 使うHermesプロンプト: `hermes/prompts/instagram-prospect-scoring-review.md`
+- 出力先: `docs/reports/sales/research/YYYY-MM-DD-instagram-prospect-scoring-review.md`
+- 人間が判断すること: 0件は失敗/未達、1〜7件は候補不足、8〜9件は補完余地あり、10件以上は完了として扱うか
+- 注意点: C/除外候補がJSONに混入している場合は差し戻す
+
+## 探索Tierを広げて候補を補完したい
+
+- 最初に見るファイル: `docs/sales-targeting-rules.md`
+- 次に見るファイル: `hermes/prompts/instagram-sales-list-builder.md`
+- 使うHermesプロンプト: `hermes/prompts/instagram-sales-list-builder.md`
+- 出力先: `data/prospects/YYYY-MM-DD-instagram-prospects.json`
+- 人間が判断すること: Tier 1〜4のどこまで許容するか、フォロワー数不明B候補を採用するか
+- 注意点: Sheets投入、営業送信、DM、コメント、フォーム送信はしない
+
 | やりたいこと | 最初に見るファイル | 次に見るファイル | 使うHermesプロンプト | 出力先 | 人間が判断すること |
 |---|---|---|---|---|---|
 | 今日送る営業候補を見たい | `docs/reports/sales/daily/` | `docs/sales/daily-sales-candidates-output.md` | `scheduled-daily-sales-candidates.md` | `docs/reports/sales/daily/` | 送信可否 |

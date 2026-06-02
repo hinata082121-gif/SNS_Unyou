@@ -1,5 +1,25 @@
 # 主要ドキュメント索引
 
+## 日次営業候補0件防止
+
+- 目的: 日次営業候補生成で候補0件を成功扱いせず、8件未満を補完対象として扱う
+- 主要ファイル:
+  - `docs/sales-targeting-rules.md`
+  - `docs/sales/daily-sales-candidates-output.md`
+  - `docs/hermes-scheduled-automation.md`
+  - `docs/reports/infra/maintenance/2026-06-02-sales-prospect-zero-prevention-design.md`
+- 関連Hermesプロンプト:
+  - `hermes/prompts/scheduled-daily-sales-candidates.md`
+  - `hermes/prompts/instagram-sales-list-builder.md`
+  - `hermes/prompts/instagram-prospect-scoring-review.md`
+  - `hermes/prompts/prospect-json-rules.md`
+- 関連レポート保存先:
+  - `docs/reports/sales/daily/YYYY-MM-DD-instagram-sales-candidates.md`
+  - `docs/reports/sales/daily/YYYY-MM-DD-instagram-emergency-sales-candidates.md`
+  - `docs/reports/infra/incidents/YYYY-MM-DD-sales-candidate-zero-output-incident.md`
+- 使うタイミング: 候補0件、1〜7件、8〜9件、12:30/14:00補完チェック未達時
+- 注意点: ファイル存在だけで完了扱いにしない。候補数、A/B候補数、探索Tier、`emergency_refill_mode` の有無を確認する。
+
 | 部門 | 目的 | 主要ディレクトリ | 主要ファイル | 使うタイミング | 関連Hermesプロンプト | レポート保存先 |
 |---|---|---|---|---|---|---|
 | 営業部門 | 候補作成、検収、手動送信準備 | `docs/sales/`, `data/prospects/` | `docs/sales/daily-sales-candidates-output.md`, `docs/sales-targeting-rules.md` | 営業候補を作る/送る前 | `scheduled-daily-sales-candidates.md`, `scheduled-research-refill-mon-wed.md` | `docs/reports/sales/` |

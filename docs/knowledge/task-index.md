@@ -1,5 +1,19 @@
 # スケジュールタスク索引
 
+## 日次営業候補0件防止・補完チェック
+
+### 登録済みまたは検討中の補完タスク
+
+- タスク名: ICHI Social 日次営業候補補完チェック
+- 頻度: 12:30 / 14:00を想定
+- 目的: 当日の日次営業候補レポートがファイル存在だけで成功扱いになっていないか確認し、候補数0件または8件未満を補完対象にする
+- 参照プロンプト: `hermes/prompts/scheduled-daily-sales-candidates.md`, `hermes/prompts/instagram-prospect-scoring-review.md`, `hermes/prompts/instagram-sales-list-builder.md`
+- 出力先: `docs/reports/sales/daily/YYYY-MM-DD-instagram-emergency-sales-candidates.md`, `docs/reports/infra/incidents/YYYY-MM-DD-sales-candidate-zero-output-incident.md`
+- 登録状況: 人間確認後に判断
+- 成功条件: A/B候補10件目標、8件以上が最低実用ライン、0件は失敗/未達
+- 自動化しないこと: Google Sheets投入、営業送信、Instagram DM、コメント、フォーム送信、Hermesタスクの勝手な登録/削除
+- 登録判断の条件: 12:00日次候補生成の安定性と、補完チェックが候補件数を正しく読めることを確認してから判断する
+
 ## 登録済みタスク
 
 | タスク | 頻度 | 目的 | 参照プロンプト | 出力先 | 登録状況 | 自動化しないこと |

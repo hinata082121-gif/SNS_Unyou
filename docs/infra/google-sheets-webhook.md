@@ -58,3 +58,14 @@ P Instagram URL / Q Instagramユーザー名 / R Instagramフォロワー数 / S
 ## エラー時
 
 UnauthorizedはSECRET_TOKEN不一致の可能性。HTMLエラーはApps ScriptやSheets validationの可能性。実値をログに貼らない。
+
+## 日次候補0件防止との関係
+
+日次営業候補生成や `emergency_refill_mode` は、Google Sheets投入とは分離して運用する。
+
+- 候補0件は営業候補生成の `失敗/未達` であり、Sheets Webhookの成功/失敗とは別に扱う
+- 日次候補JSONが8件未満の場合は補完対象にする
+- 8件以上でも人間検収前にSheets投入しない
+- 緊急補完候補は `未検収` として扱うが、自動投入しない
+- `scripts/sheets/send-prospects.mjs` は人間の明示許可がある場合のみ実行する
+- Sheets投入前にA/B候補数、C/除外混入、重複、Instagram URL、フォロワー数不明B候補の検収ポイントを確認する

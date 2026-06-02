@@ -1,5 +1,14 @@
 # Hermesプロンプト索引
 
+## 日次営業候補0件防止
+
+| ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認が必要なこと | 禁止事項 |
+|---|---|---|---|---|---|---|
+| `hermes/prompts/scheduled-daily-sales-candidates.md` | 日次営業候補をA/B候補10件目標で作成し、0件を未達として扱う | 既存JSON、日次/リサーチレポート、Web補助リサーチ | `docs/reports/sales/daily/YYYY-MM-DD-instagram-sales-candidates.md` | レポート作成のみ | 候補数、重複、営業可否、フォロワー数不明B候補 | Sheets投入、営業送信、DM、コメント、フォーム送信 |
+| `hermes/prompts/instagram-sales-list-builder.md` | Instagram起点で候補を抽出し、探索Tierと `emergency_refill_mode` を使う | エリア、業種、既存候補、検索結果 | `data/prospects/YYYY-MM-DD-instagram-prospects.json`, `docs/reports/sales/daily/*.md` | レポート/JSON作成のみ | A/B/C分類、C混入、8件未満の補完 | 自動送信、自動投稿、Sheets投入 |
+| `hermes/prompts/instagram-prospect-scoring-review.md` | Instagram候補JSONをスコアリング確認し、0件/候補不足を差し戻す | 候補JSON、候補レポート | `docs/reports/sales/research/YYYY-MM-DD-instagram-prospect-scoring-review.md` | レビューのみ | A/B候補数、C混入、フォロワー数不明B候補 | 外部送信、候補自動投入 |
+| `hermes/prompts/prospect-json-rules.md` | 営業候補JSONのA/B/C判定とフォロワー数不明B候補の扱いを定義 | 候補JSON案 | ルール参照 | ルール参照のみ | JSONがA/Bのみか | C候補の営業JSON混入 |
+
 ## 営業・リサーチ
 
 | ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認/禁止事項 |
