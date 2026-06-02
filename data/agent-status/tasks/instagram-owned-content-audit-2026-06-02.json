@@ -1,0 +1,34 @@
+{
+  "id": "instagram-owned-content-audit-2026-06-02",
+  "agent": "Hermes",
+  "avatar": "sales-scout",
+  "title": "Instagram自社アカウント運用コンテンツ進捗確認",
+  "category": "content",
+  "status": "needs_review",
+  "phase": "進捗棚卸し完了",
+  "progress": 55,
+  "priority": "medium",
+  "createdAt": "2026-06-02T00:00:00.000+09:00",
+  "updatedAt": "2026-06-02T18:15:31+09:00",
+  "summary": "Instagram自社アカウント運用に関する既存ファイルと進捗を棚卸し。方針、投稿テーマ、初期30日案は整備済みだが、完成原稿、キャプション、ハッシュタグ、素材メモ、実月カレンダー、投稿済み記録が不足しているため、人間確認が必要。",
+  "artifacts": [
+    "docs/reports/infra/instagram-owned-account-content-progress-2026-06-02.md"
+  ],
+  "metrics": {
+    "foundPolicyDocs": 7,
+    "foundPostIdeas": 53,
+    "foundScripts": 8,
+    "foundCalendar": 1,
+    "foundPublishedRecords": 0
+  },
+  "nextAction": "自社Instagramの投稿方針・投稿頻度・初回固定投稿3本を人間が確認し、次フェーズで完成原稿、キャプション、ハッシュタグ、素材メモ、実月カレンダー制作に進む",
+  "safeToAct": true,
+  "notes": [
+    "営業候補生成なし",
+    "Instagram DM/コメント/投稿なし",
+    "Google Sheets再送信なし",
+    "営業データはGit追加なし",
+    "自社アカウント運用と営業DM運用を分離して管理する",
+    "投稿実行は人間確認後の手動操作のみ"
+  ]
+}
