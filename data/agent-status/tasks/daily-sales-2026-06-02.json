@@ -2,17 +2,20 @@
   "id": "daily-sales-2026-06-02",
   "agent": "Hermes",
   "avatar": "sales-scout",
-  "title": "2026-06-02 12:00営業候補生成",
+  "title": "2026-06-02 営業候補10件作成・Instagram DM送信",
   "category": "sales",
-  "status": "blocked",
-  "phase": "候補不足",
-  "progress": 35,
+  "status": "success",
+  "phase": "Instagram DM送信完了",
+  "progress": 100,
   "priority": "high",
+  "createdAt": "2026-06-02T05:47:57.268Z",
   "startedAt": "2026-06-02T12:04:47+09:00",
-  "updatedAt": "2026-06-02T13:23:00+09:00",
-  "summary": "12:00ジョブは実行済みだが候補0件。緊急補完が必要。",
+  "updatedAt": "2026-06-02T07:15:33.147Z",
+  "summary": "2026-06-02分の営業候補10件を作成し、Instagram DM送信まで完了。Hermesの最終チャット報告はRateLimitで失敗したが、営業実務は完了。",
   "artifacts": [
-    "docs/reports/sales/daily/2026-06-02-daily-sales-candidates.md"
+    "docs/reports/sales/daily/2026-06-02-daily-sales-candidates.md",
+    "data/prospects/2026-06-02-instagram-prospects-emergency-10.json",
+    "docs/reports/sales/daily/2026-06-02-instagram-emergency-sales-candidates.md"
   ],
   "metrics": {
     "targetCount": 10,
@@ -21,10 +24,11 @@
     "bCandidates": 0,
     "blockedReasons": 1
   },
-  "nextAction": "緊急補完モードで候補10件を再生成",
+  "nextAction": "2026-06-05に返信確認・スプシ反応欄を更新",
   "safeToAct": false,
   "notes": [
-    "Google Sheets投入なし",
-    "営業送信なし"
+    "Instagram DM送信済み10件を確認済み",
+    "Google Sheetsへの反映は sheets-update-2026-06-02-instagram-dm で記録済み",
+    "追加DMや営業候補再生成は行わず、2026-06-05に返信確認を行う"
   ]
 }

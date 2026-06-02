@@ -1,0 +1,22 @@
+{
+  "id": "sheets-update-2026-06-02-instagram-dm",
+  "agent": "Hermes",
+  "avatar": "sheets-clerk",
+  "title": "2026-06-02 Instagram営業10件 Sheets更新",
+  "category": "ops",
+  "status": "success",
+  "phase": "Sheets更新完了",
+  "progress": 100,
+  "priority": "normal",
+  "createdAt": "2026-06-02T07:02:44.017Z",
+  "startedAt": "2026-06-02T07:02:44.017Z",
+  "updatedAt": "2026-06-02T07:02:44.017Z",
+  "summary": "2026-06-02にInstagram DM送信済みの10件をGoogle Sheetsへ送信済ステータスで更新。inserted 9件、updated 1件、skipped 0件で完了。",
+  "artifacts": [
+    "data/prospects/2026-06-02-instagram-prospects-emergency-10-sheets-sent-normalized.json"
+  ],
+  "metrics": {},
+  "nextAction": "2026-06-05に返信確認",
+  "safeToAct": false,
+  "notes": []
+}
