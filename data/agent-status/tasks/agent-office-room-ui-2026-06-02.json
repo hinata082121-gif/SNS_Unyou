@@ -1,0 +1,25 @@
+{
+  "id": "agent-office-room-ui-2026-06-02",
+  "agent": "System",
+  "avatar": "ops-monitor",
+  "title": "Agent Office 事務所風UI改修",
+  "category": "operations",
+  "status": "success",
+  "phase": "ローカルHTML UI改修完了",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-06-02T08:10:18.304Z",
+  "startedAt": "2026-06-02T08:10:18.304Z",
+  "updatedAt": "2026-06-02T08:12:25.511Z",
+  "summary": "アイコン中心のAgent Officeを、事務所風の部屋と人型キャラクターが働くUIへ改修。",
+  "artifacts": [],
+  "metrics": {},
+  "nextAction": "画面確認後、将来的にVS Code Webview化を検討",
+  "safeToAct": false,
+  "notes": [
+    "営業候補生成なし",
+    "Sheets再送信なし",
+    "DM送信なし",
+    "営業リスト系ファイルはGit追加なし"
+  ]
+}

@@ -10,6 +10,21 @@ Agent Officeは、Codex/Hermes Agentの作業状態をローカルで確認す�
 現時点では、Node.js標準機能だけで `data/agent-status/tasks/*.json` を読み込み、静的HTMLを生成します。
 外部CSS、外部JS、外部画像、CDNは使いません。
 
+### v0.2: 人型キャラクターが働く事務所風UI
+
+v0.2では、アイコンカード中心の表示から、レトロゲーム風の事務所/司令室UIへ変更しました。
+画面中央に壁、床タイル、机、PCモニター、書類棚、観葉植物、ホワイトボードを置き、Hermes、Sheets Clerk、Git Keeper、ミオ、あなたがCSS製の人型キャラクターとして働いている状態を表示します。
+
+ステータスに応じた見た目:
+
+- `success`: 緑ランプ、落ち着いた完了状態
+- `running` / `checking`: タイピング中の腕アニメーション、モニター点滅
+- `blocked` / `failed`: 赤/橙ランプ、警告マーク
+- `needs_review` / `waiting_human`: あなたの確認ボードとミオの案内を強調
+- `queued` / `pending` / `skipped`: 待機状態
+
+アニメーションはCSSのみで実装し、`prefers-reduced-motion` に対応しています。
+
 生成コマンド:
 
 ```bash
@@ -37,6 +52,7 @@ start .\tmp\agent-office.html
 
 最終的にはVS Code Webview拡張として、Codex/Hermes作業中に同じ画面で進捗を確認できるようにします。
 この段階でも営業送信、SNS投稿、Google Sheets投入、認証情報表示は行いません。
+今回のv0.2ではVS Code拡張化は行わず、ローカルHTML版の完成度向上に留めています。
 
 ## 登場キャラクター
 
@@ -45,6 +61,9 @@ start .\tmp\agent-office.html
 - Git Keeper / Git管理: Git/GitHub管理係
 - ミオ / 秘書: 今日のまとめ、次アクション、注意アラートを話し言葉で整理
 - あなた / 判断担当: 返信確認、DM可否判断、Sheets目視確認、Git操作判断
+
+各キャラクターは、髪、顔、胴体、腕、脚、nameplateをCSSで構成しています。
+Hermesは青系の営業担当、Sheets Clerkは緑系の記録担当、Git Keeperは紫/黒系のGit管理、ミオは明るい受付/秘書、あなたは確認ボード前の判断担当として表示します。
 
 ## 秘書ミオの役割
 
@@ -58,6 +77,7 @@ start .\tmp\agent-office.html
 - `docs/reports/sales/` は実在店舗名、Instagram情報、DM文面を含む可能性があるためGitに追加しない
 - `tmp/agent-office.html` と `tmp/agent-dashboard.html` は生成物のためGitに追加しない
 - 追加DM、営業候補再生成、Google Sheets再送信は行わない
+- 2026-06-05までは返信確認待ちとして扱い、追加営業は行わない
 - Webhook URL、SECRET_TOKEN、APIキー、Cookie、SNSログイン情報をHTMLやstatus JSONに入れない
 
 ## 既存ダッシュボードとの関係
