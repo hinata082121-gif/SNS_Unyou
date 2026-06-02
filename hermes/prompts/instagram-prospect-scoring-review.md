@@ -66,6 +66,17 @@ docs/reports/sales/research/YYYY-MM-DD-instagram-prospect-scoring-review.md
 レビュー開始時に `scripts/agent-status/update.mjs` で `checking` を記録する。レビュー結果に応じて、問題なしは `success`、補完余地ありは `partial`、人間検収が必要なら `needs_review`、候補0件やC混入など重大問題は `blocked` にする。
 
 notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報はstatus JSONに入れない。
+
+## Agent Status更新ルール
+
+このプロンプトを実行する際は、`docs/ops/agent-status-prompt-footer.md` のルールに従うこと。
+
+- 作業開始時に `scripts/agent-status/update.mjs` で `running` または `checking` を記録する
+- 主要フェーズ完了時に `phase` / `progress` を更新する
+- 候補0件は `success` にしない
+- 候補数に応じて `success` / `partial` / `needs_review` / `blocked` を設定する
+- 作業完了後に `npm run agent:status:validate` と `npm run agent:status:render` を実行する
+- 秘密情報はstatus JSONに入れない
 - 人間確認が必要な候補
 - 修正すべきJSON項目
 - Google Sheets投入前の確認事項

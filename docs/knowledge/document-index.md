@@ -25,6 +25,8 @@
 - 目的: Codex/Hermes Agentのタスク状態をローカルHTMLで可視化する
 - 主要ファイル:
   - `docs/ops/agent-operations-dashboard.md`
+  - `docs/ops/agent-status-prompt-footer.md`
+  - `docs/ops/codex-prompt-rules.md`
   - `scripts/agent-status/update.mjs`
   - `scripts/agent-status/validate.mjs`
   - `scripts/agent-status/render-dashboard.mjs`
@@ -36,6 +38,7 @@
   - `docs/reports/infra/maintenance/2026-06-02-agent-operations-dashboard-mvp.md`
 - 使うタイミング: Codex作業開始/終了、Hermes cron開始/終了、営業候補0件、補完チェック、lint/build、commit/push確認
 - 注意点: `tmp/agent-dashboard.html` はローカル生成物であり、公開サイトやVercel本番に出さない
+- プロンプト運用: Codex/Hermes向けプロンプトの末尾には `docs/ops/agent-status-prompt-footer.md` の内容を付け、作業後にvalidate/renderを実行する
 
 | 部門 | 目的 | 主要ディレクトリ | 主要ファイル | 使うタイミング | 関連Hermesプロンプト | レポート保存先 |
 |---|---|---|---|---|---|---|

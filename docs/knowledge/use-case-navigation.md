@@ -12,11 +12,21 @@
 ## Agent Operations DashboardのJSONを更新したい
 
 - 最初に見るファイル: `docs/ops/agent-operations-dashboard.md`
+- 次に見るファイル: `docs/ops/agent-status-prompt-footer.md`, `docs/ops/codex-prompt-rules.md`
 - 使うコマンド: `node scripts/agent-status/update.mjs ...`
 - 検証コマンド: `npm run agent:status:validate`
 - 出力先: `data/agent-status/tasks/*.json`
 - 人間が判断すること: status、safeToAct、nextAction
 - 注意点: 秘密情報、Webhook URL実値、Cookie、SNSログイン情報を入れない
+
+## Codex/Hermes向けプロンプトを作りたい
+
+- 最初に見るファイル: `docs/ops/agent-status-prompt-footer.md`
+- 次に見るファイル: `docs/ops/codex-prompt-rules.md`
+- 使うコマンド: `npm run agent:status:validate`, `npm run agent:status:render`
+- 出力先: `data/agent-status/tasks/*.json`, `tmp/agent-dashboard.html`
+- 人間が判断すること: タスクID、status、safeToAct、外部操作の可否
+- 注意点: プロンプト末尾にAgent Status Prompt Footerを付け、秘密情報をstatus JSONに入れない
 
 ## 日次営業候補が0件になった
 

@@ -179,6 +179,17 @@ JSON内に件数メタデータを入れる必要はないが、対応するMark
 営業候補JSONを作成またはレビューするタスクでは、`scripts/agent-status/update.mjs` を使って作業開始時に `running` または `checking` を記録する。候補数に応じて `success`、`partial`、`needs_review`、`blocked` を設定し、候補0件はsuccessにしない。
 
 notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報はstatus JSONに入れない。
+
+## Agent Status更新ルール
+
+このプロンプトを実行する際は、`docs/ops/agent-status-prompt-footer.md` のルールに従うこと。
+
+- 作業開始時に `scripts/agent-status/update.mjs` で `running` または `checking` を記録する
+- 主要フェーズ完了時に `phase` / `progress` を更新する
+- 候補0件は `success` にしない
+- 候補数に応じて `success` / `partial` / `needs_review` / `blocked` を設定する
+- 作業完了後に `npm run agent:status:validate` と `npm run agent:status:render` を実行する
+- 秘密情報はstatus JSONに入れない
 - Instagram運用課題、営業切り口、手動DM文案、手動コメント案を記録する
 - 問い合わせフォーム、メール、Instagram DM、LINE、電話などの連絡導線が確認できる候補を優先する
 - チェーン、FC、多店舗ブランド、本部運営色が強い店舗は除外または後回しにする

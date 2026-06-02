@@ -21,6 +21,8 @@
 
 候補0件は `success` にしない。Google Sheets投入なし、営業送信なしをnotesに残し、秘密情報はstatus JSONに入れない。
 
+今後のCodex/Hermes向けプロンプトには `docs/ops/agent-status-prompt-footer.md` を末尾に付ける。作業後は `npm run agent:status:validate` と `npm run agent:status:render` を実行し、`tmp/agent-dashboard.html` を更新する。
+
 ## 営業・リサーチ
 
 | ファイル | 目的 | 入力 | 出力先 | 自動化可否 | 人間確認/禁止事項 |

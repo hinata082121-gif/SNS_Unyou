@@ -1503,6 +1503,18 @@ ICHI Social 毎朝営業候補10件作成
 
 修正後、登録済みスケジュールタスクの内容を表示してください。
 
+## Agent Status Prompt Footer標準適用
+
+今後、Hermes Agentへ貼るスケジュール登録文、既存タスク修正文、手動実行プロンプトの末尾には、`docs/ops/agent-status-prompt-footer.md` の内容を付ける。
+
+- status JSON更新を標準運用にする
+- 作業開始時に `running` を記録する
+- 主要フェーズ完了時に `phase` / `progress` を更新する
+- 候補0件は `success` にしない
+- 作業後に `npm run agent:status:validate` と `npm run agent:status:render` を実行する
+- `tmp/agent-dashboard.html` はローカル確認専用とし、公開サイトへ出さない
+- 秘密情報はstatus JSONに入れない
+
 ## 禁止事項
 
 - GmailやSNS DMの完全自動送信は初期段階では行わない

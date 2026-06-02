@@ -150,3 +150,15 @@ npm run agent:status:render
 - Next.jsのローカル限定管理画面
 - AIアバター画像生成
 - 日次/週次の運用サマリー生成
+
+## プロンプト末尾フッター
+
+今後のCodex/Hermes向けプロンプトには、`docs/ops/agent-status-prompt-footer.md` の内容を末尾に付ける。これにより、作業開始、主要フェーズ完了、失敗、完了をAgent Operations Dashboardへ標準記録する。
+
+- 作業開始時に `running` を記録する
+- 主要フェーズ完了時に `phase` / `progress` を更新する
+- 失敗・ブロック時は `blocked` または `failed` を記録する
+- 人間確認が必要な場合は `needs_review` を記録する
+- 作業後に `npm run agent:status:validate` と `npm run agent:status:render` を実行する
+- `tmp/agent-dashboard.html` はローカル確認専用とし、公開サイトへ出さない
+- 秘密情報はstatus JSON、notes、summary、artifacts、HTMLへ入れない

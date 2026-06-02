@@ -379,3 +379,14 @@ docs/reports/sales/daily/YYYY-MM-DD-daily-sales-candidates.md
 - 候補0件: `blocked`
 
 notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報、認証情報、Webhook URL実値、Cookie、SNSログイン情報はstatus JSONに入れない。
+
+## Agent Status更新ルール
+
+このプロンプトを実行する際は、`docs/ops/agent-status-prompt-footer.md` のルールに従うこと。
+
+- 作業開始時に `scripts/agent-status/update.mjs` で `running` を記録する
+- 主要フェーズ完了時に `phase` / `progress` を更新する
+- 候補0件は `success` にしない
+- 候補数に応じて `success` / `partial` / `needs_review` / `blocked` を設定する
+- 作業完了後に `npm run agent:status:validate` と `npm run agent:status:render` を実行する
+- 秘密情報はstatus JSONに入れない

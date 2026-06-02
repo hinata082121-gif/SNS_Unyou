@@ -273,3 +273,14 @@ A/B候補が0件の場合は `emergency_refill_mode` を有効にする。
 作業開始時に `scripts/agent-status/update.mjs` で `running` を記録する。候補10件以上は `success`、8〜9件は `partial`、1〜7件は `needs_review`、0件は `blocked` にする。
 
 metricsには `targetCount`、`actualCount`、`aCandidates`、`bCandidates`、`excludedCandidates` を可能な範囲で記録する。notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報はstatus JSONに入れない。
+
+## Agent Status更新ルール
+
+このプロンプトを実行する際は、`docs/ops/agent-status-prompt-footer.md` のルールに従うこと。
+
+- 作業開始時に `scripts/agent-status/update.mjs` で `running` を記録する
+- 主要フェーズ完了時に `phase` / `progress` を更新する
+- 候補0件は `success` にしない
+- 候補数に応じて `success` / `partial` / `needs_review` / `blocked` を設定する
+- 作業完了後に `npm run agent:status:validate` と `npm run agent:status:render` を実行する
+- 秘密情報はstatus JSONに入れない

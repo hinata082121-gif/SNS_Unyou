@@ -122,6 +122,17 @@
 
 notesには `Google Sheets投入なし`、`営業送信なし` を残す。秘密情報はstatus JSONに入れない。
 
+## Agent Status更新ルール
+
+このプロンプトを実行する際は、`docs/ops/agent-status-prompt-footer.md` のルールに従うこと。
+
+- 作業開始時に `scripts/agent-status/update.mjs` で `running` を記録する
+- 主要フェーズ完了時に `phase` / `progress` を更新する
+- 候補0件は `success` にしない
+- 候補数に応じて `success` / `partial` / `needs_review` / `blocked` を設定する
+- 作業完了後に `npm run agent:status:validate` と `npm run agent:status:render` を実行する
+- 秘密情報はstatus JSONに入れない
+
 ## 重複除外
 
 候補生成前にGoogle Sheets CSVまたは重複除外台帳、既存JSON、既存レポートを照合する。ステータスが `未検収`、`検収済`、`除外`、`送信済`、`返信あり`、`商談化`、`反応なしクローズ`、`未送信` の店舗は再出力しない。
