@@ -12,7 +12,8 @@
     "agent:status:seed": "node scripts/agent-status/seed.mjs",
     "agent:status:validate": "node scripts/agent-status/validate.mjs",
     "agent:status:render": "node scripts/agent-status/render-dashboard.mjs",
-    "agent:status:open": "node scripts/agent-status/render-dashboard.mjs && echo \"Open tmp/agent-dashboard.html in your browser\""
+    "agent:status:open": "node scripts/agent-status/render-dashboard.mjs && echo \"Open tmp/agent-dashboard.html in your browser\"",
+    "agent:office:render": "node scripts/agent-status/render-agent-office.mjs"
   },
   "dependencies": {
     "next": "16.2.6",

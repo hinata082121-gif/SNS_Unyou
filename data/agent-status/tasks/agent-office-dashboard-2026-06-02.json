@@ -1,0 +1,24 @@
+{
+  "id": "agent-office-dashboard-2026-06-02",
+  "agent": "Codex",
+  "avatar": "codex-engineer",
+  "title": "Agent Officeローカル司令室MVP",
+  "category": "ops",
+  "status": "success",
+  "phase": "検証完了",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-06-02T07:47:55.705Z",
+  "startedAt": "2026-06-02T07:47:55.705Z",
+  "updatedAt": "2026-06-02T07:53:19.159Z",
+  "summary": "Agent OfficeローカルHTML生成、既存dashboard生成、lint、buildが成功。必要ファイルのみcommit/pushへ進む。",
+  "artifacts": [],
+  "metrics": {},
+  "nextAction": "人間確認",
+  "safeToAct": false,
+  "notes": [
+    "Google Sheets投入なし",
+    "営業候補生成なし",
+    "Instagram DM送信なし"
+  ]
+}

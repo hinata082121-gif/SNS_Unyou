@@ -23,6 +23,12 @@
 # local generated dashboards
 tmp/
 *.local.html
+tmp_*.txt
+*.bak
+
+# operational sales data and reports
+data/prospects/
+docs/reports/sales/
 
 # misc
 .DS_Store
