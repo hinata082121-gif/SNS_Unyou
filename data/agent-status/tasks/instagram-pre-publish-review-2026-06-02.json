@@ -9,7 +9,7 @@
   "progress": 85,
   "priority": "medium",
   "createdAt": "2026-06-03T00:00:00+09:00",
-  "updatedAt": "2026-06-03T01:15:37+09:00",
+  "updatedAt": "2026-06-03T01:41:31+09:00",
   "summary": "初回固定投稿3本、リール2本、キャプション、ハッシュタグ、2週間投稿カレンダーを投稿前レビューし、Canva制作指示書と投稿可否判断ボードを作成。実投稿前に人間確認が必要。",
   "artifacts": [
     "docs/pr/instagram-initial-post-review-2026-06-02.md",
@@ -24,7 +24,7 @@
     "publishedPosts": 0,
     "scheduledPosts": 0
   },
-  "nextAction": "人間が投稿可否、Canva制作方針、CTA、初回投稿日を確認し、素材化に進むか判断する",
+  "nextAction": "Canva貼り付け制作方針確認待ち。人間が投稿可否、CTA、初回投稿日を確認し、素材化に進むか判断する",
   "safeToAct": true,
   "notes": [
     "Instagram投稿なし",

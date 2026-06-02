@@ -86,6 +86,14 @@ Agent Officeに表示する場合も、追加DM、予約投稿、自動投稿、
 投稿前レビューを行った場合は、`data/agent-status/tasks/instagram-pre-publish-review-2026-06-02.json` のように別タスクとして記録し、レビュー結果、Canva制作指示、投稿可否判断ボードをAgent Officeで確認します。
 この段階でも、投稿実行や予約投稿は行いません。
 
+Canva貼り付け用素材パックを作成した場合は、`data/agent-status/tasks/instagram-canva-materialization-2026-06-02.json` のように別タスクとして記録します。
+Agent Officeでは、コピー素材、素材チェックリスト、スライド設計、制作順、人間用貼り付けボードの進捗を確認対象にします。
+Canva自動公開、Instagram投稿、予約投稿は行いません。
+
+Gmail営業メール自動化MVPを準備した場合は、`data/agent-status/tasks/gmail-sales-automation-mvp-2026-06-02.json` のように別タスクとして記録します。
+Agent Officeでは、Gmail送信設計、返信分類、配信停止管理、重複送信防止、本番送信OFFの状態を確認対象にします。
+初期状態では `DRY_RUN=true`、`LIVE_SEND_ENABLED=false` とし、実送信や自動返信実送信は行いません。
+
 ## 運用注意
 
 - `git add .` は使わない

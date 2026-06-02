@@ -1,0 +1,40 @@
+{
+  "id": "gmail-sales-automation-mvp-2026-06-02",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail営業メール完全自動化MVP",
+  "category": "sales",
+  "status": "needs_review",
+  "phase": "完全自動化MVP実装準備完了・本番送信OFF",
+  "progress": 80,
+  "priority": "high",
+  "createdAt": "2026-06-03T01:41:31+09:00",
+  "updatedAt": "2026-06-03T01:41:31+09:00",
+  "summary": "Gmailで毎日最大30件の営業メール送信、新着返信確認、返信分類、条件付き自動返信、配信停止管理、ログ記録を行う完全自動化MVPの設計・Apps Scriptコード・運用資料を作成。初期状態はDRY_RUN=true、LIVE_SEND_ENABLED=falseで実送信なし。",
+  "artifacts": [
+    "docs/gmail/gmail-sales-automation-mvp-2026-06-02.md",
+    "docs/gmail/gmail-sales-automation-rules-2026-06-02.md",
+    "docs/gmail/gmail-sales-email-templates-2026-06-02.md",
+    "apps-script/gmail-sales-automation/Code.gs",
+    "apps-script/gmail-sales-automation/README.md",
+    "apps-script/gmail-sales-automation/appsscript.json"
+  ],
+  "metrics": {
+    "dailySendLimit": 30,
+    "actualSentDuringSetup": 0,
+    "autoReplySentDuringSetup": 0,
+    "dryRunDefault": true,
+    "liveSendEnabledDefault": false
+  },
+  "nextAction": "人間がScript Properties、送信対象シート、文面、配信停止ルールを確認し、DRY_RUNでテストしてから本番送信ONを判断する",
+  "safeToAct": true,
+  "notes": [
+    "Gmail実送信なし",
+    "自動返信実送信なし",
+    "初期状態はDRY_RUN=true",
+    "LIVE_SEND_ENABLED=false",
+    "毎日30件上限",
+    "配信停止・重複送信防止必須",
+    "営業データはGit追加なし"
+  ]
+}

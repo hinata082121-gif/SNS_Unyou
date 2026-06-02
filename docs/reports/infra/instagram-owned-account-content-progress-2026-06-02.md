@@ -235,3 +235,27 @@ Hermes Agent / Agent Officeから見て、方針、投稿案、制作物、実�
 これにより、状態は **C: 制作準備中・人間確認待ち** と判断できる。
 実投稿前に、人間が投稿可否、Canva制作方針、CTA、初回投稿日を確認する必要がある。
 Instagram投稿、予約投稿、DM、コメント、営業候補生成、Google Sheets再送信は行っていない。
+
+## 2026-06-03 Canva貼り付け用素材パック作成フェーズ
+
+2026-06-03に、Hermesレビューの軽微修正を反映し、Canvaで人間が貼り付け制作へ進めるための素材パックを追加作成した。
+
+追加したファイル:
+
+- `docs/pr/instagram-canva-copy-pack-2026-06-02.md`
+- `docs/pr/instagram-canva-asset-checklist-2026-06-02.md`
+- `docs/pr/instagram-canva-slide-map-2026-06-02.md`
+- `docs/pr/instagram-canva-production-order-2026-06-02.md`
+- `docs/pr/instagram-canva-human-paste-board-2026-06-02.md`
+- `data/agent-status/tasks/instagram-canva-materialization-2026-06-02.json`
+
+反映した主な修正:
+
+- P2の1枚目見出しを「投稿しているのに、伝わり方で損しているかも。」へ調整した。
+- P2の代替見出しとして「投稿しているのに、伝わり方で迷いやすいかも。」をメモに残した。
+- P3はSNS診断を主役にし、自動化相談は補助扱いにした。
+- R1は初回リールとして優先し、15秒版ではプロフィール、固定投稿、予約導線に絞った。
+- R2のタイトルを「予約方法が見つかりにくいSNSの確認ポイント」へ調整し、サムネ文言を「予約方法、すぐ見つかりますか？」にした。
+
+これにより、自社Instagramコンテンツ制作は **C: 制作準備中・人間確認待ち** として、Canva素材化へ進める状態になった。
+ただし、Instagram投稿、予約投稿、DM、コメント、Google Sheets再送信、営業候補生成は行っていない。

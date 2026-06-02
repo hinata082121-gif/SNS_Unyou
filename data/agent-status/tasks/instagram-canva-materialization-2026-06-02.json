@@ -1,0 +1,41 @@
+{
+  "id": "instagram-canva-materialization-2026-06-02",
+  "agent": "Hermes",
+  "avatar": "pr-writer",
+  "title": "Instagram Canva貼り付け用素材パック作成",
+  "category": "content",
+  "status": "needs_review",
+  "phase": "Canva貼り付け用素材パック作成完了・人間確認待ち",
+  "progress": 90,
+  "priority": "medium",
+  "createdAt": "2026-06-03T01:41:31+09:00",
+  "updatedAt": "2026-06-03T01:41:31+09:00",
+  "summary": "Hermesレビューを反映し、Instagram初回投稿セットについて、Canvaへ貼り付けるだけで制作を進められるコピー・素材チェックリスト・スライド設計・制作順・人間用貼り付けボードを整理。実投稿前に人間確認が必要。",
+  "artifacts": [
+    "docs/pr/instagram-canva-copy-pack-2026-06-02.md",
+    "docs/pr/instagram-canva-asset-checklist-2026-06-02.md",
+    "docs/pr/instagram-canva-slide-map-2026-06-02.md",
+    "docs/pr/instagram-canva-production-order-2026-06-02.md",
+    "docs/pr/instagram-canva-human-paste-board-2026-06-02.md"
+  ],
+  "metrics": {
+    "pinnedPostsPrepared": 3,
+    "reelsPrepared": 2,
+    "copyBlocksPrepared": 5,
+    "assetListsPrepared": 5,
+    "publishedPosts": 0,
+    "scheduledPosts": 0
+  },
+  "nextAction": "人間がCanvaテンプレ方針と素材を確認し、貼り付け制作に進むか判断する",
+  "safeToAct": true,
+  "notes": [
+    "Instagram投稿なし",
+    "Instagram予約投稿なし",
+    "Instagram DM/コメントなし",
+    "営業候補生成なし",
+    "Google Sheets再送信なし",
+    "Canva自動公開なし",
+    "投稿前に人間確認が必要",
+    "HermesレビューのP2/R2表現修正を反映"
+  ]
+}
