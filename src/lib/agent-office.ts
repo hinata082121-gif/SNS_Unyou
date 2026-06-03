@@ -51,6 +51,7 @@ export type AgentOfficeDashboardData = {
   urgentTasks: SafeAgentTask[];
   nextActions: SafeAgentTask[];
   humanReviewTasks: SafeAgentTask[];
+  replyCheckTask?: SafeAgentTask;
   categoryGroups: AgentOfficeCategoryGroup[];
   counts: Record<
     "success" | "needs_review" | "blocked" | "failed" | "running" | "scheduled",
@@ -118,6 +119,7 @@ const FEATURE_KEYWORDS = [
   "gmail-daily-sales-send",
   "gmail-ready-candidate-pool",
   "gmail-full-auto-send-design",
+  "gmail-reply-check",
   "market-analysis-friday",
   "instagram-initial-posts-published",
   "instagram-canva-materialization",
@@ -133,6 +135,10 @@ const CATEGORY_META: Record<string, { label: string; description: string }> = {
   gmail_list_refresh: {
     label: "Gmailリスト更新",
     description: "公開メール確認済み候補の補充とoutbox準備",
+  },
+  gmail_reply_check: {
+    label: "Gmail返信確認",
+    description: "返信有無、未読返信、人間確認要否の監視",
   },
   market_analysis: {
     label: "金曜市場分析",
@@ -180,8 +186,15 @@ const STATUS_PRIORITY: Record<AgentOfficeStatus, number> = {
 export function getAgentOfficeDashboardData(): AgentOfficeDashboardData {
   const tasks = loadTasks().sort(compareTasksForDisplay);
   const featuredTasks = selectFeaturedTasks(tasks);
+  const replyCheckTask = tasks.find((task) => task.category === "gmail_reply_check");
   const urgentTasks = tasks
-    .filter((task) => task.status === "failed" || task.status === "blocked")
+    .filter(
+      (task) =>
+        task.status === "failed" ||
+        task.status === "blocked" ||
+        hasTrueMetric(task, "needsHumanEmailCheck") ||
+        hasPositiveMetric(task, "unreadReplyCount"),
+    )
     .slice(0, 5);
   const nextActions = tasks
     .filter((task) => task.nextAction && task.status !== "success")
@@ -205,6 +218,7 @@ export function getAgentOfficeDashboardData(): AgentOfficeDashboardData {
     urgentTasks,
     nextActions,
     humanReviewTasks,
+    replyCheckTask,
     categoryGroups: buildCategoryGroups(tasks),
     counts,
     topState: buildTopState(counts),
@@ -277,7 +291,7 @@ function safeMetrics(value: unknown): SafeMetric[] {
       const type = typeof metricValue;
       return type === "number" || type === "boolean" || type === "string";
     })
-    .slice(0, 6)
+    .slice(0, 12)
     .map(([key, metricValue]) => ({
       label: key,
       value: safeText(String(metricValue)),
@@ -287,6 +301,7 @@ function safeMetrics(value: unknown): SafeMetric[] {
 function inferRole(id: string, title: string, category: string, avatar: string): string {
   const text = `${id} ${title} ${category} ${avatar}`.toLowerCase();
   if (text.includes("gmail") && text.includes("pool")) return "Gmail候補プール補充";
+  if (text.includes("gmail") && text.includes("reply")) return "Gmail返信確認";
   if (text.includes("gmail") && text.includes("list")) return "Gmailリスト更新";
   if (text.includes("gmail")) return "Gmail営業送信";
   if (text.includes("market")) return "金曜市場分析";
@@ -336,6 +351,7 @@ function buildCategoryGroups(tasks: SafeAgentTask[]): AgentOfficeCategoryGroup[]
   const order = [
     "gmail_send",
     "gmail_list_refresh",
+    "gmail_reply_check",
     "hermes_monitoring",
     "market_analysis",
     "instagram",
@@ -362,4 +378,14 @@ function buildCategoryGroups(tasks: SafeAgentTask[]): AgentOfficeCategoryGroup[]
       description: CATEGORY_META[key]?.description || "Agent statusで管理する運用タスク",
       tasks: groupTasks.sort(compareTasksForDisplay),
     }));
+}
+
+function hasTrueMetric(task: SafeAgentTask, label: string): boolean {
+  return task.metrics.some(
+    (metric) => metric.label === label && metric.value.toLowerCase() === "true",
+  );
+}
+
+function hasPositiveMetric(task: SafeAgentTask, label: string): boolean {
+  return task.metrics.some((metric) => metric.label === label && Number(metric.value) > 0);
 }

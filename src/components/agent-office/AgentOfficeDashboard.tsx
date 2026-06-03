@@ -109,9 +109,9 @@ function UrgentStrip({ tasks }: { tasks: SafeAgentTask[] }) {
     <section className="mt-4 border border-red-300/35 bg-red-400/10 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-black text-red-50">停止/失敗タスク</p>
+          <p className="text-sm font-black text-red-50">重要アラート</p>
           <p className="mt-1 text-sm text-red-100">
-            自動業務が止まっています。人間が次アクションを確認してください。
+            停止、失敗、またはメール確認が必要なタスクです。人間が次アクションを確認してください。
           </p>
         </div>
         <span className="border border-red-200/30 px-3 py-1 text-xs font-black text-red-50">
@@ -203,12 +203,62 @@ function Panels({ data }: { data: AgentOfficeDashboardData }) {
         ))}
       </div>
       <aside className="grid content-start gap-4">
+        {data.replyCheckTask ? <ReplyCheckPanel task={data.replyCheckTask} /> : null}
         <ActionPanel title="人間確認が必要" tasks={data.humanReviewTasks} />
         <ActionPanel title="次にやること" tasks={data.nextActions} />
         <CategoryPanel data={data} />
         <TaskList tasks={data.tasks.slice(0, 10)} />
       </aside>
     </section>
+  );
+}
+
+function ReplyCheckPanel({ task }: { task: SafeAgentTask }) {
+  const repliedCount = metricValue(task, "repliedCount", "0");
+  const unreadReplyCount = metricValue(task, "unreadReplyCount", "0");
+  const needsHuman = metricValue(task, "needsHumanEmailCheck", "false") === "true";
+  const lastReplyCheckAt = metricValue(task, "lastReplyCheckAt", "未実行");
+  const nextReplyCheckAt = metricValue(task, "nextReplyCheckAt", "未設定");
+  const autoReplyEnabled = metricValue(task, "autoReplyEnabled", "false");
+
+  return (
+    <section
+      className={`border p-4 ${
+        needsHuman || Number(unreadReplyCount) > 0
+          ? "border-amber-300/40 bg-amber-300/10"
+          : "border-emerald-300/25 bg-emerald-300/10"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-black text-white">Gmail返信確認</h2>
+          <p className="mt-1 text-sm text-slate-300">
+            現在メール確認: {needsHuman ? "必要" : "不要"}
+          </p>
+        </div>
+        <StatusBadge status={task.status} />
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <ReplyMetric label="返信あり" value={repliedCount} />
+        <ReplyMetric label="未読返信" value={unreadReplyCount} />
+        <ReplyMetric label="最終確認" value={formatMetricDate(lastReplyCheckAt)} />
+        <ReplyMetric label="次回確認" value={formatMetricDate(nextReplyCheckAt)} />
+      </div>
+      <div className="mt-3 border border-white/10 bg-slate-950/50 p-3 text-sm leading-6 text-slate-200">
+        自動返信: {autoReplyEnabled === "true" ? "ON" : "OFF"}
+        <br />
+        返信本文、メールアドレス、営業先名は表示しません。
+      </div>
+    </section>
+  );
+}
+
+function ReplyMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-h-16 border border-white/10 bg-white/5 p-3">
+      <p className="text-[11px] font-black text-slate-400">{label}</p>
+      <p className="mt-1 break-words font-number text-sm font-black text-white">{value}</p>
+    </div>
   );
 }
 
@@ -313,4 +363,13 @@ function formatFullDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function metricValue(task: SafeAgentTask, label: string, fallback: string) {
+  return task.metrics.find((metric) => metric.label === label)?.value || fallback;
+}
+
+function formatMetricDate(value: string) {
+  if (!value || value === "null" || value === "未実行" || value === "未設定") return value;
+  return formatFullDate(value);
 }

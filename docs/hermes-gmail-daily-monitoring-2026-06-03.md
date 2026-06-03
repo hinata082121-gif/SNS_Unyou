@@ -12,6 +12,7 @@ HermesはGmail本番送信、自動返信実送信、Google Sheets送信済み�
 - 当日outbox30件の有無を確認する
 - Preflight結果を確認する
 - 送信結果を確認する
+- 返信確認結果を確認する
 - blocked/needs_review/successをAgent Office向けに整理する
 - 人間が次に行うべき作業を明確にする
 
@@ -35,7 +36,18 @@ HermesはGmail本番送信、自動返信実送信、Google Sheets送信済み�
 | 12:10 | 送信結果 | processed、failed、送信有無 |
 | 12:30 | Sheets/Agent Office | 送信済み反映、status整合性 |
 | 14:00 | 失敗/未送信/候補不足 | blocked/needs_review理由 |
-| 17:00 | 翌日分候補プール | available残数、翌日準備の要否 |
+| 17:00 | 翌日分候補プール/返信確認 | available残数、翌日準備の要否、Gmail確認要否 |
+
+## 返信確認監視
+
+Hermesは返信確認結果も監視します。
+
+- 09:00 / 12:30 / 17:00 の返信確認結果を見る
+- `needsHumanEmailCheck=true` の場合、人間へ「Gmail確認必要」と報告する
+- `needsHumanEmailCheck=false` の場合、「メール確認不要」と報告する
+- `unreadReplyCount` と `repliedCount` の件数だけを扱う
+- 返信本文、メールアドレス、営業先名、スレッドURLは出さない
+- 自動返信はしない
 
 ## 報告形式
 
@@ -122,6 +134,7 @@ ICHI SocialのGmail営業メール30件/日運用について、当日の送信�
 - docs/gmail/YYYY-MM-DD-gmail-outbox-preparation-summary.md
 - docs/gmail/gmail-ready-candidate-pool-summary.md
 - Apps ScriptのPreflight結果
+- Apps Scriptの返信確認結果
 - Agent Office表示
 
 出力:
@@ -131,6 +144,9 @@ ICHI SocialのGmail営業メール30件/日運用について、当日の送信�
 - remainingQuota
 - sentCount
 - failedCount
+- repliedCount
+- unreadReplyCount
+- needsHumanEmailCheck
 - Sheets更新確認
 - Agent Office整合性
 - 人間が次に行うこと

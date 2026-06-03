@@ -159,6 +159,18 @@ ICHI Socialの営業メールについて、毎日最大30件の送信候補処�
 - `markBatchSent_(batchId)`: 送信成功後にバッチ送信済みをScript Propertiesへ記録する。
 - `resetLiveSendAfterRun_()`: 送信後に本番送信許可をOFFへ戻す。
 
+## 返信確認用関数
+
+返信確認は、Gmail送信や自動返信とは分離して実行します。
+
+- `runGmailReplyCheckOnly()`: 手動確認用。送信しない。自動返信しない。返信有無だけを集計する。
+- `runScheduledGmailReplyCheck()`: 09:00 / 12:30 / 17:00などの定期確認用。送信しない。自動返信しない。
+- `setupReplyCheckTriggers()`: 返信確認トリガーを作成する。人間確認後にだけ実行する。
+- `removeReplyCheckTriggers()`: 返信確認トリガーを削除する。
+
+返信確認ログに出してよいものは、返信あり件数、未読返信件数、人間確認要否、最終確認時刻、次回確認予定だけです。
+返信本文、メールアドレス、営業先名、GmailスレッドURLはLogger、Google Sheetsのsummary列、Git管理資料に出しません。
+
 ## トラブルシュート
 
 - 送信予定が0件: ステータス、配信停止、送信禁止、宛先列を確認する。

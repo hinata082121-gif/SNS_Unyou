@@ -45,6 +45,13 @@ Gmail送信対象、候補プール本体、送信ログ本体、営業リスト
 金曜市場分析は、`market_analysis` カテゴリでAgent statusへ記録します。
 市場分析の実データ取得は金曜タスク実行時に行い、通常のHermes監視では予定、実行中、完了、確認待ちだけを記録します。
 
+### Gmail返信確認監視
+
+Gmail返信確認は、`gmail_reply_check` カテゴリでAgent statusへ記録します。
+Hermesは09:00、12:30、17:00の返信確認結果を見て、`needsHumanEmailCheck` と `unreadReplyCount` の件数だけを報告します。
+返信本文、メールアドレス、営業先名、GmailスレッドURLは表示しません。
+自動返信は行いません。
+
 ## 前提
 
 - Hermes AgentはWSL2上で起動済み

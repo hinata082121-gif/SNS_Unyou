@@ -29,7 +29,17 @@ Gmail営業メール30件/日の完全自動送信で、Apps Scriptが安全に�
 | `sentBy` | 任意 | 送信実行元 |
 | `sentStatus` | 必須 | 送信結果 |
 | `errorMessage` | 任意 | エラー要約。秘密情報は書かない |
+| `gmailThreadId` | 任意 | Gmailスレッド識別用。Git管理資料には出さない |
+| `gmailMessageId` | 任意 | Gmailメッセージ識別用。Git管理資料には出さない |
 | `replyStatus` | 必須 | 返信状態 |
+| `replyDetectedAt` | 任意 | 返信検知日時 |
+| `unreadReplyCount` | 任意 | 未読返信件数 |
+| `replyCount` | 任意 | 返信件数 |
+| `lastReplyCheckedAt` | 任意 | 返信確認日時 |
+| `needsHumanEmailCheck` | 任意 | 人間がGmail確認すべきか |
+| `humanHandledAt` | 任意 | 人間対応日時 |
+| `humanHandledStatus` | 任意 | 人間対応結果 |
+| `replyCheckNotes` | 任意 | 返信確認の安全な要約 |
 | `unsubscribe` | 必須 | 配信停止フラグ |
 | `doNotContact` | 必須 | 送信禁止フラグ |
 | `lastCheckedAt` | 任意 | 最終確認日時 |
@@ -97,6 +107,26 @@ Gmail営業メール30件/日の完全自動送信で、Apps Scriptが安全に�
 | `bounce` | バウンス |
 | `complaint` | クレーム |
 | `needs_human` | 人間確認 |
+| `none` | 返信なし |
+| `unread_reply` | 未読返信あり |
+| `needs_human_review` | 返信あり・人間確認待ち |
+| `handled` | 対応済み |
+| `ignored` | 対応不要 |
+| `unknown` | 確認不能 |
+
+## needsHumanEmailCheckの種類
+
+| 値 | 意味 |
+|---|---|
+| `true` | 人間がGmail確認すべき |
+| `false` | 現時点では確認不要 |
+
+## 返信確認で保存しない列
+
+- `replyBody`
+- `rawEmail`
+- `sourceMessage`
+- `fullThreadText`
 
 ## sendBatchIdの形式
 
@@ -123,3 +153,12 @@ gmail-sales-YYYY-MM-DD
 - `lastCheckedAt`: 更新日時
 - 失敗時は `sentStatus=needs_review` と `errorMessage` を記録
 
+## 返信確認後に更新される列
+
+- `replyStatus`
+- `replyDetectedAt`
+- `unreadReplyCount`
+- `replyCount`
+- `lastReplyCheckedAt`
+- `needsHumanEmailCheck`
+- `replyCheckNotes`

@@ -1,0 +1,36 @@
+{
+  "id": "gmail-reply-check-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail返信確認",
+  "category": "gmail_reply_check",
+  "status": "scheduled",
+  "phase": "返信確認自動化準備中",
+  "progress": 75,
+  "priority": "high",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T23:45:00+09:00",
+  "summary": "Gmail営業メール送信後の返信有無を自動確認し、出先スマホの/agent-officeでメール確認必要の有無を一目で確認できるようにする。",
+  "metrics": {
+    "replyCheckEnabled": false,
+    "replyCheckTriggersEnabled": false,
+    "repliedCount": 0,
+    "unreadReplyCount": 0,
+    "handledReplyCount": 0,
+    "needsHumanEmailCheck": false,
+    "lastReplyCheckAt": "",
+    "nextReplyCheckAt": "2026-06-04T09:00:00+09:00",
+    "autoReplyEnabled": false
+  },
+  "nextAction": "2026-06-04送信後にrunGmailReplyCheckOnly()を実行し、返信確認の集計結果を/agent-officeへ反映する",
+  "safeToAct": true,
+  "notes": [
+    "返信本文は保存しない",
+    "メールアドレスは表示しない",
+    "自動返信はしない",
+    "人間確認が必要な有無だけ表示する"
+  ],
+  "artifacts": [
+    "docs/gmail/gmail-reply-check-automation-2026-06-03.md"
+  ]
+}

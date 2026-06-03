@@ -58,6 +58,37 @@
 - candidate pool本体をGit追加しない
 - 営業先名やメール宛先を表示しない
 
+## Gmail返信確認後
+
+更新対象:
+
+- `data/agent-status/tasks/gmail-reply-check-YYYY-MM-DD.json`
+- 必要に応じて安全な返信確認summary docs
+
+記録すること:
+
+- repliedCount
+- unreadReplyCount
+- handledReplyCount
+- needsHumanEmailCheck
+- lastReplyCheckAt
+- nextReplyCheckAt
+- autoReplyEnabled
+
+判定:
+
+- `needsHumanEmailCheck=true` または `unreadReplyCount>0`: `needs_review`
+- 返信なし、または対応済みのみ: `success`
+- Sheet接続やGmail検索が失敗: `blocked` または `failed`
+
+禁止:
+
+- 返信本文を保存しない
+- メールアドレスをsummaryへ書かない
+- 営業先名をsummaryへ書かない
+- GmailスレッドURLをGit管理資料へ書かない
+- 自動返信しない
+
 ## 金曜市場分析後
 
 更新対象:

@@ -4,6 +4,7 @@ import { StatusBadge } from "./StatusBadge";
 
 const ROLE_COLORS: Record<string, string> = {
   Gmail営業送信: "from-sky-400 to-cyan-200",
+  Gmail返信確認: "from-blue-300 to-teal-200",
   Gmail候補プール補充: "from-emerald-400 to-lime-200",
   Hermes監視: "from-violet-400 to-indigo-200",
   Instagram運用: "from-pink-400 to-orange-200",

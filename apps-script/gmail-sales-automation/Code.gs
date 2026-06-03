@@ -334,6 +334,257 @@ function scanGmailRepliesJob() {
   });
 }
 
+function setupReplyCheckTriggers() {
+  const triggerSpecs = [
+    { handler: 'runScheduledGmailReplyCheck', hour: 9 },
+    { handler: 'runScheduledGmailReplyCheck', hour: 12 },
+    { handler: 'runScheduledGmailReplyCheck', hour: 17 }
+  ];
+
+  triggerSpecs.forEach((spec) => {
+    if (hasTrigger_(spec.handler)) {
+      appendReplyCheckSafeLog_({ event: 'reply_check_trigger_exists', handler: spec.handler });
+      return;
+    }
+    ScriptApp.newTrigger(spec.handler).timeBased().everyDays(1).atHour(spec.hour).create();
+    appendReplyCheckSafeLog_({ event: 'reply_check_trigger_created', handler: spec.handler, hour: spec.hour });
+  });
+}
+
+function removeReplyCheckTriggers() {
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    if (trigger.getHandlerFunction() === 'runScheduledGmailReplyCheck') {
+      ScriptApp.deleteTrigger(trigger);
+      appendReplyCheckSafeLog_({ event: 'reply_check_trigger_removed' });
+    }
+  });
+}
+
+function runGmailReplyCheckOnly() {
+  const summary = checkRepliesForSentRows_();
+  appendReplyCheckSafeLog_(Object.assign({ event: 'reply_check_only' }, summary));
+  updateReplyCheckAgentStatus_(summary);
+  return summary;
+}
+
+function runScheduledGmailReplyCheck() {
+  const summary = checkRepliesForSentRows_();
+  appendReplyCheckSafeLog_(Object.assign({ event: 'scheduled_reply_check' }, summary));
+  updateReplyCheckAgentStatus_(summary);
+  return summary;
+}
+
+function checkRepliesForSentRows_() {
+  const config = getConfig_();
+  const rows = loadCandidateRows_(config);
+  const summary = buildReplyCheckSummary_();
+
+  rows.forEach((item) => {
+    const row = item.row;
+    const sentStatus = String(row.sentStatus || row.status || '').toLowerCase();
+    if (!includesAny_(sentStatus, ['送信済', 'sent'])) {
+      return;
+    }
+
+    summary.sentRowsChecked += 1;
+    const signal = findReplySignalsForRow_(row);
+    updateReplyStatusForRow_(config, item.rowIndex, signal);
+
+    if (signal.replied) {
+      summary.repliedCount += 1;
+    }
+    if (signal.status === 'handled') {
+      summary.handledReplyCount += 1;
+    }
+    if (signal.unreadReplyCount > 0) {
+      summary.unreadReplyCount += signal.unreadReplyCount;
+    }
+    if (signal.needsHumanEmailCheck) {
+      summary.needsHumanReviewCount += 1;
+      summary.needsHumanEmailCheck = true;
+    }
+    if (signal.status === 'bounced') {
+      summary.bouncedCount += 1;
+    }
+    if (signal.status === 'unknown') {
+      summary.unknownCount += 1;
+    }
+  });
+
+  summary.lastReplyCheckAt = new Date().toISOString();
+  summary.nextReplyCheckAt = nextReplyCheckAt_();
+  return summary;
+}
+
+function findReplySignalsForRow_(row) {
+  const handledAt = String(row.humanHandledAt || '').trim();
+  const handledStatus = String(row.humanHandledStatus || '').trim();
+  if (handledAt || handledStatus === 'handled') {
+    return {
+      status: 'handled',
+      replied: true,
+      unreadReplyCount: 0,
+      replyCount: Number(row.replyCount || 0),
+      needsHumanEmailCheck: false
+    };
+  }
+
+  try {
+    const threads = findReplyThreadsForRow_(row);
+    let replyCount = 0;
+    let unreadReplyCount = 0;
+    let bounced = false;
+    const sentAt = parseDateOrNull_(row.sentAt);
+
+    threads.forEach((thread) => {
+      thread.getMessages().forEach((message) => {
+        const messageDate = message.getDate();
+        if (sentAt && messageDate <= sentAt) {
+          return;
+        }
+        if (typeof message.isDraft === 'function' && message.isDraft()) {
+          return;
+        }
+        const subject = message.getSubject() || '';
+        const body = message.getPlainBody() || '';
+        const classification = classifyReply_(subject, body);
+        if (classification === CLASSIFICATION.bounce) {
+          bounced = true;
+        }
+        replyCount += 1;
+        if (message.isUnread()) {
+          unreadReplyCount += 1;
+        }
+      });
+    });
+
+    if (bounced) {
+      return {
+        status: 'bounced',
+        replied: true,
+        unreadReplyCount,
+        replyCount,
+        needsHumanEmailCheck: true
+      };
+    }
+
+    if (unreadReplyCount > 0) {
+      return {
+        status: 'unread_reply',
+        replied: true,
+        unreadReplyCount,
+        replyCount,
+        needsHumanEmailCheck: true
+      };
+    }
+
+    if (replyCount > 0) {
+      return {
+        status: 'needs_human_review',
+        replied: true,
+        unreadReplyCount,
+        replyCount,
+        needsHumanEmailCheck: true
+      };
+    }
+
+    return {
+      status: 'none',
+      replied: false,
+      unreadReplyCount: 0,
+      replyCount: 0,
+      needsHumanEmailCheck: false
+    };
+  } catch (error) {
+    return {
+      status: 'unknown',
+      replied: false,
+      unreadReplyCount: 0,
+      replyCount: 0,
+      needsHumanEmailCheck: true
+    };
+  }
+}
+
+function findReplyThreadsForRow_(row) {
+  const threadId = String(row.gmailThreadId || '').trim();
+  if (threadId) {
+    try {
+      return [GmailApp.getThreadById(threadId)].filter(Boolean);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  const subject = String(row.subject || row['件名'] || '').trim();
+  if (!subject) {
+    return [];
+  }
+
+  const sentAt = parseDateOrNull_(row.sentAt);
+  const dateText = sentAt
+    ? Utilities.formatDate(sentAt, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy/MM/dd')
+    : Utilities.formatDate(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy/MM/dd');
+  const query = 'subject:"' + escapeGmailSearchText_(subject) + '" after:' + dateText;
+  return GmailApp.search(query, 0, 10);
+}
+
+function updateReplyStatusForRow_(config, rowIndex, replySignal) {
+  const now = new Date().toISOString();
+  markSheetRow_(config, rowIndex, {
+    replyStatus: replySignal.status,
+    replyDetectedAt: replySignal.replied ? now : '',
+    unreadReplyCount: replySignal.unreadReplyCount,
+    replyCount: replySignal.replyCount,
+    lastReplyCheckedAt: now,
+    needsHumanEmailCheck: replySignal.needsHumanEmailCheck,
+    replyCheckNotes: replySignal.needsHumanEmailCheck ? 'human_check_required' : 'no_reply_action_required'
+  });
+}
+
+function buildReplyCheckSummary_() {
+  return {
+    sentRowsChecked: 0,
+    repliedCount: 0,
+    unreadReplyCount: 0,
+    needsHumanReviewCount: 0,
+    handledReplyCount: 0,
+    bouncedCount: 0,
+    unknownCount: 0,
+    needsHumanEmailCheck: false,
+    autoReplyEnabled: false,
+    lastReplyCheckAt: '',
+    nextReplyCheckAt: ''
+  };
+}
+
+function appendReplyCheckSafeLog_(summary) {
+  appendSafeLog_({
+    event: summary.event || 'reply_check_summary',
+    sentRowsChecked: summary.sentRowsChecked,
+    repliedCount: summary.repliedCount,
+    unreadReplyCount: summary.unreadReplyCount,
+    needsHumanReviewCount: summary.needsHumanReviewCount,
+    bouncedCount: summary.bouncedCount,
+    unknownCount: summary.unknownCount,
+    needsHumanEmailCheck: summary.needsHumanEmailCheck,
+    autoReplyEnabled: false,
+    lastReplyCheckAt: summary.lastReplyCheckAt,
+    nextReplyCheckAt: summary.nextReplyCheckAt
+  });
+}
+
+function updateReplyCheckAgentStatus_(summary) {
+  appendSafeLog_({
+    event: 'reply_check_agent_status_planned',
+    status: summary.needsHumanEmailCheck ? 'needs_review' : 'success',
+    repliedCount: summary.repliedCount,
+    unreadReplyCount: summary.unreadReplyCount,
+    needsHumanEmailCheck: summary.needsHumanEmailCheck,
+    autoReplyEnabled: false
+  });
+}
+
 function classifyReply_(subject, body) {
   const text = String(subject + ' ' + body).toLowerCase();
 
@@ -883,6 +1134,39 @@ function normalizeDateText_(value) {
     return Utilities.formatDate(value, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
   }
   return String(value || '').trim().slice(0, 10);
+}
+
+function parseDateOrNull_(value) {
+  if (!value) {
+    return null;
+  }
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return value;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
+function escapeGmailSearchText_(value) {
+  return String(value || '').replace(/["\\]/g, ' ').slice(0, 120);
+}
+
+function nextReplyCheckAt_() {
+  const timezone = Session.getScriptTimeZone() || 'Asia/Tokyo';
+  const now = new Date();
+  const today = Utilities.formatDate(now, timezone, 'yyyy-MM-dd');
+  const candidates = [9, 12, 17].map((hour) => new Date(today + 'T' + ('0' + hour).slice(-2) + ':00:00+09:00'));
+  for (let i = 0; i < candidates.length; i += 1) {
+    if (candidates[i].getTime() > now.getTime()) {
+      return candidates[i].toISOString();
+    }
+  }
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const dateText = Utilities.formatDate(tomorrow, timezone, 'yyyy-MM-dd');
+  return new Date(dateText + 'T09:00:00+09:00').toISOString();
 }
 
 function getToday_() {

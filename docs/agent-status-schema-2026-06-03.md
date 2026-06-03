@@ -42,6 +42,7 @@ Gmail送信、Gmail営業リスト更新、Hermes監視、金曜市場分析、I
 
 - `gmail_send`
 - `gmail_list_refresh`
+- `gmail_reply_check`
 - `market_analysis`
 - `instagram`
 - `hermes_monitoring`
@@ -67,6 +68,15 @@ Gmail送信、Gmail営業リスト更新、Hermes監視、金曜市場分析、I
 - `preflightPassed`
 - `deployed`
 - `mobileReady`
+- `repliedCount`
+- `unreadReplyCount`
+- `handledReplyCount`
+- `needsHumanEmailCheck`
+- `lastReplyCheckAt`
+- `nextReplyCheckAt`
+- `replyCheckEnabled`
+- `replyCheckTriggersEnabled`
+- `autoReplyEnabled`
 
 ## metricsに入れてはいけないもの
 
@@ -80,6 +90,12 @@ Gmail送信、Gmail営業リスト更新、Hermes監視、金曜市場分析、I
 - 外部通知URL
 - 外部サービス認証値
 - Gmail本文全文
+- 返信本文
+- Gmailスレッド全文
+- Gmailメッセージ全文
+- 送信者メール
+- 受信者メール
+- GmailスレッドURL
 
 ## 更新ルール
 

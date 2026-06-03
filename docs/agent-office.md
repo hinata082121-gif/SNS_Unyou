@@ -155,6 +155,12 @@ Gmail送信用候補プールは、`data/agent-status/tasks/gmail-ready-candidat
 
 2026-06-04の送信運用準備は、`data/agent-status/tasks/gmail-automation-readiness-2026-06-03.json` で確認します。2026-06-04分はoutbox30件、Sheets貼り付け、PreflightのreadyCount=30確認まで完了済みで、明日は手動承認つき送信を推奨します。Hermes Agentは監視・報告のみ、Apps Scriptは送信実行担当、Codexは記録・設計・Agent Office更新担当として分けます。完全自動トリガー有効化は2026-06-04の送信成功後に検討します。
 
+Gmail返信確認は、`data/agent-status/tasks/gmail-reply-check-YYYY-MM-DD.json` で確認します。
+Agent Officeでは、返信あり件数、未読返信件数、人間がGmail確認すべきか、最終確認時刻、次回確認予定、自動返信OFFだけを表示します。
+返信本文、メールアドレス、営業先名、GmailスレッドURLは表示しません。
+`needsHumanEmailCheck=true` または `unreadReplyCount>0` の場合は `needs_review` として上部に表示し、人間がGmailを確認します。
+返信確認ジョブは送信も自動返信もしません。
+
 Instagram初回投稿5件が人間の手で公開された場合は、`data/agent-status/tasks/instagram-initial-posts-published-2026-06-03.json` のように別タスクとして記録します。
 Agent Officeでは、投稿済み件数、カルーセル/リール内訳、24時間後・72時間後・7日後の反応確認待ちを確認対象にします。
 AI/Hermes/Codexは投稿操作を行わず、追加投稿、予約投稿、DM、コメントも行いません。
