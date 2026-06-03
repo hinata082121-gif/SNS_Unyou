@@ -105,6 +105,8 @@ Gmail営業メール30件/日を実行対象にした場合は、`data/agent-sta
 
 Gmail送信用候補プールは、`data/agent-status/tasks/gmail-ready-candidate-pool-2026-06-03.json` で確認します。毎日30件送信を安定させるには、公開メールアドレス確認済み候補を常時プール化し、`available` が30件未満なら送信を `blocked`、60件未満なら補充対象として扱います。現在は最低30件に到達済みですが、推奨90件には60件不足しています。プール本体、outbox、TSV、メールアドレス一覧はGitに追加せず、Agent Officeには件数と次アクションだけを表示します。
 
+2026-06-04の送信運用準備は、`data/agent-status/tasks/gmail-automation-readiness-2026-06-03.json` で確認します。2026-06-04分はoutbox30件、Sheets貼り付け、PreflightのreadyCount=30確認まで完了済みで、明日は手動承認つき送信を推奨します。Hermes Agentは監視・報告のみ、Apps Scriptは送信実行担当、Codexは記録・設計・Agent Office更新担当として分けます。完全自動トリガー有効化は2026-06-04の送信成功後に検討します。
+
 Instagram初回投稿5件が人間の手で公開された場合は、`data/agent-status/tasks/instagram-initial-posts-published-2026-06-03.json` のように別タスクとして記録します。
 Agent Officeでは、投稿済み件数、カルーセル/リール内訳、24時間後・72時間後・7日後の反応確認待ちを確認対象にします。
 AI/Hermes/Codexは投稿操作を行わず、追加投稿、予約投稿、DM、コメントも行いません。

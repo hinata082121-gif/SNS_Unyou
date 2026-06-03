@@ -1561,6 +1561,22 @@ ICHI Social 毎朝営業候補10件作成
 
 候補プール本体、outbox、TSV、ログ、メールアドレス一覧はGitに追加しない。Agent Officeには件数、blocked理由、次回補充必要数だけを記録する。
 
+### 2026-06-04 手動承認つき送信とHermes監視
+
+2026-06-04分は、outbox30件、Sheets貼り付け、Apps Script PreflightのreadyCount=30確認まで完了済みとして扱う。ただし、2026-06-04分を2026-06-03夜に送信しない。
+
+2026-06-04の運用:
+
+- 11:45: 人間がApps Scriptで `runPreflightCheckOnly()` を再実行する
+- PreflightでreadyCount=30、blockedReason空、remainingQuota>=30を確認する
+- 人間がScript Propertiesを送信用に切り替える
+- 人間が `runDailyGmailSalesSend()` を手動実行する
+- 送信後すぐに `DRY_RUN=true` / `LIVE_SEND_ENABLED=false` / `AUTO_SEND_ENABLED=false` へ戻す
+- Codexで送信結果をAgent Officeへ記録する
+- Hermesは監視・確認・報告のみ行い、送信実行しない
+
+2026-06-05以降の完全自動トリガー有効化は、2026-06-04の手動承認つき送信が成功してから検討する。候補プールavailableが60件未満の場合は完全自動化を保留し、90件以上で安定運用候補とする。
+
 ## 禁止事項
 
 - Gmail送信はApps Scriptの安全条件、sendBatchId重複防止、30件ちょうどのready確認、Gmail残クォータ確認を満たす場合のみ行う

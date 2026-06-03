@@ -1,0 +1,36 @@
+{
+  "id": "gmail-automation-readiness-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail営業30件/日 自動化運用準備",
+  "category": "sales",
+  "status": "needs_review",
+  "phase": "2026-06-04手動承認つき送信・自動化移行待ち",
+  "progress": 85,
+  "priority": "high",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T22:14:38+09:00",
+  "summary": "2026-06-04分のoutbox30件とPreflight成功を確認済み。明日は手動承認つきで送信し、成功後に2026-06-05以降の完全自動トリガー有効化を検討する。",
+  "artifacts": [
+    "docs/gmail/2026-06-04-gmail-send-runbook.md",
+    "docs/hermes-gmail-daily-monitoring-2026-06-03.md",
+    "docs/gmail/gmail-apps-script-trigger-enable-checklist-2026-06-03.md"
+  ],
+  "metrics": {
+    "tomorrowOutboxReady": true,
+    "tomorrowReadyCount": 30,
+    "preflightPassed": true,
+    "autoTriggersEnabled": false,
+    "gmailLiveSendEnabled": false,
+    "requiresHumanApproval": true
+  },
+  "nextAction": "2026-06-04 11:45にrunPreflightCheckOnly()を再実行し、問題なければ手動承認つきで30件送信する",
+  "safeToAct": true,
+  "notes": [
+    "今回Gmail送信なし",
+    "Apps Script本番トリガー有効化なし",
+    "2026-06-04は手動承認つき送信推奨",
+    "2026-06-05以降に完全自動化移行を検討",
+    "Hermesは監視・報告のみ"
+  ]
+}
