@@ -6,11 +6,11 @@
   "category": "sales",
   "status": "blocked",
   "phase": "Gmail送信用候補不足",
-  "progress": 30,
+  "progress": 35,
   "priority": "high",
   "createdAt": "2026-06-03T00:00:00.000Z",
-  "updatedAt": "2026-06-03T18:02:18+09:00",
-  "summary": "2026-06-04分のGmail営業メール送信対象をローカル既存データから確認したが、2026-06-03送信済みと重複しないGmail-ready候補は0件。Web追加収集は時間超過のため中止し、outbox30件とSheets貼り付け用TSVは未作成。",
+  "updatedAt": "2026-06-03T18:15:10+09:00",
+  "summary": "2026-06-04分のGmail営業メール送信対象をローカル既存データから確認したが、2026-06-03送信済みと重複しないGmail-ready候補は0件。outbox30件とSheets貼り付け用TSVは未作成のまま、候補プール補充パイプラインを整備した。",
   "artifacts": [
     "docs/gmail/2026-06-04-gmail-candidate-summary.md",
     "docs/gmail/2026-06-04-gmail-outbox-preparation-summary.md"
@@ -23,12 +23,13 @@
     "shortage": 30,
     "outboxCreated": false,
     "sheetsReadyTsvCreated": false,
+    "poolPipelineDesigned": true,
     "sentCount": 0,
     "sheetPasted": false,
     "preflightPassed": false,
     "autoTriggersEnabled": false
   },
-  "nextAction": "公開メールアドレス付き候補30件を追加収集し、2026-06-03送信済み候補と重複しないことを確認してからoutbox/TSVを作成する",
+  "nextAction": "5〜10件単位の分割Web収集バッチで公開メールアドレス付き候補を補充し、pool availableが30件以上になってからoutbox/TSVを作成する",
   "safeToAct": false,
   "notes": [
     "Gmail本番送信なし",
@@ -37,6 +38,7 @@
     "Google Sheets送信済み更新なし",
     "Instagram操作なし",
     "メールアドレス入りoutbox/TSVは未作成",
-    "Web追加収集は時間超過のため中止"
+    "Web追加収集は時間超過のため中止",
+    "候補プール補充パイプライン設計済み"
   ]
 }

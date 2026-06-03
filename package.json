@@ -13,7 +13,10 @@
     "agent:status:validate": "node scripts/agent-status/validate.mjs",
     "agent:status:render": "node scripts/agent-status/render-dashboard.mjs",
     "agent:status:open": "node scripts/agent-status/render-dashboard.mjs && echo \"Open tmp/agent-dashboard.html in your browser\"",
-    "agent:office:render": "node scripts/agent-status/render-agent-office.mjs"
+    "agent:office:render": "node scripts/agent-status/render-agent-office.mjs",
+    "gmail:pool:validate": "node scripts/gmail/validate-gmail-pool.mjs",
+    "gmail:pool:merge": "node scripts/gmail/merge-gmail-candidate-pool.mjs",
+    "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs"
   },
   "dependencies": {
     "next": "16.2.6",

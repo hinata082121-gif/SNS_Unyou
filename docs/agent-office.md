@@ -103,6 +103,8 @@ Gmail営業メール30件/日を実行対象にした場合は、`data/agent-sta
 
 2026-06-04分のGmail送信対象準備は、`data/agent-status/tasks/gmail-outbox-2026-06-04.json` で確認します。ローカル既存データでは2026-06-03送信済みと重複しないGmail-ready候補が0件だったため、現在は `blocked` です。outbox30件とSheets貼り付け用TSVは未作成で、Gmail本番送信、自動返信、Google Sheets送信済み更新、自動トリガー有効化は行いません。
 
+Gmail送信用候補プールは、`data/agent-status/tasks/gmail-ready-candidate-pool-2026-06-03.json` で確認します。毎日30件送信を安定させるには、公開メールアドレス確認済み候補を常時プール化し、`available` が30件未満なら送信を `blocked`、60件未満なら補充対象として扱います。プール本体、outbox、TSV、メールアドレス一覧はGitに追加せず、Agent Officeには件数と次アクションだけを表示します。
+
 Instagram初回投稿5件が人間の手で公開された場合は、`data/agent-status/tasks/instagram-initial-posts-published-2026-06-03.json` のように別タスクとして記録します。
 Agent Officeでは、投稿済み件数、カルーセル/リール内訳、24時間後・72時間後・7日後の反応確認待ちを確認対象にします。
 AI/Hermes/Codexは投稿操作を行わず、追加投稿、予約投稿、DM、コメントも行いません。

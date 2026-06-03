@@ -68,6 +68,21 @@
 7. readyCount=30 / blockedReason="" を確認する
 8. 自動トリガー有効化はその後に判断する
 
+## 候補プール補充パイプライン
+
+2026-06-04分は30件未達のためblocked継続とする。単発のWeb追加収集は時間超過しやすいため、以後は `docs/gmail/gmail-ready-candidate-pool-design-2026-06-03.md` と `docs/gmail/gmail-candidate-web-research-batch-plan-2026-06-03.md` に従い、5〜10件単位でGmail-ready候補を補充する。
+
+outbox作成の再開条件:
+
+- pool availableが30件以上
+- 2026-06-03送信済み候補と重複なし
+- 推測メールアドレスなし
+- 問い合わせフォームのみ/Instagram URLのみ候補なし
+- 配信停止/返信あり/送信禁止なし
+- Sheets貼り付け用TSVを作れる列が揃っている
+
+上記条件を満たすまでは、Gmail本番送信、Google Sheets送信済み更新、自動トリガー有効化は行わない。
+
 ## 実行していないこと
 
 - Gmail本番送信
@@ -77,4 +92,3 @@
 - `setupDailyAutoSendTriggers()` の実行
 - Google Sheets送信済み更新
 - Instagram投稿/DM/コメント/フォロー/いいね
-
