@@ -1,0 +1,33 @@
+{
+  "id": "daily-sales-candidates-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "hermes-scheduler",
+  "title": "daily-sales-candidates-2026-06-03",
+  "category": "sales",
+  "status": "success",
+  "phase": "done",
+  "progress": 100,
+  "priority": "normal",
+  "createdAt": "2026-06-03T03:05:32.211Z",
+  "startedAt": "2026-06-03T03:05:32.211Z",
+  "updatedAt": "2026-06-03T14:46:00+09:00",
+  "summary": "Report created. candidates 10, A 9, conditional 1. Candidate creation is treated as complete despite the 12:00 cron error report, but Gmail sending is managed separately by gmail-daily-sales-send-2026-06-03.",
+  "artifacts": [
+    "docs/reports/sales/daily/2026-06-03-daily-sales-candidates.md"
+  ],
+  "metrics": {
+    "candidates": 10,
+    "sendCandidateA": 9,
+    "conditional": 1,
+    "shortage": false,
+    "confirmedEmailTargets": 0
+  },
+  "nextAction": "Gmail daily send is blocked until 30 confirmed email recipients are available and DRY_RUN passes.",
+  "safeToAct": false,
+  "notes": [
+    "No Google Sheets update",
+    "No sales sending",
+    "Gmail sending is tracked by gmail-daily-sales-send-2026-06-03",
+    "Do not treat candidate creation success as Gmail send completion"
+  ]
+}

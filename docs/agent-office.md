@@ -94,6 +94,10 @@ Gmail営業メール自動化MVPを準備した場合は、`data/agent-status/ta
 Agent Officeでは、Gmail送信設計、返信分類、配信停止管理、重複送信防止、本番送信OFFの状態を確認対象にします。
 初期状態では `DRY_RUN=true`、`LIVE_SEND_ENABLED=false` とし、実送信や自動返信実送信は行いません。
 
+Gmail営業メール30件/日を実行対象にした場合は、`data/agent-status/tasks/gmail-daily-sales-send-YYYY-MM-DD.json` のように別タスクとして記録します。
+候補作成が完了していても、メール宛先30件、DRY_RUN、重複/除外チェック、送信結果記録が完了していなければGmail送信は完了扱いにしません。
+送信対象メールが不足している場合は `blocked` として表示し、人間が次に確認すべき内容をミオの案内やタスク一覧で確認できるようにします。
+
 Instagram初回投稿5件が人間の手で公開された場合は、`data/agent-status/tasks/instagram-initial-posts-published-2026-06-03.json` のように別タスクとして記録します。
 Agent Officeでは、投稿済み件数、カルーセル/リール内訳、24時間後・72時間後・7日後の反応確認待ちを確認対象にします。
 AI/Hermes/Codexは投稿操作を行わず、追加投稿、予約投稿、DM、コメントも行いません。

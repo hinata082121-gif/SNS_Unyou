@@ -1,0 +1,40 @@
+{
+  "id": "gmail-daily-sales-send-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "2026-06-03 Gmail営業メール30件送信",
+  "category": "sales",
+  "status": "blocked",
+  "phase": "送信対象メール不足・本番送信未実行",
+  "progress": 35,
+  "priority": "high",
+  "createdAt": "2026-06-03T14:46:00+09:00",
+  "updatedAt": "2026-06-03T14:46:00+09:00",
+  "summary": "毎日30件Gmail営業送信を主タスク化したが、2026-06-03時点のローカル候補JSONには送信用メール宛先が0件で、Gmail送信ジョブもApps Script移植前のため本番送信を実行できずblocked。DRY_RUN相当の事前集計で送信予定0件。",
+  "artifacts": [
+    "docs/gmail/2026-06-03-gmail-sales-dry-run-summary.md",
+    "docs/gmail/2026-06-03-gmail-sales-send-summary.md",
+    "docs/gmail/gmail-sales-daily-30-operation-2026-06-03.md"
+  ],
+  "metrics": {
+    "targetSendCount": 30,
+    "dryRunCount": 0,
+    "sentCount": 0,
+    "failedCount": 0,
+    "skippedCount": 0,
+    "prospectJsonFilesChecked": 12,
+    "confirmedEmailTargets": 0,
+    "sheetUpdated": false
+  },
+  "nextAction": "メール宛先を含む送信対象30件を人間が確認し、Apps Script側でDRY_RUNを通してから本番送信可否を判断する",
+  "safeToAct": false,
+  "notes": [
+    "Gmail本番送信なし",
+    "Gmail自動返信なし",
+    "Google Sheets更新なし",
+    "Instagram投稿/DM/コメントなし",
+    "営業候補の不要な再生成なし",
+    "営業リスト本体とメール宛先一覧はGit追加なし",
+    "重複送信防止のためblocked記録"
+  ]
+}
