@@ -97,7 +97,7 @@ Agent Officeでは、Gmail送信設計、返信分類、配信停止管理、重
 Gmail営業メール30件/日を実行対象にした場合は、`data/agent-status/tasks/gmail-daily-sales-send-YYYY-MM-DD.json` のように別タスクとして記録します。
 候補作成が完了していても、メール宛先30件、DRY_RUN、重複/除外チェック、送信結果記録が完了していなければGmail送信は完了扱いにしません。
 送信対象メールが不足している場合は `blocked` として表示し、人間が次に確認すべき内容をミオの案内やタスク一覧で確認できるようにします。
-2026-06-03分は、既存候補からGmail-ready候補0件、追加収集後15件まで確認済みだが、目標30件には15件不足しているため `blocked` を継続します。今回もGmail本番送信、Google Sheets更新は行いません。
+2026-06-03分は、既存候補からGmail-ready候補0件、追加収集後30件まで確認済みです。outbox30件とDRY_RUNログは作成済みですが、Gmail本番送信環境とユーザー承認が未完了のため `needs_review` として扱います。今回もGmail本番送信、Google Sheets更新は行いません。
 
 Instagram初回投稿5件が人間の手で公開された場合は、`data/agent-status/tasks/instagram-initial-posts-published-2026-06-03.json` のように別タスクとして記録します。
 Agent Officeでは、投稿済み件数、カルーセル/リール内訳、24時間後・72時間後・7日後の反応確認待ちを確認対象にします。

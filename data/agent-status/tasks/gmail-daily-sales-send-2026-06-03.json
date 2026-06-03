@@ -4,35 +4,36 @@
   "avatar": "ops-monitor",
   "title": "2026-06-03 Gmail営業メール30件送信",
   "category": "sales",
-  "status": "blocked",
-  "phase": "Gmail送信対象不足・追加収集15件まで完了",
-  "progress": 55,
+  "status": "needs_review",
+  "phase": "送信対象30件確定・本番送信環境/承認待ち",
+  "progress": 85,
   "priority": "high",
   "createdAt": "2026-06-03T14:46:00+09:00",
-  "updatedAt": "2026-06-03T16:30:00+09:00",
-  "summary": "既存候補118件を分類した結果、Gmail-ready候補は0件。追加収集で公開メールつき候補15件を確保したが、目標30件には15件不足しているため本番送信は実行せずblocked継続。",
+  "updatedAt": "2026-06-03T16:45:00+09:00",
+  "summary": "既存候補118件を分類した結果、Gmail-ready候補は0件。追加収集v1/v2で公開メールつき候補30件を確保し、outbox30件とDRY_RUNログを作成。Gmail本番送信環境とユーザー承認が未完了のため実送信は行わずneeds_review。",
   "artifacts": [
     "docs/gmail/2026-06-03-gmail-sales-dry-run-summary.md",
     "docs/gmail/2026-06-03-gmail-sales-send-summary.md",
     "docs/gmail/gmail-sales-daily-30-operation-2026-06-03.md",
     "docs/gmail/2026-06-03-gmail-sales-blocked-resolution-plan.md",
     "docs/gmail/2026-06-03-gmail-candidate-audit-summary.md",
-    "docs/gmail/2026-06-03-gmail-additional-candidate-summary.md"
+    "docs/gmail/2026-06-03-gmail-additional-candidate-summary.md",
+    "docs/gmail/2026-06-03-gmail-additional-candidate-summary-v2.md"
   ],
   "metrics": {
     "targetSendCount": 30,
-    "dryRunCount": 0,
+    "dryRunCount": 30,
     "sentCount": 0,
     "failedCount": 0,
     "skippedCount": 0,
     "prospectJsonFilesChecked": 10,
     "existingGmailReady": 0,
-    "additionalReadyCount": 15,
-    "readyCount": 15,
-    "shortage": 15,
+    "additionalReadyCount": 30,
+    "readyCount": 30,
+    "shortage": 0,
     "sheetUpdated": false
   },
-  "nextAction": "Gmail-ready候補をあと15件以上追加確認し、30件確定後にDRY_RUNを実行する",
+  "nextAction": "ユーザーがApps Script側のDRY_RUN、Gmail残クォータ、Google Sheets更新列を確認し、本番送信可否を判断する",
   "safeToAct": false,
   "notes": [
     "Gmail本番送信なし",
@@ -41,7 +42,8 @@
     "Instagram投稿/DM/コメントなし",
     "営業候補の不要な再生成なし",
     "営業リスト本体とメール宛先一覧はGit追加なし",
-    "追加収集候補はdata/gmail/outbox配下に保存しGit追加なし",
-    "重複送信防止のためblocked継続"
+    "outbox30件はdata/gmail/outbox配下に保存しGit追加なし",
+    "DRY_RUNログはdata/gmail/logs配下に保存しGit追加なし",
+    "本番送信環境と承認待ちのためneeds_review"
   ]
 }
