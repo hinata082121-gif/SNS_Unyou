@@ -1,0 +1,42 @@
+{
+  "id": "gmail-outbox-2026-06-04",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "2026-06-04 Gmail営業送信対象30件準備",
+  "category": "sales",
+  "status": "blocked",
+  "phase": "Gmail送信用候補不足",
+  "progress": 30,
+  "priority": "high",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T18:02:18+09:00",
+  "summary": "2026-06-04分のGmail営業メール送信対象をローカル既存データから確認したが、2026-06-03送信済みと重複しないGmail-ready候補は0件。Web追加収集は時間超過のため中止し、outbox30件とSheets貼り付け用TSVは未作成。",
+  "artifacts": [
+    "docs/gmail/2026-06-04-gmail-candidate-summary.md",
+    "docs/gmail/2026-06-04-gmail-outbox-preparation-summary.md"
+  ],
+  "metrics": {
+    "targetSendCount": 30,
+    "readyCount": 0,
+    "reusableCandidateCount": 0,
+    "additionalCollectedCount": 0,
+    "shortage": 30,
+    "outboxCreated": false,
+    "sheetsReadyTsvCreated": false,
+    "sentCount": 0,
+    "sheetPasted": false,
+    "preflightPassed": false,
+    "autoTriggersEnabled": false
+  },
+  "nextAction": "公開メールアドレス付き候補30件を追加収集し、2026-06-03送信済み候補と重複しないことを確認してからoutbox/TSVを作成する",
+  "safeToAct": false,
+  "notes": [
+    "Gmail本番送信なし",
+    "自動返信実送信なし",
+    "自動トリガー未有効化",
+    "Google Sheets送信済み更新なし",
+    "Instagram操作なし",
+    "メールアドレス入りoutbox/TSVは未作成",
+    "Web追加収集は時間超過のため中止"
+  ]
+}
