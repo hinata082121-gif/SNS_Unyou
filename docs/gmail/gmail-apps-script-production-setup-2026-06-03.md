@@ -153,6 +153,16 @@
 | `live_send_disabled` | 本番送信時にLIVE_SEND_ENABLEDがtrueか |
 | `outbox_validation_errors` | 重複、文面、除外条件に問題がないか |
 
+## 2026-06-03 Illegal return statement修正メモ
+
+Apps Script貼り付け時に `SyntaxError: Illegal return statement` が出たため、公開実行関数側の戻り値返却をやめた。
+
+- `dailySalesEmailJob()` は `runDailyGmailSalesSend()` を呼ぶだけにした
+- `runPreflightCheckOnly()` はLoggerへ安全な要約を出し、戻り値を返さない
+- `runDailyGmailSalesSend()` はblocked時や完了時のオブジェクト返却をやめ、安全な要約ログで状態を確認する
+- 内部関数の `return` はすべて `function` 内に残している
+- Markdownコードブロック、appsscript.json、Node.js用のimport/exportはCode.gsに混ぜない
+
 ## 秘密情報をGitに入れない注意
 
 - Script Propertiesの実値をGitに書かない

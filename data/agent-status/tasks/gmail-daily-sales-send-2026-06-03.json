@@ -9,8 +9,8 @@
   "progress": 90,
   "priority": "high",
   "createdAt": "2026-06-03T14:46:00+09:00",
-  "updatedAt": "2026-06-03T17:15:00+09:00",
-  "summary": "outbox30件とDRY_RUNログは作成済み。Apps Script側の本番送信環境を確認するため、runPreflightCheckOnly() と runDailyGmailSalesSend() をCode.gsに追加し、セットアップ手順を整備。Gmail本番送信とGoogle Sheets更新は未実行。",
+  "updatedAt": "2026-06-03T17:35:00+09:00",
+  "summary": "outbox30件とDRY_RUNログは作成済み。Apps Script貼り付け時のIllegal return statement対策として公開実行関数の戻り値返却をやめ、runPreflightCheckOnly() と runDailyGmailSalesSend() をApps Scriptで貼り付けやすい形に修正。Gmail本番送信とGoogle Sheets更新は未実行。",
   "artifacts": [
     "docs/gmail/2026-06-03-gmail-sales-dry-run-summary.md",
     "docs/gmail/2026-06-03-gmail-sales-send-summary.md",
@@ -35,7 +35,7 @@
     "sheetUpdated": false,
     "appsScriptSetupRequired": true
   },
-  "nextAction": "ユーザーがApps ScriptへCode.gs/appsscript.jsonを反映し、runPreflightCheckOnly()を実行。問題なければ本番送信ONを判断する",
+  "nextAction": "ユーザーが修正版Code.gsをApps Scriptへ貼り付け、runPreflightCheckOnly()を実行。構文エラーが消えたことを確認してから本番送信ONを判断する",
   "safeToAct": false,
   "notes": [
     "Gmail本番送信なし",

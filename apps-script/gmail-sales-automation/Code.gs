@@ -56,7 +56,7 @@ function setupGmailSalesAutomation() {
 }
 
 function dailySalesEmailJob() {
-  return runDailyGmailSalesSend();
+  runDailyGmailSalesSend();
 }
 
 function runPreflightCheckOnly() {
@@ -73,14 +73,13 @@ function runPreflightCheckOnly() {
     sheetConnected: result.sheetConnected,
     safeToSend: false
   });
-  return result;
 }
 
 function runDailyGmailSalesSend() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
     appendSafeLog_({ event: 'daily_job_lock_skipped' });
-    return { status: 'blocked', reason: 'lock_unavailable' };
+    return;
   }
 
   try {
@@ -94,7 +93,7 @@ function runDailyGmailSalesSend() {
         readyCount: preflight.readyCount,
         remainingQuota: preflight.remainingQuota
       });
-      return { status: 'blocked', reason: preflight.blockedReason, preflight };
+      return;
     }
 
     const config = preflight.config;
@@ -149,7 +148,6 @@ function runDailyGmailSalesSend() {
       dryRun: config.dryRun,
       liveSendEnabled: config.liveSendEnabled
     });
-    return { status: failed > 0 ? 'needs_review' : 'success', processed, failed };
   } finally {
     lock.releaseLock();
   }
