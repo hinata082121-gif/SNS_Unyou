@@ -1,0 +1,35 @@
+{
+  "id": "agent-office-vercel-dashboard-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "AIアバター進捗確認サイト Vercel公開",
+  "category": "dashboard",
+  "status": "needs_review",
+  "phase": "Vercel公開・スマホ確認待ち",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T23:10:00+09:00",
+  "summary": "ローカルのAIアバター風進捗確認サイトをNext.jsの/agent-officeページとして実装し、Vercelからスマホで確認できるようにした。",
+  "artifacts": [
+    "src/app/agent-office/page.tsx",
+    "src/lib/agent-office.ts",
+    "src/components/agent-office/AgentOfficeDashboard.tsx",
+    "docs/agent-office-vercel-publish-2026-06-03.md"
+  ],
+  "metrics": {
+    "vercelReady": true,
+    "mobileReady": true,
+    "accessKeyRequired": true,
+    "containsSensitiveData": false
+  },
+  "nextAction": "Vercel環境変数に簡易アクセスキーを設定し、公開URLの/agent-office?key=...をスマホで確認する",
+  "safeToAct": true,
+  "notes": [
+    "表示専用ページ",
+    "Gmail送信機能なし",
+    "営業先名・メールアドレス非表示",
+    "秘密情報非表示",
+    "簡易アクセスキーで保護"
+  ]
+}

@@ -48,6 +48,28 @@ start .\tmp\agent-office.html
 将来的にはNext.jsまたはローカル専用Webアプリとして、タスク更新、フィルタ、日次サマリー、Git状態確認をより操作しやすくします。
 ただし、公開サイトやVercel本番には内部運用情報を表示しません。
 
+## Phase 2.5: Vercel確認ページ
+
+出先のスマホから進捗だけを確認するため、Next.jsアプリ内に `/agent-office` を追加しました。
+このページは `data/agent-status/tasks/*.json` の安全な要約だけを読み込み、`data/gmail/`、`data/prospects/`、`docs/reports/sales/`、`tmp/` は読み込みません。
+
+Vercel本番では、環境変数 `AGENT_OFFICE_ACCESS_KEY` とURLの `?key=...` が一致する場合だけダッシュボードを表示します。
+環境変数が未設定の本番環境ではロック画面を表示します。開発環境では、環境変数が未設定の場合に限り表示できます。
+
+公開ページの役割:
+
+- Hermes、Codex、Apps Script、Gmail営業、Instagram運用の進捗をスマホで確認する
+- `status`、`phase`、`progress`、`nextAction`、安全なmetrics要約を表示する
+- 人間確認が必要なタスクを上位に表示する
+- Gmail送信、Instagram操作、Google Sheets更新は実行しない
+
+表示禁止:
+
+- 営業先名、メールアドレス、送信先URL
+- Gmail送信対象リスト、outbox、candidate pool本体
+- Google Sheets ID、Apps Script URL、Webhook URL、APIキー、トークン
+- `.env` / `.env.local` の値
+
 ## Phase 3: VS Code Webview拡張
 
 最終的にはVS Code Webview拡張として、Codex/Hermes作業中に同じ画面で進捗を確認できるようにします。

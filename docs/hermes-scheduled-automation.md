@@ -4,6 +4,19 @@
 
 Hermes AgentでICHI Socialの営業候補整理と新規候補リサーチを定期実行するための手順です。初期段階では、送信以外の自動化に限定します。
 
+## Agent Office公開確認
+
+Next.jsアプリ内の `/agent-office` は、Vercel公開URLからスマホで確認するための表示専用ダッシュボードです。
+Hermes Agentは、各タスクの進捗を `data/agent-status/tasks/*.json` に記録し、Codexが必要に応じてAgent Officeへ反映します。
+
+運用ルール:
+
+- HermesはGmail本番送信、自動返信、Instagram操作、Google Sheets送信済み更新を実行しない
+- `/agent-office` には安全な進捗要約だけを表示する
+- 営業先名、メールアドレス、送信対象リスト、outbox、candidate pool、秘密情報は表示しない
+- Vercel本番では環境変数 `AGENT_OFFICE_ACCESS_KEY` による簡易アクセスキーを設定する
+- 完全自動化や送信実行の判断は、人間確認とApps Script側の安全条件を前提にする
+
 ## 前提
 
 - Hermes AgentはWSL2上で起動済み
