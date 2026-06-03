@@ -71,14 +71,19 @@ ICHI Socialの営業主タスクを「毎日10件の候補作成」から「毎�
 
 2026-06-03は、候補作成レポート上では10件の候補が作成済みで、月水リサーチ由来の候補も確認済みだった。
 
-一方で、ローカル候補JSON群に送信用メール宛先が確認できず、Gmail送信ジョブもApps Script移植前のため、30件の本番送信は実行しない。
+一方で、当初はローカル候補JSON群に送信用メール宛先が確認できず、Gmail送信ジョブもApps Script移植前だったため、30件の本番送信は `blocked` とした。
 
-本日分は以下の扱いにする。
+その後、公開メールアドレス付き候補30件を安全確認し、Apps Script上で2026-06-03 16:40 JSTにGmail営業メール30件送信が完了した。
+
+本日分は最終的に以下の扱いにする。
 
 - 12:00 cron error: 候補作成は成果物上完了済みとして扱う
-- Gmail送信: 送信対象メール不足のため `blocked`
-- Google Sheets更新: 送信実績がないため未実行
-- Agent Office: `gmail-daily-sales-send-2026-06-03` でblocked記録
+- Gmail送信: Apps Script上で30件送信完了
+- Google Sheets更新: Apps Script送信成功ログに基づき送信済み反映済みとして記録
+- Agent Office: `gmail-daily-sales-send-2026-06-03` で `success` 記録
+- 次アクション: 2026-06-06に返信確認・フォローアップ管理
+
+送信後は二重送信防止のため、必ず `DRY_RUN=true` / `LIVE_SEND_ENABLED=false` へ戻し、`runDailyGmailSalesSend()` を再実行しない。
 
 ## 14:00補完タスクの役割
 

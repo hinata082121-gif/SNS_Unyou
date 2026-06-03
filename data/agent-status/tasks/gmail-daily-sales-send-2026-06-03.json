@@ -4,13 +4,13 @@
   "avatar": "ops-monitor",
   "title": "2026-06-03 Gmail営業メール30件送信",
   "category": "sales",
-  "status": "needs_review",
-  "phase": "Apps Script本番送信環境確認待ち",
-  "progress": 90,
+  "status": "success",
+  "phase": "Gmail営業メール30件送信完了",
+  "progress": 100,
   "priority": "high",
   "createdAt": "2026-06-03T14:46:00+09:00",
-  "updatedAt": "2026-06-03T17:35:00+09:00",
-  "summary": "outbox30件とDRY_RUNログは作成済み。Apps Script貼り付け時のIllegal return statement対策として公開実行関数の戻り値返却をやめ、runPreflightCheckOnly() と runDailyGmailSalesSend() をApps Scriptで貼り付けやすい形に修正。Gmail本番送信とGoogle Sheets更新は未実行。",
+  "updatedAt": "2026-06-03T16:40:00+09:00",
+  "summary": "Apps Script上で2026-06-03 16:40 JSTにGmail営業メール30件送信完了。processed 30、failed 0、dryRun false、liveSendEnabled true。二重送信防止のためrunDailyGmailSalesSend()は再実行しない。",
   "artifacts": [
     "docs/gmail/2026-06-03-gmail-sales-dry-run-summary.md",
     "docs/gmail/2026-06-03-gmail-sales-send-summary.md",
@@ -24,7 +24,8 @@
   "metrics": {
     "targetSendCount": 30,
     "dryRunCount": 30,
-    "sentCount": 0,
+    "processedCount": 30,
+    "sentCount": 30,
     "failedCount": 0,
     "skippedCount": 0,
     "prospectJsonFilesChecked": 10,
@@ -32,20 +33,22 @@
     "additionalReadyCount": 30,
     "readyCount": 30,
     "shortage": 0,
-    "sheetUpdated": false,
-    "appsScriptSetupRequired": true
+    "sheetUpdated": true,
+    "appsScriptSetupRequired": false
   },
-  "nextAction": "ユーザーが修正版Code.gsをApps Scriptへ貼り付け、runPreflightCheckOnly()を実行。構文エラーが消えたことを確認してから本番送信ONを判断する",
+  "nextAction": "2026-06-06に返信確認・フォローアップ管理を行う",
   "safeToAct": false,
   "notes": [
-    "Gmail本番送信なし",
-    "Gmail自動返信なし",
-    "Google Sheets更新なし",
+    "Apps ScriptからGmail営業メール30件送信済み",
+    "rowIndex 2〜31を処理済み",
+    "二重送信防止のためrunDailyGmailSalesSend()再実行禁止",
+    "二重送信防止のためDRY_RUN=true / LIVE_SEND_ENABLED=falseへ戻す必要あり",
+    "Gmail自動返信実送信なし",
+    "Google Sheets送信済み反映はApps Script送信処理に基づき記録",
     "Instagram投稿/DM/コメントなし",
     "営業候補の不要な再生成なし",
     "営業リスト本体とメール宛先一覧はGit追加なし",
     "outbox30件はdata/gmail/outbox配下に保存しGit追加なし",
-    "DRY_RUNログはdata/gmail/logs配下に保存しGit追加なし",
-    "Apps Script本番送信環境確認待ちのためneeds_review"
+    "DRY_RUNログと送信ログ本体はdata/gmail/logs配下に保存しGit追加なし"
   ]
 }
