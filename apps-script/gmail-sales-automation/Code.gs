@@ -55,6 +55,46 @@ function setupGmailSalesAutomation() {
   }
 }
 
+function setupDailyAutoSendTriggers() {
+  const config = getConfig_();
+  const triggerSpecs = [
+    { handler: 'runScheduledPreflight', hour: config.preflightHour, minute: 30 },
+    { handler: 'runScheduledDailySend', hour: config.sendHour, minute: 0 },
+    { handler: 'runPostSendCheck', hour: config.postSendCheckHour, minute: 30 },
+    { handler: 'runFailureRecoveryCheck', hour: 14, minute: 0 }
+  ];
+
+  triggerSpecs.forEach((spec) => {
+    if (hasTrigger_(spec.handler)) {
+      appendSafeLog_({ event: 'auto_trigger_exists', handler: spec.handler });
+      return;
+    }
+    ScriptApp.newTrigger(spec.handler)
+      .timeBased()
+      .everyDays(1)
+      .atHour(spec.hour)
+      .nearMinute(spec.minute)
+      .create();
+    appendSafeLog_({ event: 'auto_trigger_created', handler: spec.handler, hour: spec.hour, minute: spec.minute });
+  });
+}
+
+function removeDailyAutoSendTriggers() {
+  const handlers = [
+    'runScheduledPreflight',
+    'runScheduledDailySend',
+    'runPostSendCheck',
+    'runFailureRecoveryCheck'
+  ];
+
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    if (handlers.indexOf(trigger.getHandlerFunction()) !== -1) {
+      ScriptApp.deleteTrigger(trigger);
+      appendSafeLog_({ event: 'auto_trigger_removed', handler: trigger.getHandlerFunction() });
+    }
+  });
+}
+
 function dailySalesEmailJob() {
   runDailyGmailSalesSend();
 }
@@ -75,29 +115,125 @@ function runPreflightCheckOnly() {
   });
 }
 
+function runScheduledPreflight() {
+  const result = runPreflight_(false);
+  appendAutomationStatusLog_({
+    event: 'scheduled_preflight_checked',
+    dryRun: result.dryRun,
+    liveSendEnabled: result.liveSendEnabled,
+    autoSendEnabled: result.config.autoSendEnabled,
+    dailySendLimit: result.dailySendLimit,
+    remainingQuota: result.remainingQuota,
+    targetCount: result.targetCount,
+    readyCount: result.readyCount,
+    sendBatchId: result.batchId,
+    blockedReason: result.blockedReason,
+    sheetConnected: result.sheetConnected,
+    safeToSend: false
+  });
+}
+
+function runScheduledDailySend() {
+  executeDailyGmailSalesSend_({ source: 'scheduled', requireAutoSend: true });
+}
+
+function runPostSendCheck() {
+  const config = getConfig_();
+  const batchId = buildSendBatchId_(config.sendDate);
+  const rows = loadCandidateRows_(config);
+  let sentCount = 0;
+  let failedCount = 0;
+  let readyCount = 0;
+
+  rows.forEach((item) => {
+    const row = item.row;
+    if (String(row.sendBatchId || '') !== batchId) {
+      return;
+    }
+    const sentStatus = String(row.sentStatus || row.status || '').toLowerCase();
+    if (includesAny_(sentStatus, ['送信済', 'sent'])) {
+      sentCount += 1;
+      return;
+    }
+    if (includesAny_(sentStatus, ['失敗', 'failed', 'error'])) {
+      failedCount += 1;
+      return;
+    }
+    if (String(row.status || '').toLowerCase() === 'ready') {
+      readyCount += 1;
+    }
+  });
+
+  appendAutomationStatusLog_({
+    event: 'post_send_check',
+    sendBatchId: batchId,
+    sentCount,
+    failedCount,
+    readyCount,
+    liveSendEnabled: config.liveSendEnabled,
+    autoSendEnabled: config.autoSendEnabled
+  });
+}
+
+function runFailureRecoveryCheck() {
+  const result = runPreflight_(false);
+  appendAutomationStatusLog_({
+    event: 'failure_recovery_check',
+    targetCount: result.targetCount,
+    readyCount: result.readyCount,
+    sendBatchId: result.batchId,
+    blockedReason: result.blockedReason || 'none',
+    action: result.readyCount === result.targetCount ? 'monitor_only' : 'needs_human_review'
+  });
+}
+
 function runDailyGmailSalesSend() {
+  executeDailyGmailSalesSend_({ source: 'manual', requireAutoSend: false });
+}
+
+function executeDailyGmailSalesSend_(options) {
+  const settings = options || {};
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
     appendSafeLog_({ event: 'daily_job_lock_skipped' });
     return;
   }
 
+  let configForReset = null;
   try {
     const preflight = runPreflight_(true);
+    configForReset = preflight.config;
+
+    if (settings.requireAutoSend && !preflight.config.autoSendEnabled) {
+      appendSafeLog_({
+        event: 'daily_job_blocked',
+        source: settings.source || 'unknown',
+        blockedReason: 'auto_send_disabled',
+        dryRun: preflight.dryRun,
+        liveSendEnabled: preflight.liveSendEnabled,
+        autoSendEnabled: preflight.config.autoSendEnabled,
+        readyCount: preflight.readyCount
+      });
+      return;
+    }
+
     if (!preflight.safeToSend) {
       appendSafeLog_({
         event: 'daily_job_blocked',
+        source: settings.source || 'unknown',
         blockedReason: preflight.blockedReason,
         dryRun: preflight.dryRun,
         liveSendEnabled: preflight.liveSendEnabled,
+        autoSendEnabled: preflight.config.autoSendEnabled,
         readyCount: preflight.readyCount,
-        remainingQuota: preflight.remainingQuota
+        remainingQuota: preflight.remainingQuota,
+        sendBatchId: preflight.batchId
       });
       return;
     }
 
     const config = preflight.config;
-    const maxToProcess = preflight.readyCount;
+    const maxToProcess = preflight.targetCount;
     const rows = preflight.readyRows;
     let processed = 0;
     let failed = 0;
@@ -106,7 +242,7 @@ function runDailyGmailSalesSend() {
       const item = rows[i];
       const row = item.row;
       const rowIndex = item.rowIndex;
-      const email = normalizeEmail_(row.email || row['宛先メール']);
+      const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
 
       try {
         assertSafeToSend_(row);
@@ -119,8 +255,11 @@ function runDailyGmailSalesSend() {
           name: config.fromName
         });
         updateSheetAfterSend_(config, rowIndex, {
+          status: 'sent',
           sentStatus: '送信済',
-          lastSentAt: new Date().toISOString()
+          sentAt: new Date().toISOString(),
+          sentBy: 'Apps Script',
+          lastCheckedAt: new Date().toISOString()
         });
         appendSafeLog_({
           event: 'send_executed',
@@ -131,24 +270,40 @@ function runDailyGmailSalesSend() {
         processed += 1;
       } catch (error) {
         failed += 1;
+        updateSheetAfterSend_(config, rowIndex, {
+          sentStatus: 'needs_review',
+          errorMessage: String(error.message || 'send_failed'),
+          lastCheckedAt: new Date().toISOString()
+        });
         appendSafeLog_({
           event: 'send_failed_stopped',
           rowIndex,
           errorName: error.name || 'Error',
           reason: error.message
         });
-        break;
+        if (failed >= config.maxFailuresBeforeStop) {
+          break;
+        }
       }
+    }
+
+    if (processed === maxToProcess && failed === 0) {
+      markBatchSent_(preflight.batchId);
     }
 
     appendSafeLog_({
       event: 'daily_job_finished',
+      source: settings.source || 'unknown',
+      sendBatchId: preflight.batchId,
       processed,
       failed,
       dryRun: config.dryRun,
       liveSendEnabled: config.liveSendEnabled
     });
   } finally {
+    if (configForReset) {
+      resetLiveSendAfterRun_(configForReset);
+    }
     lock.releaseLock();
   }
 }
@@ -229,6 +384,12 @@ function maybeSendAutoReply_(thread, classification, config) {
 }
 
 function buildInitialSalesEmail_(row) {
+  const subject = String(row.subject || row['件名'] || '').trim();
+  const body = String(row.body || row['本文'] || '').trim();
+  if (subject && body) {
+    return { subject, body };
+  }
+
   const storeName = row.name || row['店舗名'] || 'ご担当者';
   const signature = getConfig_().replySignature;
   return {
@@ -319,12 +480,25 @@ function appendSafeLog_(event) {
 function getConfig_() {
   const props = PropertiesService.getScriptProperties();
   const dailyLimit = Number(props.getProperty('DAILY_SEND_LIMIT') || '30');
+  const sendDate = props.getProperty('SEND_DATE') || getToday_();
   return {
     sheetId: props.getProperty('SHEET_ID'),
     sheetName: props.getProperty('SHEET_NAME') || 'sales',
     dryRun: props.getProperty('DRY_RUN') !== 'false',
     liveSendEnabled: props.getProperty('LIVE_SEND_ENABLED') === 'true',
+    autoSendEnabled: props.getProperty('AUTO_SEND_ENABLED') === 'true',
+    autoResetLiveSendAfterRun: props.getProperty('AUTO_RESET_LIVE_SEND_AFTER_RUN') !== 'false',
     dailySendLimit: Math.min(Number.isFinite(dailyLimit) ? dailyLimit : 30, 30),
+    preflightHour: normalizeHour_(props.getProperty('PREFLIGHT_HOUR'), 11),
+    sendHour: normalizeHour_(props.getProperty('SEND_HOUR'), 12),
+    postSendCheckHour: normalizeHour_(props.getProperty('POST_SEND_CHECK_HOUR'), 12),
+    sendBatchIdPrefix: props.getProperty('SEND_BATCH_ID_PREFIX') || 'gmail-sales',
+    requireExactReadyCount: props.getProperty('REQUIRE_EXACT_READY_COUNT') !== 'false',
+    requireOptOutText: props.getProperty('REQUIRE_OPT_OUT_TEXT') !== 'false',
+    requireUniqueBatch: props.getProperty('REQUIRE_UNIQUE_BATCH') !== 'false',
+    maxFailuresBeforeStop: Math.max(1, Number(props.getProperty('MAX_FAILURES_BEFORE_STOP') || '1')),
+    sendDate,
+    nextActionDate: props.getProperty('NEXT_ACTION_DATE') || '',
     fromName: props.getProperty('FROM_NAME') || 'ICHI Social',
     replySignature: props.getProperty('REPLY_SIGNATURE') || 'ICHI Social',
     createTriggers: props.getProperty('CREATE_TRIGGERS') || 'false'
@@ -351,6 +525,9 @@ function validateProductionConfig_() {
   if (config.dailySendLimit > 30) {
     errors.push('daily_limit_exceeds_30');
   }
+  if (config.dailySendLimit !== 30) {
+    errors.push('daily_limit_must_be_30');
+  }
   if (!verifyNoSensitiveLogging_()) {
     errors.push('unsafe_logging');
   }
@@ -374,6 +551,7 @@ function validateOutboxRows_(items, config) {
   const sentEmails = loadKnownSentEmails_(config);
   const seenEmails = {};
   const seenBusiness = {};
+  const batchId = buildSendBatchId_(config.sendDate);
   const readyRows = [];
   const skipped = [];
   const errors = [];
@@ -381,8 +559,30 @@ function validateOutboxRows_(items, config) {
   items.forEach((item) => {
     const row = item.row;
     const rowIndex = item.rowIndex;
-    const email = normalizeEmail_(row.email || row['宛先メール']);
+    const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
     const businessName = String(row.name || row['店舗名'] || '').trim().toLowerCase();
+    const rowStatus = String(row.status || '').toLowerCase();
+    const rowSendDate = normalizeDateText_(row.sendDate || row['送信日']);
+    const rowBatchId = String(row.sendBatchId || '').trim();
+    const subject = String(row.subject || row['件名'] || '').trim();
+    const body = String(row.body || row['本文'] || '').trim();
+
+    if (rowStatus !== 'ready') {
+      skipped.push({ rowIndex, reason: 'not_ready_status' });
+      return;
+    }
+    if (rowSendDate !== config.sendDate) {
+      skipped.push({ rowIndex, reason: 'send_date_mismatch' });
+      return;
+    }
+    if (!rowBatchId || rowBatchId !== batchId) {
+      errors.push({ rowIndex, reason: 'send_batch_id_mismatch' });
+      return;
+    }
+    if (!subject || !body) {
+      errors.push({ rowIndex, reason: 'missing_subject_or_body' });
+      return;
+    }
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       skipped.push({ rowIndex, reason: 'invalid_email' });
@@ -434,6 +634,7 @@ function updateSheetAfterSend_(config, rowIndex, updates) {
 function runPreflight_(forSend) {
   const production = validateProductionConfig_();
   const config = production.config;
+  const batchId = buildSendBatchId_(config.sendDate);
   let remainingQuota = 0;
   let sheetConnected = false;
   let rows = [];
@@ -455,7 +656,7 @@ function runPreflight_(forSend) {
   }
 
   const targetCount = Math.min(config.dailySendLimit, 30);
-  const readyCount = Math.min(validation.readyRows.length, targetCount);
+  const readyCount = validation.readyRows.length;
 
   if (validation.errors.length > 0) {
     blockedReasons.push('outbox_validation_errors');
@@ -463,11 +664,16 @@ function runPreflight_(forSend) {
   if (readyCount === 0) {
     blockedReasons.push('no_ready_rows');
   }
-  if (readyCount > targetCount) {
+  if (config.requireExactReadyCount && readyCount !== targetCount) {
+    blockedReasons.push('exact_ready_count_not_met');
+  } else if (readyCount > targetCount) {
     blockedReasons.push('ready_count_exceeds_limit');
   }
-  if (remainingQuota < readyCount) {
+  if (remainingQuota < targetCount) {
     blockedReasons.push('insufficient_gmail_quota');
+  }
+  if (config.requireUniqueBatch && !verifyBatchNotSent_(batchId)) {
+    blockedReasons.push('batch_already_sent');
   }
   if (forSend && config.dryRun) {
     blockedReasons.push('dry_run_enabled');
@@ -488,6 +694,7 @@ function runPreflight_(forSend) {
     targetCount,
     readyCount,
     readyRows: validation.readyRows.slice(0, targetCount),
+    batchId,
     blockedReason,
     sheetConnected,
     safeToSend
@@ -495,8 +702,9 @@ function runPreflight_(forSend) {
 }
 
 function assertMessageSafe_(message) {
+  const config = getConfig_();
   const text = String((message && message.subject) || '') + '\n' + String((message && message.body) || '');
-  if (!includesAny_(text, ['不要', '今後のご案内が不要', 'ご返信不要'])) {
+  if (config.requireOptOutText && !includesAny_(text, ['不要', '今後のご案内が不要', 'ご返信不要'])) {
     throw new Error('missing_opt_out_text');
   }
   if (includesAny_(text, ['必ず売上', '絶対', '売上保証', '成果保証'])) {
@@ -513,6 +721,8 @@ function shouldSkipRecipient_(row) {
     row.status,
     row.sentStatus,
     row.replyStatus,
+    row.unsubscribe,
+    row.doNotContact,
     row['送信ステータス'],
     row['返信ステータス'],
     row['配信停止'],
@@ -555,6 +765,7 @@ function loadCandidateRows_(config) {
       row[key] = rowValues[columnIndex];
     });
     row.email = row.email || row['宛先メール'] || row['メール'];
+    row.contactEmail = row.contactEmail || row['連絡先メール'];
     row.name = row.name || row['店舗名'];
     return { row, rowIndex: index + 2 };
   });
@@ -599,4 +810,81 @@ function hashValue_(value) {
     const normalized = byte < 0 ? byte + 256 : byte;
     return ('0' + normalized.toString(16)).slice(-2);
   }).join('').slice(0, 12);
+}
+
+function buildSendBatchId_(dateText) {
+  const config = getConfig_();
+  return config.sendBatchIdPrefix + '-' + normalizeDateText_(dateText || config.sendDate);
+}
+
+function verifyBatchNotSent_(batchId) {
+  if (!batchId) {
+    return false;
+  }
+  const props = PropertiesService.getScriptProperties();
+  return props.getProperty(getBatchSentPropertyKey_(batchId)) !== 'true';
+}
+
+function markBatchSent_(batchId) {
+  if (!batchId) {
+    return;
+  }
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(getBatchSentPropertyKey_(batchId), 'true');
+  props.setProperty('LAST_SENT_BATCH_ID', batchId);
+  props.setProperty('LAST_SENT_AT', new Date().toISOString());
+  appendSafeLog_({ event: 'batch_marked_sent', sendBatchId: batchId });
+}
+
+function resetLiveSendAfterRun_(config) {
+  if (!config.autoResetLiveSendAfterRun) {
+    return;
+  }
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('LIVE_SEND_ENABLED', 'false');
+  props.setProperty('AUTO_SEND_ENABLED', 'false');
+  appendSafeLog_({ event: 'live_send_reset_after_run' });
+}
+
+function appendAutomationStatusLog_(event) {
+  appendSafeLog_(event);
+  updateAgentStatusSheetOrLog_(event);
+}
+
+function updateAgentStatusSheetOrLog_(status) {
+  appendSafeLog_({
+    event: 'agent_status_update_planned',
+    statusEvent: status.event || 'unknown',
+    readyCount: status.readyCount,
+    sentCount: status.sentCount,
+    failedCount: status.failedCount,
+    blockedReason: status.blockedReason
+  });
+}
+
+function hasTrigger_(handlerName) {
+  return ScriptApp.getProjectTriggers().some((trigger) => trigger.getHandlerFunction() === handlerName);
+}
+
+function getBatchSentPropertyKey_(batchId) {
+  return 'BATCH_SENT_' + hashValue_(batchId);
+}
+
+function normalizeHour_(value, fallback) {
+  const hour = Number(value);
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) {
+    return fallback;
+  }
+  return Math.floor(hour);
+}
+
+function normalizeDateText_(value) {
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    return Utilities.formatDate(value, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
+  }
+  return String(value || '').trim().slice(0, 10);
+}
+
+function getToday_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
 }

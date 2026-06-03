@@ -4,14 +4,16 @@
 
 2026-06-03分のGmail営業メール30件送信について、Apps Script側で本番送信前の接続確認を行える状態にする。
 
-本手順は送信環境の準備とPreflight確認用であり、まだ本番送信は行わない。
+本手順は送信環境の準備とPreflight確認用です。
+
+2026-06-03分はApps Script上で30件送信成功済み。2026-06-04以降は、完全自動送信トリガーを人間確認後に有効化する。
 
 ## 現在の状態
 
 - outbox30件: 確定済み
 - DRY_RUN: 30件で成功済み
-- Gmail本番送信: 未実行
-- Google Sheets更新: 未実行
+- Gmail本番送信: 2026-06-03分は成功済み
+- Google Sheets更新: 送信成功分のみ更新する設計
 - Agent status: `needs_review`
 
 ## Apps Scriptに反映するファイル
@@ -40,7 +42,17 @@
 | `SHEET_NAME` | 送信対象シート名 |
 | `DRY_RUN` | 送信せず確認のみ行うか |
 | `LIVE_SEND_ENABLED` | 本番送信を許可するか |
+| `AUTO_SEND_ENABLED` | 定期トリガーからの自動送信を許可するか |
+| `AUTO_RESET_LIVE_SEND_AFTER_RUN` | 送信後に本番送信設定をOFFへ戻すか |
 | `DAILY_SEND_LIMIT` | 1日の送信上限。最大30 |
+| `PREFLIGHT_HOUR` | Preflight実行時刻 |
+| `SEND_HOUR` | 自動送信時刻 |
+| `POST_SEND_CHECK_HOUR` | 送信後確認時刻 |
+| `SEND_BATCH_ID_PREFIX` | 日次バッチID接頭辞 |
+| `REQUIRE_EXACT_READY_COUNT` | ready行30件ちょうどを必須にするか |
+| `REQUIRE_OPT_OUT_TEXT` | 配信停止/不要案内を必須にするか |
+| `REQUIRE_UNIQUE_BATCH` | 同一sendBatchIdの再送信を防ぐか |
+| `MAX_FAILURES_BEFORE_STOP` | 失敗時に停止する閾値 |
 | `FROM_NAME` | Gmail送信時の表示名 |
 | `REPLY_SIGNATURE` | 署名 |
 | `OUTBOX_SOURCE_MODE` | outbox相当データの取得方式 |
@@ -109,6 +121,15 @@
 
 初回本番送信前は、手動実行で確認する。
 
+完全自動化トリガーを使う場合:
+
+- `setupDailyAutoSendTriggers()` を人間が明示実行する
+- `runScheduledPreflight()` で11:30 Preflightを行う
+- `runScheduledDailySend()` で12:00送信を行う
+- `runPostSendCheck()` で12:30送信後確認を行う
+- `runFailureRecoveryCheck()` で14:00失敗/不足確認を行う
+- 緊急停止時は `removeDailyAutoSendTriggers()` を実行する
+
 ## 本番送信ON前チェック
 
 - outbox30件が確定している
@@ -127,7 +148,9 @@
 3. `runDailyGmailSalesSend()` を手動実行する。
 4. ログで成功件数、失敗件数を確認する。
 5. 送信成功分だけGoogle Sheetsに送信済みを反映する。
-6. 完了後、必要に応じて `LIVE_SEND_ENABLED=false` に戻す。
+6. 完了後、`LIVE_SEND_ENABLED=false` と `AUTO_SEND_ENABLED=false` に戻す。
+
+完全自動化では、`AUTO_RESET_LIVE_SEND_AFTER_RUN=true` により送信成功時も失敗時も自動でOFFへ戻す。
 
 ## 緊急停止手順
 

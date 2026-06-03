@@ -1,0 +1,37 @@
+{
+  "id": "gmail-full-auto-send-design-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail営業メール30件/日 完全自動送信設計",
+  "category": "sales",
+  "status": "needs_review",
+  "phase": "完全自動化設計・本番トリガー有効化待ち",
+  "progress": 85,
+  "priority": "high",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T17:04:41+09:00",
+  "summary": "2026-06-04以降のGmail営業メール30件/日送信について、Preflight、自動送信、送信後確認、失敗時停止、再送信防止、Agent Office記録までの完全自動化設計を整備。本番トリガー有効化は人間確認後。",
+  "artifacts": [
+    "docs/gmail/gmail-daily-full-auto-send-design-2026-06-03.md",
+    "docs/gmail/gmail-send-target-sheet-schema-2026-06-03.md",
+    "docs/gmail/gmail-next-day-outbox-preparation-2026-06-03.md",
+    "apps-script/gmail-sales-automation/Code.gs",
+    "apps-script/gmail-sales-automation/README.md"
+  ],
+  "metrics": {
+    "dailySendLimit": 30,
+    "autoSendDesigned": true,
+    "liveTriggersEnabled": false,
+    "actualSentDuringSetup": 0,
+    "requiresHumanTriggerApproval": true
+  },
+  "nextAction": "ユーザーがApps Scriptの自動送信トリガー有効化とScript PropertiesのAUTO_SEND_ENABLED運用を確認する",
+  "safeToAct": true,
+  "notes": [
+    "今回の設計作業中にGmail送信なし",
+    "自動返信実送信なし",
+    "Instagram操作なし",
+    "本番トリガー有効化は人間確認後",
+    "送信後はLIVE_SEND_ENABLEDをfalseへ戻す設計"
+  ]
+}

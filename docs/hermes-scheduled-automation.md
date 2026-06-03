@@ -1534,13 +1534,17 @@ ICHI Social 毎朝営業候補10件作成
 
 12:00 cronはerror報告だったが、候補作成成果物とAgent status上では10件候補作成済みとして扱う。
 
-ただし、Gmail送信は別タスク `gmail-daily-sales-send-2026-06-03` で管理し、送信対象メール不足のためblockedにした。
+ただし、Gmail送信は別タスク `gmail-daily-sales-send-2026-06-03` で管理する。2026-06-03分は追加確認後にApps Script上で30件送信が完了し、Agent Officeでは `success` として記録済み。
 
-14:00補完タスクは現時点で未登録のため、本ドキュメントでは将来登録候補として整理する。勝手なHermesタスク登録/削除/変更は行わない。
+2026-06-04以降は、Gmail営業メール30件/日の完全自動送信設計を `docs/gmail/gmail-daily-full-auto-send-design-2026-06-03.md` に従って扱う。11:30 Preflight、12:00送信、12:30送信後確認、14:00失敗/不足確認はApps Script側の安全条件を満たす場合だけ有効化する。
+
+14:00補完タスクは、未送信/失敗/候補不足の確認用とし、自動再送信は行わない。Hermesタスク登録/削除/変更は人間確認後に行う。
 
 ## 禁止事項
 
-- GmailやSNS DMの完全自動送信は初期段階では行わない
+- Gmail送信はApps Scriptの安全条件、sendBatchId重複防止、30件ちょうどのready確認、Gmail残クォータ確認を満たす場合のみ行う
+- Gmail本番トリガー有効化は人間確認後に行う
+- Gmail送信後は `LIVE_SEND_ENABLED=false` / `AUTO_SEND_ENABLED=false` へ戻し、二重送信を防止する
 - 問い合わせフォーム送信を自動化しない
 - Googleスプレッドシートを勝手に更新しない
 - 請求書を自動送付しない

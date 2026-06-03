@@ -99,6 +99,8 @@ Gmail営業メール30件/日を実行対象にした場合は、`data/agent-sta
 送信対象メールが不足している場合は `blocked` として表示し、人間が次に確認すべき内容をミオの案内やタスク一覧で確認できるようにします。
 2026-06-03分は、Apps Script上でGmail営業メール30件送信が完了済みです。Agent Officeでは `success` として扱い、次は2026-06-06の返信確認・フォローアップ管理を表示します。二重送信防止のため `runDailyGmailSalesSend()` は再実行せず、送信後は `DRY_RUN=true` / `LIVE_SEND_ENABLED=false` へ戻す確認を人間タスクとして扱います。
 
+2026-06-04以降は、`data/agent-status/tasks/gmail-full-auto-send-design-2026-06-03.json` でGmail営業メール30件/日の完全自動送信設計を確認対象にします。11:30 Preflight、12:00自動送信、12:30送信後確認、14:00失敗/不足確認をApps Script側で実行できる設計にしますが、本番トリガー有効化は人間確認後です。送信対象30件、Gmail残クォータ、sendBatchId未送信、配信停止/返信あり/送信禁止除外、本文の不要案内が揃わない場合は送信しません。
+
 Instagram初回投稿5件が人間の手で公開された場合は、`data/agent-status/tasks/instagram-initial-posts-published-2026-06-03.json` のように別タスクとして記録します。
 Agent Officeでは、投稿済み件数、カルーセル/リール内訳、24時間後・72時間後・7日後の反応確認待ちを確認対象にします。
 AI/Hermes/Codexは投稿操作を行わず、追加投稿、予約投稿、DM、コメントも行いません。

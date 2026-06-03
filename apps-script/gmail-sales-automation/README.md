@@ -35,7 +35,17 @@ ICHI Socialの営業メールについて、毎日最大30件の送信候補処�
 | `SHEET_NAME` | `sales` | 送信対象タブ |
 | `DRY_RUN` | `true` | 送信せず予定ログだけ残す |
 | `LIVE_SEND_ENABLED` | `false` | 本番送信許可 |
+| `AUTO_SEND_ENABLED` | `false` | 定期トリガーからの自動送信許可 |
+| `AUTO_RESET_LIVE_SEND_AFTER_RUN` | `true` | 送信後に本番送信設定をOFFへ戻す |
 | `DAILY_SEND_LIMIT` | `30` | 1日上限 |
+| `PREFLIGHT_HOUR` | `11` | Preflight実行時刻 |
+| `SEND_HOUR` | `12` | 自動送信実行時刻 |
+| `POST_SEND_CHECK_HOUR` | `12` | 送信後確認時刻 |
+| `SEND_BATCH_ID_PREFIX` | `gmail-sales` | 日次バッチID接頭辞 |
+| `REQUIRE_EXACT_READY_COUNT` | `true` | ready行が30件ちょうどの場合のみ送信 |
+| `REQUIRE_OPT_OUT_TEXT` | `true` | 配信停止/不要案内文を必須にする |
+| `REQUIRE_UNIQUE_BATCH` | `true` | 同じsendBatchIdの二重送信を防ぐ |
+| `MAX_FAILURES_BEFORE_STOP` | `1` | 失敗時に停止する閾値 |
 | `FROM_NAME` | `ICHI Social` | 差出人名 |
 | `REPLY_SIGNATURE` | 人間が設定 | 署名 |
 | `CREATE_TRIGGERS` | `false` | トリガー作成許可 |
@@ -64,6 +74,14 @@ ICHI Socialの営業メールについて、毎日最大30件の送信候補処�
 
 - `dailySalesEmailJob`: 毎営業日または毎日1回
 - `scanGmailRepliesJob`: 1時間ごと、または営業日中だけ
+
+2026-06-04以降の30件/日完全自動化では、人間確認後に以下の関数を手動実行してトリガーを作成します。
+
+- `setupDailyAutoSendTriggers()`: 11:30 Preflight、12:00送信、12:30送信後確認、14:00失敗確認のトリガーを作る
+- `removeDailyAutoSendTriggers()`: 緊急停止時に自動送信関連トリガーを削除する
+
+トリガー作成関数は、ユーザーがApps Script画面で明示実行した場合だけ動かします。
+コードを貼り付けただけでは本番トリガーは有効化されません。
 
 ## DRY_RUNの使い方
 
@@ -125,6 +143,21 @@ ICHI Socialの営業メールについて、毎日最大30件の送信候補処�
 - 配信停止、返信あり、送信禁止、重複が除外済み
 
 条件を満たさない場合は、安全な要約ログだけを残して停止します。
+
+定期トリガーから送信する場合は `runScheduledDailySend()` を使います。
+この関数は `AUTO_SEND_ENABLED=true` も満たさない限り送信しません。
+送信成功時も失敗時も、`AUTO_RESET_LIVE_SEND_AFTER_RUN=true` の場合は `LIVE_SEND_ENABLED=false` と `AUTO_SEND_ENABLED=false` へ戻します。
+
+## 完全自動化用関数
+
+- `runScheduledPreflight()`: 送信前の安全確認だけを行う。送信しない。
+- `runScheduledDailySend()`: 安全条件を満たす場合だけ30件送信する。
+- `runPostSendCheck()`: 送信済み件数、失敗件数、ready残りを要約する。
+- `runFailureRecoveryCheck()`: 未送信、失敗、候補不足を確認し、自動再送信はしない。
+- `buildSendBatchId_(date)`: `gmail-sales-YYYY-MM-DD` 形式のバッチIDを作る。
+- `verifyBatchNotSent_(batchId)`: 同じバッチが送信済みでないか確認する。
+- `markBatchSent_(batchId)`: 送信成功後にバッチ送信済みをScript Propertiesへ記録する。
+- `resetLiveSendAfterRun_()`: 送信後に本番送信許可をOFFへ戻す。
 
 ## トラブルシュート
 
