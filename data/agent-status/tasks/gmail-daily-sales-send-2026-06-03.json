@@ -5,12 +5,12 @@
   "title": "2026-06-03 Gmail営業メール30件送信",
   "category": "sales",
   "status": "needs_review",
-  "phase": "送信対象30件確定・本番送信環境/承認待ち",
-  "progress": 85,
+  "phase": "Apps Script本番送信環境確認待ち",
+  "progress": 90,
   "priority": "high",
   "createdAt": "2026-06-03T14:46:00+09:00",
-  "updatedAt": "2026-06-03T16:45:00+09:00",
-  "summary": "既存候補118件を分類した結果、Gmail-ready候補は0件。追加収集v1/v2で公開メールつき候補30件を確保し、outbox30件とDRY_RUNログを作成。Gmail本番送信環境とユーザー承認が未完了のため実送信は行わずneeds_review。",
+  "updatedAt": "2026-06-03T17:15:00+09:00",
+  "summary": "outbox30件とDRY_RUNログは作成済み。Apps Script側の本番送信環境を確認するため、runPreflightCheckOnly() と runDailyGmailSalesSend() をCode.gsに追加し、セットアップ手順を整備。Gmail本番送信とGoogle Sheets更新は未実行。",
   "artifacts": [
     "docs/gmail/2026-06-03-gmail-sales-dry-run-summary.md",
     "docs/gmail/2026-06-03-gmail-sales-send-summary.md",
@@ -18,7 +18,8 @@
     "docs/gmail/2026-06-03-gmail-sales-blocked-resolution-plan.md",
     "docs/gmail/2026-06-03-gmail-candidate-audit-summary.md",
     "docs/gmail/2026-06-03-gmail-additional-candidate-summary.md",
-    "docs/gmail/2026-06-03-gmail-additional-candidate-summary-v2.md"
+    "docs/gmail/2026-06-03-gmail-additional-candidate-summary-v2.md",
+    "docs/gmail/gmail-apps-script-production-setup-2026-06-03.md"
   ],
   "metrics": {
     "targetSendCount": 30,
@@ -31,9 +32,10 @@
     "additionalReadyCount": 30,
     "readyCount": 30,
     "shortage": 0,
-    "sheetUpdated": false
+    "sheetUpdated": false,
+    "appsScriptSetupRequired": true
   },
-  "nextAction": "ユーザーがApps Script側のDRY_RUN、Gmail残クォータ、Google Sheets更新列を確認し、本番送信可否を判断する",
+  "nextAction": "ユーザーがApps ScriptへCode.gs/appsscript.jsonを反映し、runPreflightCheckOnly()を実行。問題なければ本番送信ONを判断する",
   "safeToAct": false,
   "notes": [
     "Gmail本番送信なし",
@@ -44,6 +46,6 @@
     "営業リスト本体とメール宛先一覧はGit追加なし",
     "outbox30件はdata/gmail/outbox配下に保存しGit追加なし",
     "DRY_RUNログはdata/gmail/logs配下に保存しGit追加なし",
-    "本番送信環境と承認待ちのためneeds_review"
+    "Apps Script本番送信環境確認待ちのためneeds_review"
   ]
 }

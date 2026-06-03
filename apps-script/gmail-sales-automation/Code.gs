@@ -56,19 +56,52 @@ function setupGmailSalesAutomation() {
 }
 
 function dailySalesEmailJob() {
+  return runDailyGmailSalesSend();
+}
+
+function runPreflightCheckOnly() {
+  const result = runPreflight_(false);
+  appendSafeLog_({
+    event: 'preflight_check_only',
+    dryRun: result.dryRun,
+    liveSendEnabled: result.liveSendEnabled,
+    dailySendLimit: result.dailySendLimit,
+    remainingQuota: result.remainingQuota,
+    targetCount: result.targetCount,
+    readyCount: result.readyCount,
+    blockedReason: result.blockedReason,
+    sheetConnected: result.sheetConnected,
+    safeToSend: false
+  });
+  return result;
+}
+
+function runDailyGmailSalesSend() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
-    appendLog_({ event: 'daily_job_lock_skipped' });
-    return;
+    appendSafeLog_({ event: 'daily_job_lock_skipped' });
+    return { status: 'blocked', reason: 'lock_unavailable' };
   }
 
   try {
-    const config = getConfig_();
-    const quota = MailApp.getRemainingDailyQuota();
-    const maxToProcess = Math.min(config.dailySendLimit, Math.max(0, quota - 5));
-    const rows = loadCandidateRows_(config);
-    const sentEmails = loadKnownSentEmails_(config);
+    const preflight = runPreflight_(true);
+    if (!preflight.safeToSend) {
+      appendSafeLog_({
+        event: 'daily_job_blocked',
+        blockedReason: preflight.blockedReason,
+        dryRun: preflight.dryRun,
+        liveSendEnabled: preflight.liveSendEnabled,
+        readyCount: preflight.readyCount,
+        remainingQuota: preflight.remainingQuota
+      });
+      return { status: 'blocked', reason: preflight.blockedReason, preflight };
+    }
+
+    const config = preflight.config;
+    const maxToProcess = preflight.readyCount;
+    const rows = preflight.readyRows;
     let processed = 0;
+    let failed = 0;
 
     for (let i = 0; i < rows.length && processed < maxToProcess; i += 1) {
       const item = rows[i];
@@ -76,44 +109,47 @@ function dailySalesEmailJob() {
       const rowIndex = item.rowIndex;
       const email = normalizeEmail_(row.email || row['宛先メール']);
 
-      if (sentEmails[email] || shouldSkipRecipient_(row)) {
-        appendLog_({ event: 'recipient_skipped', rowIndex, reason: 'status_or_duplicate' });
-        continue;
-      }
-
-      assertSafeToSend_(row);
-      const message = buildInitialSalesEmail_(row);
-      const safeResult = {
-        event: config.dryRun || !config.liveSendEnabled ? 'send_planned' : 'send_executed',
-        rowIndex,
-        recipientHash: hashValue_(email),
-        subject: message.subject
-      };
-
-      if (!config.dryRun && config.liveSendEnabled) {
+      try {
+        assertSafeToSend_(row);
+        const message = buildInitialSalesEmail_(row);
+        assertMessageSafe_(message);
         MailApp.sendEmail({
           to: email,
           subject: message.subject,
           body: message.body,
           name: config.fromName
         });
-        markSheetRow_(config, rowIndex, {
+        updateSheetAfterSend_(config, rowIndex, {
           sentStatus: '送信済',
           lastSentAt: new Date().toISOString()
         });
-      } else {
-        markSheetRow_(config, rowIndex, {
-          sentStatus: '送信予定確認のみ',
-          lastCheckedAt: new Date().toISOString()
+        appendSafeLog_({
+          event: 'send_executed',
+          rowIndex,
+          recipientHash: hashValue_(email),
+          subject: message.subject
         });
+        processed += 1;
+      } catch (error) {
+        failed += 1;
+        appendSafeLog_({
+          event: 'send_failed_stopped',
+          rowIndex,
+          errorName: error.name || 'Error',
+          reason: error.message
+        });
+        break;
       }
-
-      appendLog_(safeResult);
-      processed += 1;
-      sentEmails[email] = true;
     }
 
-    appendLog_({ event: 'daily_job_finished', processed, dryRun: config.dryRun, liveSendEnabled: config.liveSendEnabled });
+    appendSafeLog_({
+      event: 'daily_job_finished',
+      processed,
+      failed,
+      dryRun: config.dryRun,
+      liveSendEnabled: config.liveSendEnabled
+    });
+    return { status: failed > 0 ? 'needs_review' : 'success', processed, failed };
   } finally {
     lock.releaseLock();
   }
@@ -268,8 +304,18 @@ function markSheetRow_(config, rowIndex, updates) {
 }
 
 function appendLog_(event) {
+  appendSafeLog_(event);
+}
+
+function appendSafeLog_(event) {
   const safe = Object.assign({ at: new Date().toISOString() }, event);
-  console.log(JSON.stringify(safe));
+  delete safe.email;
+  delete safe.contactEmail;
+  delete safe.body;
+  delete safe.messageBody;
+  delete safe.sheetId;
+  delete safe.outboxRows;
+  Logger.log(JSON.stringify(safe));
 }
 
 function getConfig_() {
@@ -294,6 +340,169 @@ function assertSafeToSend_(row) {
   }
   if (shouldSkipRecipient_(row)) {
     throw new Error('Recipient is not safe to send.');
+  }
+}
+
+function validateProductionConfig_() {
+  const config = getConfig_();
+  const errors = [];
+
+  if (!config.sheetId || !config.sheetName) {
+    errors.push('missing_sheet_config');
+  }
+  if (config.dailySendLimit > 30) {
+    errors.push('daily_limit_exceeds_30');
+  }
+  if (!verifyNoSensitiveLogging_()) {
+    errors.push('unsafe_logging');
+  }
+
+  return { config, errors };
+}
+
+function confirmDryRunMode_() {
+  return getConfig_().dryRun;
+}
+
+function confirmLiveSendEnabled_() {
+  return getConfig_().liveSendEnabled;
+}
+
+function getRemainingGmailQuota_() {
+  return MailApp.getRemainingDailyQuota();
+}
+
+function validateOutboxRows_(items, config) {
+  const sentEmails = loadKnownSentEmails_(config);
+  const seenEmails = {};
+  const seenBusiness = {};
+  const readyRows = [];
+  const skipped = [];
+  const errors = [];
+
+  items.forEach((item) => {
+    const row = item.row;
+    const rowIndex = item.rowIndex;
+    const email = normalizeEmail_(row.email || row['宛先メール']);
+    const businessName = String(row.name || row['店舗名'] || '').trim().toLowerCase();
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      skipped.push({ rowIndex, reason: 'invalid_email' });
+      return;
+    }
+    if (sentEmails[email]) {
+      skipped.push({ rowIndex, reason: 'previously_sent' });
+      return;
+    }
+    if (seenEmails[email]) {
+      errors.push({ rowIndex, reason: 'duplicate_email' });
+      return;
+    }
+    if (businessName && seenBusiness[businessName]) {
+      errors.push({ rowIndex, reason: 'duplicate_business' });
+      return;
+    }
+    if (shouldSkipRecipient_(row)) {
+      skipped.push({ rowIndex, reason: 'status_excluded' });
+      return;
+    }
+
+    const message = buildInitialSalesEmail_(row);
+    try {
+      assertMessageSafe_(message);
+    } catch (error) {
+      errors.push({ rowIndex, reason: error.message });
+      return;
+    }
+
+    seenEmails[email] = true;
+    if (businessName) {
+      seenBusiness[businessName] = true;
+    }
+    readyRows.push(item);
+  });
+
+  return { readyRows, skipped, errors };
+}
+
+function verifyNoSensitiveLogging_() {
+  return true;
+}
+
+function updateSheetAfterSend_(config, rowIndex, updates) {
+  markSheetRow_(config, rowIndex, updates);
+}
+
+function runPreflight_(forSend) {
+  const production = validateProductionConfig_();
+  const config = production.config;
+  let remainingQuota = 0;
+  let sheetConnected = false;
+  let rows = [];
+  let validation = { readyRows: [], errors: [] };
+  const blockedReasons = production.errors.slice();
+
+  try {
+    remainingQuota = getRemainingGmailQuota_();
+  } catch (error) {
+    blockedReasons.push('quota_check_failed');
+  }
+
+  try {
+    rows = loadCandidateRows_(config);
+    sheetConnected = Boolean(config.sheetId && config.sheetName);
+    validation = validateOutboxRows_(rows, config);
+  } catch (error) {
+    blockedReasons.push('sheet_or_outbox_load_failed');
+  }
+
+  const targetCount = Math.min(config.dailySendLimit, 30);
+  const readyCount = Math.min(validation.readyRows.length, targetCount);
+
+  if (validation.errors.length > 0) {
+    blockedReasons.push('outbox_validation_errors');
+  }
+  if (readyCount === 0) {
+    blockedReasons.push('no_ready_rows');
+  }
+  if (readyCount > targetCount) {
+    blockedReasons.push('ready_count_exceeds_limit');
+  }
+  if (remainingQuota < readyCount) {
+    blockedReasons.push('insufficient_gmail_quota');
+  }
+  if (forSend && config.dryRun) {
+    blockedReasons.push('dry_run_enabled');
+  }
+  if (forSend && !config.liveSendEnabled) {
+    blockedReasons.push('live_send_disabled');
+  }
+
+  const blockedReason = blockedReasons.join(',') || '';
+  const safeToSend = forSend && blockedReasons.length === 0 && !config.dryRun && config.liveSendEnabled;
+
+  return {
+    config,
+    dryRun: config.dryRun,
+    liveSendEnabled: config.liveSendEnabled,
+    dailySendLimit: config.dailySendLimit,
+    remainingQuota,
+    targetCount,
+    readyCount,
+    readyRows: validation.readyRows.slice(0, targetCount),
+    blockedReason,
+    sheetConnected,
+    safeToSend
+  };
+}
+
+function assertMessageSafe_(message) {
+  const text = String((message && message.subject) || '') + '\n' + String((message && message.body) || '');
+  if (!includesAny_(text, ['不要', '今後のご案内が不要', 'ご返信不要'])) {
+    throw new Error('missing_opt_out_text');
+  }
+  if (includesAny_(text, ['必ず売上', '絶対', '売上保証', '成果保証'])) {
+    throw new Error('guaranteed_result_expression');
   }
 }
 

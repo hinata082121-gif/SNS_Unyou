@@ -93,9 +93,38 @@ ICHI Socialの営業メールについて、毎日最大30件の送信候補処�
 
 1. ダミー行だけのテストシートを使う。
 2. `DRY_RUN=true`、`LIVE_SEND_ENABLED=false` を確認する。
-3. `dailySalesEmailJob()` を実行し、送信予定ログを確認する。
-4. 実送信が0件であることを確認する。
-5. 返信分類はテスト用スレッドで確認する。
+3. `runPreflightCheckOnly()` を実行し、送信予定件数、残クォータ、Sheet接続を確認する。
+4. `dailySalesEmailJob()` または `runDailyGmailSalesSend()` を実行し、送信予定ログを確認する。
+5. 実送信が0件であることを確認する。
+6. 返信分類はテスト用スレッドで確認する。
+
+## 本番前Preflight
+
+`runPreflightCheckOnly()` は、Apps Script画面から手動実行する本番前チェック専用関数です。
+
+- Script Propertiesを確認する
+- DRY_RUN / LIVE_SEND_ENABLED を確認する
+- Gmail残クォータを確認する
+- 送信対象件数を確認する
+- Sheet接続を確認する
+- 送信しない
+- Google Sheetsを更新しない
+- メールアドレスや本文全文をログに出さない
+
+## 本番送信入口
+
+本番送信は `runDailyGmailSalesSend()` から実行します。
+
+この関数は以下を満たさない限り送信しません。
+
+- `DRY_RUN=false`
+- `LIVE_SEND_ENABLED=true`
+- `DAILY_SEND_LIMIT<=30`
+- Gmail残クォータが送信予定件数以上
+- 送信対象が安全確認済み
+- 配信停止、返信あり、送信禁止、重複が除外済み
+
+条件を満たさない場合は、安全な要約ログだけを残して停止します。
 
 ## トラブルシュート
 
@@ -111,4 +140,3 @@ ICHI Socialの営業メールについて、毎日最大30件の送信候補処�
 - 営業候補データをGitに入れない。
 - 初回本番送信前に人間が必ず確認する。
 - 配信停止希望には追加営業をしない。
-
