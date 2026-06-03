@@ -5,25 +5,30 @@
   "title": "Gmail送信用候補プール設計",
   "category": "sales",
   "status": "needs_review",
-  "phase": "候補プール設計・補充運用準備",
-  "progress": 70,
+  "phase": "最低30件補充完了・追加補充継続",
+  "progress": 80,
   "priority": "high",
   "createdAt": "2026-06-03T00:00:00.000Z",
-  "updatedAt": "2026-06-03T18:15:10+09:00",
-  "summary": "毎日30件Gmail営業送信を安定化するため、公開メールアドレス確認済み候補を常時プール化し、送信済み・返信あり・配信停止・重複を除外して日次outboxへ切り出す設計を整備。",
+  "updatedAt": "2026-06-03T18:38:58+09:00",
+  "summary": "毎日30件Gmail営業送信を安定化するため、公開メールアドレス確認済み候補を3バッチで30件補充。最低ラインには到達したが、推奨90件には60件不足しているため追加補充が必要。",
   "artifacts": [
     "docs/gmail/gmail-ready-candidate-pool-design-2026-06-03.md",
     "docs/gmail/gmail-candidate-web-research-batch-plan-2026-06-03.md",
-    "docs/gmail/gmail-ready-candidate-pool-summary.md"
+    "docs/gmail/gmail-ready-candidate-pool-summary.md",
+    "docs/gmail/2026-06-04-gmail-candidate-pool-refill-summary.md"
   ],
   "metrics": {
     "targetPoolSize": 90,
     "minimumPoolSize": 30,
     "dailySendTarget": 30,
-    "availableCount": 0,
+    "availableCount": 30,
+    "refillBatches": 3,
+    "adoptedCount": 30,
+    "excludedCount": 1,
+    "shortageToTargetPool": 60,
     "actualSentDuringSetup": 0
   },
-  "nextAction": "分割Web収集バッチでメール宛先つき候補を補充し、2026-06-04分outbox30件作成を再試行する",
+  "nextAction": "推奨90件に向けて分割Web収集バッチを継続し、Gmail-ready候補を追加で60件補充する",
   "safeToAct": true,
   "notes": [
     "Gmail送信なし",

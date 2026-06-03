@@ -6,9 +6,9 @@
 
 ## 準備結果
 
-結果: `blocked`
+結果: `needs_review`
 
-ローカル既存データから再利用可能なGmail-ready候補が0件だったため、2026-06-04分のoutbox30件とSheets貼り付け用TSVは作成しない。
+ローカル既存データから再利用可能なGmail-ready候補は0件だったが、候補プール補充バッチを3件実行し、2026-06-04分のoutbox30件とSheets貼り付け用TSVを作成した。
 
 ## 件数
 
@@ -16,17 +16,13 @@
 |---|---:|
 | 目標送信件数 | 30 |
 | 既存候補からの再利用可能件数 | 0 |
-| 追加収集採用件数 | 0 |
-| 最終ready件数 | 0 |
-| 不足数 | 30 |
-| outbox30件作成 | 0 |
-| Sheets貼り付け用TSV作成 | 0 |
+| 追加収集採用件数 | 30 |
+| 最終ready件数 | 30 |
+| 不足数 | 0 |
+| outbox30件作成 | 1 |
+| Sheets貼り付け用TSV作成 | 1 |
 
 ## sendDate / sendBatchId / nextActionDate
-
-30件未達のため、送信対象ファイルは作成していない。
-
-作成できた場合の予定値:
 
 - sendDate: `2026-06-04`
 - sendBatchId: `gmail-sales-2026-06-04`
@@ -34,17 +30,30 @@
 
 ## 業態内訳
 
-30件未達のため、採用業態内訳はなし。
+| 業態 | 件数 |
+|---|---:|
+| 整体 | 4 |
+| 整骨院 | 5 |
+| 美容室 | 6 |
+| ネイルサロン | 4 |
+| ペットサロン | 1 |
+| パーソナルジム | 3 |
+| ピラティス | 2 |
+| ヨガスタジオ | 1 |
+| フォトスタジオ | 2 |
+| リフォーム会社 | 1 |
+| カフェ・飲食 | 1 |
 
 ## 地域傾向
 
-30件未達のため、採用地域傾向はなし。
+東京都内中心。
 
 ## 除外理由
 
 - 2026-06-03送信済み候補と重複
 - メールアドレスなし
 - Web追加収集を時間超過で中止
+- 補充バッチ内で2026-06-03送信済み重複を1件除外
 
 ## 検証結果
 
@@ -52,14 +61,15 @@
 - 既存メール付き候補は全件、2026-06-03送信済みと重複
 - 推測メールアドレスは使用していない
 - 問い合わせフォームのみ、Instagram URLのみの候補は採用していない
+- outbox30件を作成
+- Sheets貼り付け用TSVを作成
+- TSVはヘッダー1行 + 30件
+- `status=ready`、`sendDate=2026-06-04`、`sendBatchId=gmail-sales-2026-06-04` は30件確認
+- 2026-06-03送信済み候補との重複は0件
 
 ## Google Sheetsへの貼り付け手順
 
-今回はTSVを作成していないため、Google Sheetsへ貼り付けるものはない。
-
-30件確定後の手順:
-
-1. `data/gmail/outbox/2026-06-04-gmail-sales-sheets-ready.tsv` を作成する
+1. `data/gmail/outbox/2026-06-04-gmail-sales-sheets-ready.tsv` を開く
 2. TSV全文をコピーする
 3. Google Sheetsの「Gmail送信対象」タブを開く
 4. A1セルから貼り付ける
@@ -70,7 +80,7 @@
 
 ## 候補プール補充パイプライン
 
-2026-06-04分は30件未達のためblocked継続とする。単発のWeb追加収集は時間超過しやすいため、以後は `docs/gmail/gmail-ready-candidate-pool-design-2026-06-03.md` と `docs/gmail/gmail-candidate-web-research-batch-plan-2026-06-03.md` に従い、5〜10件単位でGmail-ready候補を補充する。
+2026-06-04分は候補プール補充によりoutbox作成まで進行した。ただし推奨90件には60件不足しているため、以後も `docs/gmail/gmail-ready-candidate-pool-design-2026-06-03.md` と `docs/gmail/gmail-candidate-web-research-batch-plan-2026-06-03.md` に従い、5〜10件単位でGmail-ready候補を補充する。
 
 outbox作成の再開条件:
 
@@ -81,7 +91,7 @@ outbox作成の再開条件:
 - 配信停止/返信あり/送信禁止なし
 - Sheets貼り付け用TSVを作れる列が揃っている
 
-上記条件を満たすまでは、Gmail本番送信、Google Sheets送信済み更新、自動トリガー有効化は行わない。
+上記条件を満たしたが、今回はGmail本番送信、Google Sheets送信済み更新、自動トリガー有効化は行わない。次は人間がTSVをSheetsへ貼り付け、Apps ScriptのPreflightを確認する。
 
 ## 実行していないこと
 
