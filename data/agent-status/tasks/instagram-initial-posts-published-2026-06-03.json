@@ -1,0 +1,39 @@
+{
+  "id": "instagram-initial-posts-published-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "pr-writer",
+  "title": "Instagram初回投稿5件 公開完了",
+  "category": "content",
+  "status": "success",
+  "phase": "初回投稿公開完了・反応確認待ち",
+  "progress": 100,
+  "priority": "medium",
+  "createdAt": "2026-06-03T14:45:32+09:00",
+  "updatedAt": "2026-06-03T14:45:32+09:00",
+  "summary": "人間の手でInstagram自社アカウントの初回投稿5件を公開完了。P1/P2/P3のカルーセル、R1/R2のリールを投稿済み。次は24時間後・72時間後・7日後の反応確認を行う。",
+  "artifacts": [
+    "docs/pr/instagram-published-log-2026-06-03.md",
+    "docs/pr/instagram-post-metrics-template-2026-06-03.md"
+  ],
+  "metrics": {
+    "publishedPosts": 5,
+    "publishedCarouselPosts": 3,
+    "publishedReels": 2,
+    "scheduledPosts": 0,
+    "aiPosted": 0,
+    "gmailLiveSendEnabled": false
+  },
+  "nextAction": "24時間後にInstagramインサイトを確認し、リーチ・保存・プロフィールアクセス・リンククリック・問い合わせ数を記録する",
+  "safeToAct": true,
+  "notes": [
+    "投稿操作は人間が実施",
+    "Instagram追加投稿なし",
+    "Instagram予約投稿なし",
+    "Instagram DM/コメントなし",
+    "Gmail実送信なし",
+    "Gmail自動返信実送信なし",
+    "営業候補生成なし",
+    "Google Sheets再送信なし",
+    "次回は投稿後24時間の指標確認"
+  ]
+}

@@ -259,3 +259,26 @@ Instagram投稿、予約投稿、DM、コメント、営業候補生成、Google
 
 これにより、自社Instagramコンテンツ制作は **C: 制作準備中・人間確認待ち** として、Canva素材化へ進める状態になった。
 ただし、Instagram投稿、予約投稿、DM、コメント、Google Sheets再送信、営業候補生成は行っていない。
+
+## 2026-06-03 初回投稿5件 公開完了
+
+2026-06-03に、Instagram自社アカウントの初回投稿5件が人間の手で公開完了した。
+AI/Hermes/Codexは投稿操作、予約投稿、DM、コメント、フォロー、いいねを行っていない。
+
+投稿済み:
+
+- P1: このアカウントで発信すること
+- P2: 小規模店舗SNSでよくある悩み
+- P3: 無料SNS診断で見るポイント
+- R1: SNS運用、毎日投稿より先に整えるべき3つ
+- R2: 予約方法が見つかりにくいSNSの確認ポイント
+
+追加した記録:
+
+- `docs/pr/instagram-published-log-2026-06-03.md`
+- `docs/pr/instagram-post-metrics-template-2026-06-03.md`
+- `data/agent-status/tasks/instagram-initial-posts-published-2026-06-03.json`
+
+ステージは **D: 運用開始済み・反応確認待ち** に進んだ。
+次は、2026-06-04の24時間後、2026-06-06の72時間後、2026-06-10の7日後にInstagramインサイトを確認し、リーチ、保存、プロフィールアクセス、リンククリック、無料SNS診断問い合わせ、フォロー増減を記録する。
+Gmail本番送信はOFFのまま維持し、営業候補生成、Google Sheets再送信は行っていない。
