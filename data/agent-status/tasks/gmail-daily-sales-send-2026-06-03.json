@@ -5,16 +5,19 @@
   "title": "2026-06-03 Gmail営業メール30件送信",
   "category": "sales",
   "status": "blocked",
-  "phase": "送信対象メール不足・本番送信未実行",
-  "progress": 35,
+  "phase": "Gmail送信対象不足・追加収集15件まで完了",
+  "progress": 55,
   "priority": "high",
   "createdAt": "2026-06-03T14:46:00+09:00",
-  "updatedAt": "2026-06-03T14:46:00+09:00",
-  "summary": "毎日30件Gmail営業送信を主タスク化したが、2026-06-03時点のローカル候補JSONには送信用メール宛先が0件で、Gmail送信ジョブもApps Script移植前のため本番送信を実行できずblocked。DRY_RUN相当の事前集計で送信予定0件。",
+  "updatedAt": "2026-06-03T16:30:00+09:00",
+  "summary": "既存候補118件を分類した結果、Gmail-ready候補は0件。追加収集で公開メールつき候補15件を確保したが、目標30件には15件不足しているため本番送信は実行せずblocked継続。",
   "artifacts": [
     "docs/gmail/2026-06-03-gmail-sales-dry-run-summary.md",
     "docs/gmail/2026-06-03-gmail-sales-send-summary.md",
-    "docs/gmail/gmail-sales-daily-30-operation-2026-06-03.md"
+    "docs/gmail/gmail-sales-daily-30-operation-2026-06-03.md",
+    "docs/gmail/2026-06-03-gmail-sales-blocked-resolution-plan.md",
+    "docs/gmail/2026-06-03-gmail-candidate-audit-summary.md",
+    "docs/gmail/2026-06-03-gmail-additional-candidate-summary.md"
   ],
   "metrics": {
     "targetSendCount": 30,
@@ -22,11 +25,14 @@
     "sentCount": 0,
     "failedCount": 0,
     "skippedCount": 0,
-    "prospectJsonFilesChecked": 12,
-    "confirmedEmailTargets": 0,
+    "prospectJsonFilesChecked": 10,
+    "existingGmailReady": 0,
+    "additionalReadyCount": 15,
+    "readyCount": 15,
+    "shortage": 15,
     "sheetUpdated": false
   },
-  "nextAction": "メール宛先を含む送信対象30件を人間が確認し、Apps Script側でDRY_RUNを通してから本番送信可否を判断する",
+  "nextAction": "Gmail-ready候補をあと15件以上追加確認し、30件確定後にDRY_RUNを実行する",
   "safeToAct": false,
   "notes": [
     "Gmail本番送信なし",
@@ -35,6 +41,7 @@
     "Instagram投稿/DM/コメントなし",
     "営業候補の不要な再生成なし",
     "営業リスト本体とメール宛先一覧はGit追加なし",
-    "重複送信防止のためblocked記録"
+    "追加収集候補はdata/gmail/outbox配下に保存しGit追加なし",
+    "重複送信防止のためblocked継続"
   ]
 }
