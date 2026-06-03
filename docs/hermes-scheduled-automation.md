@@ -17,6 +17,34 @@ Hermes Agentは、各タスクの進捗を `data/agent-status/tasks/*.json` に�
 - Vercel本番では環境変数 `AGENT_OFFICE_ACCESS_KEY` による簡易アクセスキーを設定する
 - 完全自動化や送信実行の判断は、人間確認とApps Script側の安全条件を前提にする
 
+### 自動業務完了後の共通ルール
+
+HermesまたはCodexが自動業務の結果を確認したら、以下を標準手順にします。
+
+1. 対応する `data/agent-status/tasks/*.json` を更新する
+2. 個人情報を含まないsummary docsを更新する
+3. `npm run agent:status:validate` を実行する
+4. `npm run agent:status:render` と `npm run agent:office:render` を実行する
+5. 秘密情報を含まないファイルだけを個別にGit追加する
+6. `git add .` は使わない
+7. commit/pushし、Vercelの `/agent-office` に反映する
+
+blocked/failedの場合は、`nextAction` に人間が次に判断すべきことを必ず書きます。
+Gmail送信対象、候補プール本体、送信ログ本体、営業リスト本体はGitに追加しません。
+
+### Gmail営業リスト更新タスク
+
+- ジョブID: `eb1341568dbc`
+- cron: `30 10 * * 1,4`
+- 役割: 月曜/木曜10:30にGmail-ready候補の補充状況を確認する
+- 出力: 安全なsummary docsとAgent statusのみ
+- 禁止: Gmail送信、自動返信、営業先リスト本体のGit追加
+
+### 金曜市場分析タスク
+
+金曜市場分析は、`market_analysis` カテゴリでAgent statusへ記録します。
+市場分析の実データ取得は金曜タスク実行時に行い、通常のHermes監視では予定、実行中、完了、確認待ちだけを記録します。
+
 ## 前提
 
 - Hermes AgentはWSL2上で起動済み

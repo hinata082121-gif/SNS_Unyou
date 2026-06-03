@@ -20,7 +20,7 @@ export function AgentCard({ task }: { task: SafeAgentTask }) {
           <PixelAvatar gradient={color} status={task.status} />
           <div className="min-w-0">
             <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">
-              {task.role}
+              {task.categoryLabel} / {task.role}
             </p>
             <h2 className="mt-1 break-words text-lg font-black leading-snug text-white">
               {task.title}
@@ -83,7 +83,6 @@ function PixelAvatar({
       <span className={`absolute right-1 top-1 size-2 ${lamp}`} />
       <div className="relative h-14 w-10">
         <div className="absolute left-2 top-0 h-5 w-6 border border-slate-950 bg-amber-100" />
-        <div className="absolute left-1 top-4 h-7 w-8 border border-slate-950 bg-gradient-to-b" />
         <div className={`absolute left-1 top-5 h-6 w-8 bg-gradient-to-b ${gradient}`} />
         <div className="absolute left-0 top-5 h-2 w-2 bg-amber-100" />
         <div className="absolute right-0 top-5 h-2 w-2 bg-amber-100" />

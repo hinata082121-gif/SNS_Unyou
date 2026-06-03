@@ -1,0 +1,32 @@
+{
+  "id": "template-hermes-monitoring",
+  "agent": "System",
+  "avatar": "ops-monitor",
+  "title": "Hermes監視",
+  "category": "hermes_monitoring",
+  "status": "scheduled",
+  "phase": "テンプレート",
+  "progress": 0,
+  "priority": "medium",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T23:30:00+09:00",
+  "summary": "Hermes監視タスク用テンプレート。cron、Preflight、送信後確認、候補不足の状態を日付別に記録する。",
+  "artifacts": [
+    "docs/agent-status-schema-2026-06-03.md"
+  ],
+  "metrics": {
+    "jobsChecked": 0,
+    "okCount": 0,
+    "blockedCount": 0,
+    "needsReviewCount": 0,
+    "lastRunAt": "",
+    "nextRunAt": ""
+  },
+  "nextAction": "実行日ごとに日付別タスクへコピーし、監視結果とblocked理由を記録する",
+  "safeToAct": true,
+  "notes": [
+    "テンプレートは/agent-officeに表示しない",
+    "Hermesは監視と報告のみ",
+    "Gmail送信やSNS操作なし"
+  ]
+}

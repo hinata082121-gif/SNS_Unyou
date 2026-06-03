@@ -15,6 +15,7 @@ const STATUS_VALUES = new Set([
   "skipped",
   "needs_review",
   "synced",
+  "scheduled",
 ]);
 
 const AGENT_VALUES = new Set(["Codex", "Hermes", "System", "Human"]);

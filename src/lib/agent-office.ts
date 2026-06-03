@@ -33,15 +33,29 @@ export type SafeAgentTask = {
   nextAction: string;
   metrics: SafeMetric[];
   role: string;
+  categoryLabel: string;
+  urgencyRank: number;
+};
+
+export type AgentOfficeCategoryGroup = {
+  key: string;
+  label: string;
+  description: string;
+  tasks: SafeAgentTask[];
 };
 
 export type AgentOfficeDashboardData = {
   generatedAt: string;
   tasks: SafeAgentTask[];
   featuredTasks: SafeAgentTask[];
+  urgentTasks: SafeAgentTask[];
   nextActions: SafeAgentTask[];
   humanReviewTasks: SafeAgentTask[];
-  counts: Record<"success" | "needs_review" | "blocked" | "running", number>;
+  categoryGroups: AgentOfficeCategoryGroup[];
+  counts: Record<
+    "success" | "needs_review" | "blocked" | "failed" | "running" | "scheduled",
+    number
+  >;
   topState: string;
 };
 
@@ -95,22 +109,80 @@ const STATUS_SET = new Set([
   "skipped",
   "queued",
   "synced",
+  "scheduled",
 ]);
 
 const FEATURE_KEYWORDS = [
-  "gmail-daily-sales-send",
-  "gmail-outbox",
-  "gmail-ready-candidate-pool",
   "gmail-automation-readiness",
+  "gmail-outbox",
+  "gmail-daily-sales-send",
+  "gmail-ready-candidate-pool",
   "gmail-full-auto-send-design",
+  "market-analysis-friday",
   "instagram-initial-posts-published",
   "instagram-canva-materialization",
   "instagram-pre-publish-review",
+  "agent-office-vercel-dashboard",
 ];
 
+const CATEGORY_META: Record<string, { label: string; description: string }> = {
+  gmail_send: {
+    label: "Gmail送信",
+    description: "日次30件送信、Preflight、送信後確認",
+  },
+  gmail_list_refresh: {
+    label: "Gmailリスト更新",
+    description: "公開メール確認済み候補の補充とoutbox準備",
+  },
+  market_analysis: {
+    label: "金曜市場分析",
+    description: "市場変化、競合、翌週施策の分析予定",
+  },
+  instagram: {
+    label: "Instagram運用",
+    description: "自社投稿、反応確認、改善メモ",
+  },
+  hermes_monitoring: {
+    label: "Hermes監視",
+    description: "cron、Apps Script、Agent statusの監視",
+  },
+  dashboard: {
+    label: "Agent Office",
+    description: "表示ページ、Vercel公開、スマホ確認",
+  },
+  system: {
+    label: "System",
+    description: "運用基盤と安全確認",
+  },
+  sales: {
+    label: "営業運用",
+    description: "既存営業タスクと候補管理",
+  },
+  content: {
+    label: "コンテンツ",
+    description: "自社SNS制作と投稿後確認",
+  },
+};
+
+const STATUS_PRIORITY: Record<AgentOfficeStatus, number> = {
+  failed: 0,
+  blocked: 1,
+  needs_review: 2,
+  running: 3,
+  checking: 3,
+  scheduled: 4,
+  partial: 5,
+  success: 6,
+  skipped: 7,
+  unknown: 8,
+};
+
 export function getAgentOfficeDashboardData(): AgentOfficeDashboardData {
-  const tasks = loadTasks().sort(compareTasksByDate);
+  const tasks = loadTasks().sort(compareTasksForDisplay);
   const featuredTasks = selectFeaturedTasks(tasks);
+  const urgentTasks = tasks
+    .filter((task) => task.status === "failed" || task.status === "blocked")
+    .slice(0, 5);
   const nextActions = tasks
     .filter((task) => task.nextAction && task.status !== "success")
     .slice(0, 6);
@@ -120,16 +192,20 @@ export function getAgentOfficeDashboardData(): AgentOfficeDashboardData {
   const counts = {
     success: tasks.filter((task) => task.status === "success").length,
     needs_review: tasks.filter((task) => task.status === "needs_review").length,
-    blocked: tasks.filter((task) => task.status === "blocked" || task.status === "failed").length,
+    blocked: tasks.filter((task) => task.status === "blocked").length,
+    failed: tasks.filter((task) => task.status === "failed").length,
     running: tasks.filter((task) => task.status === "running" || task.status === "checking").length,
+    scheduled: tasks.filter((task) => task.status === "scheduled").length,
   };
 
   return {
     generatedAt: new Date().toISOString(),
     tasks,
     featuredTasks,
+    urgentTasks,
     nextActions,
     humanReviewTasks,
+    categoryGroups: buildCategoryGroups(tasks),
     counts,
     topState: buildTopState(counts),
   };
@@ -139,7 +215,7 @@ function loadTasks(): SafeAgentTask[] {
   if (!fs.existsSync(TASK_DIR)) return [];
   return fs
     .readdirSync(TASK_DIR)
-    .filter((file) => file.endsWith(".json"))
+    .filter((file) => file.endsWith(".json") && !file.startsWith("template-"))
     .map((file) => path.join(TASK_DIR, file))
     .map(readTask)
     .filter((task): task is SafeAgentTask => Boolean(task));
@@ -165,6 +241,8 @@ function readTask(filePath: string): SafeAgentTask | null {
       nextAction: safeText(raw.nextAction, "次アクション未設定"),
       metrics: safeMetrics(raw.metrics),
       role: inferRole(id, safeText(raw.title), safeText(raw.category), safeText(raw.avatar)),
+      categoryLabel: categoryLabel(safeText(raw.category, "system")),
+      urgencyRank: STATUS_PRIORITY[status],
     };
   } catch {
     return null;
@@ -209,7 +287,9 @@ function safeMetrics(value: unknown): SafeMetric[] {
 function inferRole(id: string, title: string, category: string, avatar: string): string {
   const text = `${id} ${title} ${category} ${avatar}`.toLowerCase();
   if (text.includes("gmail") && text.includes("pool")) return "Gmail候補プール補充";
+  if (text.includes("gmail") && text.includes("list")) return "Gmailリスト更新";
   if (text.includes("gmail")) return "Gmail営業送信";
+  if (text.includes("market")) return "金曜市場分析";
   if (text.includes("instagram")) return "Instagram運用";
   if (text.includes("hermes") || text.includes("scheduled")) return "Hermes監視";
   if (text.includes("agent-office") || text.includes("dashboard")) return "Agent Office";
@@ -218,6 +298,12 @@ function inferRole(id: string, title: string, category: string, avatar: string):
 
 function compareTasksByDate(a: SafeAgentTask, b: SafeAgentTask): number {
   return Date.parse(b.updatedAt || "0") - Date.parse(a.updatedAt || "0");
+}
+
+function compareTasksForDisplay(a: SafeAgentTask, b: SafeAgentTask): number {
+  const urgencyDelta = a.urgencyRank - b.urgencyRank;
+  if (urgencyDelta !== 0) return urgencyDelta;
+  return compareTasksByDate(a, b);
 }
 
 function selectFeaturedTasks(tasks: SafeAgentTask[]): SafeAgentTask[] {
@@ -236,8 +322,44 @@ function selectFeaturedTasks(tasks: SafeAgentTask[]): SafeAgentTask[] {
 }
 
 function buildTopState(counts: AgentOfficeDashboardData["counts"]): string {
-  if (counts.blocked > 0) return "要確認の停止タスクあり";
+  if (counts.failed > 0 || counts.blocked > 0) return "停止中タスクあり";
   if (counts.needs_review > 0) return "人間確認待ちあり";
   if (counts.running > 0) return "実行中タスクあり";
-  return "主要タスクは安定";
+  return "自動化正常稼働中";
+}
+
+function categoryLabel(category: string): string {
+  return CATEGORY_META[category]?.label || category;
+}
+
+function buildCategoryGroups(tasks: SafeAgentTask[]): AgentOfficeCategoryGroup[] {
+  const order = [
+    "gmail_send",
+    "gmail_list_refresh",
+    "hermes_monitoring",
+    "market_analysis",
+    "instagram",
+    "dashboard",
+    "system",
+    "sales",
+    "content",
+  ];
+  const grouped = new Map<string, SafeAgentTask[]>();
+  for (const task of tasks) {
+    const key = task.category;
+    grouped.set(key, [...(grouped.get(key) || []), task]);
+  }
+
+  return [...grouped.entries()]
+    .sort(([a], [b]) => {
+      const aIndex = order.includes(a) ? order.indexOf(a) : order.length;
+      const bIndex = order.includes(b) ? order.indexOf(b) : order.length;
+      return aIndex - bIndex || a.localeCompare(b);
+    })
+    .map(([key, groupTasks]) => ({
+      key,
+      label: CATEGORY_META[key]?.label || key,
+      description: CATEGORY_META[key]?.description || "Agent statusで管理する運用タスク",
+      tasks: groupTasks.sort(compareTasksForDisplay),
+    }));
 }

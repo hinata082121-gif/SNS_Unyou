@@ -18,6 +18,7 @@ const STATUS_META = {
   needs_review: { label: "人間確認待ち", icon: "?", tone: "warn" },
   waiting_human: { label: "人間確認待ち", icon: "?", tone: "warn" },
   partial: { label: "一部完了", icon: "△", tone: "warn" },
+  scheduled: { label: "予定", icon: "-", tone: "idle" },
   queued: { label: "待機中", icon: "-", tone: "idle" },
   pending: { label: "未着手", icon: "-", tone: "idle" },
   skipped: { label: "未実行", icon: "z", tone: "idle" },
@@ -110,7 +111,9 @@ function readTasks() {
     return { tasks, warnings: [`${path.relative(ROOT, TASK_DIR)} が見つかりません。`] };
   }
 
-  for (const file of fs.readdirSync(TASK_DIR).filter((item) => item.endsWith(".json"))) {
+  for (const file of fs
+    .readdirSync(TASK_DIR)
+    .filter((item) => item.endsWith(".json") && !item.startsWith("template-"))) {
     const fullPath = path.join(TASK_DIR, file);
     try {
       const raw = fs.readFileSync(fullPath, "utf8");

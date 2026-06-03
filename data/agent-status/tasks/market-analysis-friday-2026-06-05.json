@@ -1,0 +1,34 @@
+{
+  "id": "market-analysis-friday-2026-06-05",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "2026-06-05 金曜市場分析",
+  "category": "market_analysis",
+  "status": "scheduled",
+  "phase": "金曜実行予定",
+  "progress": 10,
+  "priority": "medium",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T23:30:00+09:00",
+  "summary": "2026-06-05にSNS運用代行、小規模店舗支援、AI自動化市場の変化を確認し、翌週の営業、Instagram投稿、サービス改善へ反映する予定。",
+  "artifacts": [
+    "docs/market-analysis/friday-market-analysis-automation-2026-06-03.md"
+  ],
+  "metrics": {
+    "analysisCompleted": false,
+    "reportCreated": false,
+    "recommendationCount": 0,
+    "nextExperimentCount": 0,
+    "humanReviewRequired": true,
+    "nextRunAt": "2026-06-05"
+  },
+  "nextAction": "2026-06-05の金曜タスクで公開情報を確認し、翌週の営業切り口とInstagram投稿テーマを整理する",
+  "safeToAct": true,
+  "notes": [
+    "今回実データ取得なし",
+    "市場分析は金曜タスクで実行",
+    "Gmail送信なし",
+    "Instagram操作なし",
+    "秘密情報なし"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "id": "template-market-analysis-friday",
+  "agent": "System",
+  "avatar": "ops-monitor",
+  "title": "金曜市場分析",
+  "category": "market_analysis",
+  "status": "scheduled",
+  "phase": "テンプレート",
+  "progress": 0,
+  "priority": "medium",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T23:30:00+09:00",
+  "summary": "金曜市場分析タスク用テンプレート。実行後にレポート作成状況と提案件数を記録する。",
+  "artifacts": [
+    "docs/agent-status-schema-2026-06-03.md"
+  ],
+  "metrics": {
+    "analysisCompleted": false,
+    "reportCreated": false,
+    "recommendationCount": 0,
+    "nextExperimentCount": 0,
+    "humanReviewRequired": true
+  },
+  "nextAction": "金曜実行時に日付別タスクへコピーし、市場分析結果を記録する",
+  "safeToAct": true,
+  "notes": [
+    "テンプレートは/agent-officeに表示しない",
+    "今回実データ取得なし",
+    "営業送信やSNS操作なし"
+  ]
+}

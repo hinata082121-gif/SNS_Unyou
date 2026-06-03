@@ -12,6 +12,7 @@ export function AgentOfficeDashboard({
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <Header data={data} />
         <Summary data={data} />
+        <UrgentStrip tasks={data.urgentTasks} />
         <PixelOffice tasks={data.featuredTasks} />
         <Panels data={data} />
         <SafetyNotes />
@@ -52,6 +53,7 @@ function Header({ data }: { data: AgentOfficeDashboardData }) {
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
           Hermes Agent、Codex、Apps Script、Gmail営業、Instagram運用の状態を表示専用で確認します。
+          自動業務の結果はAgent status更新とGit pushを通じて反映されます。
           ここから送信・投稿・Sheets更新は実行されません。
         </p>
       </div>
@@ -68,14 +70,16 @@ function Header({ data }: { data: AgentOfficeDashboardData }) {
 
 function Summary({ data }: { data: AgentOfficeDashboardData }) {
   const cards = [
+    ["failed", "失敗", data.counts.failed],
+    ["blocked", "停止", data.counts.blocked],
     ["success", "完了", data.counts.success],
     ["needs_review", "確認待ち", data.counts.needs_review],
-    ["blocked", "停止", data.counts.blocked],
     ["running", "実行中", data.counts.running],
+    ["scheduled", "予定", data.counts.scheduled],
   ] as const;
 
   return (
-    <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <section className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
       {cards.map(([status, label, value]) => (
         <div key={status} className="border border-white/15 bg-slate-950/70 p-4">
           <div className="flex items-center justify-between gap-3">
@@ -85,6 +89,49 @@ function Summary({ data }: { data: AgentOfficeDashboardData }) {
           <p className="mt-4 font-number text-4xl font-black">{value}</p>
         </div>
       ))}
+    </section>
+  );
+}
+
+function UrgentStrip({ tasks }: { tasks: SafeAgentTask[] }) {
+  if (!tasks.length) {
+    return (
+      <section className="mt-4 border border-emerald-300/25 bg-emerald-300/10 p-4">
+        <p className="text-sm font-black text-emerald-50">自動化正常稼働中</p>
+        <p className="mt-2 text-sm leading-7 text-emerald-50">
+          現在、最優先で止まっているタスクはありません。人間確認待ちがある場合は下の「人間確認が必要」を確認してください。
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-4 border border-red-300/35 bg-red-400/10 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-red-50">停止/失敗タスク</p>
+          <p className="mt-1 text-sm text-red-100">
+            自動業務が止まっています。人間が次アクションを確認してください。
+          </p>
+        </div>
+        <span className="border border-red-200/30 px-3 py-1 text-xs font-black text-red-50">
+          {tasks.length}件
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {tasks.map((task) => (
+          <div key={task.id} className="border border-red-200/20 bg-slate-950/70 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-red-100">{task.categoryLabel}</p>
+                <p className="mt-1 text-sm font-black text-white">{task.title}</p>
+              </div>
+              <StatusBadge status={task.status} />
+            </div>
+            <p className="mt-3 text-sm leading-6 text-red-50">{task.nextAction}</p>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -135,7 +182,7 @@ function Workstation({ task }: { task: SafeAgentTask }) {
         </div>
       </div>
       <div className="mt-4">
-        <p className="text-center text-xs font-black text-slate-300">{task.role}</p>
+        <p className="text-center text-xs font-black text-slate-300">{task.categoryLabel}</p>
         <p className="mt-2 line-clamp-2 text-center text-sm font-black text-white">
           {task.title}
         </p>
@@ -158,8 +205,36 @@ function Panels({ data }: { data: AgentOfficeDashboardData }) {
       <aside className="grid content-start gap-4">
         <ActionPanel title="人間確認が必要" tasks={data.humanReviewTasks} />
         <ActionPanel title="次にやること" tasks={data.nextActions} />
+        <CategoryPanel data={data} />
         <TaskList tasks={data.tasks.slice(0, 10)} />
       </aside>
+    </section>
+  );
+}
+
+function CategoryPanel({ data }: { data: AgentOfficeDashboardData }) {
+  return (
+    <section className="border border-white/15 bg-slate-950/80 p-4">
+      <h2 className="text-lg font-black text-white">業務カテゴリ</h2>
+      <div className="mt-4 space-y-3">
+        {data.categoryGroups.map((group) => {
+          const lead = group.tasks[0];
+          return (
+            <div key={group.key} className="border border-white/10 bg-white/5 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-black text-white">{group.label}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    {group.description}
+                  </p>
+                </div>
+                {lead ? <StatusBadge status={lead.status} /> : null}
+              </div>
+              <p className="mt-2 text-xs text-slate-300">{group.tasks.length}件</p>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

@@ -25,6 +25,7 @@ const STATUS_META = {
   skipped: { label: "Skipped", color: "#64748b" },
   needs_review: { label: "Needs Review", color: "#ca8a04" },
   synced: { label: "Synced", color: "#0891b2" },
+  scheduled: { label: "Scheduled", color: "#4f46e5" },
 };
 
 const SECRET_PATTERN =
@@ -41,9 +42,9 @@ function escapeHtml(value) {
 
 function readTasks() {
   if (!fs.existsSync(TASK_DIR)) return [];
-  return fs
-    .readdirSync(TASK_DIR)
-    .filter((file) => file.endsWith(".json"))
+    return fs
+      .readdirSync(TASK_DIR)
+      .filter((file) => file.endsWith(".json") && !file.startsWith("template-"))
     .map((file) => {
       const fullPath = path.join(TASK_DIR, file);
       const raw = fs.readFileSync(fullPath, "utf8");

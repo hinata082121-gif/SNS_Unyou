@@ -70,6 +70,32 @@ Vercel本番では、環境変数 `AGENT_OFFICE_ACCESS_KEY` とURLの `?key=...`
 - Google Sheets ID、Apps Script URL、Webhook URL、APIキー、トークン
 - `.env` / `.env.local` の値
 
+### 自動業務後の更新
+
+Phase 1では、Git push連動で `/agent-office` を更新します。
+Gmail送信、Gmail営業リスト更新、Hermes監視、金曜市場分析、Instagram運用が完了したら、対応する `data/agent-status/tasks/*.json` と安全なsummary docsだけを更新し、個別にGit追加してpushします。
+Vercelの自動デプロイ後、スマホの `/agent-office` に反映されます。
+
+表示優先順位:
+
+1. `failed`
+2. `blocked`
+3. `needs_review`
+4. `running`
+5. `scheduled`
+6. `success`
+
+テンプレートJSONは `template-*` として保存しますが、公開ページとローカルHTMLには表示しません。
+
+自動業務カテゴリ:
+
+- `gmail_send`: 日次Gmail送信
+- `gmail_list_refresh`: Gmail-ready候補補充
+- `hermes_monitoring`: Hermes監視
+- `market_analysis`: 金曜市場分析
+- `instagram`: 自社Instagram運用
+- `dashboard`: Agent Office本体
+
 ## Phase 3: VS Code Webview拡張
 
 最終的にはVS Code Webview拡張として、Codex/Hermes作業中に同じ画面で進捗を確認できるようにします。

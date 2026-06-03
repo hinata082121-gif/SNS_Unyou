@@ -1,0 +1,34 @@
+{
+  "id": "template-gmail-send-daily",
+  "agent": "System",
+  "avatar": "ops-monitor",
+  "title": "Gmail営業30件送信",
+  "category": "gmail_send",
+  "status": "scheduled",
+  "phase": "テンプレート",
+  "progress": 0,
+  "priority": "high",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T23:30:00+09:00",
+  "summary": "日次Gmail営業送信タスク用テンプレート。実行日ごとにコピーして使用する。",
+  "artifacts": [
+    "docs/agent-status-schema-2026-06-03.md"
+  ],
+  "metrics": {
+    "targetSendCount": 30,
+    "readyCount": 0,
+    "sentCount": 0,
+    "failedCount": 0,
+    "preflightPassed": false,
+    "humanApprovalRequired": true,
+    "liveSendEnabled": false,
+    "autoSendEnabled": false
+  },
+  "nextAction": "実行日ごとに日付別タスクへコピーし、Preflight結果と送信結果を記録する",
+  "safeToAct": true,
+  "notes": [
+    "テンプレートは/agent-officeに表示しない",
+    "メール宛先は入れない",
+    "Gmail送信は実行しない"
+  ]
+}

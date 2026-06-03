@@ -1,0 +1,34 @@
+{
+  "id": "template-gmail-list-refresh",
+  "agent": "System",
+  "avatar": "ops-monitor",
+  "title": "Gmail営業リスト更新",
+  "category": "gmail_list_refresh",
+  "status": "scheduled",
+  "phase": "テンプレート",
+  "progress": 0,
+  "priority": "high",
+  "createdAt": "2026-06-03T00:00:00.000Z",
+  "updatedAt": "2026-06-03T23:30:00+09:00",
+  "summary": "Gmail-ready候補補充タスク用テンプレート。月木10:30のHermes監視結果を日付別タスクへ記録する。",
+  "artifacts": [
+    "docs/agent-status-schema-2026-06-03.md",
+    "docs/gmail/gmail-ready-candidate-pool-summary.md"
+  ],
+  "metrics": {
+    "targetCandidatesPerRun": 30,
+    "adoptedCount": 0,
+    "excludedCount": 0,
+    "totalReady": 0,
+    "availableForNextSend": 0,
+    "shortageTo90": 90,
+    "gmailSendDuringRefresh": false
+  },
+  "nextAction": "実行日ごとに日付別タスクへコピーし、補充件数と不足数を記録する",
+  "safeToAct": true,
+  "notes": [
+    "テンプレートは/agent-officeに表示しない",
+    "候補プール本体は入れない",
+    "Gmail送信は実行しない"
+  ]
+}
