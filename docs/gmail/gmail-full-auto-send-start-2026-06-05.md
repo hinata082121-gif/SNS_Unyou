@@ -167,8 +167,9 @@ Hermesはメール本文、返信本文、宛先、営業先名、秘密情報�
 
 2026-06-05分は、17:20翌日outbox準備タスクの初回実行前に12:00自動送信があるため、一回限りの事前準備としてoutbox30件とSheets貼り付け用TSVを作成しました。
 しかし緊急確認で、2026-06-05分outboxが2026-06-04送信済み候補と30件すべて重複していたため、旧outbox/TSVは使用禁止です。
-過去送信済み候補を除外すると安全に使える候補は3件のみで、新規30件を確保できないため、2026-06-05送信は `blocked` として扱います。
-Agent Officeには `tomorrowOutboxReady=false`、`tomorrowOutboxCount=0`、`duplicateWithPreviousBatch=true`、`duplicateCount=30`、`shortage=27`、`safeToSend=false` として表示します。
+公開メール確認済み候補を緊急補充し、過去送信済み候補と重複ゼロの新outbox30件とSheets貼り付け用TSVを再作成しました。
+Agent Officeには `tomorrowOutboxReady=true`、`tomorrowOutboxCount=30`、`duplicateWithPreviousBatch=false`、`duplicateWithPastSent=false`、`duplicateCount=0`、`sheetPasted=false`、`preflightRequired=true` として表示します。
+旧6/5 TSVがSheetsに入っている場合は、送信前に必ず新TSVへ差し替えます。
 
 明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
 

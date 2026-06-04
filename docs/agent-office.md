@@ -170,8 +170,10 @@ Gmail送信、自動返信、Apps Scriptトリガー操作、Google Sheets送信
 2026-06-04時点で、追加4タスクはHermesへ登録済みです。翌日outbox準備は `4e4ed67216e3`、返信確認実行・記録は `ee8473f970ff`、Agent Office反映監査は `1365e7b16899`、候補プール不足時補充強化チェックは `758eef276079` として扱います。
 2026-06-05分は17:20タスクの初回実行前に12:00自動送信があるため、一回限りでoutbox30件とSheets貼り付け用TSVを事前準備しました。
 ただし緊急確認で、2026-06-05分outboxが2026-06-04送信済み候補と30件すべて重複していたため、旧outbox/TSVは使用禁止です。
-過去送信済み候補を除外すると安全に使える候補は3件のみで、新規30件を確保できないため、`data/agent-status/tasks/gmail-next-day-outbox-2026-06-05.json` は `blocked` として表示します。
-`/agent-office` では `tomorrowOutboxReady=false`、`tomorrowOutboxCount=0`、`duplicateWithPreviousBatch=true`、`duplicateCount=30`、`shortage=27`、`safeToSend=false` を表示し、2026-06-05送信を停止する判断を明確にします。
+公開メール確認済み候補を緊急補充し、過去送信済み候補と重複ゼロの新outbox30件とSheets貼り付け用TSVを再作成しました。
+`data/agent-status/tasks/gmail-next-day-outbox-2026-06-05.json` は `needs_review` として、Sheets差し替えとPreflight確認待ちを表示します。
+`/agent-office` では `tomorrowOutboxReady=true`、`tomorrowOutboxCount=30`、`duplicateWithPreviousBatch=false`、`duplicateWithPastSent=false`、`duplicateCount=0`、`sheetPasted=false`、`preflightRequired=true` を表示します。
+旧6/5 TSVがSheetsに入っている場合は、送信前に必ず新TSVへ差し替えます。
 
 2026-06-04分のGmail送信対象準備は、`data/agent-status/tasks/gmail-outbox-2026-06-04.json` で確認します。ローカル既存データでは再利用可能候補が0件でしたが、Gmail-ready候補プールを3バッチ補充し、outbox30件とSheets貼り付け用TSVを作成済みです。現在は `needs_review` として、人間がGoogle Sheetsの「Gmail送信対象」タブへTSVを貼り付け、Apps Scriptの `runPreflightCheckOnly()` を実行する段階です。Gmail本番送信、自動返信、Google Sheets送信済み更新、自動トリガー有効化は行いません。
 
