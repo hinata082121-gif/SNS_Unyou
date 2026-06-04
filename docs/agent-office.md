@@ -204,3 +204,18 @@ Agent Officeは、以下のHermes cron結果を安全な `data/agent-status/task
 
 表示するのは件数、状態、blocked理由、nextActionのみです。メールアドレス一覧、営業先一覧、返信本文、送信ログ本体、秘密情報は表示しません。
 
+## 2026-06-04 Gmail営業30件送信成功
+
+2026-06-04分のGmail営業メールは、Apps Script上で `sendBatchId=gmail-sales-2026-06-04` として30件送信成功済みです。
+
+- processed: 30
+- sentCount: 30
+- failedCount: 0
+- skippedCount: 0
+- `batch_marked_sent` 確認済み
+- `daily_job_finished` 確認済み
+- `live_send_reset_after_run` 確認済み
+
+Agent Officeと `/agent-office` では、`data/agent-status/tasks/gmail-daily-sales-send-2026-06-04.json` を `success` として表示します。
+次の確認予定は、12:30送信結果・返信確認チェック、14:00失敗・不足リカバリ確認、17:00返信確認・翌日準備チェックです。
+同一 `sendBatchId` の再送信、Google Sheets送信済み二重更新、自動返信は行いません。

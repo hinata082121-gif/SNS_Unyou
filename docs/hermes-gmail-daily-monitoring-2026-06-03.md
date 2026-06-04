@@ -73,3 +73,20 @@ Git追加する場合は、安全なdocsと `data/agent-status/tasks/*.json` の
 - `availableForNextSend`
 - `nextAction`
 - 禁止操作が未実行であること
+
+## 2026-06-04 初回自動運用結果
+
+Apps Script上で2026-06-04分のGmail営業メール30件送信が成功しました。
+
+- sendBatchId: `gmail-sales-2026-06-04`
+- source: scheduled
+- processed: 30
+- sentCount: 30
+- failedCount: 0
+- skippedCount: 0
+- `batch_marked_sent` 確認済み
+- `daily_job_finished` 確認済み
+- `live_send_reset_after_run` 確認済み
+
+HermesとAgent Officeは、同一sendBatchIdの再送信を禁止し、次は12:30送信結果・返信確認、14:00失敗・不足確認、17:00返信確認・翌日準備確認へ進めます。
+記録するのは件数、状態、nextActionのみです。メールアドレス、営業先名、本文、返信本文、Gmailスレッド全文、送信ログ本体、秘密情報は保存・表示しません。
