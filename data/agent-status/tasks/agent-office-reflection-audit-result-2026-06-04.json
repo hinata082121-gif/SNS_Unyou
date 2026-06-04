@@ -1,0 +1,149 @@
+{
+  "id": "agent-office-reflection-audit-result-2026-06-04",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Agent Office反映監査結果 2026-06-04",
+  "category": "agent_office_monitoring",
+  "status": "blocked",
+  "phase": "未反映・blocked・needs_reviewを検知",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-06-04T18:32:32+09:00",
+  "updatedAt": "2026-06-04T18:32:32+09:00",
+  "summary": "2026-06-04に実行予定・反映予定だった自動化施策のAgent Office反映状況を監査。Gmail送信、12:30確認、14:00確認は反映済み。17:20翌日outboxと17:30返信確認は安全なAgent Status JSON上で個別結果が未確認。17:00返信/翌日準備と月木リスト更新はblocked、複数タスクがneeds_reviewのまま残っている。",
+  "artifacts": [
+    "docs/agent-office-reflection-audit-log/2026-06-04.md"
+  ],
+  "metrics": {
+    "executionDate": "2026-06-04",
+    "auditedAutomationCount": 10,
+    "agentStatusJsonOnly": true,
+    "agentOfficeUpdated": true,
+    "missingCount": 2,
+    "staleCount": 1,
+    "runningStaleCount": 0,
+    "blockedCount": 2,
+    "needsReviewCount": 5,
+    "successCount": 3,
+    "scheduledNotDueCount": 1,
+    "safeCountsOnly": true,
+    "gmailSendExecutedByAudit": false,
+    "autoReplyExecuted": false,
+    "appsScriptTriggerChanged": false,
+    "sheetsSentStatusUpdated": false,
+    "instagramActionExecuted": false,
+    "productionTemplateAutoChanged": false,
+    "gitAddDotExecuted": false
+  },
+  "auditFindings": [
+    {
+      "target": "Gmail自動送信",
+      "status": "success",
+      "taskId": "gmail-daily-sales-send-2026-06-04",
+      "updatedAt": "2026-06-04T15:15:21+09:00",
+      "issue": "none",
+      "nextAction": "同一バッチの再送信は行わず、後続チェック結果を確認する"
+    },
+    {
+      "target": "12:30送信結果確認",
+      "status": "success",
+      "taskId": "gmail-post-send-check-2026-06-04",
+      "updatedAt": "2026-06-04T15:15:21+09:00",
+      "issue": "none",
+      "nextAction": "14:00/17:00チェックへ進む"
+    },
+    {
+      "target": "14:00失敗・不足確認",
+      "status": "success",
+      "taskId": "gmail-recovery-check-2026-06-04",
+      "updatedAt": "2026-06-04T15:15:21+09:00",
+      "issue": "none",
+      "nextAction": "候補プール推奨不足は月木リスト更新タスク側で継続管理する"
+    },
+    {
+      "target": "17:00返信確認・翌日準備",
+      "status": "blocked",
+      "taskId": "gmail-evening-readiness-check-2026-06-04",
+      "updatedAt": "2026-06-04T17:01:30+09:00",
+      "issue": "blocked",
+      "nextAction": "返信確認結果を人間が確認し、翌日outbox準備を安全に完了させる"
+    },
+    {
+      "target": "17:20翌日outbox",
+      "status": "missing",
+      "taskId": "not_found",
+      "updatedAt": "",
+      "issue": "missing",
+      "nextAction": "2026-06-05分outbox30件の安全な準備結果をAgent Statusへ記録する"
+    },
+    {
+      "target": "17:30返信確認",
+      "status": "missing",
+      "taskId": "not_found",
+      "updatedAt": "",
+      "issue": "missing",
+      "nextAction": "返信本文・メールアドレスを記録せず、件数と人間対応要否だけをAgent Statusへ記録する"
+    },
+    {
+      "target": "月木リスト更新",
+      "status": "blocked",
+      "taskId": "gmail-list-refresh-2026-06-04",
+      "updatedAt": "2026-06-04T10:32:16+09:00",
+      "issue": "blocked",
+      "nextAction": "推奨プール90件に不足している安全な件数だけを表示し、候補補充を継続する"
+    },
+    {
+      "target": "金曜市場分析",
+      "status": "scheduled",
+      "taskId": "market-analysis-friday-2026-06-05",
+      "updatedAt": "2026-06-04T09:46:59+09:00",
+      "issue": "not_due_today",
+      "nextAction": "2026-06-05 17:00実行後にAgent Officeへ安全な結果を反映する"
+    },
+    {
+      "target": "金曜営業メール改善",
+      "status": "needs_review",
+      "taskId": "gmail-weekly-email-improvement-2026-06-06",
+      "updatedAt": "2026-06-04T17:31:26+09:00",
+      "issue": "needs_review",
+      "nextAction": "金曜18:00タスク登録と人間承認前提の改善案運用を確認する"
+    },
+    {
+      "target": "Agent Office反映監査タスク登録",
+      "status": "needs_review",
+      "taskId": "agent-office-reflection-audit-2026-06-04",
+      "updatedAt": "2026-06-04T17:48:01+09:00",
+      "issue": "needs_review",
+      "nextAction": "毎日18:30の反映監査運用を登録・継続確認する"
+    }
+  ],
+  "additionalNeedsReviewTaskIds": [
+    "gmail-outbox-2026-06-04",
+    "gmail-automation-gap-fix-2026-06-04",
+    "gmail-full-auto-send-start-2026-06-05"
+  ],
+  "staleTaskIds": [
+    "gmail-outbox-2026-06-04"
+  ],
+  "blockedTaskIds": [
+    "gmail-evening-readiness-check-2026-06-04",
+    "gmail-list-refresh-2026-06-04"
+  ],
+  "missingTargets": [
+    "17:20翌日outbox",
+    "17:30返信確認"
+  ],
+  "nextAction": "17:20翌日outboxと17:30返信確認の安全なAgent Status反映を追加し、blocked/needs_reviewタスクを人間確認または安全な補充作業で解消する。禁止操作は実行しない。",
+  "safeToAct": true,
+  "notes": [
+    "Gmail送信なし",
+    "自動返信なし",
+    "Apps Scriptトリガー作成・削除・変更なし",
+    "Google Sheets送信済み更新なし",
+    "Instagram操作なし",
+    "本番メールテンプレート自動差し替えなし",
+    "秘密情報、営業先名、メールアドレス、返信本文、Gmailスレッド全文は表示・保存していない",
+    "data/gmail本体、data/prospects、docs/reports/sales、tmp、.env、.env.localはGit追加対象外",
+    "git add . は使用しない"
+  ]
+}
