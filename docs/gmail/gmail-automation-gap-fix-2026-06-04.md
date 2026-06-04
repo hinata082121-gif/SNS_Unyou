@@ -75,6 +75,14 @@ outbox本体、TSV本文、メールアドレス、営業先名はGitに追加�
 
 候補プールは緊急補充後に `totalReady=65`、過去送信済み除外後の `availableForNextSend=35` まで改善したが、推奨90件には55件不足している。
 
+## batch_already_sent発生時の対応
+
+Preflightで `batch_already_sent` が出た場合、同一 `sendBatchId` は再利用しない。
+旧batchIdは使用禁止にし、同じ候補セットを使う場合でも `gmail-sales-YYYY-MM-DD-r2` のように新しいbatchIdでoutbox/TSVを再作成する。
+
+2026-06-05では `gmail-sales-2026-06-05` が使用済み扱いになったため、`gmail-sales-2026-06-05-r2` を発行した。
+r2 outboxは過去送信済み候補との重複ゼロを確認済みで、Agent Officeには `batchAlreadySentDetected=true`、`batchIdRotated=true`、`safeToSendAfterSheetUpdate=pending` として記録する。
+
 ## 既存タスクの補強方針
 
 - 17:00返信確認・翌日準備チェックは、17:20 outbox準備と17:30返信確認の結果を前提にする

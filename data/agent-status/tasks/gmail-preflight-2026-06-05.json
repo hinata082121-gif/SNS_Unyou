@@ -1,0 +1,42 @@
+{
+  "id": "gmail-preflight-2026-06-05",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "2026-06-05 Gmail Preflight確認",
+  "category": "gmail_send",
+  "status": "blocked",
+  "phase": "旧batchIdが使用済み扱い・r2差し替え待ち",
+  "progress": 60,
+  "priority": "high",
+  "createdAt": "2026-06-05T00:00:00.000Z",
+  "updatedAt": "2026-06-05T01:21:13+09:00",
+  "summary": "Apps ScriptのPreflightでreadyCount=0、blockedReason=no_ready_rows/exact_ready_count_not_met/batch_already_sentを確認。Sheet接続とGmail quotaは問題ないため、gmail-sales-2026-06-05を使用禁止にし、r2 batchへ差し替える。",
+  "artifacts": [
+    "data/agent-status/tasks/gmail-next-day-outbox-2026-06-05.json"
+  ],
+  "metrics": {
+    "dryRun": true,
+    "liveSendEnabled": false,
+    "dailySendLimit": 30,
+    "remainingQuota": 100,
+    "targetCount": 30,
+    "readyCount": 0,
+    "blockedReason": "no_ready_rows,exact_ready_count_not_met,batch_already_sent",
+    "sheetConnected": true,
+    "safeToSend": false,
+    "oldBatchId": "gmail-sales-2026-06-05",
+    "newBatchId": "gmail-sales-2026-06-05-r2",
+    "batchIdRotated": true,
+    "gmailSendExecutedByThisTask": false,
+    "autoReplyEnabled": false
+  },
+  "nextAction": "r2新TSVでGoogle Sheetsを差し替え、Apps Script側のSEND_BATCH_IDまたは対応プロパティをgmail-sales-2026-06-05-r2に合わせてrunPreflightCheckOnly()を再実行する",
+  "safeToAct": true,
+  "notes": [
+    "Gmail送信なし",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "Google Sheets送信済み更新なし",
+    "メールアドレス、営業先名、返信本文、秘密情報なし"
+  ]
+}

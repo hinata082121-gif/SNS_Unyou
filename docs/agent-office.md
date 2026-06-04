@@ -174,6 +174,8 @@ Gmail送信、自動返信、Apps Scriptトリガー操作、Google Sheets送信
 `data/agent-status/tasks/gmail-next-day-outbox-2026-06-05.json` は `needs_review` として、Sheets差し替えとPreflight確認待ちを表示します。
 `/agent-office` では `tomorrowOutboxReady=true`、`tomorrowOutboxCount=30`、`duplicateWithPreviousBatch=false`、`duplicateWithPastSent=false`、`duplicateCount=0`、`sheetPasted=false`、`preflightRequired=true` を表示します。
 旧6/5 TSVがSheetsに入っている場合は、送信前に必ず新TSVへ差し替えます。
+Preflightで `batch_already_sent` が出た場合は、`batchAlreadySentDetected`、`batchIdRotated`、`safeToSend`、`safeToSendAfterSheetUpdate` を確認対象にします。
+2026-06-05は `gmail-sales-2026-06-05` を使用禁止にし、`gmail-sales-2026-06-05-r2` のr2 outbox/TSVへ差し替える運用です。
 
 2026-06-04分のGmail送信対象準備は、`data/agent-status/tasks/gmail-outbox-2026-06-04.json` で確認します。ローカル既存データでは再利用可能候補が0件でしたが、Gmail-ready候補プールを3バッチ補充し、outbox30件とSheets貼り付け用TSVを作成済みです。現在は `needs_review` として、人間がGoogle Sheetsの「Gmail送信対象」タブへTSVを貼り付け、Apps Scriptの `runPreflightCheckOnly()` を実行する段階です。Gmail本番送信、自動返信、Google Sheets送信済み更新、自動トリガー有効化は行いません。
 

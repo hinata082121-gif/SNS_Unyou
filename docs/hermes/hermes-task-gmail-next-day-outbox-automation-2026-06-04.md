@@ -30,6 +30,8 @@ C:\Users\hinat\Documents\Codex\2026-05-27\next-js-react-typescript-tailwind-css
 - 前日送信済み候補、過去送信済み候補、既存outbox、既存sendBatchIdとの重複検査を必ず行う
 - duplicateCount > 0 の場合はoutbox作成成功にせず、statusをblockedにする
 - 既存outboxが前日送信済み候補と一致する場合は使用禁止にし、safeToSend=falseをAgent Officeへ反映する
+- PreflightやAgent Statusでbatch_already_sentを検出した場合は既存batchIdを再利用しない
+- batch_already_sent時は `gmail-sales-YYYY-MM-DD-r2` のような新batchIdを発行し、old TSVを使用禁止にする
 - 新規候補が30件未満の場合はblockedとし、不足数とnextActionを明記する
 - 翌日分Agent Status JSONを作成する
 - Sheets反映が自動化できる場合は安全な既存経路のみ使用する

@@ -171,6 +171,11 @@ Hermesはメール本文、返信本文、宛先、営業先名、秘密情報�
 Agent Officeには `tomorrowOutboxReady=true`、`tomorrowOutboxCount=30`、`duplicateWithPreviousBatch=false`、`duplicateWithPastSent=false`、`duplicateCount=0`、`sheetPasted=false`、`preflightRequired=true` として表示します。
 旧6/5 TSVがSheetsに入っている場合は、送信前に必ず新TSVへ差し替えます。
 
+Preflightで `batch_already_sent` が出た場合は、同じbatchIdを再利用しません。
+旧batchIdを使用禁止にし、`gmail-sales-YYYY-MM-DD-r2` のような新batchIdでoutbox/TSVを再作成します。
+2026-06-05では `gmail-sales-2026-06-05` が使用済み扱いになったため、`gmail-sales-2026-06-05-r2` でr2 outbox/TSVを作成済みです。
+Google Sheetsの送信対象行とApps Script側のSEND_BATCH_IDまたは対応プロパティをr2に合わせ、Preflightで `readyCount=30` と `blockedReason=""` を確認してから送信可否を判断します。
+
 明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
 
 ## 禁止事項
