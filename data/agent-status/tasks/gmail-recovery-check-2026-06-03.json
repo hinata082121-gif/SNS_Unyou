@@ -1,0 +1,34 @@
+{
+  "id": "gmail-recovery-check-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail 14時 失敗・不足リカバリ確認",
+  "category": "gmail_send",
+  "status": "scheduled",
+  "phase": "cron created: recovery check",
+  "progress": 75,
+  "priority": "high",
+  "createdAt": "2026-06-03T22:21:00+09:00",
+  "summary": "14:00に当日送信状態、failed、processed不足、availableForNextSend不足、Agent Office未反映を確認し、nextActionを明確にするcronを追加済み。",
+  "metrics": {
+    "cronJobId": "0305facfaef7",
+    "schedule": "0 14 * * *",
+    "processedThreshold": 30,
+    "failedNeedsReview": true,
+    "availableForNextSendMinimum": 30
+  },
+  "nextAction": "当日送信結果が不明、failed>0、候補不足、Agent Office未反映の場合はneeds_review/blockedとして表示する",
+  "safeToAct": true,
+  "notes": [
+    "Gmail本番送信は安全条件を満たす場合のみ。今回のローカル反映では送信していない",
+    "自動返信実送信なし",
+    "Apps Scriptトリガー有効化なし",
+    "Instagram投稿/DM/コメント/フォロー/いいねなし",
+    "メールアドレス一覧、営業先一覧、返信本文、Gmailスレッド全文は表示しない",
+    "git add . 禁止。Git追加は安全なdocsとdata/agent-status/tasks/*.jsonのみ個別に行う"
+  ],
+  "artifacts": [
+    "docs/hermes-gmail-daily-monitoring-2026-06-03.md"
+  ],
+  "updatedAt": "2026-06-04T09:46:59+09:00"
+}

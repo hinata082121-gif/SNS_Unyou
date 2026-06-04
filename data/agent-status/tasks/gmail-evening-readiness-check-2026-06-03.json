@@ -1,0 +1,33 @@
+{
+  "id": "gmail-evening-readiness-check-2026-06-03",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail 17時 返信確認・翌日準備チェック",
+  "category": "gmail_reply_check",
+  "status": "scheduled",
+  "phase": "cron created: evening readiness check",
+  "progress": 75,
+  "priority": "high",
+  "createdAt": "2026-06-03T22:21:00+09:00",
+  "summary": "17:00に返信確認、人間Gmail確認要否、翌日availableForNextSend、翌日outbox30件の有無を確認するcronを追加済み。",
+  "metrics": {
+    "cronJobId": "5b20e0820c82",
+    "schedule": "0 17 * * *",
+    "tomorrowOutboxTarget": 30,
+    "needsHumanEmailCheck": "reported_as_boolean"
+  },
+  "nextAction": "unreadReplyCount>0またはneedsHumanEmailCheck=trueならGmail確認を促し、翌日候補不足なら補充/outbox作成を促す",
+  "safeToAct": true,
+  "notes": [
+    "Gmail本番送信は安全条件を満たす場合のみ。今回のローカル反映では送信していない",
+    "自動返信実送信なし",
+    "Apps Scriptトリガー有効化なし",
+    "Instagram投稿/DM/コメント/フォロー/いいねなし",
+    "メールアドレス一覧、営業先一覧、返信本文、Gmailスレッド全文は表示しない",
+    "git add . 禁止。Git追加は安全なdocsとdata/agent-status/tasks/*.jsonのみ個別に行う"
+  ],
+  "artifacts": [
+    "docs/hermes-gmail-daily-monitoring-2026-06-03.md"
+  ],
+  "updatedAt": "2026-06-04T09:46:59+09:00"
+}

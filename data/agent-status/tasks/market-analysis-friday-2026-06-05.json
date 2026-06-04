@@ -1,34 +1,35 @@
 {
   "id": "market-analysis-friday-2026-06-05",
   "agent": "Hermes",
-  "avatar": "ops-monitor",
-  "title": "2026-06-05 金曜市場分析",
+  "avatar": "hermes-scheduler",
+  "title": "金曜17時 市場・競合分析",
   "category": "market_analysis",
   "status": "scheduled",
-  "phase": "金曜実行予定",
-  "progress": 10,
+  "phase": "cron updated: Friday market analysis",
+  "progress": 70,
   "priority": "medium",
-  "createdAt": "2026-06-03T00:00:00.000Z",
-  "updatedAt": "2026-06-03T23:30:00+09:00",
-  "summary": "2026-06-05にSNS運用代行、小規模店舗支援、AI自動化市場の変化を確認し、翌週の営業、Instagram投稿、サービス改善へ反映する予定。",
-  "artifacts": [
-    "docs/market-analysis/friday-market-analysis-automation-2026-06-03.md"
-  ],
+  "createdAt": "2026-06-03T22:21:00+09:00",
+  "summary": "Hermes cron 2be513dbe07fを金曜17時の市場・競合分析タスクへ修正済み。SNS運用代行、小規模店舗支援、AI自動化、Gmail営業、Instagram集客を週次で分析する。",
   "metrics": {
+    "cronJobId": "2be513dbe07f",
+    "schedule": "0 17 * * 5",
     "analysisCompleted": false,
     "reportCreated": false,
-    "recommendationCount": 0,
-    "nextExperimentCount": 0,
-    "humanReviewRequired": true,
-    "nextRunAt": "2026-06-05"
+    "recommendationCountTarget": 3,
+    "nextExperimentCountTarget": 3
   },
-  "nextAction": "2026-06-05の金曜タスクで公開情報を確認し、翌週の営業切り口とInstagram投稿テーマを整理する",
+  "nextAction": "2026-06-05 17:00実行後、推奨アクション3件以上と次週実験案3件以上を/agent-officeへ反映する",
   "safeToAct": true,
   "notes": [
-    "今回実データ取得なし",
-    "市場分析は金曜タスクで実行",
     "Gmail送信なし",
+    "自動返信なし",
     "Instagram操作なし",
-    "秘密情報なし"
-  ]
+    "営業先リスト・メールアドレス一覧を作らない",
+    "秘密情報を表示しない",
+    "git add . 禁止"
+  ],
+  "artifacts": [
+    "docs/hermes-scheduled-automation.md"
+  ],
+  "updatedAt": "2026-06-04T09:46:59+09:00"
 }
