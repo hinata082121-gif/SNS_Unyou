@@ -162,6 +162,11 @@ Hermes監視タスクが失敗した場合に備え、毎日18:30の反映監査
 `/agent-office` には `success` / `blocked` / `needs_review` / stale候補、最終更新時刻、次アクション、安全な件数だけを表示します。
 メールアドレス、営業先名、返信本文、Gmailスレッド全文、Sheet ID、Apps Script URL、Webhook URL、APIキー、トークンは表示しません。
 
+Gmail自動化ギャップ修正は、`data/agent-status/tasks/gmail-automation-gap-fix-2026-06-04.json` で確認します。
+Agent Officeでは、`tomorrowOutboxReady`、`replyCheckExecuted`、`reflectionAuditStatus`、`candidatePoolShortage`、`automationGapStatus` を安全な件数・状態として表示します。
+翌日outbox30件準備、返信確認実行・記録、反映監査、候補プール不足時チェックを追加タスクとして扱い、人間作業として残っている箇所を `needs_review` で明確化します。
+Gmail送信、自動返信、Apps Scriptトリガー操作、Google Sheets送信済み更新、Instagram操作はAgent Officeから実行しません。
+
 2026-06-04分のGmail送信対象準備は、`data/agent-status/tasks/gmail-outbox-2026-06-04.json` で確認します。ローカル既存データでは再利用可能候補が0件でしたが、Gmail-ready候補プールを3バッチ補充し、outbox30件とSheets貼り付け用TSVを作成済みです。現在は `needs_review` として、人間がGoogle Sheetsの「Gmail送信対象」タブへTSVを貼り付け、Apps Scriptの `runPreflightCheckOnly()` を実行する段階です。Gmail本番送信、自動返信、Google Sheets送信済み更新、自動トリガー有効化は行いません。
 
 Gmail送信用候補プールは、`data/agent-status/tasks/gmail-ready-candidate-pool-2026-06-03.json` で確認します。毎日30件送信を安定させるには、公開メールアドレス確認済み候補を常時プール化し、`available` が30件未満なら送信を `blocked`、60件未満なら補充対象として扱います。現在は最低30件に到達済みですが、推奨90件には60件不足しています。プール本体、outbox、TSV、メールアドレス一覧はGitに追加せず、Agent Officeには件数と次アクションだけを表示します。
@@ -215,7 +220,10 @@ Agent Officeは、以下のHermes cron結果を安全な `data/agent-status/task
 - 17:00 毎日: 返信確認・翌日準備
 - 17:00 金曜: 市場・競合分析
 - 18:00 金曜: 営業メール改善・反応率分析
+- 17:20 毎日: 翌日outbox30件自動準備
+- 17:30 毎日: 返信確認実行・記録
 - 18:30 毎日: Agent Office反映監査・未反映検知
+- 16:00 月木: 候補プール不足時 補充強化チェック
 
 表示するのは件数、状態、blocked理由、nextActionのみです。メールアドレス一覧、営業先一覧、返信本文、送信ログ本体、秘密情報は表示しません。
 

@@ -101,6 +101,19 @@ HermesとAgent Officeは、同一sendBatchIdの再送信を禁止し、次は12:
 - failed/blockedが出た場合は自動送信停止をnextActionに明記する
 - 自動返信はOFFのまま扱う
 
+## 日次監視の不足箇所と追加タスク
+
+2026-06-04のHermes確認では、翌日outbox準備、返信確認結果記録、Agent Office反映監査、候補プール不足時チェックが未自動化箇所として残っています。
+
+追加方針:
+
+- 17:20: 翌日outbox30件自動準備。tomorrowOutboxReadyとtomorrowOutboxCountをAgent Officeへ反映する
+- 17:30: 返信確認実行・記録。replyCheckExecutedとneedsHumanEmailCheckをAgent Officeへ反映する
+- 18:30: Agent Office反映監査。missing/stale/blocked/needs_reviewを検知する
+- 月木16:00: 候補プール不足時 補充強化チェック。totalReady<90またはavailableForNextSend<60をneeds_review化する
+
+これらの追加タスクは、Gmail送信、自動返信、Apps Scriptトリガー操作、Google Sheets送信済み更新、Instagram操作を行いません。
+
 完全自動化開始前に人間がApps Scriptで確認する関数:
 
 - `setupDailyAutoSendTriggers()`

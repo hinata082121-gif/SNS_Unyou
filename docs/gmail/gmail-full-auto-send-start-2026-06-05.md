@@ -153,6 +153,17 @@ Hermesはメール本文、返信本文、宛先、営業先名、秘密情報�
 - 翌日分候補とoutbox準備状況
 - 自動返信がOFFのままである
 
+## 完全自動化に必要な追加監視
+
+完全自動送信を安定させるには、送信そのものだけでなく、翌日outbox準備とAgent Office反映監査が必要です。
+
+- 毎日17:20の翌日outbox30件自動準備で、翌日分outboxとAgent Status JSONを準備する
+- 毎日17:30の返信確認実行・記録で、replyCheckExecutedとneedsHumanEmailCheckを明確化する
+- 毎日18:30のAgent Office反映監査で、当日タスクの未反映、stale候補、blocked、needs_reviewを検知する
+- 月木16:00の候補プール不足時チェックで、totalReady<90またはavailableForNextSend<60を補充強化対象にする
+
+明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
+
 ## 禁止事項
 
 - このRunbook作成中にGmail送信しない

@@ -1,0 +1,41 @@
+{
+  "id": "gmail-automation-gap-fix-2026-06-04",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail自動化ギャップ修正",
+  "category": "automation_improvement",
+  "status": "needs_review",
+  "phase": "未自動化箇所の修正タスク登録待ち",
+  "progress": 80,
+  "priority": "high",
+  "createdAt": "2026-06-04T00:00:00.000Z",
+  "updatedAt": "2026-06-04T17:53:44+09:00",
+  "summary": "本日のHermes確認で、翌日outbox準備、返信確認結果記録、Agent Office反映監査、候補プール補充に未自動化箇所が残っていることを確認し、追加タスク設計を作成した。",
+  "metrics": {
+    "dailySendSucceeded": true,
+    "sentCountToday": 30,
+    "failedCountToday": 0,
+    "availableForNextSend": 33,
+    "recommendedPoolShortage": 57,
+    "tomorrowOutboxReady": false,
+    "replyCheckExecuted": false,
+    "reflectionAuditScheduled": false,
+    "newHermesTasksProposed": 4,
+    "autoReplyEnabled": false,
+    "gmailSendExecutedByThisTask": false,
+    "instagramActionEnabled": false
+  },
+  "nextAction": "Hermes Agentに翌日outbox準備、返信確認実行・記録、Agent Office反映監査、候補プール不足時チェックの追加タスクを登録する",
+  "safeToAct": true,
+  "notes": [
+    "今回の作業は設計とAgent Office記録のみ",
+    "Gmail送信なし",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "Instagram操作なし",
+    "本番テンプレート差し替えなし"
+  ],
+  "artifacts": [
+    "docs/gmail/gmail-automation-gap-fix-2026-06-04.md"
+  ]
+}

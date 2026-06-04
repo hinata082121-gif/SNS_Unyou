@@ -70,6 +70,8 @@ C:\Users\hinat\Documents\Codex\2026-05-27\next-js-react-typescript-tailwind-css
 作成するもの:
 - data/agent-status/tasks/agent-office-reflection-audit-result-YYYY-MM-DD.json
 - 必要に応じて docs/agent-office-reflection-audit-log/YYYY-MM-DD.md
+- missing/stale/blocked/needs_reviewの安全な件数とnextAction
+- 反映漏れがある場合のAgent Office用needs_review記録
 
 Agent Office表示:
 - stale候補件数
