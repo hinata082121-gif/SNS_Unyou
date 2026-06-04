@@ -1,0 +1,37 @@
+{
+  "id": "agent-office-reflection-audit-2026-06-04",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Agent Office反映監査・未反映検知",
+  "category": "agent_office_monitoring",
+  "status": "needs_review",
+  "phase": "反映監査タスクの登録待ち",
+  "progress": 80,
+  "priority": "high",
+  "createdAt": "2026-06-04T00:00:00.000Z",
+  "updatedAt": "2026-06-04T17:48:01+09:00",
+  "summary": "各自動化施策が実行後にAgent Officeへ反映されているかを毎日監査し、未反映やstale状態を検知する。",
+  "metrics": {
+    "reflectionAuditScheduled": false,
+    "recommendedSchedule": "Daily 18:30",
+    "monitoredAutomationCount": 8,
+    "checksSensitiveData": false,
+    "writesSafeStatusOnly": true,
+    "autoSendsEmail": false,
+    "autoReplyEnabled": false,
+    "instagramActionEnabled": false
+  },
+  "nextAction": "Hermes Agentに毎日18:30のAgent Office反映監査タスクを登録する",
+  "safeToAct": true,
+  "notes": [
+    "監査のみ",
+    "Gmail送信なし",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "Instagram操作なし",
+    "未反映タスクはstale/needs_reviewとして表示"
+  ],
+  "artifacts": [
+    "docs/agent-office-reflection-audit-2026-06-04.md"
+  ]
+}
