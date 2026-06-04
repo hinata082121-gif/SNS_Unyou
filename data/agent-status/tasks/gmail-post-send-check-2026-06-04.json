@@ -1,0 +1,49 @@
+{
+  "id": "gmail-post-send-check-2026-06-04",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "ICHI Gmail 12:30送信結果・返信確認チェック",
+  "category": "gmail_reply_check",
+  "status": "blocked",
+  "phase": "12:00送信未実行後の安全確認",
+  "progress": 70,
+  "priority": "high",
+  "createdAt": "2026-06-04T12:32:50+09:00",
+  "updatedAt": "2026-06-04T12:32:50+09:00",
+  "summary": "12:00 Gmail営業30件送信チェックはblockedで、本番送信は実行されていない。processed/failed/skippedは0/0/0。Apps Script安全設定の実値復帰はこのcronから確認できないため、成功扱いにせずblockedを維持する。返信確認は送信未実行のため実行対象なしとして扱い、返信本文・メールアドレス・営業先名は記録していない。",
+  "artifacts": [
+    "docs/gmail/2026-06-04-gmail-daily-send-check-summary.md"
+  ],
+  "metrics": {
+    "sourceTaskId": "gmail-daily-sales-send-2026-06-04",
+    "sourceTaskStatus": "blocked",
+    "liveSendExecuted": false,
+    "processed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "blockedReason": "current_preflight_not_verified; post_send_safety_reset_not_verified; reply_check_not_run_due_send_blocked",
+    "postSendSafetyResetVerified": false,
+    "dryRunExpected": true,
+    "liveSendEnabledExpected": false,
+    "autoSendEnabledExpected": false,
+    "appsScriptSafetyValuesDisplayed": false,
+    "replyCheckExecuted": false,
+    "repliedCount": 0,
+    "unreadReplyCount": 0,
+    "needsHumanEmailCheck": false,
+    "autoReplyEnabled": false,
+    "agentOfficeUpdated": true,
+    "safeFilesOnlyIntendedForGit": true
+  },
+  "nextAction": "人間がApps Script画面で安全設定がDRY_RUN=true、LIVE_SEND_ENABLED=false、AUTO_SEND_ENABLED=falseに戻っていることを値や秘密情報を共有せず確認する。12:00当日Preflight未検証のため、Hermesは再送信・送信済み二重更新・自動返信をしない。",
+  "safeToAct": false,
+  "notes": [
+    "Gmail本番送信なし",
+    "自動返信なし",
+    "Google Sheets送信済み更新なし",
+    "Instagram操作なし",
+    "メールアドレス、営業先名、返信本文、Gmailスレッド全文は表示していない",
+    "秘密情報、Sheet ID、Apps Script URL、Webhook URLは読まず表示していない",
+    "Git追加対象は安全なdata/agent-status/tasks配下JSONと必要なdocsのみ。git add . は使用しない"
+  ]
+}
