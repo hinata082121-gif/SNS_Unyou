@@ -162,6 +162,12 @@ Hermesはメール本文、返信本文、宛先、営業先名、秘密情報�
 - 毎日18:30のAgent Office反映監査で、当日タスクの未反映、stale候補、blocked、needs_reviewを検知する
 - 月木16:00の候補プール不足時チェックで、totalReady<90またはavailableForNextSend<60を補充強化対象にする
 
+追加4タスクはHermesへ登録済みです。
+17:20翌日outbox準備は `4e4ed67216e3`、17:30返信確認実行・記録は `ee8473f970ff`、18:30反映監査は `1365e7b16899`、月木16:00候補プール不足時チェックは `758eef276079` です。
+
+2026-06-05分は、17:20翌日outbox準備タスクの初回実行前に12:00自動送信があるため、一回限りの事前準備としてoutbox30件とSheets貼り付け用TSVを作成済みです。
+Agent Officeには `tomorrowOutboxReady=true`、`tomorrowOutboxCount=30`、`sheetsReadyTsvCreated=true`、`sheetPasted=false`、`preflightRequired=true` として表示します。
+
 明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
 
 ## 禁止事項

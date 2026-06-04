@@ -1,0 +1,41 @@
+{
+  "id": "gmail-next-day-outbox-2026-06-05",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "2026-06-05 Gmail翌日outbox30件準備",
+  "category": "next_day_outbox",
+  "status": "needs_review",
+  "phase": "outbox30件準備完了・Sheets反映とPreflight確認待ち",
+  "progress": 85,
+  "priority": "high",
+  "createdAt": "2026-06-04T00:00:00.000Z",
+  "updatedAt": "2026-06-04T23:39:16+09:00",
+  "summary": "2026-06-05 12:00のGmail自動送信に間に合わせるため、初回17:20タスク実行前の一回限りの事前準備として、Gmail送信用outbox30件とSheets貼り付け用TSVを作成した。",
+  "artifacts": [],
+  "metrics": {
+    "date": "2026-06-05",
+    "sendBatchId": "gmail-sales-2026-06-05",
+    "tomorrowOutboxReady": true,
+    "tomorrowOutboxCount": 30,
+    "readyCount": 30,
+    "outboxCreated": true,
+    "sheetsReadyTsvCreated": true,
+    "sheetPasted": false,
+    "preflightRequired": true,
+    "preflightPassed": false,
+    "gmailSendExecutedByThisTask": false,
+    "autoReplyEnabled": false,
+    "appsScriptTriggerChanged": false,
+    "sheetSentStatusUpdated": false
+  },
+  "nextAction": "Gmail送信対象シートへの反映とrunPreflightCheckOnly()の確認を行い、readyCount=30かつblockedReasonが空であることを確認する",
+  "safeToAct": true,
+  "notes": [
+    "Gmail送信なし",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "Google Sheets送信済み更新なし",
+    "data/gmail/outbox本体とTSVはGit追加禁止",
+    "メールアドレス、営業先名、返信本文、秘密情報なし"
+  ]
+}

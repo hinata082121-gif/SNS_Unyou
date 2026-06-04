@@ -40,8 +40,8 @@ Hermesの本日確認で判明したGmail営業30件/日運用の未自動化箇
 ### Agent Office反映監査
 
 - 毎日18:30の反映監査タスク設計は追加済み
-- Hermes実登録タスク一覧への登録が必要
-- Agent Office未反映そのものを検知する運用がまだ開始前
+- Hermes実登録タスクとして `1365e7b16899` を登録済み
+- Agent Office未反映そのものを検知する運用を開始できる状態
 
 ## 修正方針
 
@@ -56,10 +56,18 @@ Hermesの本日確認で判明したGmail営業30件/日運用の未自動化箇
 
 | タスク名 | cron候補 | 役割 |
 |---|---:|---|
-| ICHI Gmail 毎日17:20 翌日outbox30件自動準備 | `20 17 * * *` | availableForNextSendが30件以上なら翌日分outbox30件を作成し、Agent Status JSONを作る。Sheets反映できない場合はneeds_reviewとして明確化する。 |
-| ICHI Gmail 毎日17:30 返信確認実行・記録 | `30 17 * * *` | Apps Scriptの返信確認結果、または安全なAgent Statusから返信確認状態を確認し、replyCheckExecutedとneedsHumanEmailCheckをAgent Officeへ反映する。 |
-| ICHI Agent Office 毎日18:30 反映監査・未反映検知 | `30 18 * * *` | 当日実行予定だった自動化タスクのAgent Status更新有無、missing/stale/blocked/needs_reviewを検知する。 |
-| ICHI Gmail 候補プール不足時 補充強化チェック | `0 16 * * 1,4` | totalReadyが90件未満、またはavailableForNextSendが60件未満の場合に補充強化が必要と記録する。 |
+| ICHI Gmail 毎日17:20 翌日outbox30件自動準備 | `20 17 * * *` | 登録済み。ジョブID: `4e4ed67216e3`。availableForNextSendが30件以上なら翌日分outbox30件を作成し、Agent Status JSONを作る。Sheets反映できない場合はneeds_reviewとして明確化する。 |
+| ICHI Gmail 毎日17:30 返信確認実行・記録 | `30 17 * * *` | 登録済み。ジョブID: `ee8473f970ff`。Apps Scriptの返信確認結果、または安全なAgent Statusから返信確認状態を確認し、replyCheckExecutedとneedsHumanEmailCheckをAgent Officeへ反映する。 |
+| ICHI Agent Office 毎日18:30 反映監査・未反映検知 | `30 18 * * *` | 登録済み。ジョブID: `1365e7b16899`。当日実行予定だった自動化タスクのAgent Status更新有無、missing/stale/blocked/needs_reviewを検知する。 |
+| ICHI Gmail 候補プール不足時 補充強化チェック | `0 16 * * 1,4` | 登録済み。ジョブID: `758eef276079`。totalReadyが90件未満、またはavailableForNextSendが60件未満の場合に補充強化が必要と記録する。 |
+
+## 2026-06-05分の一回限り事前準備
+
+17:20の翌日outbox自動準備タスクは初回実行が2026-06-05 17:20であり、2026-06-05 12:00のGmail自動送信には間に合わない。
+そのため、2026-06-05分だけは既存の安全なローカルワークフローでoutbox30件とSheets貼り付け用TSVを事前準備済みとする。
+
+Agent Officeには、`tomorrowOutboxReady=true`、`tomorrowOutboxCount=30`、`sheetsReadyTsvCreated=true`、`sheetPasted=false`、`preflightRequired=true` の安全な状態だけを記録する。
+outbox本体、TSV本文、メールアドレス、営業先名はGitに追加しない。
 
 ## 既存タスクの補強方針
 
