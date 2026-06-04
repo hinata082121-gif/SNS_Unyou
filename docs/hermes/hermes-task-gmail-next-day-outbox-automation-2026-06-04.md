@@ -27,6 +27,10 @@ C:\Users\hinat\Documents\Codex\2026-05-27\next-js-react-typescript-tailwind-css
 やること:
 - Gmail-ready候補プールの安全な件数だけを確認する
 - availableForNextSend >= 30 の場合、翌日分outbox30件を既存の安全なワークフローで作成する
+- 前日送信済み候補、過去送信済み候補、既存outbox、既存sendBatchIdとの重複検査を必ず行う
+- duplicateCount > 0 の場合はoutbox作成成功にせず、statusをblockedにする
+- 既存outboxが前日送信済み候補と一致する場合は使用禁止にし、safeToSend=falseをAgent Officeへ反映する
+- 新規候補が30件未満の場合はblockedとし、不足数とnextActionを明記する
 - 翌日分Agent Status JSONを作成する
 - Sheets反映が自動化できる場合は安全な既存経路のみ使用する
 - Sheets反映できない場合はneeds_reviewとして、何が必要かnextActionに明記する

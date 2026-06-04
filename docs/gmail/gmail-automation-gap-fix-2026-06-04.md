@@ -64,9 +64,13 @@ Hermesの本日確認で判明したGmail営業30件/日運用の未自動化箇
 ## 2026-06-05分の一回限り事前準備
 
 17:20の翌日outbox自動準備タスクは初回実行が2026-06-05 17:20であり、2026-06-05 12:00のGmail自動送信には間に合わない。
-そのため、2026-06-05分だけは既存の安全なローカルワークフローでoutbox30件とSheets貼り付け用TSVを事前準備済みとする。
+そのため、2026-06-05分だけは既存の安全なローカルワークフローでoutbox30件とSheets貼り付け用TSVを事前準備した。
 
-Agent Officeには、`tomorrowOutboxReady=true`、`tomorrowOutboxCount=30`、`sheetsReadyTsvCreated=true`、`sheetPasted=false`、`preflightRequired=true` の安全な状態だけを記録する。
+ただし緊急確認で、2026-06-05分outbox30件は2026-06-04送信済み候補と30件すべて重複していた。
+旧2026-06-05 outbox/TSVは使用禁止とし、`invalid-duplicate` 扱いにする。
+過去送信済み候補を除外すると安全に使える候補は3件のみで、新規30件を確保できないため、2026-06-05送信は `blocked` として停止する。
+
+Agent Officeには、`tomorrowOutboxReady=false`、`tomorrowOutboxCount=0`、`duplicateWithPreviousBatch=true`、`duplicateCount=30`、`shortage=27`、`safeToSend=false` の安全な状態だけを記録する。
 outbox本体、TSV本文、メールアドレス、営業先名はGitに追加しない。
 
 ## 既存タスクの補強方針

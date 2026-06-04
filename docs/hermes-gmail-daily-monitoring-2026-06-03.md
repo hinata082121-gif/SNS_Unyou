@@ -120,7 +120,9 @@ HermesとAgent Officeは、同一sendBatchIdの再送信を禁止し、次は12:
 これらの追加タスクは、Gmail送信、自動返信、Apps Scriptトリガー操作、Google Sheets送信済み更新、Instagram操作を行いません。
 
 注意: 17:20の翌日outbox自動準備タスクは初回実行が2026-06-05 17:20のため、2026-06-05 12:00のGmail自動送信には間に合いません。
-2026-06-05分だけは、outbox30件とSheets貼り付け用TSVを事前準備し、Agent Officeには `tomorrowOutboxReady=true`、`tomorrowOutboxCount=30`、`preflightRequired=true` として記録します。
+2026-06-05分だけは、outbox30件とSheets貼り付け用TSVを事前準備しました。
+しかし緊急確認で、2026-06-05分outboxが2026-06-04送信済み候補と30件すべて重複していたため、旧outbox/TSVは使用禁止です。
+過去送信済み候補を除外すると安全に使える候補は3件のみで、新規30件を確保できないため、Agent Officeには `tomorrowOutboxReady=false`、`duplicateWithPreviousBatch=true`、`duplicateCount=30`、`shortage=27`、`safeToSend=false` として記録し、2026-06-05送信は `blocked` として停止します。
 
 完全自動化開始前に人間がApps Scriptで確認する関数:
 

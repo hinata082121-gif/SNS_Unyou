@@ -1,0 +1,38 @@
+{
+  "id": "gmail-list-refresh-emergency-2026-06-04",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail候補プール緊急補充判定",
+  "category": "gmail_list_refresh",
+  "status": "blocked",
+  "phase": "送信済み除外後の候補不足",
+  "progress": 35,
+  "priority": "high",
+  "createdAt": "2026-06-04T00:00:00.000Z",
+  "updatedAt": "2026-06-04T23:59:00+09:00",
+  "summary": "2026-06-05分outboxが前日送信済み候補と重複していたため、過去送信済み候補を除外して再抽出したが、安全に使えるGmail-ready候補は3件のみだった。新規30件を作るには公開メール確認済み候補の緊急補充が必要。",
+  "artifacts": [
+    "docs/gmail/gmail-automation-gap-fix-2026-06-04.md"
+  ],
+  "metrics": {
+    "addedCandidateCount": 0,
+    "totalReady": 33,
+    "availableForNextSend": 3,
+    "recommendedPoolShortage": 87,
+    "duplicateExcluded": 30,
+    "invalidEmailExcluded": 0,
+    "publicEmailNotConfirmedExcluded": 0,
+    "minimumAdditionalCandidatesNeeded": 27,
+    "gmailSendExecutedByThisTask": false,
+    "autoReplyEnabled": false
+  },
+  "nextAction": "公開メールアドレス確認済み候補を27件以上補充し、2026-06-05分outbox30件を重複ゼロで再作成する。補充できない場合は2026-06-05送信をblockedのまま停止する。",
+  "safeToAct": true,
+  "notes": [
+    "Gmail送信なし",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "Google Sheets送信済み更新なし",
+    "メールアドレス、営業先名、返信本文、秘密情報なし"
+  ]
+}
