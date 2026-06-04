@@ -219,3 +219,16 @@ Agent Officeは、以下のHermes cron結果を安全な `data/agent-status/task
 Agent Officeと `/agent-office` では、`data/agent-status/tasks/gmail-daily-sales-send-2026-06-04.json` を `success` として表示します。
 次の確認予定は、12:30送信結果・返信確認チェック、14:00失敗・不足リカバリ確認、17:00返信確認・翌日準備チェックです。
 同一 `sendBatchId` の再送信、Google Sheets送信済み二重更新、自動返信は行いません。
+
+## 2026-06-05以降 Gmail完全自動送信開始準備
+
+2026-06-03と2026-06-04の30件送信成功を受けて、2026-06-05以降は `data/agent-status/tasks/gmail-full-auto-send-start-2026-06-05.json` で完全自動送信開始準備を確認します。
+
+- 初回の完全自動化開始前に人間がScript Propertiesを確認する
+- Apps Scriptで `setupDailyAutoSendTriggers()` と `setupReplyCheckTriggers()` を人間が実行する
+- failed/blockedが出た場合は自動送信を停止する
+- 自動返信はOFFのままにする
+- 初日は `/agent-office` を12:30、14:00、17:00に確認する
+
+Agent Officeには自動送信の有効化状況、返信確認トリガーの有効化状況、次アクションだけを表示します。
+メールアドレス、営業先名、送信ログ本体、返信本文、秘密情報は表示しません。

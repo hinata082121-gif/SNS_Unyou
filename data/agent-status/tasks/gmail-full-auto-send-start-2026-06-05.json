@@ -1,0 +1,37 @@
+{
+  "id": "gmail-full-auto-send-start-2026-06-05",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail完全自動送信開始準備",
+  "category": "gmail_send",
+  "status": "needs_review",
+  "phase": "2026-06-05完全自動送信の有効化待ち",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-06-04T00:00:00.000Z",
+  "updatedAt": "2026-06-04T15:28:39+09:00",
+  "summary": "2026-06-03/2026-06-04にGmail営業30件送信が成功したため、2026-06-05以降の完全自動送信開始に向けたRunbookとApps Script有効化手順を整備した。",
+  "metrics": {
+    "manualSendSuccessDays": 2,
+    "lastSuccessfulBatchId": "gmail-sales-2026-06-04",
+    "dailySendLimit": 30,
+    "autoSendReady": true,
+    "autoSendTriggersEnabled": false,
+    "replyCheckTriggersEnabled": false,
+    "humanFinalApprovalRequired": true,
+    "autoReplyEnabled": false
+  },
+  "nextAction": "Apps ScriptでsetupDailyAutoSendTriggers()とsetupReplyCheckTriggers()を実行し、Script Propertiesを完全自動送信用に設定する",
+  "safeToAct": true,
+  "notes": [
+    "今回の作業中にGmail送信なし",
+    "自動返信なし",
+    "完全自動化開始前にScript Properties確認必須",
+    "緊急停止はremoveDailyAutoSendTriggers()",
+    "出先では/agent-officeで12:30/14:00/17:00の状態を確認"
+  ],
+  "artifacts": [
+    "docs/gmail/gmail-full-auto-send-start-2026-06-05.md",
+    "apps-script/gmail-sales-automation/README.md"
+  ]
+}

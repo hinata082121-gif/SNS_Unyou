@@ -159,6 +159,38 @@ ICHI Socialの営業メールについて、毎日最大30件の送信候補処�
 - `markBatchSent_(batchId)`: 送信成功後にバッチ送信済みをScript Propertiesへ記録する。
 - `resetLiveSendAfterRun_()`: 送信後に本番送信許可をOFFへ戻す。
 
+## 2026-06-05以降の完全自動送信開始
+
+2026-06-03と2026-06-04に30件送信が成功した後、2026-06-05以降は人間の最終承認後に完全自動送信へ移行できます。
+
+Apps Script画面で人間が実行する関数:
+
+- `setupDailyAutoSendTriggers()`: Preflight、12:00送信、送信後確認、失敗・不足確認のトリガーを作成する
+- `setupReplyCheckTriggers()`: 09:00 / 12:30 / 17:00 の返信確認トリガーを作成する
+
+緊急停止時に人間が実行する関数:
+
+- `removeDailyAutoSendTriggers()`
+- `removeReplyCheckTriggers()`
+
+完全自動化開始時のScript Properties推奨値:
+
+- `DRY_RUN=false`
+- `LIVE_SEND_ENABLED=true`
+- `AUTO_SEND_ENABLED=true`
+- `AUTO_RESET_LIVE_SEND_AFTER_RUN=true`
+- `DAILY_SEND_LIMIT=30`
+- `REQUIRE_EXACT_READY_COUNT=true`
+- `REQUIRE_OPT_OUT_TEXT=true`
+- `REQUIRE_UNIQUE_BATCH=true`
+- `MAX_FAILURES_BEFORE_STOP=1`
+
+初期運用では、送信後に `LIVE_SEND_ENABLED=false` と `AUTO_SEND_ENABLED=false` へ戻ることを必ず確認します。
+毎日完全自動にする場合でも、朝のPreflightと候補プール確認後に `AUTO_SEND_ENABLED=true` へ切り替える運用を推奨します。
+
+初日は `/agent-office` を12:30、14:00、17:00に確認してください。
+自動返信はOFFのまま運用し、返信確認は件数と人間確認要否だけを扱います。
+
 ## 返信確認用関数
 
 返信確認は、Gmail送信や自動返信とは分離して実行します。

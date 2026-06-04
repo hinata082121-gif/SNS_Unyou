@@ -90,3 +90,25 @@ Apps Script上で2026-06-04分のGmail営業メール30件送信が成功しま�
 
 HermesとAgent Officeは、同一sendBatchIdの再送信を禁止し、次は12:30送信結果・返信確認、14:00失敗・不足確認、17:00返信確認・翌日準備確認へ進めます。
 記録するのは件数、状態、nextActionのみです。メールアドレス、営業先名、本文、返信本文、Gmailスレッド全文、送信ログ本体、秘密情報は保存・表示しません。
+
+## 2026-06-05以降の完全自動送信監視
+
+2026-06-05以降に完全自動送信へ移行する場合、Hermesは送信実行ではなく監視・確認・記録を担当します。
+
+- 12:30: processed、failed、skipped、live send resetの有無を確認する
+- 14:00: failed/blocked、候補不足、Agent Office未反映を確認する
+- 17:00: 返信確認、人間確認要否、翌日準備状況を確認する
+- failed/blockedが出た場合は自動送信停止をnextActionに明記する
+- 自動返信はOFFのまま扱う
+
+完全自動化開始前に人間がApps Scriptで確認する関数:
+
+- `setupDailyAutoSendTriggers()`
+- `setupReplyCheckTriggers()`
+
+緊急停止時に人間が実行する関数:
+
+- `removeDailyAutoSendTriggers()`
+- `removeReplyCheckTriggers()`
+
+Hermesはトリガーを勝手に有効化せず、`/agent-office` に安全な件数、状態、nextActionのみを反映します。
