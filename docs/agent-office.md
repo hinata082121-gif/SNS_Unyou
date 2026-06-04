@@ -285,7 +285,22 @@ Agent Officeでは以下を確認対象にします。
 - `optOutPresent`
 - `expectedReadyRowsAfterCorrectPaste`
 - `safeToSend`
+- `preflightDiagnosticsRequired`
+- `diagnosticsFunctionAdded`
+- `missingEmailCount`
+- `missingSubjectCount`
+- `missingBodyCount`
+- `missingOptOutTextCount`
+- `statusMismatchCount`
+- `sendDateMismatchCount`
+- `sendBatchIdMismatchCount`
+- `duplicateInSheetCount`
+- `excludedStatusCount`
+- `validationErrorCount`
 
 ローカル検証ではr2 TSVは30件すべてready条件を満たしています。
 人間はGoogle SheetsのGmail送信対象タブをr2 TSVで差し替え、Apps Scriptの `SEND_DATE=2026-06-05` と `SEND_BATCH_ID=gmail-sales-2026-06-05-r2` を確認してから `runPreflightCheckOnly()` を再実行します。
 `readyCount=30` と `blockedReason=""` が確認できるまで本番送信は有効化しません。
+
+`outbox_validation_errors` が出る場合は、Apps Scriptへ最新Code.gsを反映して `runPreflightDiagnosticsOnly()` を実行します。
+Agent Officeには原因別件数だけを反映し、メールアドレス、営業先名、件名全文、本文全文、返信本文、Gmailスレッド全文、Sheet ID、Apps Script URL、秘密情報は表示しません。

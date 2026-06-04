@@ -103,6 +103,11 @@ r2 outboxは過去送信済み候補との重複ゼロを確認済みで、Agent
 2026-06-05 r2 TSVは、ローカル検証上は30件すべてready条件を満たしています。
 `no_ready_rows` が続く場合は、Sheet差し替え未反映、貼り付け先タブ違い、ヘッダー崩れ、またはScript Propertiesの `SEND_BATCH_ID` 未設定を優先して確認します。
 
+`outbox_validation_errors` が併発する場合は、Apps Scriptの `runPreflightDiagnosticsOnly()` を実行して、原因別件数だけを確認します。
+診断ログには、宛先、営業先名、件名全文、本文全文、Sheet ID、URL、秘密情報を出しません。
+確認対象は `status`、`sendDate`、`sendBatchId`、メール列の存在、件名/本文の空欄、不要案内、重複、送信除外ステータス、過去送信済み判定です。
+診断結果をもとに、r2 TSVの再生成、Sheets貼り直し、Script Properties修正のどれを行うか判断します。
+
 ## 既存タスクの補強方針
 
 - 17:00返信確認・翌日準備チェックは、17:20 outbox準備と17:30返信確認の結果を前提にする

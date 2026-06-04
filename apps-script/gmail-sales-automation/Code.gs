@@ -115,6 +115,32 @@ function runPreflightCheckOnly() {
   });
 }
 
+function runPreflightDiagnosticsOnly() {
+  const production = validateProductionConfig_();
+  const config = production.config;
+  const batchId = buildSendBatchId_(config.sendDate);
+  let rows = [];
+  let sheetConnected = false;
+  let loadFailed = false;
+
+  try {
+    rows = loadCandidateRows_(config);
+    sheetConnected = Boolean(config.sheetId && config.sheetName);
+  } catch (error) {
+    loadFailed = true;
+  }
+
+  const summary = buildPreflightDiagnosticsSummary_(rows, config, batchId);
+  appendSafeLog_(Object.assign({
+    event: 'preflight_diagnostics_only',
+    targetCount: Math.min(config.dailySendLimit, 30),
+    sheetConnected,
+    sheetLoadFailed: loadFailed,
+    expectedSendDate: config.sendDate,
+    expectedSendBatchId: batchId
+  }, summary));
+}
+
 function runScheduledPreflight() {
   const result = runPreflight_(false);
   appendAutomationStatusLog_({
@@ -874,6 +900,115 @@ function validateOutboxRows_(items, config) {
   });
 
   return { readyRows, skipped, errors };
+}
+
+function buildPreflightDiagnosticsSummary_(items, config, batchId) {
+  const seenEmails = {};
+  const seenBusiness = {};
+  let sentEmails = {};
+  try {
+    sentEmails = loadKnownSentEmails_(config);
+  } catch (error) {
+    sentEmails = {};
+  }
+  const summary = {
+    totalRows: items.length,
+    candidateRows: 0,
+    readyRows: 0,
+    missingEmailCount: 0,
+    invalidEmailCount: 0,
+    missingSubjectCount: 0,
+    missingBodyCount: 0,
+    missingOptOutTextCount: 0,
+    statusMismatchCount: 0,
+    sendDateMismatchCount: 0,
+    sendBatchIdMismatchCount: 0,
+    duplicateInSheetCount: 0,
+    duplicateBusinessCount: 0,
+    excludedStatusCount: 0,
+    previouslySentCount: 0,
+    validationErrorCount: 0
+  };
+
+  items.forEach((item) => {
+    const row = item.row;
+    const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
+    const businessName = String(row.name || row['店舗名'] || '').trim().toLowerCase();
+    const rowStatus = String(row.status || '').toLowerCase();
+    const rowSendDate = normalizeDateText_(row.sendDate || row['送信日']);
+    const rowBatchId = String(row.sendBatchId || '').trim();
+    const subject = String(row.subject || row['件名'] || '').trim();
+    const body = String(row.body || row['本文'] || '').trim();
+    const isCandidate = rowStatus === 'ready' || rowSendDate === config.sendDate || rowBatchId === batchId;
+
+    if (isCandidate) {
+      summary.candidateRows += 1;
+    }
+    if (rowStatus !== 'ready') {
+      summary.statusMismatchCount += 1;
+      return;
+    }
+    if (rowSendDate !== config.sendDate) {
+      summary.sendDateMismatchCount += 1;
+      return;
+    }
+    if (!rowBatchId || rowBatchId !== batchId) {
+      summary.sendBatchIdMismatchCount += 1;
+      summary.validationErrorCount += 1;
+      return;
+    }
+    if (!subject) {
+      summary.missingSubjectCount += 1;
+    }
+    if (!body) {
+      summary.missingBodyCount += 1;
+    }
+    if (!subject || !body) {
+      summary.validationErrorCount += 1;
+      return;
+    }
+    if (!email) {
+      summary.missingEmailCount += 1;
+      return;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      summary.invalidEmailCount += 1;
+      return;
+    } else if (sentEmails[email]) {
+      summary.previouslySentCount += 1;
+      return;
+    } else if (seenEmails[email]) {
+      summary.duplicateInSheetCount += 1;
+      summary.validationErrorCount += 1;
+      return;
+    }
+    if (businessName && seenBusiness[businessName]) {
+      summary.duplicateBusinessCount += 1;
+      summary.validationErrorCount += 1;
+      return;
+    }
+    if (shouldSkipRecipient_(row)) {
+      summary.excludedStatusCount += 1;
+      return;
+    }
+    try {
+      assertMessageSafe_(buildInitialSalesEmail_(row));
+    } catch (error) {
+      if (String(error.message) === 'missing_opt_out_text') {
+        summary.missingOptOutTextCount += 1;
+      }
+      summary.validationErrorCount += 1;
+      return;
+    }
+    summary.readyRows += 1;
+    if (email) {
+      seenEmails[email] = true;
+    }
+    if (businessName) {
+      seenBusiness[businessName] = true;
+    }
+  });
+
+  return summary;
 }
 
 function verifyNoSensitiveLogging_() {

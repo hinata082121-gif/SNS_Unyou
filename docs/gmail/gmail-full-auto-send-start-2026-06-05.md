@@ -197,6 +197,34 @@ Code.gsは `SEND_BATCH_ID` が設定されている場合、その値を当日�
 未設定の場合は `SEND_BATCH_ID_PREFIX` と `SEND_DATE` から `gmail-sales-YYYY-MM-DD` を組み立てます。
 そのためr2運用では、Sheet側の `sendBatchId` とScript Propertiesの `SEND_BATCH_ID` を必ず一致させます。
 
+## outbox_validation_errorsの安全診断
+
+`outbox_validation_errors` が出た場合は、本文、宛先、営業先名を出さずに `runPreflightDiagnosticsOnly()` を実行して原因別件数だけ確認します。
+
+診断で見る項目は以下です。
+
+- `totalRows`
+- `candidateRows`
+- `readyRows`
+- `missingEmailCount`
+- `missingSubjectCount`
+- `missingBodyCount`
+- `missingOptOutTextCount`
+- `statusMismatchCount`
+- `sendDateMismatchCount`
+- `sendBatchIdMismatchCount`
+- `duplicateInSheetCount`
+- `duplicateBusinessCount`
+- `excludedStatusCount`
+- `previouslySentCount`
+- `validationErrorCount`
+- `expectedSendDate`
+- `expectedSendBatchId`
+- `sheetConnected`
+
+この診断関数はGmail送信、自動返信、Google Sheets送信済み更新を行いません。
+原因別件数を確認したうえで、r2 TSV再生成、Sheets貼り直し、またはScript Properties修正のどれが必要か判断します。
+
 明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
 
 ## 禁止事項

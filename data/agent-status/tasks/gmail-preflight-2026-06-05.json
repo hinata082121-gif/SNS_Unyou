@@ -5,12 +5,12 @@
   "title": "2026-06-05 Gmail Preflight確認",
   "category": "gmail_send",
   "status": "blocked",
-  "phase": "r2 TSV/Script Properties整合確認待ち",
-  "progress": 70,
+  "phase": "outbox validation内訳診断待ち",
+  "progress": 75,
   "priority": "high",
   "createdAt": "2026-06-05T00:00:00.000Z",
-  "updatedAt": "2026-06-05T01:35:58+09:00",
-  "summary": "Apps ScriptのPreflightでbatch_already_sentは解消したが、readyCount=0、blockedReason=no_ready_rows/exact_ready_count_not_metを確認。Sheet接続とGmail quotaは問題ないため、r2 TSVのSheets反映とScript PropertiesのbatchId整合を確認する。",
+  "updatedAt": "2026-06-05T01:53:18+09:00",
+  "summary": "Apps ScriptのPreflightでbatch_already_sentは解消済みだが、readyCount=0、blockedReason=outbox_validation_errors/no_ready_rows/exact_ready_count_not_metを確認。原因別件数を安全に確認する診断関数を追加し、Sheet上のstatus/sendDate/sendBatchId/本文安全条件/重複のどこで落ちているかを確認する。",
   "artifacts": [
     "data/agent-status/tasks/gmail-next-day-outbox-2026-06-05.json"
   ],
@@ -21,7 +21,7 @@
     "remainingQuota": 100,
     "targetCount": 30,
     "readyCount": 0,
-    "blockedReason": "no_ready_rows,exact_ready_count_not_met",
+    "blockedReason": "outbox_validation_errors,no_ready_rows,exact_ready_count_not_met",
     "sheetConnected": true,
     "safeToSend": false,
     "oldBatchId": "gmail-sales-2026-06-05",
@@ -29,7 +29,11 @@
     "batchIdRotated": true,
     "batchAlreadySentResolved": true,
     "latestPreflightReadyCount": 0,
-    "latestPreflightBlockedReason": "no_ready_rows,exact_ready_count_not_met",
+    "latestPreflightBlockedReason": "outbox_validation_errors,no_ready_rows,exact_ready_count_not_met",
+    "preflightDiagnosticsRequired": true,
+    "diagnosticsFunctionAdded": true,
+    "expectedSendDate": "2026-06-05",
+    "expectedSendBatchId": "gmail-sales-2026-06-05-r2",
     "tsvReadyConditionChecked": true,
     "r2TsvRegenerated": false,
     "expectedReadyRowsAfterCorrectPaste": 30,
@@ -41,11 +45,12 @@
     "subjectBodyPresent": true,
     "optOutPresent": true,
     "likelyReadyRowsIfPasted": 30,
+    "likelyValidationErrorReason": "none_in_local_r2_tsv",
     "appsScriptExplicitSendBatchIdSupported": true,
     "gmailSendExecutedByThisTask": false,
     "autoReplyEnabled": false
   },
-  "nextAction": "Gmail送信対象シートを正しいr2 TSVで差し替え、Apps Script側でSEND_DATE=2026-06-05かつSEND_BATCH_ID=gmail-sales-2026-06-05-r2に合わせてrunPreflightCheckOnly()を再実行する",
+  "nextAction": "Apps ScriptにCode.gs更新を反映し、runPreflightDiagnosticsOnly()で原因別件数を確認する。必要ならr2 TSVを再生成または再貼り付けし、runPreflightCheckOnly()でreadyCount=30かつblockedReasonが空であることを確認する",
   "safeToAct": true,
   "notes": [
     "Gmail送信なし",
@@ -53,7 +58,8 @@
     "Apps Scriptトリガー操作なし",
     "Google Sheets送信済み更新なし",
     "batch_already_sentは解消済み",
-    "no_ready_rowsが続く場合はSheets貼り付け先、ヘッダー、status、sendDate、sendBatchId、SEND_BATCH_ID設定を確認",
+    "outbox_validation_errorsは原因別件数診断で確認する",
+    "no_ready_rowsが続く場合はSheets貼り付け先、ヘッダー、status、sendDate、sendBatchId、本文安全条件、重複、SEND_BATCH_ID設定を確認",
     "メールアドレス、営業先名、返信本文、秘密情報なし"
   ]
 }
