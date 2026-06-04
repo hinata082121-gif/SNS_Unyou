@@ -149,6 +149,12 @@ Gmail営業メール30件/日を実行対象にした場合は、`data/agent-sta
 
 2026-06-04以降は、`data/agent-status/tasks/gmail-full-auto-send-design-2026-06-03.json` でGmail営業メール30件/日の完全自動送信設計を確認対象にします。11:30 Preflight、12:00自動送信、12:30送信後確認、14:00失敗/不足確認をApps Script側で実行できる設計にしますが、本番トリガー有効化は人間確認後です。送信対象30件、Gmail残クォータ、sendBatchId未送信、配信停止/返信あり/送信禁止除外、本文の不要案内が揃わない場合は送信しません。
 
+営業メール改善・反応率分析は、`data/agent-status/tasks/gmail-weekly-email-improvement-2026-06-06.json` で確認します。
+毎週金曜18:00に、17:00の市場・競合分析結果と直近7日間のGmail営業結果をもとに、翌週の件名、本文、CTA、訴求軸の改善案を作成します。
+Agent Officeと `/agent-office` では、改善案が作成済みか、承認待ちか、適用済みか、blockedか、次回適用予定があるか、直近7日間の安全な集計値だけを表示します。
+メールアドレス、営業先名、返信本文、Gmailスレッド全文、送信ログ本体、秘密情報は表示しません。
+初期運用では改善案は `needs_review` とし、本番テンプレートへの反映は人間承認後に限定します。
+
 2026-06-04分のGmail送信対象準備は、`data/agent-status/tasks/gmail-outbox-2026-06-04.json` で確認します。ローカル既存データでは再利用可能候補が0件でしたが、Gmail-ready候補プールを3バッチ補充し、outbox30件とSheets貼り付け用TSVを作成済みです。現在は `needs_review` として、人間がGoogle Sheetsの「Gmail送信対象」タブへTSVを貼り付け、Apps Scriptの `runPreflightCheckOnly()` を実行する段階です。Gmail本番送信、自動返信、Google Sheets送信済み更新、自動トリガー有効化は行いません。
 
 Gmail送信用候補プールは、`data/agent-status/tasks/gmail-ready-candidate-pool-2026-06-03.json` で確認します。毎日30件送信を安定させるには、公開メールアドレス確認済み候補を常時プール化し、`available` が30件未満なら送信を `blocked`、60件未満なら補充対象として扱います。現在は最低30件に到達済みですが、推奨90件には60件不足しています。プール本体、outbox、TSV、メールアドレス一覧はGitに追加せず、Agent Officeには件数と次アクションだけを表示します。
@@ -201,6 +207,7 @@ Agent Officeは、以下のHermes cron結果を安全な `data/agent-status/task
 - 14:00 毎日: 失敗・不足リカバリ確認
 - 17:00 毎日: 返信確認・翌日準備
 - 17:00 金曜: 市場・競合分析
+- 18:00 金曜: 営業メール改善・反応率分析
 
 表示するのは件数、状態、blocked理由、nextActionのみです。メールアドレス一覧、営業先一覧、返信本文、送信ログ本体、秘密情報は表示しません。
 

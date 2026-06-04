@@ -1,0 +1,34 @@
+{
+  "id": "gmail-weekly-email-improvement-2026-06-06",
+  "agent": "Hermes",
+  "avatar": "sales-scout",
+  "title": "営業メール改善・反応率分析",
+  "category": "gmail_sales_improvement",
+  "status": "needs_review",
+  "phase": "週次営業メール改善タスクの運用開始待ち",
+  "progress": 80,
+  "priority": "high",
+  "createdAt": "2026-06-04T00:00:00.000Z",
+  "updatedAt": "2026-06-04T17:31:26+09:00",
+  "summary": "毎週金曜17:00の市場・競合分析をもとに、金曜18:00に翌週の営業メール件名・本文・CTA・訴求軸を改善する運用を追加する。",
+  "metrics": {
+    "weeklyMarketAnalysisLinked": true,
+    "weeklyEmailImprovementScheduled": false,
+    "recommendedSchedule": "Friday 18:00",
+    "requiresHumanApprovalBeforeTemplateApply": true,
+    "autoReplyEnabled": false,
+    "liveTemplateAutoApply": false
+  },
+  "nextAction": "Hermes Agentに毎週金曜18:00の営業メール改善・反応率分析タスクを追加し、初回実行後に改善案を/agent-officeで確認する",
+  "safeToAct": true,
+  "notes": [
+    "改善案作成のみ",
+    "本番送信なし",
+    "自動返信なし",
+    "本番テンプレート自動差し替えなし",
+    "人間承認後のみ翌週テンプレートへ反映"
+  ],
+  "artifacts": [
+    "docs/gmail/gmail-weekly-email-improvement-automation-2026-06-04.md"
+  ]
+}
