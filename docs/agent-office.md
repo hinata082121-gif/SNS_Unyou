@@ -267,3 +267,25 @@ Agent Officeと `/agent-office` では、`data/agent-status/tasks/gmail-daily-sa
 
 Agent Officeには自動送信の有効化状況、返信確認トリガーの有効化状況、次アクションだけを表示します。
 メールアドレス、営業先名、送信ログ本体、返信本文、秘密情報は表示しません。
+
+## 2026-06-05 r2 Preflight確認
+
+2026-06-05分は `gmail-sales-2026-06-05` が使用済み扱いになったため、`gmail-sales-2026-06-05-r2` にbatchIdをローテーションしています。
+その後のPreflightで `batch_already_sent` は解消しましたが、`readyCount=0` と `no_ready_rows,exact_ready_count_not_met` が残りました。
+
+Agent Officeでは以下を確認対象にします。
+
+- `batchAlreadySentResolved`
+- `tsvReadyConditionChecked`
+- `headerMatched`
+- `statusValueMatched`
+- `sendDateMatched`
+- `sendBatchIdMatched`
+- `subjectBodyPresent`
+- `optOutPresent`
+- `expectedReadyRowsAfterCorrectPaste`
+- `safeToSend`
+
+ローカル検証ではr2 TSVは30件すべてready条件を満たしています。
+人間はGoogle SheetsのGmail送信対象タブをr2 TSVで差し替え、Apps Scriptの `SEND_DATE=2026-06-05` と `SEND_BATCH_ID=gmail-sales-2026-06-05-r2` を確認してから `runPreflightCheckOnly()` を再実行します。
+`readyCount=30` と `blockedReason=""` が確認できるまで本番送信は有効化しません。

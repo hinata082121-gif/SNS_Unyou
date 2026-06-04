@@ -176,6 +176,27 @@ Preflightで `batch_already_sent` が出た場合は、同じbatchIdを再利用
 2026-06-05では `gmail-sales-2026-06-05` が使用済み扱いになったため、`gmail-sales-2026-06-05-r2` でr2 outbox/TSVを作成済みです。
 Google Sheetsの送信対象行とApps Script側のSEND_BATCH_IDまたは対応プロパティをr2に合わせ、Preflightで `readyCount=30` と `blockedReason=""` を確認してから送信可否を判断します。
 
+## no_ready_rowsが残る場合の確認
+
+`batch_already_sent` が解消した後も `readyCount=0` / `no_ready_rows` が出る場合は、送信ではなくSheets行のready判定不一致として扱います。
+
+優先確認項目は以下です。
+
+- Gmail送信対象シートに正しいr2 TSVが貼り付けられている
+- 1行目のヘッダーがApps Scriptの想定列名と一致している
+- `status` が全行 `ready`
+- `sendDate` が全行 `2026-06-05`
+- `sendBatchId` が全行 `gmail-sales-2026-06-05-r2`
+- Apps ScriptのScript Propertiesで `SEND_DATE=2026-06-05`
+- Apps ScriptのScript Propertiesで `SEND_BATCH_ID=gmail-sales-2026-06-05-r2`
+- `subject` / `body` が全行空でない
+- `body` に不要案内が含まれる
+- `sentStatus`、`replyStatus`、`unsubscribe`、`doNotContact` が送信除外値になっていない
+
+Code.gsは `SEND_BATCH_ID` が設定されている場合、その値を当日の期待batchIdとして優先します。
+未設定の場合は `SEND_BATCH_ID_PREFIX` と `SEND_DATE` から `gmail-sales-YYYY-MM-DD` を組み立てます。
+そのためr2運用では、Sheet側の `sendBatchId` とScript Propertiesの `SEND_BATCH_ID` を必ず一致させます。
+
 明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
 
 ## 禁止事項

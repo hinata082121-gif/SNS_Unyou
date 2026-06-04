@@ -83,6 +83,26 @@ Preflightで `batch_already_sent` が出た場合、同一 `sendBatchId` は再�
 2026-06-05では `gmail-sales-2026-06-05` が使用済み扱いになったため、`gmail-sales-2026-06-05-r2` を発行した。
 r2 outboxは過去送信済み候補との重複ゼロを確認済みで、Agent Officeには `batchAlreadySentDetected=true`、`batchIdRotated=true`、`safeToSendAfterSheetUpdate=pending` として記録する。
 
+## r2後もreadyCount=0になる場合の対応
+
+`batch_already_sent` が消えた後に `readyCount=0`、`blockedReason=no_ready_rows,exact_ready_count_not_met` が残る場合は、batchIdローテーション自体は成功しています。
+この状態ではGmail送信を有効化せず、Sheet上の行がApps Scriptのready判定を満たしているかを確認します。
+
+確認する項目は以下です。
+
+- 正しいr2 TSVがGmail送信対象シートに貼られている
+- ヘッダー列がApps Scriptの想定と一致している
+- `status=ready`
+- `sendDate=2026-06-05`
+- `sendBatchId=gmail-sales-2026-06-05-r2`
+- `subject` と `body` が空でない
+- `body` に不要案内がある
+- `unsubscribe`、`doNotContact`、`sentStatus`、`replyStatus` が送信除外値になっていない
+- Apps Scriptの `SEND_DATE` と `SEND_BATCH_ID` がSheet側の値と一致している
+
+2026-06-05 r2 TSVは、ローカル検証上は30件すべてready条件を満たしています。
+`no_ready_rows` が続く場合は、Sheet差し替え未反映、貼り付け先タブ違い、ヘッダー崩れ、またはScript Propertiesの `SEND_BATCH_ID` 未設定を優先して確認します。
+
 ## 既存タスクの補強方針
 
 - 17:00返信確認・翌日準備チェックは、17:20 outbox準備と17:30返信確認の結果を前提にする

@@ -732,6 +732,7 @@ function getConfig_() {
   const props = PropertiesService.getScriptProperties();
   const dailyLimit = Number(props.getProperty('DAILY_SEND_LIMIT') || '30');
   const sendDate = props.getProperty('SEND_DATE') || getToday_();
+  const sendBatchId = props.getProperty('SEND_BATCH_ID') || '';
   return {
     sheetId: props.getProperty('SHEET_ID'),
     sheetName: props.getProperty('SHEET_NAME') || 'sales',
@@ -744,6 +745,7 @@ function getConfig_() {
     sendHour: normalizeHour_(props.getProperty('SEND_HOUR'), 12),
     postSendCheckHour: normalizeHour_(props.getProperty('POST_SEND_CHECK_HOUR'), 12),
     sendBatchIdPrefix: props.getProperty('SEND_BATCH_ID_PREFIX') || 'gmail-sales',
+    sendBatchId,
     requireExactReadyCount: props.getProperty('REQUIRE_EXACT_READY_COUNT') !== 'false',
     requireOptOutText: props.getProperty('REQUIRE_OPT_OUT_TEXT') !== 'false',
     requireUniqueBatch: props.getProperty('REQUIRE_UNIQUE_BATCH') !== 'false',
@@ -1065,6 +1067,9 @@ function hashValue_(value) {
 
 function buildSendBatchId_(dateText) {
   const config = getConfig_();
+  if (config.sendBatchId) {
+    return config.sendBatchId;
+  }
   return config.sendBatchIdPrefix + '-' + normalizeDateText_(dateText || config.sendDate);
 }
 
