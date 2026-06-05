@@ -270,8 +270,8 @@ Agent Officeには自動送信の有効化状況、返信確認トリガーの�
 
 ## 2026-06-05 r2 Preflight確認
 
-2026-06-05分は `gmail-sales-2026-06-05` が使用済み扱いになったため、`gmail-sales-2026-06-05-r2` にbatchIdをローテーションしています。
-その後のPreflightで `batch_already_sent` は解消しましたが、`readyCount=0` と `no_ready_rows,exact_ready_count_not_met` が残りました。
+2026-06-05分は `gmail-sales-2026-06-05` が使用済み扱いになったため、最終的に `gmail-sales-2026-06-05-r2-2026-06-05` にbatchIdをローテーションしました。
+その後の診断とPreflightで `batch_already_sent`、`outbox_validation_errors`、`no_ready_rows` は解消し、送信前条件は成功済みです。
 
 Agent Officeでは以下を確認対象にします。
 
@@ -308,9 +308,21 @@ Agent Officeでは以下を確認対象にします。
 - `subjectNormalizedCount`
 - `expectedBodyWouldContainLiteralBackslashN`
 
-ローカル検証ではr2 TSVは30件すべてready条件を満たしています。
-人間はGoogle SheetsのGmail送信対象タブをr2 TSVで差し替え、Apps Scriptの `SEND_DATE=2026-06-05` と `SEND_BATCH_ID=gmail-sales-2026-06-05-r2` を確認してから `runPreflightCheckOnly()` を再実行します。
-`readyCount=30` と `blockedReason=""` が確認できるまで本番送信は有効化しません。
+最終Preflightでは以下を安全な件数だけで確認済みです。
+
+- readyRows: 30
+- readyCount: 30
+- validationErrorCount: 0
+- statusMismatchCount: 0
+- sendBatchIdMismatchCount: 0
+- duplicateInSheetCount: 0
+- previouslySentCount: 0
+- sheetConnected: true
+- blockedReason: 空
+
+2026-06-05分は送信済みのため、同じr2 TSVや同じsendBatchIdで再送信しません。
+送信後にGoogle Sheets側の対象行が `sent` へ更新され、ready行ではなくなる場合があります。
+この場合の `readyRows=0` や `statusMismatchCount=30` は、送信後状態として正常な可能性があるため、送信前Preflight失敗と混同しません。
 
 `outbox_validation_errors` が出る場合は、Apps Scriptへ最新Code.gsを反映して `runPreflightDiagnosticsOnly()` を実行します。
 Agent Officeには原因別件数だけを反映し、メールアドレス、営業先名、件名全文、本文全文、返信本文、Gmailスレッド全文、Sheet ID、Apps Script URL、秘密情報は表示しません。
@@ -327,23 +339,27 @@ Agent Officeでは `gmail-body-newline-fix-2026-06-05` を表示し、本文正�
 表示するのは件数と状態のみです。
 本文全文、宛先、営業先名、返信本文、Gmailスレッド全文は表示しません。
 
+本文/件名正規化と診断拡張は実装済みとして `success` 表示にします。
+次回以降も `escapedNewlineBodyCount`、`bodyNormalizedCount`、`expectedBodyWouldContainLiteralBackslashN` などの安全な件数だけを確認します。
+
 ## 2026-06-05 Gmail営業30件送信チェック
 
-2026-06-05 12:00チェックでは、既存Preflight記録が `readyCount=29` かつ `blockedReason=outbox_validation_errors,exact_ready_count_not_met` のため、Gmail本番送信へ進めず `blocked` として記録しました。
+2026-06-05分のGmail営業メールは、r2 outboxと `sendBatchId=gmail-sales-2026-06-05-r2-2026-06-05` で30件送信完了済みです。
 
 Agent Officeと `/agent-office` では、`data/agent-status/tasks/gmail-daily-sales-send-2026-06-05.json` を表示対象にします。
 
 安全な表示項目:
 
-- Preflight: failed / blocked
-- readyCount: 29
+- Preflight: success
+- readyCount: 30
 - targetSendCount: 30
 - remainingQuota: 100
 - sheetConnected: true
-- 送信実行: なし
-- processed: 0
+- 送信実行: 完了
+- processed: 30
+- sentCount: 30
 - failed: 0
 - skipped: 0
-- nextAction: r2 TSV再貼り付け、Apps Script診断、Preflight再確認
+- nextAction: 再送信せず、送信後確認、返信確認、翌日準備、反映監査へ進む
 
-条件達成までGmail本番送信、Google Sheets送信済み更新、自動返信、Apps Scriptトリガー操作は行いません。
+同一sendBatchIdでの再送信、Google Sheets送信済み二重更新、自動返信、Apps Scriptトリガー操作は行いません。

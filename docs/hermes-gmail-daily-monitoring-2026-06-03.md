@@ -161,3 +161,21 @@ Hermesは次回以降、送信前Preflight診断で `escapedNewlineBodyCount`、
 - `expectedBodyWouldContainLiteralBackslashN=false` を確認する
 - 本文全文、宛先、営業先名は表示しない
 - 問題が残る場合は `needs_review` としてAgent Officeへ反映する
+
+## 2026-06-05送信後の監視整理
+
+2026-06-05分は `gmail-sales-2026-06-05-r2-2026-06-05` でPreflight成功後に30件送信完了済みです。
+Hermesは古いPreflight blockedや診断待ちを残さず、Agent Statusを送信済み・再送信禁止の状態へ更新します。
+
+送信前に確認済みの安全な件数:
+
+- readyRows=30
+- readyCount=30
+- validationErrorCount=0
+- sendBatchIdMismatchCount=0
+- duplicateInSheetCount=0
+- previouslySentCount=0
+- blockedReason=""
+
+送信後はGoogle Sheets側で対象行が `sent` へ変わるため、readyRows=0やstatusMismatchCount=30が出ても、送信後状態として正常な場合があります。
+Hermesはこの状態を送信前Preflight失敗として扱わず、再送信禁止、返信確認、翌日準備、反映監査をnextActionにします。

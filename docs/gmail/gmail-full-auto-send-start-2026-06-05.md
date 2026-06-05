@@ -254,6 +254,25 @@ Code.gsは `SEND_BATCH_ID` が設定されている場合、その値を当日�
 
 本文全文はAgent Officeやログに表示しません。
 
+## 2026-06-05送信後のAgent Office反映
+
+2026-06-05分は `gmail-sales-2026-06-05-r2-2026-06-05` でPreflight成功後に30件送信完了済みです。
+
+送信前の安全確認では以下を満たしていました。
+
+- readyRows=30
+- readyCount=30
+- validationErrorCount=0
+- sendBatchIdMismatchCount=0
+- statusMismatchCount=0
+- duplicateInSheetCount=0
+- previouslySentCount=0
+- blockedReason=""
+
+送信後に対象行が `sent` へ更新されると、再度Preflightした場合にready行が0件になったり、`statusMismatchCount=30` になる場合があります。
+これは送信後状態として正常な可能性があるため、送信前のblockedと混同しません。
+送信済み行を `ready` に戻して再送信することは禁止します。
+
 明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
 
 ## 禁止事項

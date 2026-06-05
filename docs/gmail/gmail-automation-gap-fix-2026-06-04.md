@@ -126,6 +126,22 @@ TSV生成ではセル内改行を `\n` 表現にする必要がありますが�
 - 本文全文、宛先、営業先名はログやAgent Officeに表示しない
 - 既に送信済みの2026-06-05分は再送信しない
 
+## 2026-06-05 r2送信後の反映整理
+
+2026-06-05分は、`gmail-sales-2026-06-05-r2-2026-06-05` でPreflight成功後に30件送信完了済みです。
+Agent Officeの古い `blocked` / `needs_review` 記録は、送信前の診断待ち状態ではなく送信済み状態へ更新します。
+
+送信前の最終確認では、readyRows=30、validationErrorCount=0、sendBatchIdMismatchCount=0、duplicateInSheetCount=0、previouslySentCount=0、blockedReason空を確認済みです。
+送信後にGoogle Sheets側の行が `sent` へ更新された結果、ready行が0件になったりstatus不一致が30件になることは、送信後状態として正常な可能性があります。
+
+重要な扱い:
+
+- 送信済み行を `ready` に戻さない
+- r2 TSVを再貼り付けして再送信しない
+- 同一sendBatchIdを再利用しない
+- Agent Officeには「送信済み・再送信禁止・返信/送信後確認へ進む」と表示する
+- 本文、宛先、営業先名、返信本文は表示しない
+
 ## 既存タスクの補強方針
 
 - 17:00返信確認・翌日準備チェックは、17:20 outbox準備と17:30返信確認の結果を前提にする
