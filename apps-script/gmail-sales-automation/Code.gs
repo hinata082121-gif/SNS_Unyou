@@ -927,18 +927,31 @@ function buildPreflightDiagnosticsSummary_(items, config, batchId) {
     duplicateBusinessCount: 0,
     excludedStatusCount: 0,
     previouslySentCount: 0,
-    validationErrorCount: 0
+    validationErrorCount: 0,
+    validationErrorRowNumbers: [],
+    validationErrorReasonCounts: {},
+    validationErrorReasonSamples: [],
+    prohibitedExpressionCount: 0,
+    bodyLengthErrorCount: 0,
+    subjectLengthErrorCount: 0,
+    optOutPatternMismatchCount: 0,
+    unknownValidationErrorCount: 0,
+    malformedRowCount: 0,
+    requiredFieldWhitespaceOnlyCount: 0
   };
 
   items.forEach((item) => {
     const row = item.row;
+    const rowIndex = item.rowIndex;
     const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
     const businessName = String(row.name || row['店舗名'] || '').trim().toLowerCase();
     const rowStatus = String(row.status || '').toLowerCase();
     const rowSendDate = normalizeDateText_(row.sendDate || row['送信日']);
     const rowBatchId = String(row.sendBatchId || '').trim();
-    const subject = String(row.subject || row['件名'] || '').trim();
-    const body = String(row.body || row['本文'] || '').trim();
+    const rawSubject = String(row.subject || row['件名'] || '');
+    const rawBody = String(row.body || row['本文'] || '');
+    const subject = rawSubject.trim();
+    const body = rawBody.trim();
     const isCandidate = rowStatus === 'ready' || rowSendDate === config.sendDate || rowBatchId === batchId;
 
     if (isCandidate) {
@@ -954,7 +967,7 @@ function buildPreflightDiagnosticsSummary_(items, config, batchId) {
     }
     if (!rowBatchId || rowBatchId !== batchId) {
       summary.sendBatchIdMismatchCount += 1;
-      summary.validationErrorCount += 1;
+      recordPreflightValidationError_(summary, rowIndex, 'SEND_BATCH_ID_MISMATCH');
       return;
     }
     if (!subject) {
@@ -964,7 +977,8 @@ function buildPreflightDiagnosticsSummary_(items, config, batchId) {
       summary.missingBodyCount += 1;
     }
     if (!subject || !body) {
-      summary.validationErrorCount += 1;
+      const reason = (rawSubject || rawBody) ? 'REQUIRED_FIELD_WHITESPACE_ONLY' : 'MISSING_SUBJECT_OR_BODY';
+      recordPreflightValidationError_(summary, rowIndex, reason);
       return;
     }
     if (!email) {
@@ -978,12 +992,12 @@ function buildPreflightDiagnosticsSummary_(items, config, batchId) {
       return;
     } else if (seenEmails[email]) {
       summary.duplicateInSheetCount += 1;
-      summary.validationErrorCount += 1;
+      recordPreflightValidationError_(summary, rowIndex, 'DUPLICATE_EMAIL');
       return;
     }
     if (businessName && seenBusiness[businessName]) {
       summary.duplicateBusinessCount += 1;
-      summary.validationErrorCount += 1;
+      recordPreflightValidationError_(summary, rowIndex, 'DUPLICATE_BUSINESS');
       return;
     }
     if (shouldSkipRecipient_(row)) {
@@ -996,7 +1010,7 @@ function buildPreflightDiagnosticsSummary_(items, config, batchId) {
       if (String(error.message) === 'missing_opt_out_text') {
         summary.missingOptOutTextCount += 1;
       }
-      summary.validationErrorCount += 1;
+      recordPreflightValidationError_(summary, rowIndex, classifyPreflightValidationError_(error));
       return;
     }
     summary.readyRows += 1;
@@ -1009,6 +1023,45 @@ function buildPreflightDiagnosticsSummary_(items, config, batchId) {
   });
 
   return summary;
+}
+
+function recordPreflightValidationError_(summary, rowIndex, reasonCode) {
+  const reason = String(reasonCode || 'UNKNOWN_VALIDATION_ERROR');
+  summary.validationErrorCount += 1;
+  if (rowIndex) {
+    summary.validationErrorRowNumbers.push(rowIndex);
+  }
+  summary.validationErrorReasonCounts[reason] = (summary.validationErrorReasonCounts[reason] || 0) + 1;
+  if (summary.validationErrorReasonSamples.indexOf(reason) === -1) {
+    summary.validationErrorReasonSamples.push(reason);
+  }
+
+  if (reason === 'PROHIBITED_EXPRESSION') {
+    summary.prohibitedExpressionCount += 1;
+  } else if (reason === 'BODY_LENGTH_ERROR') {
+    summary.bodyLengthErrorCount += 1;
+  } else if (reason === 'SUBJECT_LENGTH_ERROR') {
+    summary.subjectLengthErrorCount += 1;
+  } else if (reason === 'OPT_OUT_PATTERN_MISMATCH') {
+    summary.optOutPatternMismatchCount += 1;
+  } else if (reason === 'REQUIRED_FIELD_WHITESPACE_ONLY') {
+    summary.requiredFieldWhitespaceOnlyCount += 1;
+  } else if (reason === 'MALFORMED_ROW') {
+    summary.malformedRowCount += 1;
+  } else if (reason === 'UNKNOWN_VALIDATION_ERROR') {
+    summary.unknownValidationErrorCount += 1;
+  }
+}
+
+function classifyPreflightValidationError_(error) {
+  const message = String((error && error.message) || '');
+  if (message === 'missing_opt_out_text') {
+    return 'OPT_OUT_PATTERN_MISMATCH';
+  }
+  if (message === 'guaranteed_result_expression') {
+    return 'PROHIBITED_EXPRESSION';
+  }
+  return 'UNKNOWN_VALIDATION_ERROR';
 }
 
 function verifyNoSensitiveLogging_() {

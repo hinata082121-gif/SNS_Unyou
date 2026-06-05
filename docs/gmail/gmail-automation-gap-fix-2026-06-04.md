@@ -108,6 +108,10 @@ r2 outboxは過去送信済み候補との重複ゼロを確認済みで、Agent
 確認対象は `status`、`sendDate`、`sendBatchId`、メール列の存在、件名/本文の空欄、不要案内、重複、送信除外ステータス、過去送信済み判定です。
 診断結果をもとに、r2 TSVの再生成、Sheets貼り直し、Script Properties修正のどれを行うか判断します。
 
+`readyRows=29`、`validationErrorCount=1` のように1件だけ落ちた場合は、`validationErrorRowNumbers` とreason codeだけを出します。
+該当行のメールアドレス、営業先名、件名全文、本文全文は表示しません。
+reason codeが `PROHIBITED_EXPRESSION`、`OPT_OUT_PATTERN_MISMATCH`、`REQUIRED_FIELD_WHITESPACE_ONLY` などの場合は、r2 TSVを安全表現へ修正して再貼り付けします。
+
 ## 既存タスクの補強方針
 
 - 17:00返信確認・翌日準備チェックは、17:20 outbox準備と17:30返信確認の結果を前提にする

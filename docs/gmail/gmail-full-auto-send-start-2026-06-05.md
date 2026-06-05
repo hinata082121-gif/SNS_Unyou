@@ -225,6 +225,18 @@ Code.gsは `SEND_BATCH_ID` が設定されている場合、その値を当日�
 この診断関数はGmail送信、自動返信、Google Sheets送信済み更新を行いません。
 原因別件数を確認したうえで、r2 TSV再生成、Sheets貼り直し、またはScript Properties修正のどれが必要か判断します。
 
+## readyRows=29 / validationErrorCount=1の対応
+
+`readyRows=29`、`validationErrorCount=1` のように1件だけ落ちている場合は、個人情報を出さずに行番号とreason codeだけで特定します。
+
+- `validationErrorRowNumbers`: シート上の行番号のみ
+- `validationErrorReasonCounts`: reason code別件数のみ
+- `validationErrorReasonSamples`: reason code名のみ
+
+出してよいreason codeは、`PROHIBITED_EXPRESSION`、`OPT_OUT_PATTERN_MISMATCH`、`MISSING_SUBJECT_OR_BODY`、`REQUIRED_FIELD_WHITESPACE_ONLY`、`DUPLICATE_EMAIL`、`DUPLICATE_BUSINESS`、`SEND_BATCH_ID_MISMATCH`、`UNKNOWN_VALIDATION_ERROR` などです。
+該当行は、本文の安全表現修正または未送信候補への差し替えで対応します。
+本文全文、宛先、営業先名は記録しません。
+
 明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
 
 ## 禁止事項
