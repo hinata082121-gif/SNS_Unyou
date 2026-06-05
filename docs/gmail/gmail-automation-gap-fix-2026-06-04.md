@@ -112,6 +112,20 @@ r2 outboxは過去送信済み候補との重複ゼロを確認済みで、Agent
 該当行のメールアドレス、営業先名、件名全文、本文全文は表示しません。
 reason codeが `PROHIBITED_EXPRESSION`、`OPT_OUT_PATTERN_MISMATCH`、`REQUIRED_FIELD_WHITESPACE_ONLY` などの場合は、r2 TSVを安全表現へ修正して再貼り付けします。
 
+## 2026-06-05送信後の本文改行エスケープ対応
+
+2026-06-05送信後、Gmail本文に改行用の `\n` が文字列として表示される問題を確認しました。
+TSV生成ではセル内改行を `\n` 表現にする必要がありますが、Apps Script送信直前では実改行へ戻す必要があります。
+
+対応方針は以下です。
+
+- Apps Script送信直前に本文を正規化する
+- 件名内の改行エスケープはスペースへ正規化する
+- Preflight診断に `escapedNewlineBodyCount`、`escapedNewlineSubjectCount`、`bodyNormalizedCount`、`subjectNormalizedCount` を追加する
+- outbox/TSV生成側でも本文・件名を正規化してから出力する
+- 本文全文、宛先、営業先名はログやAgent Officeに表示しない
+- 既に送信済みの2026-06-05分は再送信しない
+
 ## 既存タスクの補強方針
 
 - 17:00返信確認・翌日準備チェックは、17:20 outbox準備と17:30返信確認の結果を前提にする

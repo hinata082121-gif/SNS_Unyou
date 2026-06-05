@@ -1,0 +1,43 @@
+{
+  "id": "gmail-body-newline-fix-2026-06-05",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail本文改行エスケープ修正",
+  "category": "gmail_send",
+  "status": "needs_review",
+  "phase": "本文正規化修正済み・次回送信前確認待ち",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-06-05T00:00:00.000Z",
+  "updatedAt": "2026-06-05T13:25:06+09:00",
+  "summary": "送信済みメール本文に改行エスケープが表示されたため、送信前に本文と件名を正規化する処理を追加した。次回送信前にPreflight診断で改行エスケープ件数を確認する。",
+  "artifacts": [
+    "apps-script/gmail-sales-automation/Code.gs",
+    "scripts/gmail/pool-utils.mjs",
+    "scripts/gmail/select-daily-gmail-outbox.mjs"
+  ],
+  "metrics": {
+    "literalBackslashNDetectedInSentMail": true,
+    "bodyNormalizerAdded": true,
+    "subjectNormalizerAdded": true,
+    "nodeOutboxNormalizerAdded": true,
+    "preflightDiagnosticsExtended": true,
+    "escapedNewlineBodyCountMetricAdded": true,
+    "escapedNewlineSubjectCountMetricAdded": true,
+    "expectedBodyWouldContainLiteralBackslashN": false,
+    "gmailSendExecutedByThisTask": false,
+    "autoReplyEnabled": false,
+    "appsScriptTriggerChanged": false,
+    "sheetSentStatusUpdated": false
+  },
+  "nextAction": "Apps ScriptへCode.gs更新を反映し、runPreflightDiagnosticsOnly()とrunPreflightCheckOnly()でreadyCount=30かつ改行エスケープ0件を確認する",
+  "safeToAct": true,
+  "notes": [
+    "Gmail送信なし",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "Google Sheets更新なし",
+    "本文全文は表示しない",
+    "次回送信前に改行エスケープ件数を確認"
+  ]
+}

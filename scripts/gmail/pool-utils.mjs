@@ -92,8 +92,28 @@ export function isAvailable(candidate) {
 }
 
 export function hasOptOutText(body) {
-  const text = String(body || '');
+  const text = normalizeEmailBody(body);
   return text.includes('不要') || text.includes('今後のご案内が不要') || text.includes('ご返信不要');
+}
+
+export function normalizeEmailBody(body) {
+  return String(body ?? '')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export function normalizeEmailSubject(subject) {
+  return String(subject ?? '')
+    .replace(/\\r\\n/g, ' ')
+    .replace(/\\n/g, ' ')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 export function buildBatchId(sendDate) {
@@ -122,10 +142,16 @@ export function parseArgs(argv) {
 }
 
 export function toTsv(rows) {
-  const escapeCell = (value) => String(value ?? '').replace(/\r?\n/g, '\\n').replace(/\t/g, ' ');
+  const escapeCell = (value, key) => {
+    const normalized = key === 'body'
+      ? normalizeEmailBody(value)
+      : key === 'subject'
+        ? normalizeEmailSubject(value)
+        : String(value ?? '');
+    return normalized.replace(/\r?\n/g, '\\n').replace(/\t/g, ' ');
+  };
   return [
     OUTBOX_HEADERS.join('\t'),
-    ...rows.map((row) => OUTBOX_HEADERS.map((key) => escapeCell(row[key])).join('\t'))
+    ...rows.map((row) => OUTBOX_HEADERS.map((key) => escapeCell(row[key], key)).join('\t'))
   ].join('\n') + '\n';
 }
-

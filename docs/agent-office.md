@@ -302,6 +302,11 @@ Agent Officeでは以下を確認対象にします。
 - `validationErrorReasonSamples`
 - `replacementCandidateAvailable`
 - `expectedReadyRowsAfterFix`
+- `escapedNewlineBodyCount`
+- `escapedNewlineSubjectCount`
+- `bodyNormalizedCount`
+- `subjectNormalizedCount`
+- `expectedBodyWouldContainLiteralBackslashN`
 
 ローカル検証ではr2 TSVは30件すべてready条件を満たしています。
 人間はGoogle SheetsのGmail送信対象タブをr2 TSVで差し替え、Apps Scriptの `SEND_DATE=2026-06-05` と `SEND_BATCH_ID=gmail-sales-2026-06-05-r2` を確認してから `runPreflightCheckOnly()` を再実行します。
@@ -313,6 +318,14 @@ Agent Officeには原因別件数だけを反映し、メールアドレス、�
 `readyRows=29`、`validationErrorCount=1` のように1件だけ落ちた場合、Agent Officeには行番号とreason codeだけを表示対象にします。
 該当行の候補名、宛先、本文は表示しません。
 修正または差し替え後は `expectedReadyRowsAfterFix=30` として、再貼り付けとPreflight再実行をnextActionに残します。
+
+## Gmail本文改行エスケープ修正の表示
+
+2026-06-05送信後に、本文中の `\n` が文字列として表示される問題を確認しました。
+Agent Officeでは `gmail-body-newline-fix-2026-06-05` を表示し、本文正規化、件名正規化、Preflight診断拡張が反映済みかを確認します。
+
+表示するのは件数と状態のみです。
+本文全文、宛先、営業先名、返信本文、Gmailスレッド全文は表示しません。
 
 ## 2026-06-05 Gmail営業30件送信チェック
 

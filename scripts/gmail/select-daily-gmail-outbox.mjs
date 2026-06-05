@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_POOL_FILE, OUTBOX_HEADERS, asCandidates, buildBatchId, candidateEmail, candidateName, dedupeKey, hasOptOutText, isAvailable, isValidEmail, parseArgs, readJson, safeSummary, sourceDomain, toTsv, writeJson } from './pool-utils.mjs';
+import { DEFAULT_POOL_FILE, OUTBOX_HEADERS, asCandidates, buildBatchId, candidateEmail, candidateName, dedupeKey, hasOptOutText, isAvailable, isValidEmail, normalizeEmailBody, normalizeEmailSubject, parseArgs, readJson, safeSummary, sourceDomain, toTsv, writeJson } from './pool-utils.mjs';
 
 function printHelp() {
   console.log(`Usage: node scripts/gmail/select-daily-gmail-outbox.mjs --date YYYY-MM-DD --next-action-date YYYY-MM-DD [--pool data/gmail/pool/gmail-ready-candidate-pool.json] [--history-dir data/gmail/outbox]
@@ -48,7 +48,8 @@ for (const candidate of candidates) {
   const email = candidateEmail(candidate);
   const key = dedupeKey(candidate);
   const businessKey = businessDedupeKey(candidate);
-  const body = candidate.body || buildDefaultBody(candidate);
+  const subject = normalizeEmailSubject(candidate.subject || 'SNSの見え方について、簡単な無料確認のご案内');
+  const body = normalizeEmailBody(candidate.body || buildDefaultBody(candidate));
   if (!isValidEmail(email)) continue;
   if (isHistoricallyUsed(candidate, historicalExclusions)) {
     summary.excludedHistorical += 1;
@@ -67,7 +68,7 @@ for (const candidate of candidates) {
     sourceUrl: candidate.sourceUrl || '',
     issueHypothesis: candidate.issueHypothesis || '',
     salesAngle: candidate.salesAngle || '',
-    subject: candidate.subject || 'SNSの見え方について、簡単な無料確認のご案内',
+    subject,
     body,
     status: 'ready',
     sendDate,
@@ -116,7 +117,7 @@ console.log(safeSummary(summary));
 
 function buildDefaultBody(candidate) {
   const name = candidate.name || 'ご担当者';
-  return `${name} さま\n\n突然のご連絡失礼いたします。\nICHI Socialです。\n\n小規模店舗さま向けに、Instagramプロフィールや予約導線の見え方を整理するSNS運用サポートを行っています。\n\nもし現在SNS運用や予約導線の整理でお困りでしたら、無料で簡単に確認できます。\n\n今後のご案内が不要な場合は、その旨をご返信いただければ以後のご連絡は控えます。\n\nICHI Social`;
+  return normalizeEmailBody(`${name} さま\n\n突然のご連絡失礼いたします。\nICHI Socialです。\n\n小規模店舗さま向けに、Instagramプロフィールや予約導線の見え方を整理するSNS運用サポートを行っています。\n\nもし現在SNS運用や予約導線の整理でお困りでしたら、無料で簡単に確認できます。\n\n今後のご案内が不要な場合は、その旨をご返信いただければ以後のご連絡は控えます。\n\nICHI Social`);
 }
 
 function collectHistoricalExclusions(dir, currentDate) {

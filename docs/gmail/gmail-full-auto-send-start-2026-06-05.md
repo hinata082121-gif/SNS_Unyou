@@ -237,6 +237,23 @@ Code.gsは `SEND_BATCH_ID` が設定されている場合、その値を当日�
 該当行は、本文の安全表現修正または未送信候補への差し替えで対応します。
 本文全文、宛先、営業先名は記録しません。
 
+## 本文改行エスケープの正規化
+
+2026-06-05送信後に、メール本文へ `\n` や `\n\n` が文字列として表示される問題を確認しました。
+原因は、Sheets貼り付け用TSVではセル内改行を `\n` として保持する一方、Apps Script送信直前で実改行へ復元していなかったことです。
+
+送信前の必須条件として以下を追加します。
+
+- body内の `\\r\\n` と `\\n` は実改行へ変換する
+- 実際の `\r\n` と `\r` は `\n` へ正規化する
+- 3連続以上の改行は2連続までに整える
+- 行末の余分な空白を削る
+- subject内の改行と `\\n` はスペースへ変換する
+- Preflight診断で `escapedNewlineBodyCount` と `escapedNewlineSubjectCount` を確認する
+- 送信直前に `expectedBodyWouldContainLiteralBackslashN=false` であることを確認する
+
+本文全文はAgent Officeやログに表示しません。
+
 明日分outboxが未作成、またはAgent Officeに反映されていない場合、翌日の自動送信は `blocked` として扱う。
 
 ## 禁止事項

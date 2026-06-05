@@ -661,8 +661,8 @@ function maybeSendAutoReply_(thread, classification, config) {
 }
 
 function buildInitialSalesEmail_(row) {
-  const subject = String(row.subject || row['件名'] || '').trim();
-  const body = String(row.body || row['本文'] || '').trim();
+  const subject = normalizeEmailSubject_(row.subject || row['件名']);
+  const body = normalizeEmailBody_(row.body || row['本文']);
   if (subject && body) {
     return { subject, body };
   }
@@ -670,8 +670,8 @@ function buildInitialSalesEmail_(row) {
   const storeName = row.name || row['店舗名'] || 'ご担当者';
   const signature = getConfig_().replySignature;
   return {
-    subject: 'SNSの見え方について、簡単な無料確認のご案内',
-    body:
+    subject: normalizeEmailSubject_('SNSの見え方について、簡単な無料確認のご案内'),
+    body: normalizeEmailBody_(
       storeName + ' さま\n\n' +
       '突然のご連絡失礼いたします。\n' +
       'ICHI Socialです。\n\n' +
@@ -680,41 +680,45 @@ function buildInitialSalesEmail_(row) {
       'ご興味があれば、このメールに「診断希望」とだけご返信ください。\n\n' +
       '今後のご案内が不要な場合は、その旨をご返信いただければ以後のご連絡は控えます。\n\n' +
       signature
+    )
   };
 }
 
 function buildFollowupEmail_(row) {
   const storeName = row.name || row['店舗名'] || 'ご担当者';
   return {
-    subject: 'SNSプロフィール確認の件',
-    body:
+    subject: normalizeEmailSubject_('SNSプロフィール確認の件'),
+    body: normalizeEmailBody_(
       storeName + ' さま\n\n' +
       '先日、SNSの見え方確認についてご案内したICHI Socialです。\n\n' +
       '必要なタイミングがあれば、プロフィールや固定投稿の見え方を簡単に確認できます。\n\n' +
       'ご不要でしたら返信不要です。今後のご案内を控えてほしい場合は、その旨だけご返信ください。\n\n' +
       getConfig_().replySignature
+    )
   };
 }
 
 function buildInterestedAutoReply_(row) {
   return {
-    subject: 'Re: SNS診断の件',
-    body:
+    subject: normalizeEmailSubject_('Re: SNS診断の件'),
+    body: normalizeEmailBody_(
       'ご返信ありがとうございます。\n\n' +
       '無料SNS診断では、プロフィール、固定投稿、予約導線、投稿テーマの見え方を中心に確認します。\n\n' +
       'まずは公開されているSNSを拝見し、簡単な診断メモをお送りします。\n\n' +
       getConfig_().replySignature
+    )
   };
 }
 
 function buildInfoRequestAutoReply_(row) {
   return {
-    subject: 'Re: 資料のご希望について',
-    body:
+    subject: normalizeEmailSubject_('Re: 資料のご希望について'),
+    body: normalizeEmailBody_(
       'ご返信ありがとうございます。\n\n' +
       'ICHI Socialでは、小規模店舗向けにSNSの伝わり方、投稿テーマ、予約導線の整理を支援しています。\n\n' +
       '概要を確認し、必要に応じて人間担当から詳細をご案内します。\n\n' +
       getConfig_().replySignature
+    )
   };
 }
 
@@ -843,8 +847,8 @@ function validateOutboxRows_(items, config) {
     const rowStatus = String(row.status || '').toLowerCase();
     const rowSendDate = normalizeDateText_(row.sendDate || row['送信日']);
     const rowBatchId = String(row.sendBatchId || '').trim();
-    const subject = String(row.subject || row['件名'] || '').trim();
-    const body = String(row.body || row['本文'] || '').trim();
+    const subject = normalizeEmailSubject_(row.subject || row['件名']);
+    const body = normalizeEmailBody_(row.body || row['本文']);
 
     if (rowStatus !== 'ready') {
       skipped.push({ rowIndex, reason: 'not_ready_status' });
@@ -937,7 +941,12 @@ function buildPreflightDiagnosticsSummary_(items, config, batchId) {
     optOutPatternMismatchCount: 0,
     unknownValidationErrorCount: 0,
     malformedRowCount: 0,
-    requiredFieldWhitespaceOnlyCount: 0
+    requiredFieldWhitespaceOnlyCount: 0,
+    escapedNewlineBodyCount: 0,
+    escapedNewlineSubjectCount: 0,
+    bodyNormalizedCount: 0,
+    subjectNormalizedCount: 0,
+    expectedBodyWouldContainLiteralBackslashN: false
   };
 
   items.forEach((item) => {
@@ -950,9 +959,23 @@ function buildPreflightDiagnosticsSummary_(items, config, batchId) {
     const rowBatchId = String(row.sendBatchId || '').trim();
     const rawSubject = String(row.subject || row['件名'] || '');
     const rawBody = String(row.body || row['本文'] || '');
-    const subject = rawSubject.trim();
-    const body = rawBody.trim();
+    const subject = normalizeEmailSubject_(rawSubject);
+    const body = normalizeEmailBody_(rawBody);
     const isCandidate = rowStatus === 'ready' || rowSendDate === config.sendDate || rowBatchId === batchId;
+    const escapedSubject = hasEscapedNewline_(rawSubject);
+    const escapedBody = hasEscapedNewline_(rawBody);
+    if (escapedSubject) {
+      summary.escapedNewlineSubjectCount += 1;
+    }
+    if (escapedBody) {
+      summary.escapedNewlineBodyCount += 1;
+    }
+    if (subject !== String(rawSubject || '').trim()) {
+      summary.subjectNormalizedCount += 1;
+    }
+    if (body !== String(rawBody || '').trim()) {
+      summary.bodyNormalizedCount += 1;
+    }
 
     if (isCandidate) {
       summary.candidateRows += 1;
@@ -1144,13 +1167,39 @@ function runPreflight_(forSend) {
 
 function assertMessageSafe_(message) {
   const config = getConfig_();
-  const text = String((message && message.subject) || '') + '\n' + String((message && message.body) || '');
+  const subject = normalizeEmailSubject_((message && message.subject) || '');
+  const body = normalizeEmailBody_((message && message.body) || '');
+  const text = subject + '\n' + body;
   if (config.requireOptOutText && !includesAny_(text, ['不要', '今後のご案内が不要', 'ご返信不要'])) {
     throw new Error('missing_opt_out_text');
   }
   if (includesAny_(text, ['必ず売上', '絶対', '売上保証', '成果保証'])) {
     throw new Error('guaranteed_result_expression');
   }
+}
+
+function normalizeEmailBody_(body) {
+  return String(body || '')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function normalizeEmailSubject_(subject) {
+  return String(subject || '')
+    .replace(/\\r\\n/g, ' ')
+    .replace(/\\n/g, ' ')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function hasEscapedNewline_(value) {
+  return /\\r\\n|\\n/.test(String(value || ''));
 }
 
 function normalizeEmail_(email) {

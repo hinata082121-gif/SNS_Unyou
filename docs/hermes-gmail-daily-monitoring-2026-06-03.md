@@ -100,6 +100,7 @@ HermesとAgent Officeは、同一sendBatchIdの再送信を禁止し、次は12:
 2026-06-05以降に完全自動送信へ移行する場合、Hermesは送信実行ではなく監視・確認・記録を担当します。
 
 - 12:30: processed、failed、skipped、live send resetの有無を確認する
+- 12:30: 送信済み本文に `\n` が文字列として表示されていないか、可能な範囲で安全な件数だけ確認する
 - 14:00: failed/blocked、候補不足、Agent Office未反映を確認する
 - 17:00: 返信確認、人間確認要否、翌日準備状況を確認する
 - failed/blockedが出た場合は自動送信停止をnextActionに明記する
@@ -150,3 +151,13 @@ Hermesはトリガーを勝手に有効化せず、`/agent-office` に安全な�
 - 自動返信、本番送信、Apps Scriptトリガー操作、本番テンプレート自動差し替えは行わない
 
 表示するのは反応率や件数、改善案の状態、nextActionのみです。メールアドレス、営業先名、返信本文、Gmailスレッド全文、秘密情報は表示しません。
+
+## 本文改行エスケープ監視
+
+2026-06-05送信後に、本文内の改行エスケープが文字列として表示される問題を確認しました。
+Hermesは次回以降、送信前Preflight診断で `escapedNewlineBodyCount`、`escapedNewlineSubjectCount`、`bodyNormalizedCount`、`subjectNormalizedCount` を確認します。
+
+- `escapedNewlineBodyCount` が0でない場合でも、Apps Script送信直前の正規化が入っていることを確認する
+- `expectedBodyWouldContainLiteralBackslashN=false` を確認する
+- 本文全文、宛先、営業先名は表示しない
+- 問題が残る場合は `needs_review` としてAgent Officeへ反映する

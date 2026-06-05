@@ -32,6 +32,9 @@ C:\Users\hinat\Documents\Codex\2026-05-27\next-js-react-typescript-tailwind-css
 - 既存outboxが前日送信済み候補と一致する場合は使用禁止にし、safeToSend=falseをAgent Officeへ反映する
 - PreflightやAgent Statusでbatch_already_sentを検出した場合は既存batchIdを再利用しない
 - batch_already_sent時は `gmail-sales-YYYY-MM-DD-r2` のような新batchIdを発行し、old TSVを使用禁止にする
+- outbox生成時に本文の `\n` / `\r\n` エスケープを実改行へ正規化し、件名内の改行エスケープはスペースへ正規化する
+- TSVでは貼り付け都合でセル内改行が `\n` 表現になってもよいが、Apps Script送信直前に実改行へ復元されることをAgent Statusに記録する
+- Preflight診断で `escapedNewlineBodyCount` と `escapedNewlineSubjectCount` を確認し、本文全文は表示しない
 - 新規候補が30件未満の場合はblockedとし、不足数とnextActionを明記する
 - 翌日分Agent Status JSONを作成する
 - Sheets反映が自動化できる場合は安全な既存経路のみ使用する
