@@ -1705,6 +1705,24 @@ ICHI Social 毎朝営業候補10件作成
 
 2026-06-05以降の完全自動トリガー有効化は、2026-06-04の手動承認つき送信が成功してから検討する。候補プールavailableが60件未満の場合は完全自動化を保留し、90件以上で安定運用候補とする。
 
+### Threads運用タスク追加予定
+
+ICHI Socialの新部門としてThreads運用を追加する。Gmail営業が個別接触を担当するのに対し、Threadsは公開発信による認知、共感、無料SNS診断への導線づくりを担当する。
+
+登録待ち/needs_reviewのタスク:
+
+| 時刻 | タスク | cron | 状態 | 役割 |
+|---|---|---|---|---|
+| 毎日 11:00 | ICHI Threads 毎日11時 ノウハウ投稿 | `0 11 * * *` | 登録待ち | SNS導線改善、Instagramプロフィール、固定投稿、予約導線などの学び/気づき投稿 |
+| 毎日 19:00 | ICHI Threads 毎日19時 共感・導線投稿 | `0 19 * * *` | 登録待ち | 小規模店舗のSNSあるある、問いかけ、無料SNS診断への自然な導線投稿 |
+| 金曜 20:00 | ICHI Threads 金曜20時 バズ投稿分析・投稿文改善 | `0 20 * * 5` | 登録待ち | 公開情報の安全な範囲で伸びた投稿の構造を分析し、翌週投稿文を改善 |
+
+Threads投稿は、`THREADS_PUBLISH_ENABLED=true` かつ `THREADS_DRY_RUN=false` が確認できる場合のみ、公式APIまたは正式に許可された投稿経路で実行する。
+初期状態では `THREADS_PUBLISH_ENABLED=false`、`THREADS_DRY_RUN=true` として扱い、API未設定時は `blocked` としてAgent Officeへ反映する。
+
+Threads運用でも、自動返信、自動いいね、自動フォロー、無断転載、ログイン画面操作、ブラウザ操作による投稿は行わない。
+APIトークン、投稿先ID、App Secret、Client Secret、APIレスポンスの秘密情報は表示・保存・Git追加しない。
+
 ## 禁止事項
 
 - Gmail送信はApps Scriptの安全条件、sendBatchId重複防止、30件ちょうどのready確認、Gmail残クォータ確認を満たす場合のみ行う

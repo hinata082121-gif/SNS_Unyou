@@ -8,6 +8,8 @@ const ROLE_COLORS: Record<string, string> = {
   Gmail候補プール補充: "from-emerald-400 to-lime-200",
   Hermes監視: "from-violet-400 to-indigo-200",
   Instagram運用: "from-pink-400 to-orange-200",
+  Threads運用: "from-violet-300 to-fuchsia-200",
+  Threads週次分析: "from-purple-400 to-sky-200",
   "Agent Office": "from-amber-300 to-yellow-100",
 };
 
@@ -73,7 +75,7 @@ function PixelAvatar({
   const lamp =
     status === "success"
       ? "bg-emerald-300"
-      : status === "blocked" || status === "failed"
+      : status === "blocked" || status === "failed" || status === "stale"
         ? "bg-red-300"
         : status === "needs_review"
           ? "bg-amber-300"

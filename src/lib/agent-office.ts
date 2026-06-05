@@ -11,6 +11,7 @@ export type AgentOfficeStatus =
   | "partial"
   | "failed"
   | "skipped"
+  | "stale"
   | "unknown";
 
 export type SafeMetric = {
@@ -44,6 +45,17 @@ export type AgentOfficeCategoryGroup = {
   tasks: SafeAgentTask[];
 };
 
+export type AgentOfficeDepartmentKey = "gmail" | "threads" | "overall";
+
+export type AgentOfficeDepartment = {
+  key: AgentOfficeDepartmentKey;
+  label: string;
+  description: string;
+  tasks: SafeAgentTask[];
+  urgentTasks: SafeAgentTask[];
+  categoryGroups: AgentOfficeCategoryGroup[];
+};
+
 export type AgentOfficeDashboardData = {
   generatedAt: string;
   tasks: SafeAgentTask[];
@@ -53,6 +65,7 @@ export type AgentOfficeDashboardData = {
   humanReviewTasks: SafeAgentTask[];
   replyCheckTask?: SafeAgentTask;
   categoryGroups: AgentOfficeCategoryGroup[];
+  departments: AgentOfficeDepartment[];
   counts: Record<
     "success" | "needs_review" | "blocked" | "failed" | "running" | "scheduled",
     number
@@ -108,6 +121,7 @@ const STATUS_SET = new Set([
   "partial",
   "failed",
   "skipped",
+  "stale",
   "queued",
   "synced",
   "scheduled",
@@ -125,6 +139,7 @@ const FEATURE_KEYWORDS = [
   "instagram-canva-materialization",
   "instagram-pre-publish-review",
   "agent-office-vercel-dashboard",
+  "threads-automation-setup",
 ];
 
 const CATEGORY_META: Record<string, { label: string; description: string }> = {
@@ -139,6 +154,46 @@ const CATEGORY_META: Record<string, { label: string; description: string }> = {
   gmail_reply_check: {
     label: "Gmail返信確認",
     description: "返信有無、未読返信、人間確認要否の監視",
+  },
+  gmail_sales_improvement: {
+    label: "Gmail改善",
+    description: "営業メール改善、反応率分析、週次改善案",
+  },
+  next_day_outbox: {
+    label: "翌日outbox",
+    description: "翌日分outbox準備、重複検査、Preflight待ち",
+  },
+  candidate_pool: {
+    label: "候補プール",
+    description: "Gmail-ready候補の残数と補充状態",
+  },
+  automation_improvement: {
+    label: "自動化改善",
+    description: "未自動化箇所の修正と監査タスク",
+  },
+  agent_office_monitoring: {
+    label: "反映監査",
+    description: "Agent Office未反映、stale、blockedの検知",
+  },
+  threads_post: {
+    label: "Threads投稿",
+    description: "Threads投稿の実行結果とblocked確認",
+  },
+  threads_daily_post: {
+    label: "Threads日次投稿",
+    description: "11:00/19:00の投稿予定、投稿結果、blocked確認",
+  },
+  threads_weekly_analysis: {
+    label: "Threads週次分析",
+    description: "バズ投稿分析と翌週投稿文改善",
+  },
+  threads_growth: {
+    label: "Threads成長分析",
+    description: "反応、プロフィール遷移、導線改善",
+  },
+  threads_automation: {
+    label: "Threads自動化",
+    description: "API設定、dry-run、投稿自動化準備",
   },
   market_analysis: {
     label: "金曜市場分析",
@@ -174,6 +229,7 @@ const STATUS_PRIORITY: Record<AgentOfficeStatus, number> = {
   failed: 0,
   blocked: 1,
   needs_review: 2,
+  stale: 2,
   running: 3,
   checking: 3,
   scheduled: 4,
@@ -192,6 +248,7 @@ export function getAgentOfficeDashboardData(): AgentOfficeDashboardData {
       (task) =>
         task.status === "failed" ||
         task.status === "blocked" ||
+        task.status === "stale" ||
         hasTrueMetric(task, "needsHumanEmailCheck") ||
         hasPositiveMetric(task, "unreadReplyCount"),
     )
@@ -220,6 +277,7 @@ export function getAgentOfficeDashboardData(): AgentOfficeDashboardData {
     humanReviewTasks,
     replyCheckTask,
     categoryGroups: buildCategoryGroups(tasks),
+    departments: buildDepartments(tasks),
     counts,
     topState: buildTopState(counts),
   };
@@ -304,6 +362,8 @@ function inferRole(id: string, title: string, category: string, avatar: string):
   if (text.includes("gmail") && text.includes("reply")) return "Gmail返信確認";
   if (text.includes("gmail") && text.includes("list")) return "Gmailリスト更新";
   if (text.includes("gmail")) return "Gmail営業送信";
+  if (text.includes("threads") && text.includes("weekly")) return "Threads週次分析";
+  if (text.includes("threads")) return "Threads運用";
   if (text.includes("market")) return "金曜市場分析";
   if (text.includes("instagram")) return "Instagram運用";
   if (text.includes("hermes") || text.includes("scheduled")) return "Hermes監視";
@@ -352,6 +412,14 @@ function buildCategoryGroups(tasks: SafeAgentTask[]): AgentOfficeCategoryGroup[]
     "gmail_send",
     "gmail_list_refresh",
     "gmail_reply_check",
+    "gmail_sales_improvement",
+    "next_day_outbox",
+    "candidate_pool",
+    "threads_automation",
+    "threads_daily_post",
+    "threads_post",
+    "threads_weekly_analysis",
+    "threads_growth",
     "hermes_monitoring",
     "market_analysis",
     "instagram",
@@ -378,6 +446,72 @@ function buildCategoryGroups(tasks: SafeAgentTask[]): AgentOfficeCategoryGroup[]
       description: CATEGORY_META[key]?.description || "Agent statusで管理する運用タスク",
       tasks: groupTasks.sort(compareTasksForDisplay),
     }));
+}
+
+function buildDepartments(tasks: SafeAgentTask[]): AgentOfficeDepartment[] {
+  const gmailTasks = tasks.filter(isGmailTask);
+  const threadsTasks = tasks.filter(isThreadsTask);
+
+  return [
+    {
+      key: "gmail",
+      label: "Gmail運用",
+      description: "Gmail送信、返信確認、候補プール、outbox、Preflight、営業メール改善",
+      tasks: gmailTasks,
+      urgentTasks: urgentForDepartment(gmailTasks),
+      categoryGroups: buildCategoryGroups(gmailTasks),
+    },
+    {
+      key: "threads",
+      label: "Threads運用",
+      description: "11:00/19:00投稿、投稿結果、週次バズ分析、API接続状態",
+      tasks: threadsTasks,
+      urgentTasks: urgentForDepartment(threadsTasks),
+      categoryGroups: buildCategoryGroups(threadsTasks),
+    },
+    {
+      key: "overall",
+      label: "全体管理",
+      description: "Gmail/Threads横断の重要アラート、stale、blocked、needs_review、反映監査",
+      tasks,
+      urgentTasks: urgentForDepartment(tasks),
+      categoryGroups: buildCategoryGroups(tasks),
+    },
+  ];
+}
+
+function urgentForDepartment(tasks: SafeAgentTask[]): SafeAgentTask[] {
+  return tasks
+    .filter(
+      (task) =>
+        task.status === "failed" ||
+        task.status === "blocked" ||
+        task.status === "stale" ||
+        task.status === "needs_review" ||
+        hasTrueMetric(task, "needsHumanEmailCheck") ||
+        hasPositiveMetric(task, "unreadReplyCount"),
+    )
+    .sort(compareTasksForDisplay)
+    .slice(0, 8);
+}
+
+function isGmailTask(task: SafeAgentTask): boolean {
+  const text = `${task.id} ${task.category} ${task.title}`.toLowerCase();
+  return (
+    text.includes("gmail") ||
+    [
+      "gmail_send",
+      "gmail_list_refresh",
+      "gmail_reply_check",
+      "gmail_sales_improvement",
+      "next_day_outbox",
+      "candidate_pool",
+    ].includes(task.category)
+  );
+}
+
+function isThreadsTask(task: SafeAgentTask): boolean {
+  return task.category.startsWith("threads_") || task.id.includes("threads");
 }
 
 function hasTrueMetric(task: SafeAgentTask, label: string): boolean {

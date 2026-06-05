@@ -1,0 +1,40 @@
+{
+  "id": "threads-automation-setup-2026-06-05",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads運用自動化セットアップ",
+  "category": "threads_automation",
+  "status": "needs_review",
+  "phase": "Threads毎日2投稿・週次分析の自動化準備",
+  "progress": 80,
+  "priority": "high",
+  "createdAt": "2026-06-05T00:00:00.000Z",
+  "updatedAt": "2026-06-05T00:00:00.000Z",
+  "summary": "Threadsで毎日11:00/19:00の2投稿と、毎週金曜20:00のバズ投稿分析・投稿文改善を行う新部門をAgent Officeへ追加する。",
+  "metrics": {
+    "dailyPostsPlanned": 2,
+    "morningPostTime": "11:00",
+    "eveningPostTime": "19:00",
+    "weeklyAnalysisTime": "Friday 20:00",
+    "agentOfficeTabsAdded": true,
+    "publishEnabled": false,
+    "dryRunDefault": true,
+    "requiresApiTokenSetup": true,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "Threads API設定後、Hermesに11:00投稿・19:00投稿・金曜20:00分析タスクを登録する。",
+  "safeToAct": true,
+  "notes": [
+    "初期状態では投稿実行なし",
+    "API設定完了後に完全自動化へ移行",
+    "自動返信/自動いいね/自動フォローなし",
+    "投稿結果はAgent OfficeのThreads運用タブへ反映"
+  ],
+  "artifacts": [
+    "docs/threads/threads-automation-strategy-2026-06-05.md",
+    "docs/threads/threads-api-automation-design-2026-06-05.md",
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md"
+  ]
+}

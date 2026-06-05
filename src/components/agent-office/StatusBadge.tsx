@@ -10,6 +10,7 @@ const STATUS_LABELS: Record<AgentOfficeStatus, string> = {
   partial: "一部完了",
   failed: "失敗",
   skipped: "未実行",
+  stale: "未反映",
   unknown: "不明",
 };
 
@@ -23,6 +24,7 @@ const STATUS_CLASSES: Record<AgentOfficeStatus, string> = {
   partial: "border-orange-300/50 bg-orange-300/15 text-orange-100",
   failed: "border-red-400/50 bg-red-400/15 text-red-100",
   skipped: "border-neutral-300/40 bg-neutral-300/10 text-neutral-200",
+  stale: "border-fuchsia-300/50 bg-fuchsia-300/15 text-fuchsia-100",
   unknown: "border-neutral-300/40 bg-neutral-300/10 text-neutral-200",
 };
 

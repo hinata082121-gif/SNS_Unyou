@@ -16,7 +16,12 @@
     "agent:office:render": "node scripts/agent-status/render-agent-office.mjs",
     "gmail:pool:validate": "node scripts/gmail/validate-gmail-pool.mjs",
     "gmail:pool:merge": "node scripts/gmail/merge-gmail-candidate-pool.mjs",
-    "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs"
+    "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs",
+    "threads:post:validate": "node scripts/threads/validate-thread-posts.mjs",
+    "threads:post:11": "node scripts/threads/publish-scheduled-thread.mjs --slot 11",
+    "threads:post:19": "node scripts/threads/publish-scheduled-thread.mjs --slot 19",
+    "threads:weekly:analyze": "node scripts/threads/weekly-viral-analysis.mjs",
+    "threads:status:record": "node scripts/threads/record-thread-status.mjs"
   },
   "dependencies": {
     "next": "16.2.6",

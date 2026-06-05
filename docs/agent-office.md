@@ -63,6 +63,39 @@ Vercel本番では、環境変数 `AGENT_OFFICE_ACCESS_KEY` とURLの `?key=...`
 - 人間確認が必要なタスクを上位に表示する
 - Gmail送信、Instagram操作、Google Sheets更新は実行しない
 
+### 3部門タブ
+
+`/agent-office` は、以下3部門をタブで切り替えて確認できるようにします。
+
+1. Gmail運用
+   - Gmail送信
+   - 返信確認
+   - 候補プール
+   - outbox
+   - Preflight
+   - Gmail営業メール改善
+2. Threads運用
+   - 11:00投稿
+   - 19:00投稿
+   - 投稿成功/失敗
+   - 投稿予定
+   - 週次バズ分析
+   - 投稿文改善
+   - Threads API接続状態
+   - blocked/needs_review
+3. 全体管理
+   - 重要アラート横断
+   - 今日の自動化状況
+   - stale/blocked/needs_review
+   - Gmail/Threads両方の次アクション
+   - 反映監査
+
+Threads運用タブは `threads_post`、`threads_daily_post`、`threads_weekly_analysis`、`threads_growth`、`threads_automation` を表示対象にします。
+全体管理タブではGmail/Threads/Instagram/市場分析/監視を横断し、`blocked`、`failed`、`needs_review`、`stale` を優先表示します。
+
+Threadsタブから投稿、返信、いいね、フォロー、API設定変更は実行しません。
+アクセストークン、投稿先ID、APIキー、APIレスポンスの秘密情報は表示しません。
+
 表示禁止:
 
 - 営業先名、メールアドレス、送信先URL

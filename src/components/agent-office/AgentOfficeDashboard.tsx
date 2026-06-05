@@ -1,4 +1,13 @@
-import type { AgentOfficeDashboardData, SafeAgentTask } from "@/lib/agent-office";
+"use client";
+
+import { useState } from "react";
+
+import type {
+  AgentOfficeDashboardData,
+  AgentOfficeDepartment,
+  AgentOfficeDepartmentKey,
+  SafeAgentTask,
+} from "@/lib/agent-office";
 import { AgentCard } from "./AgentCard";
 import { StatusBadge } from "./StatusBadge";
 
@@ -7,14 +16,26 @@ export function AgentOfficeDashboard({
 }: {
   data: AgentOfficeDashboardData;
 }) {
+  const [activeDepartmentKey, setActiveDepartmentKey] =
+    useState<AgentOfficeDepartmentKey>("overall");
+  const activeDepartment =
+    data.departments.find((department) => department.key === activeDepartmentKey) ||
+    data.departments[0];
+
   return (
     <main className="min-h-screen bg-[#08111f] text-white">
       <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <Header data={data} />
         <Summary data={data} />
-        <UrgentStrip tasks={data.urgentTasks} />
-        <PixelOffice tasks={data.featuredTasks} />
-        <Panels data={data} />
+        <DepartmentTabs
+          departments={data.departments}
+          activeKey={activeDepartment.key}
+          onChange={setActiveDepartmentKey}
+        />
+        <DepartmentOverview department={activeDepartment} />
+        <UrgentStrip tasks={activeDepartment.urgentTasks} />
+        <PixelOffice tasks={activeDepartment.tasks.slice(0, 5)} />
+        <Panels data={data} department={activeDepartment} />
         <SafetyNotes />
       </section>
     </main>
@@ -52,7 +73,7 @@ function Header({ data }: { data: AgentOfficeDashboardData }) {
           ICHI Agent Office
         </h1>
         <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
-          Hermes Agent、Codex、Apps Script、Gmail営業、Instagram運用の状態を表示専用で確認します。
+          Hermes Agent、Codex、Apps Script、Gmail営業、Threads運用、Instagram運用の状態を表示専用で確認します。
           自動業務の結果はAgent status更新とGit pushを通じて反映されます。
           ここから送信・投稿・Sheets更新は実行されません。
         </p>
@@ -65,6 +86,71 @@ function Header({ data }: { data: AgentOfficeDashboardData }) {
         <p className="mt-2 text-sm text-cyan-50">{data.topState}</p>
       </div>
     </header>
+  );
+}
+
+function DepartmentTabs({
+  departments,
+  activeKey,
+  onChange,
+}: {
+  departments: AgentOfficeDepartment[];
+  activeKey: AgentOfficeDepartmentKey;
+  onChange: (key: AgentOfficeDepartmentKey) => void;
+}) {
+  return (
+    <nav className="mt-4 grid gap-2 sm:grid-cols-3" aria-label="Agent Office部門">
+      {departments.map((department) => {
+        const active = department.key === activeKey;
+        return (
+          <button
+            key={department.key}
+            type="button"
+            onClick={() => onChange(department.key)}
+            className={`min-h-20 border p-4 text-left transition ${
+              active
+                ? "border-cyan-200/60 bg-cyan-200/15 text-white"
+                : "border-white/15 bg-slate-950/70 text-slate-300 hover:border-white/30"
+            }`}
+          >
+            <span className="text-sm font-black">{department.label}</span>
+            <span className="mt-2 block text-xs leading-5">{department.description}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function DepartmentOverview({ department }: { department: AgentOfficeDepartment }) {
+  const blockedCount = department.tasks.filter(
+    (task) => task.status === "blocked" || task.status === "failed" || task.status === "stale",
+  ).length;
+  const reviewCount = department.tasks.filter((task) => task.status === "needs_review").length;
+  const successCount = department.tasks.filter((task) => task.status === "success").length;
+
+  return (
+    <section className="mt-4 grid gap-3 border border-white/15 bg-slate-950/70 p-4 sm:grid-cols-4">
+      <div className="sm:col-span-2">
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-200">
+          {department.label}
+        </p>
+        <h2 className="mt-2 text-2xl font-black">{department.description}</h2>
+      </div>
+      <DepartmentMetric label="停止/未反映" value={blockedCount} />
+      <DepartmentMetric label="確認待ち" value={reviewCount} />
+      <DepartmentMetric label="完了" value={successCount} />
+      <DepartmentMetric label="合計" value={department.tasks.length} />
+    </section>
+  );
+}
+
+function DepartmentMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border border-white/10 bg-white/5 p-3">
+      <p className="text-xs font-bold text-slate-400">{label}</p>
+      <p className="mt-1 font-number text-3xl font-black">{value}</p>
+    </div>
   );
 }
 
@@ -194,20 +280,29 @@ function Workstation({ task }: { task: SafeAgentTask }) {
   );
 }
 
-function Panels({ data }: { data: AgentOfficeDashboardData }) {
+function Panels({
+  data,
+  department,
+}: {
+  data: AgentOfficeDashboardData;
+  department: AgentOfficeDepartment;
+}) {
   return (
     <section className="mt-4 grid gap-4 lg:grid-cols-[1.5fr_0.9fr]">
       <div className="grid gap-4">
-        {data.featuredTasks.map((task) => (
+        {department.tasks.slice(0, 6).map((task) => (
           <AgentCard key={task.id} task={task} />
         ))}
       </div>
       <aside className="grid content-start gap-4">
         {data.replyCheckTask ? <ReplyCheckPanel task={data.replyCheckTask} /> : null}
-        <ActionPanel title="人間確認が必要" tasks={data.humanReviewTasks} />
-        <ActionPanel title="次にやること" tasks={data.nextActions} />
-        <CategoryPanel data={data} />
-        <TaskList tasks={data.tasks.slice(0, 10)} />
+        <ActionPanel title="人間確認が必要" tasks={department.urgentTasks} />
+        <ActionPanel
+          title="次にやること"
+          tasks={department.tasks.filter((task) => task.nextAction && task.status !== "success").slice(0, 6)}
+        />
+        <CategoryPanel groups={department.categoryGroups} />
+        <TaskList tasks={department.tasks.slice(0, 10)} />
       </aside>
     </section>
   );
@@ -262,12 +357,12 @@ function ReplyMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CategoryPanel({ data }: { data: AgentOfficeDashboardData }) {
+function CategoryPanel({ groups }: { groups: AgentOfficeDepartment["categoryGroups"] }) {
   return (
     <section className="border border-white/15 bg-slate-950/80 p-4">
       <h2 className="text-lg font-black text-white">業務カテゴリ</h2>
       <div className="mt-4 space-y-3">
-        {data.categoryGroups.map((group) => {
+        {groups.map((group) => {
           const lead = group.tasks[0];
           return (
             <div key={group.key} className="border border-white/10 bg-white/5 p-3">
@@ -345,7 +440,7 @@ function SafetyNotes() {
       <h2 className="font-black">Safety Notes</h2>
       <ul className="mt-2 grid gap-1 sm:grid-cols-2">
         <li>このページは表示専用です。</li>
-        <li>Gmail送信、自動返信、Instagram操作は実行しません。</li>
+        <li>Gmail送信、Threads投稿、自動返信、Instagram操作は実行しません。</li>
         <li>営業先名、メールアドレス、URL、秘密情報は表示しません。</li>
         <li>`data/gmail/`、`data/prospects/`、`tmp/` は読み込みません。</li>
       </ul>
