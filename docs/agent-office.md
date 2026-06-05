@@ -313,3 +313,24 @@ Agent Officeには原因別件数だけを反映し、メールアドレス、�
 `readyRows=29`、`validationErrorCount=1` のように1件だけ落ちた場合、Agent Officeには行番号とreason codeだけを表示対象にします。
 該当行の候補名、宛先、本文は表示しません。
 修正または差し替え後は `expectedReadyRowsAfterFix=30` として、再貼り付けとPreflight再実行をnextActionに残します。
+
+## 2026-06-05 Gmail営業30件送信チェック
+
+2026-06-05 12:00チェックでは、既存Preflight記録が `readyCount=29` かつ `blockedReason=outbox_validation_errors,exact_ready_count_not_met` のため、Gmail本番送信へ進めず `blocked` として記録しました。
+
+Agent Officeと `/agent-office` では、`data/agent-status/tasks/gmail-daily-sales-send-2026-06-05.json` を表示対象にします。
+
+安全な表示項目:
+
+- Preflight: failed / blocked
+- readyCount: 29
+- targetSendCount: 30
+- remainingQuota: 100
+- sheetConnected: true
+- 送信実行: なし
+- processed: 0
+- failed: 0
+- skipped: 0
+- nextAction: r2 TSV再貼り付け、Apps Script診断、Preflight再確認
+
+条件達成までGmail本番送信、Google Sheets送信済み更新、自動返信、Apps Scriptトリガー操作は行いません。
