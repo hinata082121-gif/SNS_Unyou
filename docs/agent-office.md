@@ -96,6 +96,16 @@ Threads運用タブは `threads_post`、`threads_daily_post`、`threads_weekly_a
 Threadsタブから投稿、返信、いいね、フォロー、API設定変更は実行しません。
 アクセストークン、投稿先ID、APIキー、APIレスポンスの秘密情報は表示しません。
 
+Threads運用3タスクはHermesへ登録済みです。
+
+- 11:00ノウハウ投稿: `2c6a2309255f`、cron `0 11 * * *`、次回 `2026-06-06T11:00:00+09:00`
+- 19:00共感・導線投稿: `d02c609665e8`、cron `0 19 * * *`、次回 `2026-06-06T19:00:00+09:00`
+- 金曜20:00バズ投稿分析: `807bcd30473d`、cron `0 20 * * 5`、次回 `2026-06-12T20:00:00+09:00`
+
+Threads運用タブでは、`postPrepared`、`postValidated`、`posted`、`blockedReason`、`publishEnabled`、`dryRun`、`autoReplyEnabled=false`、`autoLikeEnabled=false`、`autoFollowEnabled=false` を確認します。
+全体管理タブでは、Threadsの `blocked`、`needs_review`、`stale` もGmailと同じ重要アラートとして横断表示します。
+API未設定時は投稿せず `blocked` でよく、初日から完全自動化する場合も `THREADS_PUBLISH_ENABLED=true` と `THREADS_DRY_RUN=false` の設定確認を必須にします。
+
 表示禁止:
 
 - 営業先名、メールアドレス、送信先URL

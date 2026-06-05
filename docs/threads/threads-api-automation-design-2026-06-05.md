@@ -35,6 +35,15 @@ API接続が未設定の場合は投稿をblockedにし、投稿文だけ生成�
 
 完全自動化へ移行するのは、API設定、投稿先確認、dry-run検証、Agent Office反映が完了した後に限る。
 
+## Hermes登録済みタスク
+
+- 毎日11:00: `2c6a2309255f` / `0 11 * * *` / 次回 `2026-06-06T11:00:00+09:00`
+- 毎日19:00: `d02c609665e8` / `0 19 * * *` / 次回 `2026-06-06T19:00:00+09:00`
+- 金曜20:00: `807bcd30473d` / `0 20 * * 5` / 次回 `2026-06-12T20:00:00+09:00`
+
+Agent OfficeのThreads運用タブでは、`postPrepared`、`postValidated`、`posted`、`blockedReason`、`publishEnabled`、`dryRun`、`autoReplyEnabled=false`、`autoLikeEnabled=false`、`autoFollowEnabled=false` を安全なmetricsとして確認する。
+全体管理タブではThreadsの `blocked`、`needs_review`、`stale` も横断表示する。
+
 ## 安全検査
 
 - 1投稿500文字以内を基本にする

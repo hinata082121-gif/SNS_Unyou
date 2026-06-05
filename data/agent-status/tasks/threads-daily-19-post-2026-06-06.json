@@ -1,0 +1,38 @@
+{
+  "id": "threads-daily-19-post-2026-06-06",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 19:00 共感・導線投稿",
+  "category": "threads_daily_post",
+  "status": "scheduled",
+  "phase": "Hermes登録済み・初回実行待ち",
+  "progress": 70,
+  "priority": "high",
+  "createdAt": "2026-06-05T00:00:00.000Z",
+  "updatedAt": "2026-06-05T22:23:28+09:00",
+  "summary": "共感・問いかけ・無料SNS診断導線のThreads投稿を毎日19:00に実行するHermesタスク。API未設定またはpublish無効時は投稿せずblockedとして記録する。",
+  "metrics": {
+    "jobId": "d02c609665e8",
+    "cron": "0 19 * * *",
+    "nextRunAt": "2026-06-06T19:00:00+09:00",
+    "postPrepared": false,
+    "postValidated": false,
+    "posted": false,
+    "publishEnabled": false,
+    "dryRun": true,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "初回実行時に投稿文を検証し、API設定とpublish/dryRun設定を確認する。未設定なら投稿せずblockedとしてAgent Officeへ記録する。",
+  "safeToAct": true,
+  "notes": [
+    "初回実行待ち",
+    "今回Threads投稿なし",
+    "自動返信/自動いいね/自動フォローなし",
+    "秘密情報なし"
+  ],
+  "artifacts": [
+    "docs/hermes/threads/hermes-task-threads-daily-19-post-2026-06-05.md"
+  ]
+}

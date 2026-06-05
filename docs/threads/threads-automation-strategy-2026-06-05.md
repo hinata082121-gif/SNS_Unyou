@@ -71,6 +71,19 @@ Gmail営業は個別接触、Threadsは公開発信による認知・信頼形�
 
 無断転載や本文丸コピーは行わない。
 
+## Hermes登録状況
+
+Threads運用3タスクはHermes Agentへ登録済みです。
+
+| タスク | ジョブID | cron | 次回実行 | 状態 |
+|---|---|---|---|---|
+| ICHI Threads 毎日11時 ノウハウ投稿 | `2c6a2309255f` | `0 11 * * *` | `2026-06-06T11:00:00+09:00` | 有効 / scheduled |
+| ICHI Threads 毎日19時 共感・導線投稿 | `d02c609665e8` | `0 19 * * *` | `2026-06-06T19:00:00+09:00` | 有効 / scheduled |
+| ICHI Threads 金曜20時 バズ投稿分析・投稿文改善 | `807bcd30473d` | `0 20 * * 5` | `2026-06-12T20:00:00+09:00` | 有効 / scheduled |
+
+初日から完全自動化する場合でも、`THREADS_PUBLISH_ENABLED=true` と `THREADS_DRY_RUN=false` の設定確認が必須です。
+API未設定時は投稿せず `blocked` としてAgent Officeに反映します。
+
 ## 禁止事項
 
 - 誇大表現
@@ -97,6 +110,15 @@ Threads運用は `/agent-office` の「Threads運用」タブに表示する。
 - 週次バズ分析の状態
 - Threads API接続設定の有無
 - 次アクション
+- postPrepared
+- postValidated
+- posted
+- blockedReason
+- publishEnabled
+- dryRun
+- autoReplyEnabled=false
+- autoLikeEnabled=false
+- autoFollowEnabled=false
 
 表示しないもの:
 

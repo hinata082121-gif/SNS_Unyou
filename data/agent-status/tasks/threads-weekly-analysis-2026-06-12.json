@@ -1,0 +1,36 @@
+{
+  "id": "threads-weekly-analysis-2026-06-12",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads金曜20時 バズ投稿分析・投稿文改善",
+  "category": "threads_weekly_analysis",
+  "status": "scheduled",
+  "phase": "Hermes登録済み・初回実行待ち",
+  "progress": 70,
+  "priority": "high",
+  "createdAt": "2026-06-05T00:00:00.000Z",
+  "updatedAt": "2026-06-05T22:23:28+09:00",
+  "summary": "毎週金曜20:00に、公開情報の安全な範囲でバズ投稿傾向を分析し、翌週のThreads投稿文改善案を作成するHermesタスク。",
+  "metrics": {
+    "jobId": "807bcd30473d",
+    "cron": "0 20 * * 5",
+    "nextRunAt": "2026-06-12T20:00:00+09:00",
+    "weeklyAnalysisScheduled": true,
+    "reportCreated": false,
+    "recommendationCount": 0,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "初回実行後、公開情報の安全な範囲で分析し、投稿文改善案をneeds_reviewとしてAgent Officeへ反映する。",
+  "safeToAct": true,
+  "notes": [
+    "初回実行待ち",
+    "投稿文丸コピーなし",
+    "自動返信/自動いいね/自動フォローなし",
+    "秘密情報なし"
+  ],
+  "artifacts": [
+    "docs/hermes/threads/hermes-task-threads-weekly-viral-analysis-2026-06-05.md"
+  ]
+}
