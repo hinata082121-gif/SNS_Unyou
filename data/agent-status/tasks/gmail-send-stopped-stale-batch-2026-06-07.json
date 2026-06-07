@@ -1,0 +1,44 @@
+{
+  "id": "gmail-send-stopped-stale-batch-2026-06-07",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail送信停止: stale batch診断",
+  "category": "gmail_send",
+  "status": "blocked",
+  "phase": "6/5固定batchIdにより6/6・6/7送信停止を確認",
+  "progress": 60,
+  "priority": "high",
+  "createdAt": "2026-06-07T00:00:00.000Z",
+  "updatedAt": "2026-06-07T18:44:40+09:00",
+  "summary": "Apps Script診断で2026-06-07時点でも2026-06-05用のsendDate/sendBatchIdを参照しており、6/6・6/7のGmail営業送信が停止していたことを確認。古いバッチの再送はせず、日次ローテーション修正と6/8分outbox/Preflight確認へ進む。",
+  "metrics": {
+    "sentOn20260605": 30,
+    "sentOn20260606": 0,
+    "sentOn20260607": 0,
+    "expectedSendDateAtDiagnosis": "2026-06-05",
+    "currentDiagnosisDate": "2026-06-07",
+    "staleSendDate": true,
+    "expectedSendBatchIdAtDiagnosis": "gmail-sales-2026-06-05-r2-2026-06-05",
+    "staleBatchId": true,
+    "readyCount": 0,
+    "blockedReason": "no_ready_rows,exact_ready_count_not_met,batch_already_sent",
+    "safeToSend": false,
+    "shouldResendOldBatch": false
+  },
+  "nextAction": "Apps Scriptの日次sendDate/sendBatchIdローテーション修正を反映し、2026-06-08分outboxとPreflightでreadyCount=30 / blockedReason=\"\"を確認する",
+  "safeToAct": true,
+  "notes": [
+    "6/5送信済み行をreadyへ戻さない",
+    "古いsendBatchIdを再送しない",
+    "runDailyGmailSalesSend()は今回実行しない",
+    "Gmail送信なし",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "Google Sheets更新なし",
+    "秘密情報・メールアドレス・営業先名・返信本文は表示しない"
+  ],
+  "artifacts": [
+    "docs/gmail/gmail-recovery-stale-batch-2026-06-07.md",
+    "apps-script/gmail-sales-automation/Code.gs"
+  ]
+}

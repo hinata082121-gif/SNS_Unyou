@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_POOL_FILE, OUTBOX_HEADERS, asCandidates, buildBatchId, candidateEmail, candidateName, dedupeKey, hasOptOutText, isAvailable, isValidEmail, normalizeEmailBody, normalizeEmailSubject, parseArgs, readJson, safeSummary, sourceDomain, toTsv, writeJson } from './pool-utils.mjs';
+import { DEFAULT_POOL_FILE, OUTBOX_HEADERS, addDaysToDate, asCandidates, buildBatchId, candidateEmail, candidateName, dedupeKey, hasOptOutText, isAvailable, isValidEmail, normalizeEmailBody, normalizeEmailSubject, parseArgs, readJson, resolveDateArg, safeSummary, sourceDomain, toTsv, writeJson } from './pool-utils.mjs';
 
 function printHelp() {
-  console.log(`Usage: node scripts/gmail/select-daily-gmail-outbox.mjs --date YYYY-MM-DD --next-action-date YYYY-MM-DD [--pool data/gmail/pool/gmail-ready-candidate-pool.json] [--history-dir data/gmail/outbox]
+  console.log(`Usage: node scripts/gmail/select-daily-gmail-outbox.mjs [--date YYYY-MM-DD|today|tomorrow] [--next-action-date YYYY-MM-DD] [--pool data/gmail/pool/gmail-ready-candidate-pool.json] [--history-dir data/gmail/outbox]
 
-Selects exactly 30 available candidates and writes Git-ignored outbox JSON/TSV. Does not send email.`);
+Selects exactly 30 available candidates and writes Git-ignored outbox JSON/TSV. Defaults to tomorrow in JST. Does not send email.`);
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -13,14 +13,9 @@ if (args.help || args.h) {
   printHelp();
   process.exit(0);
 }
-if (!args.date || !args['next-action-date']) {
-  printHelp();
-  process.exit(1);
-}
-
 const poolFile = args.pool || DEFAULT_POOL_FILE;
-const sendDate = args.date;
-const nextActionDate = args['next-action-date'];
+const sendDate = resolveDateArg(args.date, 'tomorrow');
+const nextActionDate = args['next-action-date'] || addDaysToDate(sendDate, 2);
 const sendBatchId = buildBatchId(sendDate);
 const historyDir = args['history-dir'] || 'data/gmail/outbox';
 const pool = readJson(poolFile, { candidates: [] });
@@ -41,6 +36,11 @@ const summary = {
   outboxCreated: false,
   sheetsReadyTsvCreated: false
 };
+
+if (!sendDate || !nextActionDate) {
+  printHelp();
+  process.exit(1);
+}
 
 for (const candidate of candidates) {
   if (!isAvailable(candidate)) continue;

@@ -78,6 +78,21 @@ outbox本体、TSV本文、メールアドレス、営業先名はGitに追加�
 ## batch_already_sent発生時の対応
 
 Preflightで `batch_already_sent` が出た場合、同一 `sendBatchId` は再利用しない。
+
+## 2026-06-07 stale batch停止の追加対策
+
+2026-06-07の診断で、Apps Scriptが2026-06-05用の `expectedSendDate` と緊急r2 `expectedSendBatchId` を参照したままになっており、6/6・6/7の送信が停止していたことを確認した。
+6/5分は送信済みであり、送信済み行をreadyへ戻したり、古いbatchIdを再利用したりしない。
+
+追加対策:
+
+- 12:00送信チェックはJST当日を使う
+- 17:20翌日outbox準備はJST翌日を使う
+- `SEND_DATE` / `SEND_BATCH_ID` が古い場合は診断で `staleSendDate` / `staleBatchId` を出す
+- 通常運用では古い6/5 emergency batchを6/6以降へ持ち越さない
+- `batch_already_sent` が出た場合は再送せず、新しい日付または新しいbatchIdのoutboxを準備する
+- expectedSendDateが当日と一致しない場合はblockedとして扱う
+- Apps Script診断ログの `dryRun`、`liveSendEnabled`、`autoSendEnabled` が実際の送信可否の基準であり、人間の認識より優先する
 旧batchIdは使用禁止にし、同じ候補セットを使う場合でも `gmail-sales-YYYY-MM-DD-r2` のように新しいbatchIdでoutbox/TSVを再作成する。
 
 2026-06-05では `gmail-sales-2026-06-05` が使用済み扱いになったため、`gmail-sales-2026-06-05-r2` を発行した。

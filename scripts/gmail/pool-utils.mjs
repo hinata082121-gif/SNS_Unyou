@@ -120,6 +120,31 @@ export function buildBatchId(sendDate) {
   return `gmail-sales-${sendDate}`;
 }
 
+export function jstDate(daysFromToday = 0) {
+  const now = new Date();
+  const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const base = new Date(Date.UTC(
+    jstNow.getUTCFullYear(),
+    jstNow.getUTCMonth(),
+    jstNow.getUTCDate() + daysFromToday
+  ));
+  return base.toISOString().slice(0, 10);
+}
+
+export function addDaysToDate(dateText, days) {
+  const date = new Date(`${dateText}T00:00:00+09:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+export function resolveDateArg(value, fallbackMode = 'today') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'today') return jstDate(0);
+  if (raw === 'tomorrow') return jstDate(1);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return fallbackMode === 'tomorrow' ? jstDate(1) : jstDate(0);
+}
+
 export function safeSummary(summary) {
   return JSON.stringify(summary, null, 2);
 }

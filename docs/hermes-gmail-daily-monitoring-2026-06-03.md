@@ -179,3 +179,18 @@ Hermesは古いPreflight blockedや診断待ちを残さず、Agent Statusを送
 
 送信後はGoogle Sheets側で対象行が `sent` へ変わるため、readyRows=0やstatusMismatchCount=30が出ても、送信後状態として正常な場合があります。
 Hermesはこの状態を送信前Preflight失敗として扱わず、再送信禁止、返信確認、翌日準備、反映監査をnextActionにします。
+
+## 2026-06-07 stale batch停止監視
+
+2026-06-07のApps Script診断では、通常日次運用が2026-06-05の緊急r2 batchを参照したままになっており、6/6・6/7の送信停止が確認されました。
+
+Hermesは以下を監視します。
+
+- 12:00送信チェックはJST当日を使っているか
+- 17:20翌日outbox準備はJST翌日を使っているか
+- 6/5の緊急r2 batchが6/6以降へ持ち越されていないか
+- `staleSendDate` / `staleBatchId` がtrueの場合にblocked化されているか
+- `batch_already_sent` が出た場合に再送ではなく新日付outbox準備がnextActionになっているか
+- Apps Script診断ログの `dryRun` / `liveSendEnabled` / `autoSendEnabled` がAgent Officeの表示と一致しているか
+
+送信済み行をreadyへ戻さず、古いsendBatchIdを再利用せず、2026-06-08分は新しい当日batchでPreflightを確認します。

@@ -103,15 +103,27 @@ function runPreflightCheckOnly() {
   const result = runPreflight_(false);
   appendSafeLog_({
     event: 'preflight_check_only',
+    currentJstDate: result.config.currentJstDate,
+    expectedSendDate: result.config.sendDate,
+    expectedSendBatchId: result.batchId,
+    sendDateSource: result.config.sendDateSource,
+    sendBatchIdSource: result.config.sendBatchIdSource,
+    staleSendDate: result.config.staleSendDate,
+    staleBatchId: result.config.staleBatchId,
     dryRun: result.dryRun,
     liveSendEnabled: result.liveSendEnabled,
+    autoSendEnabled: result.config.autoSendEnabled,
     dailySendLimit: result.dailySendLimit,
     remainingQuota: result.remainingQuota,
     targetCount: result.targetCount,
     readyCount: result.readyCount,
     blockedReason: result.blockedReason,
     sheetConnected: result.sheetConnected,
-    safeToSend: false
+    safeToSend: false,
+    publishAllowed: result.publishAllowed,
+    canPrepareOutbox: result.canPrepareOutbox,
+    canSendToday: result.canSendToday,
+    recommendedNextAction: result.recommendedNextAction
   });
 }
 
@@ -133,11 +145,29 @@ function runPreflightDiagnosticsOnly() {
   const summary = buildPreflightDiagnosticsSummary_(rows, config, batchId);
   appendSafeLog_(Object.assign({
     event: 'preflight_diagnostics_only',
+    currentJstDate: config.currentJstDate,
     targetCount: Math.min(config.dailySendLimit, 30),
     sheetConnected,
     sheetLoadFailed: loadFailed,
     expectedSendDate: config.sendDate,
-    expectedSendBatchId: batchId
+    expectedSendBatchId: batchId,
+    sendDateSource: config.sendDateSource,
+    sendBatchIdSource: config.sendBatchIdSource,
+    staleSendDate: config.staleSendDate,
+    staleBatchId: config.staleBatchId,
+    dryRun: config.dryRun,
+    liveSendEnabled: config.liveSendEnabled,
+    autoSendEnabled: config.autoSendEnabled,
+    publishAllowed: !config.dryRun && config.liveSendEnabled && config.autoSendEnabled,
+    canPrepareOutbox: summary.readyRows === Math.min(config.dailySendLimit, 30),
+    canSendToday: summary.readyRows === Math.min(config.dailySendLimit, 30) && !config.dryRun && config.liveSendEnabled,
+    blockedReason: buildDiagnosticsBlockedReason_(summary, config, batchId),
+    recommendedNextAction: buildRecommendedNextAction_(
+      buildDiagnosticsBlockedReason_(summary, config, batchId),
+      summary.readyRows,
+      Math.min(config.dailySendLimit, 30),
+      config
+    )
   }, summary));
 }
 
@@ -145,6 +175,13 @@ function runScheduledPreflight() {
   const result = runPreflight_(false);
   appendAutomationStatusLog_({
     event: 'scheduled_preflight_checked',
+    currentJstDate: result.config.currentJstDate,
+    expectedSendDate: result.config.sendDate,
+    expectedSendBatchId: result.batchId,
+    sendDateSource: result.config.sendDateSource,
+    sendBatchIdSource: result.config.sendBatchIdSource,
+    staleSendDate: result.config.staleSendDate,
+    staleBatchId: result.config.staleBatchId,
     dryRun: result.dryRun,
     liveSendEnabled: result.liveSendEnabled,
     autoSendEnabled: result.config.autoSendEnabled,
@@ -155,7 +192,11 @@ function runScheduledPreflight() {
     sendBatchId: result.batchId,
     blockedReason: result.blockedReason,
     sheetConnected: result.sheetConnected,
-    safeToSend: false
+    safeToSend: false,
+    publishAllowed: result.publishAllowed,
+    canPrepareOutbox: result.canPrepareOutbox,
+    canSendToday: result.canSendToday,
+    recommendedNextAction: result.recommendedNextAction
   });
 }
 
@@ -758,11 +799,77 @@ function appendSafeLog_(event) {
   Logger.log(JSON.stringify(safe));
 }
 
+function resolveDailySendContext_(props) {
+  const timezone = Session.getScriptTimeZone() || 'Asia/Tokyo';
+  const currentJstDate = Utilities.formatDate(new Date(), timezone, 'yyyy-MM-dd');
+  const prefix = props.getProperty('SEND_BATCH_ID_PREFIX') || 'gmail-sales';
+  const rawSendDate = String(props.getProperty('SEND_DATE') || '').trim();
+  const rawBatchId = String(props.getProperty('SEND_BATCH_ID') || '').trim();
+  const allowStaleDateOverride = props.getProperty('SEND_DATE_OVERRIDE') === 'true';
+  const allowStaleBatchOverride = props.getProperty('SEND_BATCH_ID_OVERRIDE') === 'true';
+  const normalizedRawDate = normalizeDateText_(rawSendDate);
+  const staleSendDate = Boolean(normalizedRawDate && normalizedRawDate !== currentJstDate);
+  let sendDate = currentJstDate;
+  let sendDateSource = 'auto_today_jst';
+  let usingStaleSendDate = false;
+
+  if (normalizedRawDate) {
+    if (!staleSendDate) {
+      sendDate = normalizedRawDate;
+      sendDateSource = 'script_property';
+    } else if (allowStaleDateOverride) {
+      sendDate = normalizedRawDate;
+      sendDateSource = 'override';
+      usingStaleSendDate = true;
+    }
+  }
+
+  const batchDateMatch = rawBatchId.match(/\d{4}-\d{2}-\d{2}/);
+  const batchDate = batchDateMatch ? batchDateMatch[0] : '';
+  const staleBatchId = Boolean(batchDate && batchDate !== sendDate);
+  let sendBatchId = prefix + '-' + sendDate;
+  let sendBatchIdSource = 'auto_daily';
+  let usingStaleBatchId = false;
+
+  if (rawBatchId) {
+    if (batchDate) {
+      if (!staleBatchId) {
+        sendBatchId = rawBatchId;
+        sendBatchIdSource = 'script_property';
+      } else if (allowStaleBatchOverride) {
+        sendBatchId = rawBatchId;
+        sendBatchIdSource = 'override';
+        usingStaleBatchId = true;
+      }
+    } else if (rawBatchId === prefix) {
+      sendBatchId = rawBatchId + '-' + sendDate;
+      sendBatchIdSource = 'auto_daily';
+    } else if (allowStaleBatchOverride) {
+      sendBatchId = rawBatchId;
+      sendBatchIdSource = 'override';
+    } else {
+      sendBatchId = rawBatchId + '-' + sendDate;
+      sendBatchIdSource = 'auto_daily';
+    }
+  }
+
+  return {
+    currentJstDate,
+    sendDate,
+    sendBatchId,
+    sendDateSource,
+    sendBatchIdSource,
+    staleSendDate,
+    staleBatchId,
+    usingStaleSendDate,
+    usingStaleBatchId
+  };
+}
+
 function getConfig_() {
   const props = PropertiesService.getScriptProperties();
   const dailyLimit = Number(props.getProperty('DAILY_SEND_LIMIT') || '30');
-  const sendDate = props.getProperty('SEND_DATE') || getToday_();
-  const sendBatchId = props.getProperty('SEND_BATCH_ID') || '';
+  const sendContext = resolveDailySendContext_(props);
   return {
     sheetId: props.getProperty('SHEET_ID'),
     sheetName: props.getProperty('SHEET_NAME') || 'sales',
@@ -775,12 +882,19 @@ function getConfig_() {
     sendHour: normalizeHour_(props.getProperty('SEND_HOUR'), 12),
     postSendCheckHour: normalizeHour_(props.getProperty('POST_SEND_CHECK_HOUR'), 12),
     sendBatchIdPrefix: props.getProperty('SEND_BATCH_ID_PREFIX') || 'gmail-sales',
-    sendBatchId,
+    sendBatchId: sendContext.sendBatchId,
+    currentJstDate: sendContext.currentJstDate,
+    sendDateSource: sendContext.sendDateSource,
+    sendBatchIdSource: sendContext.sendBatchIdSource,
+    staleSendDate: sendContext.staleSendDate,
+    staleBatchId: sendContext.staleBatchId,
+    usingStaleSendDate: sendContext.usingStaleSendDate,
+    usingStaleBatchId: sendContext.usingStaleBatchId,
     requireExactReadyCount: props.getProperty('REQUIRE_EXACT_READY_COUNT') !== 'false',
     requireOptOutText: props.getProperty('REQUIRE_OPT_OUT_TEXT') !== 'false',
     requireUniqueBatch: props.getProperty('REQUIRE_UNIQUE_BATCH') !== 'false',
     maxFailuresBeforeStop: Math.max(1, Number(props.getProperty('MAX_FAILURES_BEFORE_STOP') || '1')),
-    sendDate,
+    sendDate: sendContext.sendDate,
     nextActionDate: props.getProperty('NEXT_ACTION_DATE') || '',
     fromName: props.getProperty('FROM_NAME') || 'ICHI Social',
     replySignature: props.getProperty('REPLY_SIGNATURE') || 'ICHI Social',
@@ -1139,6 +1253,12 @@ function runPreflight_(forSend) {
   if (config.requireUniqueBatch && !verifyBatchNotSent_(batchId)) {
     blockedReasons.push('batch_already_sent');
   }
+  if (config.usingStaleSendDate) {
+    blockedReasons.push('stale_send_date_override');
+  }
+  if (config.usingStaleBatchId) {
+    blockedReasons.push('stale_batch_id_override');
+  }
   if (forSend && config.dryRun) {
     blockedReasons.push('dry_run_enabled');
   }
@@ -1148,6 +1268,9 @@ function runPreflight_(forSend) {
 
   const blockedReason = blockedReasons.join(',') || '';
   const safeToSend = forSend && blockedReasons.length === 0 && !config.dryRun && config.liveSendEnabled;
+  const publishAllowed = !config.dryRun && config.liveSendEnabled && config.autoSendEnabled;
+  const canPrepareOutbox = sheetConnected && remainingQuota >= targetCount;
+  const canSendToday = blockedReasons.length === 0 && !config.dryRun && config.liveSendEnabled;
 
   return {
     config,
@@ -1161,8 +1284,56 @@ function runPreflight_(forSend) {
     batchId,
     blockedReason,
     sheetConnected,
-    safeToSend
+    safeToSend,
+    publishAllowed,
+    canPrepareOutbox,
+    canSendToday,
+    recommendedNextAction: buildRecommendedNextAction_(blockedReason, readyCount, targetCount, config)
   };
+}
+
+function buildDiagnosticsBlockedReason_(summary, config, batchId) {
+  const reasons = [];
+  const targetCount = Math.min(config.dailySendLimit, 30);
+  if (summary.validationErrorCount > 0) {
+    reasons.push('outbox_validation_errors');
+  }
+  if (summary.readyRows === 0) {
+    reasons.push('no_ready_rows');
+  }
+  if (config.requireExactReadyCount && summary.readyRows !== targetCount) {
+    reasons.push('exact_ready_count_not_met');
+  }
+  if (config.requireUniqueBatch && !verifyBatchNotSent_(batchId)) {
+    reasons.push('batch_already_sent');
+  }
+  if (config.usingStaleSendDate) {
+    reasons.push('stale_send_date_override');
+  }
+  if (config.usingStaleBatchId) {
+    reasons.push('stale_batch_id_override');
+  }
+  return reasons.join(',') || '';
+}
+
+function buildRecommendedNextAction_(blockedReason, readyCount, targetCount, config) {
+  const reason = String(blockedReason || '');
+  if (reason.indexOf('batch_already_sent') !== -1) {
+    return 'Do not resend the old batch. Prepare a new date/new sendBatchId outbox and rerun preflight.';
+  }
+  if (config.usingStaleSendDate || config.usingStaleBatchId) {
+    return 'Disable stale override or prepare an outbox that matches the override date and batchId.';
+  }
+  if (config.staleSendDate || config.staleBatchId) {
+    return 'Remove stale SEND_DATE/SEND_BATCH_ID properties or confirm the auto JST daily values before preflight.';
+  }
+  if (readyCount !== targetCount) {
+    return 'Prepare and paste exactly 30 ready rows for the expected sendDate and sendBatchId, then rerun preflight.';
+  }
+  if (config.dryRun || !config.liveSendEnabled || !config.autoSendEnabled) {
+    return 'Preflight rows are ready. Enable production properties only after human approval.';
+  }
+  return 'Ready for the configured daily send window.';
 }
 
 function assertMessageSafe_(message) {
@@ -1304,7 +1475,7 @@ function hashValue_(value) {
 
 function buildSendBatchId_(dateText) {
   const config = getConfig_();
-  if (config.sendBatchId) {
+  if (!dateText || normalizeDateText_(dateText) === config.sendDate) {
     return config.sendBatchId;
   }
   return config.sendBatchIdPrefix + '-' + normalizeDateText_(dateText || config.sendDate);

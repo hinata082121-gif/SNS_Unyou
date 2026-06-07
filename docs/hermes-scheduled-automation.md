@@ -1723,6 +1723,30 @@ Threads投稿は、`THREADS_PUBLISH_ENABLED=true` かつ `THREADS_DRY_RUN=false`
 Threads運用でも、自動返信、自動いいね、自動フォロー、無断転載、ログイン画面操作、ブラウザ操作による投稿は行わない。
 APIトークン、投稿先ID、App Secret、Client Secret、APIレスポンスの秘密情報は表示・保存・Git追加しない。
 
+### Gmail日次batchローテーション監視
+
+Gmail営業30件/日の通常運用では、12:00の送信チェックはJST当日を対象にし、sendBatchIdは原則 `gmail-sales-YYYY-MM-DD` とする。
+17:20の翌日outbox準備タスクはJST翌日を対象にする。
+
+2026-06-05の緊急r2 batchは6/5専用であり、6/6以降へ持ち越さない。
+HermesはPreflight/診断ログで以下を確認する。
+
+- `currentJstDate`
+- `expectedSendDate`
+- `expectedSendBatchId`
+- `sendDateSource`
+- `sendBatchIdSource`
+- `staleSendDate`
+- `staleBatchId`
+- `dryRun`
+- `liveSendEnabled`
+- `autoSendEnabled`
+- `blockedReason`
+
+`expectedSendDate` が当日と一致しない場合、または `batch_already_sent` が出た場合は、古いbatchを再送しない。
+送信済み行をreadyへ戻さず、新しい日付または新しいbatchIdのoutbox準備をnextActionにする。
+Apps Script診断ログに出る実際の `dryRun` / `liveSendEnabled` / `autoSendEnabled` を送信可否の基準とする。
+
 ## 禁止事項
 
 - Gmail送信はApps Scriptの安全条件、sendBatchId重複防止、30件ちょうどのready確認、Gmail残クォータ確認を満たす場合のみ行う

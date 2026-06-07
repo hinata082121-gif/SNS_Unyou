@@ -406,3 +406,23 @@ Agent Officeと `/agent-office` では、`data/agent-status/tasks/gmail-daily-sa
 - nextAction: 再送信せず、送信後確認、返信確認、翌日準備、反映監査へ進む
 
 同一sendBatchIdでの再送信、Google Sheets送信済み二重更新、自動返信、Apps Scriptトリガー操作は行いません。
+
+## Gmail stale batch停止表示
+
+2026-06-07の診断で、通常日次運用が2026-06-05用のsendDate/sendBatchIdを参照していたため、6/6・6/7の送信停止をAgent Officeで表示します。
+
+表示する安全な項目:
+
+- `currentDiagnosisDate`
+- `expectedSendDateAtDiagnosis`
+- `expectedSendBatchIdAtDiagnosis`
+- `staleSendDate`
+- `staleBatchId`
+- `readyCount`
+- `blockedReason`
+- `safeToSend`
+- `shouldResendOldBatch`
+- `nextAction`
+
+`shouldResendOldBatch=false` を明示し、送信済み行をreadyへ戻さず、新しい日付のoutbox/Preflightへ進むことを表示します。
+Apps Script診断ログの `dryRun`、`liveSendEnabled`、`autoSendEnabled` は、/agent-office上の送信可否判断の基準として扱います。

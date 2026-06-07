@@ -29,6 +29,17 @@
 - `/agent-office` にblocked/failedの重要アラートが出ていない
 - 人間が初回自動化開始を承認している
 
+## 日次sendDate/sendBatchIdローテーション
+
+通常運用では、Apps Scriptの12:00送信チェックはJST当日を `SEND_DATE` として扱い、`SEND_BATCH_ID` は原則 `gmail-sales-YYYY-MM-DD` を使う。
+17:20の翌日outbox準備タスクはJST翌日を対象にする。
+
+2026-06-05の緊急r2 batchは6/5専用であり、6/6以降へ持ち越さない。
+Preflight診断で `expectedSendDate` が当日と一致しない場合、または `staleSendDate=true` / `staleBatchId=true` が出る場合は送信を停止し、当日または翌日分のoutboxとbatchIdを作り直す。
+
+`batch_already_sent` が出た場合は、同一batchIdの再利用や送信済み行のready戻しを行わない。
+新しい日付または新しいbatchIdのoutboxを準備し、Preflightで `readyCount=30` / `blockedReason=""` を確認するまで本番送信を有効にしない。
+
 ## Apps Scriptで有効化する関数
 
 人間がApps Script画面で明示的に実行する。
