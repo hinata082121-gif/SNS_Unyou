@@ -426,3 +426,20 @@ Agent Officeと `/agent-office` では、`data/agent-status/tasks/gmail-daily-sa
 
 `shouldResendOldBatch=false` を明示し、送信済み行をreadyへ戻さず、新しい日付のoutbox/Preflightへ進むことを表示します。
 Apps Script診断ログの `dryRun`、`liveSendEnabled`、`autoSendEnabled` は、/agent-office上の送信可否判断の基準として扱います。
+
+## 2026-06-08 Gmail通常再開準備表示
+
+2026-06-08用のoutbox30件とSheets貼り付け用TSVは準備済みです。
+`/agent-office` では `gmail-next-day-outbox-2026-06-08` を表示し、以下の安全な状態だけを確認します。
+
+- sendDate: `2026-06-08`
+- sendBatchId: `gmail-sales-2026-06-08`
+- selectedCount: 30
+- duplicateCount: 0
+- sheetsReadyTsvCreated: true
+- sheetPasted: false
+- preflightPassed: false
+- gmailSendExecuted: false
+
+残作業は、人間が6/8用TSVをGmail送信対象シートへ貼り付け、`runPreflightDiagnosticsOnly()` と `runPreflightCheckOnly()` でreadyCount=30、blockedReason空を確認することです。
+outbox本体、TSV本文、メールアドレス、営業先名、本文全文は表示しません。

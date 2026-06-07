@@ -57,3 +57,25 @@
 - nextAction
 
 メールアドレス、営業先名、本文全文、返信本文、Gmailスレッド全文、Sheet ID、Apps Script URL、トークンは表示しない。
+
+## 2026-06-08通常再開準備
+
+2026-06-08用のoutbox30件とGoogle Sheets貼り付け用TSVを作成した。
+
+安全な確認結果:
+
+- sendDate: `2026-06-08`
+- sendBatchId: `gmail-sales-2026-06-08`
+- selectedCount: 30
+- duplicateCount: 0
+- duplicateWithPreviousBatch: false
+- duplicateWithPastSent: false
+- sheetsReadyTsvCreated: true
+- validationErrorCount: 0
+- expectedBodyWouldContainLiteralBackslashN: false
+
+6/5固定batch問題は解消済みとして扱う。
+残課題は、6/8用TSVを人間がGoogle SheetsのGmail送信対象へ貼り付け、Apps Scriptで `runPreflightDiagnosticsOnly()` と `runPreflightCheckOnly()` を実行すること。
+
+送信前には必ず `expectedSendDate=2026-06-08`、`expectedSendBatchId=gmail-sales-2026-06-08`、`readyCount=30`、`blockedReason=""` を確認する。
+Gmail本番送信はPreflight成功後、かつ送信許可のScript Propertiesが正しい場合だけ行う。

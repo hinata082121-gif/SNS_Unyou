@@ -48,8 +48,8 @@ for (const candidate of candidates) {
   const email = candidateEmail(candidate);
   const key = dedupeKey(candidate);
   const businessKey = businessDedupeKey(candidate);
-  const subject = normalizeEmailSubject(candidate.subject || 'SNSの見え方について、簡単な無料確認のご案内');
-  const body = normalizeEmailBody(candidate.body || buildDefaultBody(candidate));
+  const subject = sanitizeSalesCopy(normalizeEmailSubject(candidate.subject || 'SNSの見え方について、簡単な無料確認のご案内'));
+  const body = sanitizeSalesCopy(normalizeEmailBody(candidate.body || buildDefaultBody(candidate)));
   if (!isValidEmail(email)) continue;
   if (isHistoricallyUsed(candidate, historicalExclusions)) {
     summary.excludedHistorical += 1;
@@ -118,6 +118,15 @@ console.log(safeSummary(summary));
 function buildDefaultBody(candidate) {
   const name = candidate.name || 'ご担当者';
   return normalizeEmailBody(`${name} さま\n\n突然のご連絡失礼いたします。\nICHI Socialです。\n\n小規模店舗さま向けに、Instagramプロフィールや予約導線の見え方を整理するSNS運用サポートを行っています。\n\nもし現在SNS運用や予約導線の整理でお困りでしたら、無料で簡単に確認できます。\n\n今後のご案内が不要な場合は、その旨をご返信いただければ以後のご連絡は控えます。\n\nICHI Social`);
+}
+
+function sanitizeSalesCopy(value) {
+  return String(value || '')
+    .replace(/必ず売上/g, '売上面でも')
+    .replace(/売上保証/g, '改善の可能性')
+    .replace(/成果保証/g, '改善の可能性')
+    .replace(/絶対/g, '可能な範囲で')
+    .replace(/必ず/g, '必要に応じて');
 }
 
 function collectHistoricalExclusions(dir, currentDate) {
