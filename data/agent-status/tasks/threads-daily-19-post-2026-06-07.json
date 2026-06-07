@@ -1,0 +1,48 @@
+{
+  "id": "threads-daily-19-post-2026-06-07",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 19:00 共感・導線投稿",
+  "category": "threads_daily_post",
+  "status": "blocked",
+  "phase": "投稿案準備・安全検査完了 / Threads API未設定のため投稿停止",
+  "progress": 85,
+  "priority": "high",
+  "createdAt": "2026-06-07T19:01:04+09:00",
+  "updatedAt": "2026-06-07T19:01:04+09:00",
+  "summary": "2026-06-07 19:00枠のThreads共感・導線投稿案は投稿計画から準備し、安全検査は通過。THREADS_PUBLISH_ENABLED=true かつ THREADS_DRY_RUN=false の投稿条件を満たさず、Threads APIも未設定のため、投稿は実行せずblockedとして記録した。",
+  "metrics": {
+    "cron": "0 19 * * *",
+    "scheduledTime": "19:00",
+    "executionTime": "2026-06-07T19:01:04+09:00",
+    "postPlanDate": "2026-06-07",
+    "postPlanSlot": "19:00",
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": false,
+    "publishEnabled": false,
+    "dryRun": true,
+    "apiConfigured": false,
+    "blockedReason": "threads_api_not_configured",
+    "includesSoftCta": true,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "Threads API設定と公開許可を安全に確認し、THREADS_PUBLISH_ENABLED=true かつ THREADS_DRY_RUN=false の条件が満たされた場合のみ、既存の安全コマンド npm run threads:post:19 で投稿する。API未設定・トークン不足・安全検査NGの場合は引き続き投稿せずblocked/needs_reviewで記録する。",
+  "safeToAct": false,
+  "notes": [
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md の2026-06-07 19:00枠を使用",
+    "投稿テーマは小規模店舗のSNSあるあると予約導線整理。本文全文はAgent Statusへ保存していない",
+    "無料SNS診断への軽い導線あり",
+    "npm run threads:post:validate は ok=true",
+    "npm run threads:post:19 は blockedReason=threads_api_not_configured で投稿停止",
+    "THREADS_PUBLISH_ENABLED は true ではなく、THREADS_DRY_RUN は false ではない",
+    "今回Threads投稿なし",
+    "自動返信/自動いいね/自動フォローなし",
+    "投稿本文全文・API秘密情報・個人情報はAgent Statusへ保存していない"
+  ],
+  "artifacts": [
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md"
+  ]
+}
