@@ -1,0 +1,36 @@
+{
+  "id": "template-gmail-daily-send-result",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "YYYY-MM-DD Gmail営業30件送信結果",
+  "category": "gmail_send",
+  "status": "needs_review",
+  "phase": "送信結果テンプレート",
+  "progress": 0,
+  "priority": "high",
+  "createdAt": "YYYY-MM-DDT00:00:00.000Z",
+  "updatedAt": "YYYY-MM-DDT00:00:00.000Z",
+  "summary": "Gmail営業30件送信後に、Apps ScriptまたはHermesが安全な件数だけを記録するためのテンプレート。実行時は日付別ファイルへコピーして使用する。",
+  "artifacts": [],
+  "metrics": {
+    "sendDate": "YYYY-MM-DD",
+    "sendBatchId": "gmail-sales-YYYY-MM-DD",
+    "processed": 0,
+    "sentCount": 0,
+    "failedCount": 0,
+    "batchMarkedSent": false,
+    "liveSendResetAfterRun": false,
+    "safeToSendAgain": false,
+    "newlineIssueResolved": false,
+    "staleBatchIssueResolved": false
+  },
+  "nextAction": "送信結果ログの安全な件数だけを確認し、日付別Agent Status JSONへ記録する",
+  "safeToAct": true,
+  "notes": [
+    "テンプレートはAgent Office表示対象外",
+    "Gmail送信しない",
+    "Google Sheets更新しない",
+    "送信済み行をreadyへ戻さない",
+    "メールアドレス・営業先名・本文全文・返信本文は記録しない"
+  ]
+}

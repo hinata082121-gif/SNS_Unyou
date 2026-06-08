@@ -17,6 +17,8 @@
     "gmail:pool:validate": "node scripts/gmail/validate-gmail-pool.mjs",
     "gmail:pool:merge": "node scripts/gmail/merge-gmail-candidate-pool.mjs",
     "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs",
+    "gmail:send-result:record": "node scripts/gmail/record-daily-send-result.mjs",
+    "gmail:post-send:sync": "node scripts/gmail/post-send-agent-office-sync.mjs",
     "threads:post:validate": "node scripts/threads/validate-thread-posts.mjs",
     "threads:post:11": "node scripts/threads/publish-scheduled-thread.mjs --slot 11",
     "threads:post:19": "node scripts/threads/publish-scheduled-thread.mjs --slot 19",

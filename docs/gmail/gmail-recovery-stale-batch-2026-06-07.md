@@ -97,3 +97,16 @@ Gmail本番送信はPreflight成功後、かつ送信許可のScript Properties�
 これにより、2026-06-05固定batch問題からの復旧は完了とする。
 2026-06-08分は送信済みのため、同一outbox、同一TSV、同一sendBatchIdで再送信しない。
 6/9以降は日次sendDate/sendBatchIdローテーション、17:20翌日outbox準備、送信後確認、返信確認、Agent Office反映監査を継続監視する。
+
+## 12:30送信結果反映の自動化
+
+6/9以降は、12:30の送信結果確認タスクがAgent Office反映まで担当する。
+
+- `npm run gmail:send-result:record` で日付別daily send result JSONを作成/更新する
+- outbox、recovery、preflight関連Agent Statusを安全な件数だけで解決更新する
+- `agent:status:validate`、`agent:status:render`、`agent:office:render`、`lint`、`build` を実行する
+- 安全なAgent Status JSONとdocsだけを個別にGit追加する
+- commit/pushして `/agent-office` に反映する
+
+このフローではGmail送信、Google Sheets直接更新、Apps Scriptトリガー操作、自動返信、Threads投稿、Instagram操作を行わない。
+送信済み行をreadyへ戻さず、同一sendBatchIdでの再送信も行わない。

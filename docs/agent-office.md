@@ -463,3 +463,19 @@ Agent Officeと `/agent-office` では `gmail-daily-sales-send-2026-06-08` をsu
 
 6/5固定batch問題は復旧完了、本文のリテラル `\n` 表示問題も解消済みとして扱います。
 6/8分は再送信禁止です。送信済み行をreadyへ戻さず、6/9以降の日次ローテーション、翌日outbox準備、返信確認、反映監査を確認します。
+
+## Gmail送信後の自動反映方針
+
+明日以降、毎日12:30のGmail送信結果確認タスクは、Agent Officeへの反映まで自動で行います。
+
+表示までの流れ:
+
+1. 12:00送信タスクの安全な結果メタ情報を確認する
+2. `processed`、`failedCount`、`sendBatchId`、`batchMarkedSent`、`liveSendResetAfterRun` をAgent Status JSONへ記録する
+3. outbox/recovery/preflight関連タスクを送信成功またはneeds_reviewへ解決更新する
+4. `agent:status:validate`、`agent:status:render`、`agent:office:render`、`lint`、`build` を実行する
+5. 安全なAgent Status JSONとdocsだけを個別にGit追加し、commit/pushする
+6. Vercelの `/agent-office` に当日送信結果を反映する
+
+12:30タスクはGmail再送信、Google Sheets直接更新、Apps Scriptトリガー操作、自動返信、Threads投稿、Instagram操作を行いません。
+`data/gmail/`、`data/prospects/`、`docs/reports/sales/`、`tmp/`、`.env`、`.env.local` はGit追加しません。

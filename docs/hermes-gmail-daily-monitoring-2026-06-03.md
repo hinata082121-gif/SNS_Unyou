@@ -34,7 +34,7 @@ Hermesは原則として監視・記録・安全確認を担当します。Gmail
 |---|---|---|---|
 | 月・木 10:30 | `eb1341568dbc` | ICHI Gmail 月木営業リスト更新 | Gmail-ready候補を最大200件補充し90件以上維持を目指す |
 | 毎日 12:00 | `bbf132ad0f05` | ICHI Gmail 毎日12時 30件メール送信チェック | Preflightと送信可否、送信結果、Agent Office記録 |
-| 毎日 12:30 | `8613043c053f` | ICHI Gmail 12:30送信結果・返信確認チェック | 12:00結果、返信確認、安全設定復帰、Agent Office反映を確認 |
+| 毎日 12:30 | `8613043c053f` | ICHI Gmail 12:30送信結果・Agent Office反映チェック | 12:00結果、安全設定復帰、Agent Status更新、Agent Office反映、検証、commit/pushを行い、返信確認へ引き継ぐ |
 | 毎日 14:00 | `0305facfaef7` | ICHI Gmail 14時 失敗・不足リカバリ確認 | 未送信・失敗・候補不足・未反映をneeds_review/blocked化 |
 | 毎日 17:00 | `5b20e0820c82` | ICHI Gmail 17時 返信確認・翌日準備チェック | 返信確認、翌日outbox/availableForNextSend、次アクション整理 |
 | 毎日 17:20 | `4e4ed67216e3` | ICHI Gmail 毎日17:20 翌日outbox30件自動準備 | 翌日分outbox30件と安全なAgent Statusを準備 |
@@ -101,6 +101,9 @@ HermesとAgent Officeは、同一sendBatchIdの再送信を禁止し、次は12:
 
 - 12:30: processed、failed、skipped、live send resetの有無を確認する
 - 12:30: 送信済み本文に `\n` が文字列として表示されていないか、可能な範囲で安全な件数だけ確認する
+- 12:30: `npm run gmail:send-result:record` で当日送信結果をAgent Statusへ反映する
+- 12:30: `agent:status:validate`、`agent:status:render`、`agent:office:render`、`lint`、`build` を実行する
+- 12:30: 安全なAgent Status JSONとdocsだけを個別にGit追加し、commit/pushして `/agent-office` に反映する
 - 14:00: failed/blocked、候補不足、Agent Office未反映を確認する
 - 17:00: 返信確認、人間確認要否、翌日準備状況を確認する
 - failed/blockedが出た場合は自動送信停止をnextActionに明記する
@@ -179,6 +182,26 @@ Hermesは古いPreflight blockedや診断待ちを残さず、Agent Statusを送
 
 送信後はGoogle Sheets側で対象行が `sent` へ変わるため、readyRows=0やstatusMismatchCount=30が出ても、送信後状態として正常な場合があります。
 Hermesはこの状態を送信前Preflight失敗として扱わず、再送信禁止、返信確認、翌日準備、反映監査をnextActionにします。
+
+## 12:30 Agent Office自動反映フロー
+
+明日以降、12:30の送信結果確認タスクは確認だけで終わらせず、Agent Office反映まで進めます。
+
+標準コマンド:
+
+```powershell
+npm run gmail:send-result:record -- --date YYYY-MM-DD --send-batch-id gmail-sales-YYYY-MM-DD --processed 30 --failed 0 --batch-marked-sent true --live-send-reset-after-run true
+npm run agent:status:validate
+npm run agent:status:render
+npm run agent:office:render
+npm run lint
+npm run build
+```
+
+その後、安全なファイルだけを個別に `git add` し、commit/pushします。
+
+12:30タスクではGmail本番送信、`runDailyGmailSalesSend()`、Google Sheets更新、Apps Scriptトリガー操作、自動返信、Threads投稿、Instagram操作を行いません。
+送信済み行をreadyへ戻さず、同一sendBatchIdの再送信は禁止します。
 
 ## 2026-06-07 stale batch停止監視
 

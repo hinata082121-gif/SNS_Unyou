@@ -9,8 +9,8 @@
   "progress": 100,
   "priority": "high",
   "createdAt": "2026-06-08T00:00:00.000Z",
-  "updatedAt": "2026-06-08T13:45:17+09:00",
-  "summary": "2026-06-08用のGmail送信対象30件とGoogle Sheets貼り付け用TSVは使用済み。Apps Script scheduled実行で30件送信成功したため、同一outbox/batchの再送信は禁止する。",
+  "updatedAt": "2026-06-08T04:58:40.220Z",
+  "summary": "2026-06-08用outbox/TSVは使用済み。送信成功後のため同一batchの再送信は禁止する。",
   "artifacts": [
     "docs/gmail/gmail-recovery-stale-batch-2026-06-07.md"
   ],
@@ -32,7 +32,7 @@
     "prohibitedExpressionCount": 0,
     "expectedBodyWouldContainLiteralBackslashN": false
   },
-  "nextAction": "6/8分は再送信せず、6/9用outbox準備を確認する",
+  "nextAction": "2026-06-08分は再送信せず、翌日outbox準備と返信確認へ進む",
   "safeToAct": true,
   "notes": [
     "再送信禁止",
@@ -40,6 +40,7 @@
     "6/5送信済み行をreadyへ戻していない",
     "古い6/5 r2 batchは使用していない",
     "outbox本体とTSV本文はGit追加禁止",
-    "秘密情報なし"
+    "秘密情報なし",
+    "送信済み行をreadyへ戻さない"
   ]
 }

@@ -9,8 +9,8 @@
   "progress": 100,
   "priority": "high",
   "createdAt": "2026-06-08T00:00:00.000Z",
-  "updatedAt": "2026-06-08T13:45:17+09:00",
-  "summary": "2026-06-08分のGmail営業30件送信がApps Scriptのscheduled実行で完了。6/5固定batch問題から通常日次batchへ復旧し、本文改行のリテラル表示問題も解消済みとして記録する。",
+  "updatedAt": "2026-06-08T04:58:40.220Z",
+  "summary": "2026-06-08分のGmail営業30件送信が完了。安全な件数だけをAgent Officeへ反映し、同一batchの再送信は禁止する。",
   "artifacts": [
     "docs/gmail/gmail-recovery-stale-batch-2026-06-07.md"
   ],
@@ -29,14 +29,14 @@
     "staleBatchIssueResolved": true,
     "safeToSendAgain": false
   },
-  "nextAction": "6/8分は再送信禁止。12:30/14:00/17:00/17:30/18:30の送信後確認・返信確認・反映監査へ進む。",
+  "nextAction": "2026-06-08分は再送信禁止。送信後確認、返信確認、翌日outbox準備、Agent Office反映監査へ進む。",
   "safeToAct": true,
   "notes": [
-    "6/5固定batch問題は解消済み",
-    "expectedSendDate/expectedSendBatchIdは6/8として正常化済み",
-    "本文のリテラル \\n 表示問題は解消済み",
-    "6/8送信済み行をreadyへ戻さない",
-    "Gmail再送信なし",
-    "秘密情報なし"
+    "Gmail送信関数はこのスクリプトから実行しない",
+    "Google Sheets直接更新なし",
+    "送信済み行をreadyへ戻さない",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "メールアドレス・営業先名・本文全文・返信本文は記録しない"
   ]
 }

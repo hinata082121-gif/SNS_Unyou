@@ -39,7 +39,7 @@ Gmail送信対象、候補プール本体、送信ログ本体、営業リスト
 | ジョブID | 状態 | タスク名 | スケジュール | 役割 |
 |---|---|---|---|---|
 | `bbf132ad0f05` | 有効 | ICHI Gmail 毎日12時 30件メール送信チェック | 毎日 12:00 | Gmail営業30件/日の送信前条件確認、送信結果確認、Agent Office記録。旧「ICHI Social 毎日12時営業候補10件作成」から変更済み。条件未達なら送信せず `blocked` / `needs_review` にする。 |
-| `8613043c053f` | 有効 | ICHI Gmail 12:30送信結果・返信確認チェック | 毎日 12:30 | 12:00送信チェック後の送信結果、返信確認、Agent Office反映状況を確認する。 |
+| `8613043c053f` | 有効 | ICHI Gmail 12:30送信結果・Agent Office反映チェック | 毎日 12:30 | 12:00送信チェック後の送信結果を安全な件数だけ確認し、Agent Status更新、Agent Office render、lint/build、commit/pushまで進める。返信確認は次アクションとして引き継ぐ。 |
 | `97f734b7344d` | paused / 無効化 | ICHI Social 月水リサーチ・リスト更新 | 停止中 | `eb1341568dbc` が有効なため、重複防止で停止する。 |
 | `eb1341568dbc` | 有効 | ICHI Gmail 月木営業リスト更新 | 毎週 月曜・木曜 10:30（cron: `30 10 * * 1,4`） | Gmail-ready候補を各回最大200件補充する。送信はしない。 |
 | `2be513dbe07f` | 有効 | ICHI Social 金曜17時 市場・競合分析 | 毎週 金曜 17:00 | SNS運用代行、小規模店舗支援、AI自動化、Gmail営業、Instagram集客の市場・競合分析を行う。 |
@@ -1751,6 +1751,35 @@ Apps Script診断ログに出る実際の `dryRun` / `liveSendEnabled` / `autoSe
 `sendBatchId=gmail-sales-2026-06-08`、processed=30、failed=0、`batch_marked_sent`、`live_send_reset_after_run` を安全な件数として記録済み。
 6/5固定batch問題は復旧完了、本文のリテラル `\n` 表示問題も解消済みとして扱う。
 6/8分は再送信禁止とし、6/9以降の日次ローテーション、17:20翌日outbox準備、12:30/14:00/17:00/17:30/18:30の監視を継続する。
+
+### 12:30送信結果・Agent Office反映タスク
+
+12:30タスクは、Gmail本番送信やGoogle Sheets更新を行わず、12:00送信結果をAgent Officeへ反映する担当にする。
+
+実行すること:
+
+- Apps ScriptまたはHermesが取得した安全な送信結果メタ情報を確認する
+- `processed`、`failedCount`、`sendBatchId`、`batch_marked_sent`、`live_send_reset_after_run` を件数/真偽値だけで記録する
+- `npm run gmail:send-result:record -- --date YYYY-MM-DD --processed 30 --failed 0 --batch-marked-sent true --live-send-reset-after-run true` を使って日付別Agent Status JSONを作成/更新する
+- `npm run agent:status:validate`
+- `npm run agent:status:render`
+- `npm run agent:office:render`
+- `npm run lint`
+- `npm run build`
+- 安全なAgent Status JSONとdocsだけを個別に `git add` する
+- `git add .` は使わず、commit/pushしてVercelの `/agent-office` へ反映する
+
+禁止事項:
+
+- Gmail本番送信しない
+- `runDailyGmailSalesSend()` を実行しない
+- 送信済み行をreadyへ戻さない
+- Google Sheetsを更新しない
+- Apps Scriptトリガー操作をしない
+- 自動返信しない
+- Threads投稿、Instagram操作をしない
+- `data/gmail/`、`data/prospects/`、`docs/reports/sales/`、`tmp/`、`.env`、`.env.local` をGit追加しない
+- メールアドレス、営業先名、本文全文、返信本文、Gmailスレッド全文、Sheet ID、Apps Script URL、Webhook URL、APIキー、トークンを表示/コミットしない
 
 ## 禁止事項
 
