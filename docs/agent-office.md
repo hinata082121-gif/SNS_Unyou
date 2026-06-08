@@ -443,3 +443,23 @@ Apps Script診断ログの `dryRun`、`liveSendEnabled`、`autoSendEnabled` は�
 
 残作業は、人間が6/8用TSVをGmail送信対象シートへ貼り付け、`runPreflightDiagnosticsOnly()` と `runPreflightCheckOnly()` でreadyCount=30、blockedReason空を確認することです。
 outbox本体、TSV本文、メールアドレス、営業先名、本文全文は表示しません。
+
+## 2026-06-08 Gmail送信成功表示
+
+2026-06-08分のGmail営業30件送信はscheduled実行で成功済みです。
+Agent Officeと `/agent-office` では `gmail-daily-sales-send-2026-06-08` をsuccessとして表示します。
+
+安全な表示項目:
+
+- sendBatchId: `gmail-sales-2026-06-08`
+- processed: 30
+- sentCount: 30
+- failedCount: 0
+- batchMarkedSent: true
+- liveSendResetAfterRun: true
+- staleBatchIssueResolved: true
+- newlineIssueResolved: true
+- safeToSendAgain: false
+
+6/5固定batch問題は復旧完了、本文のリテラル `\n` 表示問題も解消済みとして扱います。
+6/8分は再送信禁止です。送信済み行をreadyへ戻さず、6/9以降の日次ローテーション、翌日outbox準備、返信確認、反映監査を確認します。

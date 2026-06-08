@@ -1747,6 +1747,11 @@ HermesはPreflight/診断ログで以下を確認する。
 送信済み行をreadyへ戻さず、新しい日付または新しいbatchIdのoutbox準備をnextActionにする。
 Apps Script診断ログに出る実際の `dryRun` / `liveSendEnabled` / `autoSendEnabled` を送信可否の基準とする。
 
+2026-06-08はscheduled実行でGmail営業30件送信が成功した。
+`sendBatchId=gmail-sales-2026-06-08`、processed=30、failed=0、`batch_marked_sent`、`live_send_reset_after_run` を安全な件数として記録済み。
+6/5固定batch問題は復旧完了、本文のリテラル `\n` 表示問題も解消済みとして扱う。
+6/8分は再送信禁止とし、6/9以降の日次ローテーション、17:20翌日outbox準備、12:30/14:00/17:00/17:30/18:30の監視を継続する。
+
 ## 禁止事項
 
 - Gmail送信はApps Scriptの安全条件、sendBatchId重複防止、30件ちょうどのready確認、Gmail残クォータ確認を満たす場合のみ行う

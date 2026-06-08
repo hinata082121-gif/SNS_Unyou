@@ -79,3 +79,21 @@
 
 送信前には必ず `expectedSendDate=2026-06-08`、`expectedSendBatchId=gmail-sales-2026-06-08`、`readyCount=30`、`blockedReason=""` を確認する。
 Gmail本番送信はPreflight成功後、かつ送信許可のScript Propertiesが正しい場合だけ行う。
+
+## 2026-06-08送信成功と復旧完了
+
+2026-06-08 12:01頃のscheduled実行で、Gmail営業30件送信が成功した。
+
+安全な記録:
+
+- sendBatchId: `gmail-sales-2026-06-08`
+- processed: 30
+- failed: 0
+- `batch_marked_sent` 確認済み
+- `daily_job_finished` 確認済み
+- `live_send_reset_after_run` 確認済み
+- 本文のリテラル `\n` 表示問題は解消済み
+
+これにより、2026-06-05固定batch問題からの復旧は完了とする。
+2026-06-08分は送信済みのため、同一outbox、同一TSV、同一sendBatchIdで再送信しない。
+6/9以降は日次sendDate/sendBatchIdローテーション、17:20翌日outbox準備、送信後確認、返信確認、Agent Office反映監査を継続監視する。
