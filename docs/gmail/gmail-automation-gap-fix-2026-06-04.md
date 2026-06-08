@@ -157,6 +157,27 @@ Agent Officeの古い `blocked` / `needs_review` 記録は、送信前の診断�
 - Agent Officeには「送信済み・再送信禁止・返信/送信後確認へ進む」と表示する
 - 本文、宛先、営業先名、返信本文は表示しない
 
+## 2026-06-09翌日outbox準備の追加点検
+
+2026-06-08の点検で、17:20翌日outbox準備フローはJST翌日を対象にし、`sendDate=2026-06-09`、`sendBatchId=gmail-sales-2026-06-09` を生成できることを確認した。
+
+ただし、過去送信済み候補を除外すると選出可能件数は5件で、30件に25件不足した。
+この場合はoutbox/TSVを作成せず、2026-06-09分を `blocked` としてAgent Officeへ反映する。
+
+追加確認結果:
+
+- selectedCount: 5
+- selectedCountTarget: 30
+- shortage: 25
+- duplicateCount: 0
+- duplicateWithPreviousBatch: false
+- duplicateWithPastSent: false
+- sheetsReadyTsvCreated: false
+- sheetSynced: false
+
+Sheet自動反映は、Gmail送信対象シートへ安全に投入する既存経路が未確認のため、`autoSheetSyncEnabled=false` とする。
+outbox30件を作成できた日でも、Sheet反映が未確認なら `manualPasteRequired=true`、`preflightPending=true` として、Google Sheets投入とPreflightを人間確認対象にする。
+
 ## 既存タスクの補強方針
 
 - 17:00返信確認・翌日準備チェックは、17:20 outbox準備と17:30返信確認の結果を前提にする

@@ -464,6 +464,28 @@ Agent Officeと `/agent-office` では `gmail-daily-sales-send-2026-06-08` をsu
 6/5固定batch問題は復旧完了、本文のリテラル `\n` 表示問題も解消済みとして扱います。
 6/8分は再送信禁止です。送信済み行をreadyへ戻さず、6/9以降の日次ローテーション、翌日outbox準備、返信確認、反映監査を確認します。
 
+## 2026-06-09 翌日outbox自動準備表示
+
+17:20翌日outbox準備フローは、JST翌日を対象にして日次batchIdを生成します。
+2026-06-08の点検では、2026-06-09分として `sendDate=2026-06-09`、`sendBatchId=gmail-sales-2026-06-09` を正常に解決できました。
+
+安全な表示項目:
+
+- autoSelectEnabled: true
+- expectedBatchId: `gmail-sales-2026-06-09`
+- selectedCountActual: 5
+- selectedCountTarget: 30
+- shortage: 25
+- duplicateCount: 0
+- duplicateGuardEnabled: true
+- excludesPastSent: true
+- autoSheetSyncEnabled: false
+- manualPasteRequired: true
+
+過去送信済み候補を除外した結果、30件に届かないため2026-06-09分は `blocked` として表示します。
+Sheet自動反映は安全なGmail送信対象シート更新経路が未確認のため、`autoSheetSyncEnabled=false` とし、outbox30件が作成できた場合でもSheet投入とPreflightは `needs_review` で人間確認対象にします。
+outbox本体、TSV本文、メールアドレス、営業先名、本文全文は表示しません。
+
 ## Gmail送信後の自動反映方針
 
 明日以降、毎日12:30のGmail送信結果確認タスクは、Agent Officeへの反映まで自動で行います。

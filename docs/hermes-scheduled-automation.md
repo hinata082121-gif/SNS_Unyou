@@ -46,7 +46,7 @@ Gmail送信対象、候補プール本体、送信ログ本体、営業リスト
 | 未登録 | 追加予定 | ICHI Gmail 金曜18時 営業メール改善・反応率分析 | 毎週 金曜 18:00（cron候補: `0 18 * * 5`） | 17:00市場分析と直近1週間のGmail営業結果をもとに、翌週の件名・本文・CTA・訴求軸の改善案を作成する。初期運用では本番テンプレート自動反映なし、人間承認制にする。 |
 | `0305facfaef7` | 有効 | ICHI Gmail 14時 失敗・不足リカバリ確認 | 毎日 14:00 | 未送信、失敗、候補不足、Agent Office未反映を確認する。 |
 | `5b20e0820c82` | 有効 | ICHI Gmail 17時 返信確認・翌日準備チェック | 毎日 17:00 | 返信確認、人間確認必要性、翌日分候補・outbox準備状況を確認する。 |
-| `4e4ed67216e3` | 有効 | ICHI Gmail 毎日17:20 翌日outbox30件自動準備 | 毎日 17:20（cron: `20 17 * * *`、次回: `2026-06-05T17:20:00+09:00`） | availableForNextSendが30件以上なら翌日outbox30件を準備し、できない場合はneeds_reviewとして必要作業を明記する。 |
+| `4e4ed67216e3` | 有効 | ICHI Gmail 毎日17:20 翌日outbox30件自動準備・Sheet反映 | 毎日 17:20（cron: `20 17 * * *`） | JST翌日の日付を解決し、過去送信済み・重複を除外して翌日outbox30件を準備する。安全なSheet反映経路が使える場合のみGmail送信対象へ反映し、できない場合はneeds_reviewとして必要作業を明記する。 |
 | `ee8473f970ff` | 有効 | ICHI Gmail 毎日17:30 返信確認実行・記録 | 毎日 17:30（cron: `30 17 * * *`、次回: `2026-06-05T17:30:00+09:00`） | 返信確認結果を安全に記録し、replyCheckExecutedとneedsHumanEmailCheckをAgent Officeへ反映する。 |
 | `1365e7b16899` | 有効 | ICHI Agent Office 毎日18:30 反映監査・未反映検知 | 毎日 18:30（cron: `30 18 * * *`、次回: `2026-06-04T18:30:00+09:00`） | 当日分の自動化タスクがAgent Officeに反映されているか確認し、未反映、古い更新、stale候補を安全な状態だけで記録する。Gmail送信、自動返信、Apps Scriptトリガー操作、Instagram操作はしない。 |
 | `758eef276079` | 有効 | ICHI Gmail 候補プール不足時 補充強化チェック | 月曜・木曜 16:00（cron: `0 16 * * 1,4`、次回: `2026-06-08T16:00:00+09:00`） | totalReadyが90件未満、またはavailableForNextSendが60件未満の場合に補充強化が必要と記録する。 |
@@ -73,10 +73,13 @@ Gmail送信対象、候補プール本体、送信ログ本体、営業リスト
 
 - ジョブID: `4e4ed67216e3`
 - cron: `20 17 * * *`
-- 次回実行: `2026-06-05T17:20:00+09:00`
 
-毎日17:20の翌日outbox30件自動準備は、`next_day_outbox` 相当のAgent statusとして記録します。
-availableForNextSendが30件以上の場合に翌日outbox30件を既存の安全ワークフローで作成し、Sheets反映ができない場合は `needs_review` として必要作業を明記します。
+毎日17:20の翌日outbox30件自動準備は、`npm run gmail:outbox:prepare-tomorrow` を標準コマンドにします。
+このコマンドはJST翌日を対象にし、sendBatchIdを `gmail-sales-YYYY-MM-DD` 形式で生成します。
+過去送信済み、同一メール、同一dedupeKey、同一事業者相当の重複を除外し、30件未満または重複検出時はblockedにします。
+
+安全なSheet反映経路が確認できるまでは、outbox/TSV作成後に `sheetSynced=false`、`manualPasteRequired=true`、`preflightPending=true` としてAgent Officeに表示します。
+Sheet反映が未完了の場合、翌日12:00送信はreadyRows=30にならないためblockedのままにします。
 `data/gmail/` 本体、outbox、TSV、メールアドレス一覧はGit追加しません。
 
 2026-06-05分は初回17:20実行より前に12:00自動送信予定があるため、一回限りで事前にoutbox30件とSheets貼り付け用TSVを準備しました。
@@ -1751,6 +1754,10 @@ Apps Script診断ログに出る実際の `dryRun` / `liveSendEnabled` / `autoSe
 `sendBatchId=gmail-sales-2026-06-08`、processed=30、failed=0、`batch_marked_sent`、`live_send_reset_after_run` を安全な件数として記録済み。
 6/5固定batch問題は復旧完了、本文のリテラル `\n` 表示問題も解消済みとして扱う。
 6/8分は再送信禁止とし、6/9以降の日次ローテーション、17:20翌日outbox準備、12:30/14:00/17:00/17:30/18:30の監視を継続する。
+
+2026-06-08の点検では、2026-06-09分のsendDate/sendBatchIdは `2026-06-09` / `gmail-sales-2026-06-09` として正常に解決できた。
+ただし過去送信済み候補を除外すると5件しか選出できず、selectedCount=30未満のためblocked。
+6/9分を送信するには、Gmail-ready候補を25件以上補充してから再選出し、Sheet反映とPreflight確認を行う。
 
 ### 12:30送信結果・Agent Office反映タスク
 

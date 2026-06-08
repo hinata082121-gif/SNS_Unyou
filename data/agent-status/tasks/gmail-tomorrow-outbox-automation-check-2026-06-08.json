@@ -1,0 +1,44 @@
+{
+  "id": "gmail-tomorrow-outbox-automation-check-2026-06-08",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail翌日outbox自動準備点検",
+  "category": "gmail_outbox",
+  "status": "blocked",
+  "phase": "翌日営業リスト30件自動選出・Sheet反映フロー点検",
+  "progress": 65,
+  "priority": "high",
+  "createdAt": "2026-06-08T00:00:00.000Z",
+  "updatedAt": "2026-06-08T05:14:26.044Z",
+  "summary": "17:20翌日outbox準備フローを点検し、JST翌日の日付解決と日次sendBatchId生成、過去送信済み除外、重複防止は有効であることを確認。ただし2026-06-09分は過去送信済み除外後に5件しか選出できず、30件未満のためblocked。安全なSheet自動反映経路も未確認のため、Sheet投入はneeds_review。",
+  "artifacts": [
+    "docs/hermes-scheduled-automation.md",
+    "docs/hermes-gmail-daily-monitoring-2026-06-03.md"
+  ],
+  "metrics": {
+    "tomorrowDate": "2026-06-09",
+    "expectedBatchId": "gmail-sales-2026-06-09",
+    "autoSelectEnabled": true,
+    "autoSheetSyncEnabled": false,
+    "selectedCountTarget": 30,
+    "selectedCountActual": 5,
+    "shortage": 25,
+    "excludesPastSent": true,
+    "duplicateGuardEnabled": true,
+    "duplicateCount": 0,
+    "manualPasteRequired": true,
+    "gmailSendExecuted": false,
+    "googleSheetsUpdatedByThisCodexRun": false
+  },
+  "nextAction": "17:20タスク実行後、Agent Officeで翌日outbox準備とSheet反映状態を確認する。2026-06-09分はGmail-ready候補を25件以上補充してから再選出する。",
+  "safeToAct": false,
+  "notes": [
+    "6/6・6/7未送信の再発防止",
+    "送信済み行をreadyへ戻さない",
+    "6/5/6/8送信済みbatchを再利用しない",
+    "6/6・6/7分の後追い再送なし",
+    "Gmail送信なし",
+    "Google Sheets本番更新なし",
+    "秘密情報なし"
+  ]
+}

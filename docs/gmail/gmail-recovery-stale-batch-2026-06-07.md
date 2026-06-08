@@ -98,6 +98,26 @@ Gmail本番送信はPreflight成功後、かつ送信許可のScript Properties�
 2026-06-08分は送信済みのため、同一outbox、同一TSV、同一sendBatchIdで再送信しない。
 6/9以降は日次sendDate/sendBatchIdローテーション、17:20翌日outbox準備、送信後確認、返信確認、Agent Office反映監査を継続監視する。
 
+## 2026-06-09翌日outbox準備点検
+
+2026-06-08時点で、17:20翌日outbox準備フローはJST翌日を正しく解決し、6/9用の通常batchIdを生成できることを確認した。
+
+安全な確認結果:
+
+- sendDate: `2026-06-09`
+- sendBatchId: `gmail-sales-2026-06-09`
+- selectedCount: 5
+- targetCount: 30
+- shortage: 25
+- duplicateCount: 0
+- duplicateWithPreviousBatch: false
+- duplicateWithPastSent: false
+- sheetsReadyTsvCreated: false
+
+候補不足のため、2026-06-09分outbox/TSVは作成しない。
+6/9分を通常送信へ進めるには、Gmail-ready候補を25件以上補充し、過去送信済み・6/5・6/8送信済み候補との重複ゼロを確認したうえで再選出する。
+安全なGoogle Sheets自動反映経路が未確認のため、Sheet投入は `manualPasteRequired=true` として扱い、Preflight前に人間確認を必須にする。
+
 ## 12:30送信結果反映の自動化
 
 6/9以降は、12:30の送信結果確認タスクがAgent Office反映まで担当する。

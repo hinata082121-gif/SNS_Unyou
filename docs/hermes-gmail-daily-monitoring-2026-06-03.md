@@ -217,3 +217,23 @@ Hermesは以下を監視します。
 - Apps Script診断ログの `dryRun` / `liveSendEnabled` / `autoSendEnabled` がAgent Officeの表示と一致しているか
 
 送信済み行をreadyへ戻さず、古いsendBatchIdを再利用せず、2026-06-08分は新しい当日batchでPreflightを確認します。
+
+## 2026-06-09翌日outbox準備の点検結果
+
+17:20翌日outbox準備は、JST翌日の日付を使い、通常batchId `gmail-sales-YYYY-MM-DD` を生成する運用です。
+2026-06-08の点検では、2026-06-09分として以下を確認しました。
+
+- sendDate: `2026-06-09`
+- sendBatchId: `gmail-sales-2026-06-09`
+- selectedCount: 5
+- targetCount: 30
+- shortage: 25
+- duplicateCount: 0
+- duplicateWithPreviousBatch: false
+- duplicateWithPastSent: false
+- sheetsReadyTsvCreated: false
+- sheetSynced: false
+
+過去送信済み候補を除外した結果、30件未満のためoutbox/TSVは作成せず `blocked` とします。
+Hermesは候補補充をnextActionにし、送信済み行をreadyへ戻したり、6/5/6/8の送信済みbatchを再利用したりしません。
+安全なGoogle Sheets自動反映経路が確認できるまでは、Sheet投入は `manualPasteRequired=true` として扱い、Preflight前の人間確認対象にします。

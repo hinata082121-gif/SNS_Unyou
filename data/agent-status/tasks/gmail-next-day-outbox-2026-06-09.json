@@ -1,0 +1,48 @@
+{
+  "id": "gmail-next-day-outbox-2026-06-09",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "2026-06-09 Gmail翌日outbox30件準備",
+  "category": "gmail_outbox",
+  "status": "blocked",
+  "phase": "翌日outbox30件作成blocked",
+  "progress": 40,
+  "priority": "high",
+  "createdAt": "2026-06-09T00:00:00.000Z",
+  "updatedAt": "2026-06-08T05:14:26.044Z",
+  "summary": "2026-06-09分のGmail outbox30件を作成できなかった。候補不足または重複検出により送信準備はblocked。",
+  "artifacts": [
+    "docs/hermes-gmail-daily-monitoring-2026-06-03.md"
+  ],
+  "metrics": {
+    "sendDate": "2026-06-09",
+    "sendBatchId": "gmail-sales-2026-06-09",
+    "selectedCount": 5,
+    "selectedCountTarget": 30,
+    "poolTotal": 65,
+    "availableChecked": 65,
+    "excludedHistorical": 60,
+    "duplicateCount": 0,
+    "duplicateWithPreviousBatch": false,
+    "duplicateWithPastSent": false,
+    "shortage": 25,
+    "outboxCreated": false,
+    "sheetsReadyTsvCreated": false,
+    "sheetSynced": false,
+    "sheetReadyRowsExpected": 0,
+    "preflightPending": false,
+    "manualPasteRequired": true,
+    "gmailSendExecuted": false,
+    "googleSheetsUpdatedByThisScript": false
+  },
+  "nextAction": "Gmail-ready候補を補充し、過去送信済みと重複しない30件を再選出する",
+  "safeToAct": false,
+  "notes": [
+    "Gmail送信なし",
+    "Google Sheets直接更新なし",
+    "Apps Scriptトリガー操作なし",
+    "送信済み行をreadyへ戻さない",
+    "outbox本体とTSV本文はGit追加禁止",
+    "メールアドレス・営業先名・本文全文は表示しない"
+  ]
+}
