@@ -118,6 +118,24 @@ Gmail本番送信はPreflight成功後、かつ送信許可のScript Properties�
 6/9分を通常送信へ進めるには、Gmail-ready候補を25件以上補充し、過去送信済み・6/5・6/8送信済み候補との重複ゼロを確認したうえで再選出する。
 安全なGoogle Sheets自動反映経路が未確認のため、Sheet投入は `manualPasteRequired=true` として扱い、Preflight前に人間確認を必須にする。
 
+候補補充後、2026-06-09分はoutbox30件とGoogle Sheets貼り付け用TSVを再作成した。
+
+安全な確認結果:
+
+- sendDate: `2026-06-09`
+- sendBatchId: `gmail-sales-2026-06-09`
+- selectedCount: 30
+- shortage: 0
+- duplicateCount: 0
+- duplicateWithPreviousBatch: false
+- duplicateWithPastSent: false
+- sheetsReadyTsvCreated: true
+- sheetSynced: false
+- manualPasteRequired: true
+
+残課題は、生成済みTSVを人間がGmail送信対象シートへ貼り付け、Preflight診断とPreflight本体でreadyCount=30、blockedReason空を確認すること。
+CodexはGoogle Sheets本体を直接更新せず、Gmail送信も行わない。
+
 ## 12:30送信結果反映の自動化
 
 6/9以降は、12:30の送信結果確認タスクがAgent Office反映まで担当する。

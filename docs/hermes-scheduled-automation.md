@@ -1759,6 +1759,10 @@ Apps Script診断ログに出る実際の `dryRun` / `liveSendEnabled` / `autoSe
 ただし過去送信済み候補を除外すると5件しか選出できず、selectedCount=30未満のためblocked。
 6/9分を送信するには、Gmail-ready候補を25件以上補充してから再選出し、Sheet反映とPreflight確認を行う。
 
+同日中にGmail-ready候補を補充し、2026-06-09分はselectedCount=30、duplicateCount=0、sheetsReadyTsvCreated=trueまで復旧した。
+安全なSheet自動反映経路は未確認のため、`sheetSynced=false`、`manualPasteRequired=true` としてAgent Officeへ表示する。
+6/9送信前には、TSVをGmail送信対象シートへ貼り付け、Preflight診断とPreflight本体でreadyCount=30、blockedReason空を確認する。
+
 ### 12:30送信結果・Agent Office反映タスク
 
 12:30タスクは、Gmail本番送信やGoogle Sheets更新を行わず、12:00送信結果をAgent Officeへ反映する担当にする。

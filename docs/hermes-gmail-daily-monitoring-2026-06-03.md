@@ -237,3 +237,17 @@ Hermesは以下を監視します。
 過去送信済み候補を除外した結果、30件未満のためoutbox/TSVは作成せず `blocked` とします。
 Hermesは候補補充をnextActionにし、送信済み行をreadyへ戻したり、6/5/6/8の送信済みbatchを再利用したりしません。
 安全なGoogle Sheets自動反映経路が確認できるまでは、Sheet投入は `manualPasteRequired=true` として扱い、Preflight前の人間確認対象にします。
+
+同日中の候補補充後、2026-06-09分は30件選出とSheets貼り付け用TSV作成まで復旧しました。
+
+- selectedCount: 30
+- shortage: 0
+- duplicateCount: 0
+- duplicateWithPreviousBatch: false
+- duplicateWithPastSent: false
+- sheetsReadyTsvCreated: true
+- sheetSynced: false
+- manualPasteRequired: true
+
+Hermesは6/9送信前に、TSV貼付済みか、`runPreflightDiagnosticsOnly()` と `runPreflightCheckOnly()` がreadyCount=30、blockedReason空を返すかを確認します。
+Sheet未反映またはPreflight未実行なら送信可能扱いにしません。

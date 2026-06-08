@@ -486,6 +486,24 @@ Agent Officeと `/agent-office` では `gmail-daily-sales-send-2026-06-08` をsu
 Sheet自動反映は安全なGmail送信対象シート更新経路が未確認のため、`autoSheetSyncEnabled=false` とし、outbox30件が作成できた場合でもSheet投入とPreflightは `needs_review` で人間確認対象にします。
 outbox本体、TSV本文、メールアドレス、営業先名、本文全文は表示しません。
 
+その後、Gmail-ready候補を補充し、2026-06-09分はselectedCount=30まで復旧しました。
+`/agent-office` では `gmail-next-day-outbox-2026-06-09` を `needs_review` として表示し、Sheet貼付とPreflight確認待ちを次アクションにします。
+
+復旧後の安全な表示項目:
+
+- selectedCount: 30
+- shortage: 0
+- duplicateCount: 0
+- duplicateWithPreviousBatch: false
+- duplicateWithPastSent: false
+- sheetsReadyTsvCreated: true
+- sheetSynced: false
+- manualPasteRequired: true
+- preflightPassed: false
+
+6/9用TSVは生成済みですが、Google Sheets本体はCodexから直接更新しません。
+人間がTSVをGmail送信対象シートへ貼り付け、`runPreflightDiagnosticsOnly()` と `runPreflightCheckOnly()` でreadyCount=30、blockedReason空を確認します。
+
 ## Gmail送信後の自動反映方針
 
 明日以降、毎日12:30のGmail送信結果確認タスクは、Agent Officeへの反映まで自動で行います。
