@@ -22,8 +22,46 @@ Computer Useやブラウザ操作でログイン・投稿・スクレイピン�
 3. 禁止表現を検査する
 4. 重複投稿を検査する
 5. `THREADS_DRY_RUN` と `THREADS_PUBLISH_ENABLED` を確認する
-6. 条件を満たす場合だけ投稿する
+6. 条件を満たす場合だけMeta Threads APIへ投稿する
 7. Agent Statusへ成功、失敗、blockedを記録する
+
+## テキスト投稿API実装
+
+2026-06-11に `api_publish_not_implemented_in_local_stub` を解消し、テキスト投稿のみ公式Threads APIの2段階フローへ接続した。
+
+実装済み:
+
+- `POST /{threads-user-id}/threads`
+  - `media_type=TEXT`
+  - `text` は投稿計画から取得
+- `POST /{threads-user-id}/threads_publish`
+  - 1段階目のcreation idをpublishする
+
+本番投稿条件:
+
+- `THREADS_PUBLISH_ENABLED=true`
+- `THREADS_DRY_RUN=false`
+- `THREADS_ACCESS_TOKEN` configured
+- `THREADS_USER_ID` configured
+
+`THREADS_API_VERSION` があれば利用し、なければ `v1.0` を使う。
+`THREADS_GRAPH_BASE_URL` があれば利用し、なければ `https://graph.threads.net` を使う。
+
+未実装/禁止:
+
+- 画像投稿
+- 動画投稿
+- カルーセル投稿
+- 返信
+- 引用
+- 予約投稿
+- 自動返信
+- 自動いいね
+- 自動フォロー
+
+dry-run時はAPIコールしない。
+APIレスポンス全文、アクセストークン、User ID、App Secret、Client Secretはログ、Agent Status、docs、Gitに残さない。
+成功時も投稿IDの有無と安全なハッシュだけを記録する。
 
 ## 初期運用
 
@@ -53,6 +91,12 @@ Hermes Agentの定期実行でもThreads API設定を参照できるように、
 
 現在は投稿許可が無効でdry-run状態のため、Threads投稿は行わない。
 本番投稿へ進める場合は、人間確認後に `THREADS_PUBLISH_ENABLED=true` と `THREADS_DRY_RUN=false` を設定する。
+
+追加確認:
+
+- `THREADS_PUBLISH_ENABLED=true` / `THREADS_DRY_RUN=true` では `threads_dry_run` で停止する
+- `api_publish_not_implemented_in_local_stub` は出ない
+- Codex作業中の実投稿は行っていない
 
 ## Hermes登録済みタスク
 

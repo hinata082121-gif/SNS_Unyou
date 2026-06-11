@@ -41,7 +41,10 @@
     "dryRun": true,
     "firstDryRunChecked": true,
     "morningDryRunChecked": true,
-    "eveningDryRunChecked": true
+    "eveningDryRunChecked": true,
+    "localStubRemoved": true,
+    "textPostApiImplemented": true,
+    "livePostExecutedByCodex": false
   },
   "nextAction": "本番投稿前にTHREADS_PUBLISH_ENABLED=true / THREADS_DRY_RUN=falseへ切り替える。ただし初回は人間確認後。",
   "safeToAct": true,

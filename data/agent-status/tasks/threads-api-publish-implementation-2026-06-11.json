@@ -1,0 +1,46 @@
+{
+  "id": "threads-api-publish-implementation-2026-06-11",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads APIテキスト投稿実装",
+  "category": "threads_automation",
+  "status": "needs_review",
+  "phase": "Threads API実投稿処理実装・dry-run検証済み",
+  "progress": 85,
+  "priority": "high",
+  "createdAt": "2026-06-11T00:00:00.000Z",
+  "updatedAt": "2026-06-11T00:00:00.000Z",
+  "summary": "Threads投稿スクリプトのローカルスタブを解消し、Meta Threads APIのテキスト投稿フローを実装した。Codex作業中はpublish disabled / dry-runで検証し、実投稿は行っていない。",
+  "artifacts": [
+    "scripts/threads/publish-scheduled-thread.mjs",
+    "docs/threads/threads-api-automation-design-2026-06-05.md",
+    "docs/hermes-scheduled-automation.md",
+    "docs/agent-office.md"
+  ],
+  "metrics": {
+    "apiConfigured": true,
+    "envLoadedByScript": true,
+    "localStubRemoved": true,
+    "textPostApiImplemented": true,
+    "imagePostApiImplemented": false,
+    "videoPostApiImplemented": false,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false,
+    "publishEnabled": false,
+    "dryRun": true,
+    "livePostExecutedByCodex": false,
+    "logsSensitiveData": false,
+    "publishDisabledCheckPassed": true,
+    "dryRunPublishGuardChecked": true
+  },
+  "nextAction": "人間がPowerShellで一時環境変数 THREADS_PUBLISH_ENABLED=true / THREADS_DRY_RUN=false を設定し、1件だけテスト投稿する。",
+  "safeToAct": true,
+  "notes": [
+    "Codex作業中はThreads投稿なし",
+    "テキスト投稿のみ実装",
+    "画像/動画/返信/いいね/フォロー/自動返信なし",
+    "秘密情報なし",
+    ".env/.env.local未コミット"
+  ]
+}

@@ -1729,6 +1729,11 @@ Threadsスクリプトは、Hermes Agentの定期実行でもプロジェクト�
 2026-06-11時点で、11:00/19:00の検証は `apiConfigured=true`、`publishEnabled=false`、`dryRun=true`、`published=false` として確認済み。
 これは投稿許可が無効な安全停止状態であり、blockedReasonは `publish_disabled` としてAgent Officeへ反映する。
 
+同日にThreads APIのテキスト投稿フローを実装し、`api_publish_not_implemented_in_local_stub` は解消済み。
+実投稿は `THREADS_PUBLISH_ENABLED=true` かつ `THREADS_DRY_RUN=false` の場合だけ行う。
+`THREADS_PUBLISH_ENABLED=true` でも `THREADS_DRY_RUN=true` なら `threads_dry_run` で停止し、API投稿は行わない。
+初回本番投稿はHermes自動化ではなく、人間がPowerShellの一時環境変数で1件だけ実施して結果を確認する。
+
 Threads運用でも、自動返信、自動いいね、自動フォロー、無断転載、ログイン画面操作、ブラウザ操作による投稿は行わない。
 APIトークン、投稿先ID、App Secret、Client Secret、APIレスポンスの秘密情報は表示・保存・Git追加しない。
 

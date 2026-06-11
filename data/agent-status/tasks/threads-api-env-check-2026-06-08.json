@@ -21,6 +21,9 @@
     "published": false,
     "morningDryRunChecked": true,
     "eveningDryRunChecked": true,
+    "localStubRemoved": true,
+    "textPostApiImplemented": true,
+    "livePostExecutedByCodex": false,
     "autoReplyEnabled": false,
     "autoLikeEnabled": false,
     "autoFollowEnabled": false

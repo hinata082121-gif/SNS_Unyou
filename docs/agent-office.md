@@ -106,6 +106,21 @@ Threads運用タブでは、`postPrepared`、`postValidated`、`posted`、`block
 全体管理タブでは、Threadsの `blocked`、`needs_review`、`stale` もGmailと同じ重要アラートとして横断表示します。
 API未設定時は投稿せず `blocked` でよく、初日から完全自動化する場合も `THREADS_PUBLISH_ENABLED=true` と `THREADS_DRY_RUN=false` の設定確認を必須にします。
 
+2026-06-11にThreads APIのテキスト投稿フローを実装し、ローカルスタブ停止理由 `api_publish_not_implemented_in_local_stub` は解消済みです。
+Agent Officeでは `threads-api-publish-implementation-2026-06-11` を表示し、以下の安全な状態だけを確認します。
+
+- localStubRemoved: true
+- textPostApiImplemented: true
+- imagePostApiImplemented: false
+- videoPostApiImplemented: false
+- autoReplyEnabled: false
+- autoLikeEnabled: false
+- autoFollowEnabled: false
+- livePostExecutedByCodex: false
+
+初回本番投稿は、人間がPowerShellの一時環境変数で1件だけ実施します。
+投稿ID、アクセストークン、User ID、APIレスポンス全文は表示しません。
+
 2026-06-11時点で、Threadsスクリプトは `.env.local` を自動読み込みできるようになりました。
 Agent Officeでは `threads-api-env-check-2026-06-08` を表示し、以下の安全な状態だけを確認します。
 
