@@ -187,3 +187,19 @@ CodexはGoogle Sheets本体を直接更新せず、Gmail送信も行わない。
 今回CodexはGoogle Sheets本体を直接更新しません。
 人間がTSVをGmail送信対象シートへ反映し、Preflight診断とPreflight本体でreadyCount=30、blockedReason空を確認してから送信可否を判断します。
 6/9・6/10の後追い再送は行いません。
+
+## 2026-06-11 Sheet反映未自動化の対策
+
+6/9〜6/11の停止原因はstale batchではなく、Gmail送信対象シートに当日分ready行30件が存在しなかったことです。
+17:20タスクがoutbox/TSV作成までで止まり、Sheet反映が `manualPasteRequired=true` のままだと、翌日12:00のPreflightは `no_ready_rows` でblockedになります。
+
+対策として、17:20タスクにSheet自動反映ステップを追加します。
+
+- `npm run gmail:outbox:prepare-and-sync-tomorrow` で翌日outbox準備、Sheet同期、ready検証ターゲット記録を連続実行する
+- デフォルトは `GMAIL_SHEET_SYNC_ENABLED=false`、`GMAIL_SHEET_SYNC_DRY_RUN=true`
+- 本番同期は `GMAIL_SHEET_SYNC_ENABLED=true`、`GMAIL_SHEET_SYNC_DRY_RUN=false` の明示時のみ
+- Apps Script Web App受信口はトークン一致時だけGmail送信対象タブへ30行を反映する
+- ログとAgent OfficeにはsendDate、sendBatchId、rowCount、sheetSynced、dryRun、syncEnabled、blockedReasonだけを出す
+
+この対策ではGmail送信、送信済み行のready復帰、Apps Scriptトリガー操作、自動返信、Threads投稿、Instagram操作は行いません。
+メールアドレス、営業先名、本文全文、Sheet ID、Apps Script URL、Webhook URL、APIキー、トークンは表示/コミットしません。

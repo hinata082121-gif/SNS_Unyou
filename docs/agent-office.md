@@ -556,3 +556,38 @@ Agent Officeでは `gmail-send-stopped-no-ready-rows-2026-06-11` を `blocked` �
 2026-06-11用outbox30件とTSVは作成済みですが、Google Sheets本体はCodexから直接更新していません。
 6/11送信可否は、人間がTSVをGmail送信対象シートへ反映し、`runPreflightDiagnosticsOnly()` と `runPreflightCheckOnly()` でreadyCount=30、blockedReason空を確認してから判断します。
 6/9・6/10の後追い再送は行いません。
+
+## Gmail送信対象Sheet自動反映
+
+Agent Officeでは、17:20タスクのSheet反映状態を安全な件数と真偽値だけで表示します。
+
+表示する項目:
+
+- sheetAutoSyncImplemented
+- syncEnabledDefault
+- syncDryRunDefault
+- productionSyncRequiresFlags
+- sendDate
+- sendBatchId
+- rowCount
+- sheetSynced
+- manualPasteRequired
+- readyRowsVerified
+- blockedReason
+
+表示しない項目:
+
+- メールアドレス
+- 営業先名
+- 本文全文
+- 返信本文
+- Gmailスレッド全文
+- Sheet ID
+- Apps Script URL
+- Webhook URL
+- APIキー
+- トークン
+
+本番Sheet同期は、環境変数 `GMAIL_SHEET_SYNC_ENABLED=true` と `GMAIL_SHEET_SYNC_DRY_RUN=false` が明示され、Webhook URLと同期トークンが設定されている場合だけ行う。
+デフォルトは同期無効かつdry-runで、`sheetSynced=false`、`manualPasteRequired=true` として表示する。
+Apps Script Web App受信口を使う場合は、`Code.gs` をscript.google.comへ手動反映してから有効化する。

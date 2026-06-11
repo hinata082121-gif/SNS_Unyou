@@ -42,7 +42,9 @@
     "readyRowsVerified": false,
     "safeToSendAgain": false,
     "sheetSyncDryRunChecked": true,
-    "sheetSyncEnabled": false
+    "sheetSyncEnabled": false,
+    "sheetAutoSyncWorkflowAdded": true,
+    "sheetSyncRequiresExplicitFlags": true
   },
   "nextAction": "生成された6/11用TSVをGmail送信対象シートへ貼り付け、runPreflightDiagnosticsOnly() と runPreflightCheckOnly() を実行する。",
   "safeToAct": true,

@@ -1800,6 +1800,38 @@ Apps Script診断ログに出る実際の `dryRun` / `liveSendEnabled` / `autoSe
 
 ## 禁止事項
 
+## 2026-06-11 Gmail送信対象Sheet自動反映仕様
+
+17:20タスクは `ICHI Gmail 毎日17:20 翌日outbox30件自動準備・Sheet反映` として運用する。
+cronは `20 17 * * *`、実行コマンドは `npm run gmail:outbox:prepare-and-sync-tomorrow` を推奨する。
+
+実行内容:
+
+- JST翌日の日付を解決する
+- 翌日outbox30件を作成する
+- `selectedCount=30`、`duplicateCount=0`、`shortage=0` を確認する
+- Sheets-ready TSVを作成する
+- `GMAIL_SHEET_SYNC_ENABLED=true` かつ `GMAIL_SHEET_SYNC_DRY_RUN=false` の場合のみ、Google SheetsのGmail送信対象タブへ反映する
+- 同期が無効またはdry-runなら `sheetSynced=false`、`manualPasteRequired=true` としてAgent Officeへ記録する
+- 同期後はApps ScriptのPreflight診断またはready行検証へ接続する
+- `sendDate`、`sendBatchId`、`selectedCount`、`rowCount`、`sheetSynced`、`manualPasteRequired`、`readyRowsVerified`、`preflightPending` だけを安全に記録する
+- 失敗時は `blocked` または `needs_review` として `/agent-office` に表示する
+
+使用する環境変数名:
+
+- `GMAIL_SHEET_SYNC_ENABLED`
+- `GMAIL_SHEET_SYNC_DRY_RUN`
+- `GMAIL_SHEET_WEBHOOK_URL`
+- `GMAIL_SHEET_SYNC_TOKEN`
+- `GMAIL_SHEET_TARGET_NAME`
+- `GMAIL_SHEET_READY_TAB_NAME`
+
+値は表示、ログ出力、Agent Status保存、Git追加をしない。
+Apps Script側のWeb App受信口を使う場合、GitHub反映後に `Code.gs` をscript.google.comへ手動反映し、Script Properties側にも同期トークンを設定する。
+
+このタスクではGmail送信、`runDailyGmailSalesSend()`、送信済み行のready復帰、Apps Scriptトリガー操作、自動返信、Threads投稿、Instagram操作を行わない。
+メールアドレス、営業先名、本文全文、返信本文、Gmailスレッド全文、Sheet ID、Apps Script URL、Webhook URL、APIキー、トークンを表示/コミットしない。
+
 - Gmail送信はApps Scriptの安全条件、sendBatchId重複防止、30件ちょうどのready確認、Gmail残クォータ確認を満たす場合のみ行う
 - Gmail本番トリガー有効化は人間確認後に行う
 - Gmail送信後は `LIVE_SEND_ENABLED=false` / `AUTO_SEND_ENABLED=false` へ戻し、二重送信を防止する

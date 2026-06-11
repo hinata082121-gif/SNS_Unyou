@@ -99,6 +99,182 @@ function dailySalesEmailJob() {
   runDailyGmailSalesSend();
 }
 
+function doPost(e) {
+  return handleGmailOutboxSheetSync_(e);
+}
+
+function handleGmailOutboxSheetSync_(e) {
+  const props = PropertiesService.getScriptProperties();
+  const expectedToken = String(props.getProperty('GMAIL_SHEET_SYNC_TOKEN') || props.getProperty('SHEET_SYNC_TOKEN') || '').trim();
+  let payload;
+
+  try {
+    payload = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (error) {
+    appendSafeLog_({ event: 'gmail_sheet_sync_rejected', blockedReason: 'invalid_json' });
+    return buildSheetSyncResponse_({ ok: false, sheetSynced: false, blockedReason: 'invalid_json' });
+  }
+
+  const providedToken = String((payload && payload.token) || '').trim();
+  if (!expectedToken || providedToken !== expectedToken) {
+    appendSafeLog_({ event: 'gmail_sheet_sync_rejected', blockedReason: 'token_mismatch' });
+    return buildSheetSyncResponse_({ ok: false, sheetSynced: false, blockedReason: 'token_mismatch' });
+  }
+
+  const validation = validateSheetSyncPayload_(payload);
+  if (!validation.ok) {
+    appendSafeLog_(Object.assign({
+      event: 'gmail_sheet_sync_rejected',
+      sendDate: validation.sendDate,
+      sendBatchId: validation.sendBatchId,
+      rowCount: validation.rowCount,
+      payloadHash: validation.payloadHash,
+      blockedReason: validation.blockedReason
+    }, validation.safeCounts));
+    return buildSheetSyncResponse_({
+      ok: false,
+      sheetSynced: false,
+      sendDate: validation.sendDate,
+      sendBatchId: validation.sendBatchId,
+      rowCount: validation.rowCount,
+      blockedReason: validation.blockedReason
+    });
+  }
+
+  const config = getConfig_();
+  const result = writeGmailOutboxRowsToSheet_(payload, config);
+  appendSafeLog_({
+    event: 'gmail_sheet_sync_completed',
+    sendDate: validation.sendDate,
+    sendBatchId: validation.sendBatchId,
+    rowCount: validation.rowCount,
+    payloadHash: validation.payloadHash,
+    sheetSynced: result.sheetSynced,
+    blockedReason: result.blockedReason
+  });
+
+  return buildSheetSyncResponse_({
+    ok: result.sheetSynced,
+    sheetSynced: result.sheetSynced,
+    sendDate: validation.sendDate,
+    sendBatchId: validation.sendBatchId,
+    rowCount: validation.rowCount,
+    blockedReason: result.blockedReason
+  });
+}
+
+function validateSheetSyncPayload_(payload) {
+  const headers = Array.isArray(payload && payload.headers) ? payload.headers.map((value) => String(value)) : [];
+  const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+  const sendDate = normalizeDateText_((payload && payload.sendDate) || '');
+  const sendBatchId = String((payload && payload.sendBatchId) || '').trim();
+  const rowCount = rows.length;
+  const headerIndex = buildHeaderIndex_(headers);
+  const expectedBatchId = sendDate ? buildSendBatchId_(sendDate) : '';
+  const safeCounts = {
+    validationErrorCount: 0,
+    duplicateInPayloadCount: 0,
+    invalidEmailCount: 0,
+    sendDateMismatchCount: 0,
+    sendBatchIdMismatchCount: 0,
+    missingSubjectBodyCount: 0,
+    missingOptOutTextCount: 0
+  };
+  const seenEmail = {};
+  const errors = [];
+
+  if (!sendDate) errors.push('missing_send_date');
+  if (!sendBatchId) errors.push('missing_send_batch_id');
+  if (rowCount !== 30) errors.push('row_count_not_30');
+  ['email', 'contactEmail', 'subject', 'body', 'status', 'sendDate', 'sendBatchId'].forEach((key) => {
+    if (headerIndex[key] === undefined) errors.push('missing_header_' + key);
+  });
+  if (sendBatchId && expectedBatchId && sendBatchId !== expectedBatchId && sendBatchId.indexOf(expectedBatchId + '-') !== 0) {
+    errors.push('send_batch_id_not_for_send_date');
+  }
+
+  rows.forEach((rowValues) => {
+    const cells = Array.isArray(rowValues) ? rowValues : [];
+    const row = rowFromCells_(headers, cells);
+    const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
+    const rowStatus = String(row.status || '').toLowerCase();
+    const rowSendDate = normalizeDateText_(row.sendDate || row['送信日']);
+    const rowBatchId = String(row.sendBatchId || '').trim();
+    const subject = normalizeEmailSubject_(row.subject || row['件名']);
+    const body = normalizeEmailBody_(row.body || row['本文']);
+
+    if (rowStatus !== 'ready') safeCounts.validationErrorCount += 1;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) safeCounts.invalidEmailCount += 1;
+    if (email) {
+      if (seenEmail[email]) safeCounts.duplicateInPayloadCount += 1;
+      seenEmail[email] = true;
+    }
+    if (rowSendDate !== sendDate) safeCounts.sendDateMismatchCount += 1;
+    if (rowBatchId !== sendBatchId) safeCounts.sendBatchIdMismatchCount += 1;
+    if (!subject || !body) safeCounts.missingSubjectBodyCount += 1;
+    if (!body || body.indexOf('不要') === -1) safeCounts.missingOptOutTextCount += 1;
+  });
+
+  Object.keys(safeCounts).forEach((key) => {
+    if (safeCounts[key] > 0) errors.push(key);
+  });
+
+  return {
+    ok: errors.length === 0,
+    sendDate,
+    sendBatchId,
+    rowCount,
+    payloadHash: hashValue_([sendDate, sendBatchId, rowCount, headers.length].join('|')),
+    blockedReason: errors.join(','),
+    safeCounts
+  };
+}
+
+function writeGmailOutboxRowsToSheet_(payload, config) {
+  if (!config.sheetId) {
+    return { sheetSynced: false, blockedReason: 'missing_sheet_id' };
+  }
+  const headers = payload.headers.map((value) => String(value));
+  const rows = payload.rows.map((rowValues) => {
+    const cells = Array.isArray(rowValues) ? rowValues : [];
+    return headers.map((_, index) => cells[index] === undefined ? '' : cells[index]);
+  });
+  const targetSheetName = String(
+    payload.readyTabName ||
+    PropertiesService.getScriptProperties().getProperty('GMAIL_SHEET_READY_TAB_NAME') ||
+    PropertiesService.getScriptProperties().getProperty('GMAIL_SHEET_TARGET_NAME') ||
+    config.sheetName ||
+    'Gmail送信対象'
+  );
+  const spreadsheet = SpreadsheetApp.openById(config.sheetId);
+  const sheet = spreadsheet.getSheetByName(targetSheetName) || spreadsheet.insertSheet(targetSheetName);
+  sheet.clearContents();
+  sheet.getRange(1, 1, rows.length + 1, headers.length).setValues([headers].concat(rows));
+  return { sheetSynced: true, blockedReason: '' };
+}
+
+function buildSheetSyncResponse_(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function buildHeaderIndex_(headers) {
+  const index = {};
+  headers.forEach((header, i) => {
+    index[String(header)] = i;
+  });
+  return index;
+}
+
+function rowFromCells_(headers, cells) {
+  const row = {};
+  headers.forEach((header, index) => {
+    row[header] = cells[index];
+  });
+  return row;
+}
+
 function runPreflightCheckOnly() {
   const result = runPreflight_(false);
   appendSafeLog_({
@@ -796,6 +972,12 @@ function appendSafeLog_(event) {
   delete safe.messageBody;
   delete safe.sheetId;
   delete safe.outboxRows;
+  delete safe.token;
+  delete safe.webhookUrl;
+  delete safe.url;
+  delete safe.payload;
+  delete safe.rows;
+  delete safe.headers;
   Logger.log(JSON.stringify(safe));
 }
 

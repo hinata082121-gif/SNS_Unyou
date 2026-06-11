@@ -274,3 +274,27 @@ Sheet同期が未設定の場合は `needs_review` とし、Gmail送信は行い
 2026-06-11分はoutbox30件とTSVを作成済みです。
 ただしGoogle Sheets本体はCodexから直接更新していないため、送信前にTSV反映とPreflight再実行が必要です。
 6/9・6/10の後追い再送は行いません。
+
+## 2026-06-11 Sheet自動反映監視
+
+17:20の翌日outbox準備は、outbox/TSV作成だけでなく、Sheet反映のdry-runまたは本番同期結果まで確認します。
+
+監視する安全な項目:
+
+- sendDate
+- sendBatchId
+- selectedCount
+- rowCount
+- duplicateCount
+- validationErrorCount
+- sheetSynced
+- manualPasteRequired
+- readyRowsVerified
+- blockedReason
+
+本番同期は `GMAIL_SHEET_SYNC_ENABLED=true` かつ `GMAIL_SHEET_SYNC_DRY_RUN=false` の場合だけ許可します。
+未設定またはdry-runの場合は `sheetSynced=false`、`manualPasteRequired=true` として、翌日12:00送信前に人間確認または本番同期有効化が必要な状態で表示します。
+
+Apps Script Web App受信口を使う場合、`Code.gs` の変更はGitHub pushだけでは本番反映されません。
+script.google.comへ手動反映し、Script Propertiesに同期トークンを設定してから本番同期を有効化します。
+HermesはWebhook URL、トークン、Sheet ID、メールアドレス、営業先名、本文全文を表示しません。

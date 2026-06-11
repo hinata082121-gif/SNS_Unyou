@@ -35,6 +35,8 @@
     "publishAllowed": false,
     "rootCause": "当日分ready行30件がGmail送信対象シートに存在しない",
     "manualPasteRequiredStillPresent": true,
+    "sheetAutoSyncWorkflowAdded": true,
+    "sheetSyncRequiresExplicitFlags": true,
     "gmailSendExecutedByThisTask": false,
     "googleSheetsUpdatedByThisTask": false
   },

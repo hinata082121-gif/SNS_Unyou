@@ -1,0 +1,46 @@
+{
+  "id": "gmail-sheet-auto-sync-setup-2026-06-11",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail送信対象Sheet自動反映準備",
+  "category": "gmail_outbox",
+  "status": "needs_review",
+  "phase": "Gmail送信対象Sheet自動反映の本番運用準備",
+  "progress": 80,
+  "priority": "high",
+  "createdAt": "2026-06-11T00:00:00.000Z",
+  "updatedAt": "2026-06-11T00:00:00.000Z",
+  "summary": "17:20タスクで翌日outbox30件作成後にGoogle SheetsのGmail送信対象タブへ安全に反映できるよう、dry-run既定のローカル同期スクリプトとApps Script Web App受信口を整備した。",
+  "artifacts": [
+    "scripts/gmail/sync-outbox-to-sheet.mjs",
+    "scripts/gmail/prepare-and-sync-tomorrow.mjs",
+    "apps-script/gmail-sales-automation/Code.gs",
+    "docs/hermes-scheduled-automation.md",
+    "docs/hermes-gmail-daily-monitoring-2026-06-03.md",
+    "docs/agent-office.md",
+    "docs/gmail/gmail-recovery-stale-batch-2026-06-07.md"
+  ],
+  "metrics": {
+    "sheetAutoSyncImplemented": true,
+    "syncEnabledDefault": false,
+    "syncDryRunDefault": true,
+    "productionSyncRequiresFlags": true,
+    "webhookConfigured": "unknown",
+    "sheetSyncExecutedByThisRun": false,
+    "gmailSendExecuted": false,
+    "logsSensitiveData": false,
+    "manualPasteRequiredAfterProductionSetup": "unknown",
+    "appsScriptWebhookReceiverAdded": true,
+    "scriptGoogleComManualReflectRequired": true
+  },
+  "nextAction": "Sheet同期用の環境変数とApps ScriptのScript Propertiesを設定し、Code.gsをscript.google.comへ手動反映したうえで、dry-run確認後に17:20タスクの本番Sheet同期を有効化する。",
+  "safeToAct": true,
+  "notes": [
+    "今回Gmail送信なし",
+    "Google Sheets本番更新なし",
+    "同期はデフォルト無効かつdry-run",
+    "秘密情報なし",
+    ".env/.env.local未コミット",
+    "送信済み行をreadyへ戻さない"
+  ]
+}
