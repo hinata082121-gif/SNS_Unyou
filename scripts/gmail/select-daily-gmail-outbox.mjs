@@ -18,9 +18,11 @@ const sendDate = resolveDateArg(args.date, 'tomorrow');
 const nextActionDate = args['next-action-date'] || addDaysToDate(sendDate, 2);
 const sendBatchId = buildBatchId(sendDate);
 const historyDir = args['history-dir'] || 'data/gmail/outbox';
+const agentStatusDir = args['agent-status-dir'] || 'data/agent-status/tasks';
+const sentDates = parseSentDates(args['sent-dates']) || collectSentDatesFromAgentStatus(agentStatusDir, sendDate);
 const pool = readJson(poolFile, { candidates: [] });
 const candidates = asCandidates(pool);
-const historicalExclusions = collectHistoricalExclusions(historyDir, sendDate);
+const historicalExclusions = collectHistoricalExclusions(historyDir, sendDate, sentDates);
 const usedEmail = new Set();
 const usedDedupe = new Set();
 const usedBusiness = new Set();
@@ -29,6 +31,7 @@ const summary = {
   poolTotal: candidates.length,
   availableChecked: 0,
   excludedHistorical: 0,
+  sentDateExclusionCount: sentDates.size,
   duplicateWithPreviousBatch: false,
   duplicateCount: 0,
   selected: 0,
@@ -129,7 +132,7 @@ function sanitizeSalesCopy(value) {
     .replace(/必ず/g, '必要に応じて');
 }
 
-function collectHistoricalExclusions(dir, currentDate) {
+function collectHistoricalExclusions(dir, currentDate, sentDates) {
   const exclusions = {
     emails: new Set(),
     dedupeKeys: new Set(),
@@ -138,8 +141,8 @@ function collectHistoricalExclusions(dir, currentDate) {
   if (!fs.existsSync(dir)) return exclusions;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
-    const match = entry.name.match(/^(\d{4}-\d{2}-\d{2})-gmail-sales-outbox-30\.json$/);
-    if (!match || match[1] >= currentDate) continue;
+    const match = entry.name.match(/^(\d{4}-\d{2}-\d{2}).*gmail-sales-outbox-30\.json$/);
+    if (!match || match[1] >= currentDate || !sentDates.has(match[1])) continue;
     const rows = asCandidates(readJson(path.join(dir, entry.name), { candidates: [] }));
     for (const row of rows) {
       addExclusion(row, exclusions);
@@ -172,4 +175,33 @@ function businessDedupeKey(candidate) {
   const name = candidateName(candidate);
   const domain = sourceDomain(candidate);
   return name && domain ? `${domain}|${name}` : '';
+}
+
+function parseSentDates(value) {
+  if (!value) return null;
+  return new Set(String(value)
+    .split(',')
+    .map((date) => date.trim())
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date)));
+}
+
+function collectSentDatesFromAgentStatus(dir, currentDate) {
+  const dates = new Set();
+  if (!fs.existsSync(dir)) return dates;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const match = entry.name.match(/^gmail-daily-sales-send-(\d{4}-\d{2}-\d{2})\.json$/);
+    if (!match || match[1] >= currentDate) continue;
+    const task = readJson(path.join(dir, entry.name), null);
+    if (isSentSuccess(task)) dates.add(match[1]);
+  }
+  return dates;
+}
+
+function isSentSuccess(task) {
+  if (!task || task.status !== 'success') return false;
+  const metrics = task.metrics || {};
+  return Number(metrics.sentCount || 0) >= 30 ||
+    Number(metrics.processed || 0) >= 30 ||
+    metrics.batchMarkedSent === true;
 }

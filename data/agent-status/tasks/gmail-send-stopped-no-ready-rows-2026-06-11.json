@@ -1,0 +1,50 @@
+{
+  "id": "gmail-send-stopped-no-ready-rows-2026-06-11",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail送信停止・当日ready行なし",
+  "category": "gmail_send",
+  "status": "blocked",
+  "phase": "6/9〜6/11 Gmail送信停止・当日ready行なし",
+  "progress": 40,
+  "priority": "high",
+  "createdAt": "2026-06-11T00:00:00.000Z",
+  "updatedAt": "2026-06-11T02:25:48.241Z",
+  "summary": "2026-06-09〜2026-06-11のGmail営業送信は0件。日付/batchIdローテーションは正常だが、Gmail送信対象シートに当日分ready行30件が存在しないため送信停止。",
+  "artifacts": [
+    "docs/gmail/gmail-recovery-stale-batch-2026-06-07.md",
+    "docs/hermes-gmail-daily-monitoring-2026-06-03.md"
+  ],
+  "metrics": {
+    "sentOn20260608": 30,
+    "sentOn20260609": 0,
+    "sentOn20260610": 0,
+    "sentOn20260611": 0,
+    "diagnosisDate": "2026-06-11",
+    "expectedSendDate": "2026-06-11",
+    "expectedSendBatchId": "gmail-sales-2026-06-11",
+    "staleSendDate": false,
+    "staleBatchId": false,
+    "candidateRows": 0,
+    "readyRows": 0,
+    "readyCount": 0,
+    "blockedReason": "no_ready_rows,exact_ready_count_not_met",
+    "sheetConnected": true,
+    "liveSendEnabled": false,
+    "autoSendEnabled": false,
+    "publishAllowed": false,
+    "rootCause": "当日分ready行30件がGmail送信対象シートに存在しない",
+    "manualPasteRequiredStillPresent": true,
+    "gmailSendExecutedByThisTask": false,
+    "googleSheetsUpdatedByThisTask": false
+  },
+  "nextAction": "2026-06-11用outbox30件を作成し、Gmail送信対象シートへ反映してPreflightを再実行する。明日以降は17:20タスクでSheet反映まで自動化する。",
+  "safeToAct": false,
+  "notes": [
+    "日付/batchIdローテーションは正常",
+    "送信済み行をreadyへ戻さない",
+    "6/9・6/10の後追い再送はしない",
+    "Gmail送信なし",
+    "秘密情報なし"
+  ]
+}

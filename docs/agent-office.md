@@ -533,3 +533,26 @@ outbox本体、TSV本文、メールアドレス、営業先名、本文全文�
 
 12:30タスクはGmail再送信、Google Sheets直接更新、Apps Scriptトリガー操作、自動返信、Threads投稿、Instagram操作を行いません。
 `data/gmail/`、`data/prospects/`、`docs/reports/sales/`、`tmp/`、`.env`、`.env.local` はGit追加しません。
+
+## 2026-06-09〜2026-06-11 Gmail送信停止原因
+
+2026-06-09、2026-06-10、2026-06-11のGmail営業送信は0件でした。
+2026-06-11のPreflight診断では、日付/batchIdローテーションは正常で、`expectedSendDate=2026-06-11`、`expectedSendBatchId=gmail-sales-2026-06-11`、`staleSendDate=false`、`staleBatchId=false` でした。
+
+主因は、Gmail送信対象シートに当日分ready行30件が存在しないことです。
+`manualPasteRequired=true` が残っている限り完全自動化ではありません。
+
+Agent Officeでは `gmail-send-stopped-no-ready-rows-2026-06-11` を `blocked` として表示し、以下を安全な件数だけで確認します。
+
+- sentOn20260609: 0
+- sentOn20260610: 0
+- sentOn20260611: 0
+- readyRows: 0
+- blockedReason: `no_ready_rows,exact_ready_count_not_met`
+- sheetConnected: true
+- staleSendDate: false
+- staleBatchId: false
+
+2026-06-11用outbox30件とTSVは作成済みですが、Google Sheets本体はCodexから直接更新していません。
+6/11送信可否は、人間がTSVをGmail送信対象シートへ反映し、`runPreflightDiagnosticsOnly()` と `runPreflightCheckOnly()` でreadyCount=30、blockedReason空を確認してから判断します。
+6/9・6/10の後追い再送は行いません。

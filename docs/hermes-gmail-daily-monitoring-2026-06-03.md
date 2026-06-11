@@ -251,3 +251,26 @@ Hermesは候補補充をnextActionにし、送信済み行をreadyへ戻した�
 
 Hermesは6/9送信前に、TSV貼付済みか、`runPreflightDiagnosticsOnly()` と `runPreflightCheckOnly()` がreadyCount=30、blockedReason空を返すかを確認します。
 Sheet未反映またはPreflight未実行なら送信可能扱いにしません。
+
+## 2026-06-09〜2026-06-11未送信の原因
+
+2026-06-09、2026-06-10、2026-06-11の送信は0件でした。
+2026-06-11診断では、`currentJstDate`、`expectedSendDate`、`expectedSendBatchId` は正常で、`staleSendDate=false`、`staleBatchId=false` でした。
+
+停止原因は、Gmail送信対象シートに当日分ready行30件がなかったことです。
+
+- candidateRows: 0
+- readyRows: 0
+- statusMismatchCount: 30
+- sendDateMismatchCount: 0
+- sendBatchIdMismatchCount: 0
+- validationErrorCount: 0
+- blockedReason: `no_ready_rows,exact_ready_count_not_met`
+
+17:20タスクがTSV作成までで止まり、Sheet反映が `manualPasteRequired=true` のままだと、翌日12:00の自動送信はready行不足でblockedになります。
+今後の17:20タスクは、翌日outbox30件選出、Sheets-ready TSV作成、可能なら安全なSheet同期、Sheet同期後のPreflight診断またはreadyRows検証までを担当します。
+Sheet同期が未設定の場合は `needs_review` とし、Gmail送信は行いません。
+
+2026-06-11分はoutbox30件とTSVを作成済みです。
+ただしGoogle Sheets本体はCodexから直接更新していないため、送信前にTSV反映とPreflight再実行が必要です。
+6/9・6/10の後追い再送は行いません。

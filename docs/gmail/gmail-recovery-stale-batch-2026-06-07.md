@@ -148,3 +148,42 @@ CodexはGoogle Sheets本体を直接更新せず、Gmail送信も行わない。
 
 このフローではGmail送信、Google Sheets直接更新、Apps Scriptトリガー操作、自動返信、Threads投稿、Instagram操作を行わない。
 送信済み行をreadyへ戻さず、同一sendBatchIdでの再送信も行わない。
+
+## 2026-06-09〜2026-06-11 ready行不足による送信停止
+
+2026-06-09、2026-06-10、2026-06-11のGmail営業送信は0件でした。
+2026-06-11のPreflight診断では、日付/batchIdローテーションは正常で、stale batch問題の再発ではありません。
+
+確認された安全な状態:
+
+- expectedSendDate: `2026-06-11`
+- expectedSendBatchId: `gmail-sales-2026-06-11`
+- staleSendDate: false
+- staleBatchId: false
+- candidateRows: 0
+- readyRows: 0
+- readyCount: 0
+- blockedReason: `no_ready_rows,exact_ready_count_not_met`
+- sheetConnected: true
+
+主因は、Gmail送信対象シートに当日分ready行30件が存在しないことです。
+17:20タスクがoutbox/TSV作成までで止まり、Sheet反映が手動待ちのままだと完全自動化にはなりません。
+
+2026-06-11用のoutbox30件とGoogle Sheets貼り付け用TSVは作成済みです。
+
+安全な確認結果:
+
+- sendDate: `2026-06-11`
+- sendBatchId: `gmail-sales-2026-06-11`
+- selectedCount: 30
+- shortage: 0
+- duplicateCount: 0
+- duplicateWithPreviousBatch: false
+- duplicateWithPastSent: false
+- sheetsReadyTsvCreated: true
+- sheetSynced: false
+- manualPasteRequired: true
+
+今回CodexはGoogle Sheets本体を直接更新しません。
+人間がTSVをGmail送信対象シートへ反映し、Preflight診断とPreflight本体でreadyCount=30、blockedReason空を確認してから送信可否を判断します。
+6/9・6/10の後追い再送は行いません。

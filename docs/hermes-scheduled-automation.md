@@ -78,7 +78,9 @@ Gmail送信対象、候補プール本体、送信ログ本体、営業リスト
 このコマンドはJST翌日を対象にし、sendBatchIdを `gmail-sales-YYYY-MM-DD` 形式で生成します。
 過去送信済み、同一メール、同一dedupeKey、同一事業者相当の重複を除外し、30件未満または重複検出時はblockedにします。
 
-安全なSheet反映経路が確認できるまでは、outbox/TSV作成後に `sheetSynced=false`、`manualPasteRequired=true`、`preflightPending=true` としてAgent Officeに表示します。
+17:20タスクは、outbox/TSV作成だけでなくSheet反映までを目標にします。
+安全なSheet反映経路が有効な場合のみGmail送信対象シートへ自動反映し、反映後にPreflight診断またはreadyRows検証へ進みます。
+Sheet反映経路が未設定またはdry-runの場合は、`sheetSynced=false`、`manualPasteRequired=true`、`preflightPending=true` としてAgent Officeに表示します。
 Sheet反映が未完了の場合、翌日12:00送信はreadyRows=30にならないためblockedのままにします。
 `data/gmail/` 本体、outbox、TSV、メールアドレス一覧はGit追加しません。
 

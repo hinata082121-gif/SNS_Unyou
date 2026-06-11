@@ -18,6 +18,8 @@
     "gmail:pool:merge": "node scripts/gmail/merge-gmail-candidate-pool.mjs",
     "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs",
     "gmail:outbox:prepare-tomorrow": "node scripts/gmail/prepare-tomorrow-outbox.mjs",
+    "gmail:outbox:sync-to-sheet": "node scripts/gmail/sync-outbox-to-sheet.mjs",
+    "gmail:sheet:verify-ready": "node scripts/gmail/verify-sheet-ready-rows.mjs",
     "gmail:send-result:record": "node scripts/gmail/record-daily-send-result.mjs",
     "gmail:post-send:sync": "node scripts/gmail/post-send-agent-office-sync.mjs",
     "threads:post:validate": "node scripts/threads/validate-thread-posts.mjs",
