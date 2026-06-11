@@ -1,0 +1,45 @@
+{
+  "id": "gmail-sheet-env-load-check-2026-06-11",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Gmail Sheet同期 .env.local 読み込み確認",
+  "category": "gmail_outbox",
+  "status": "success",
+  "phase": "Gmail Sheet同期 .env.local 読み込み確認",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-06-11T00:00:00.000Z",
+  "updatedAt": "2026-06-11T00:00:00.000Z",
+  "summary": "Gmail Sheet同期関連Nodeスクリプトがローカル環境設定を起動時に読み込むよう修正し、17:20相当のprepare-and-sync dry-runで同期設定が反映されることを確認した。",
+  "artifacts": [
+    "scripts/gmail/prepare-and-sync-tomorrow.mjs",
+    "scripts/gmail/sync-outbox-to-sheet.mjs",
+    "scripts/gmail/verify-sheet-ready-rows.mjs",
+    "scripts/gmail/prepare-tomorrow-outbox.mjs",
+    "scripts/gmail/select-daily-gmail-outbox.mjs"
+  ],
+  "metrics": {
+    "envLocalExists": true,
+    "syncEnabledConfigured": true,
+    "syncDryRunConfigured": true,
+    "webhookConfigured": true,
+    "tokenConfigured": true,
+    "envLoadedByScript": true,
+    "blockedReasonBeforeEnvLoad": "sheet_sync_disabled",
+    "blockedReasonAfterEnvLoad": "sheet_sync_dry_run",
+    "sheetSynced": false,
+    "manualPasteRequired": true,
+    "googleSheetsUpdatedByThisRun": false,
+    "gmailSendExecuted": false,
+    "logsSensitiveData": false
+  },
+  "nextAction": "dry-run結果を確認後、GMAIL_SHEET_SYNC_DRY_RUN=falseへ切り替えて本番Sheet同期を1回だけ手動検証する。",
+  "safeToAct": true,
+  "notes": [
+    "Gmail送信なし",
+    "Google Sheets本番更新なし",
+    "秘密情報なし",
+    ".env/.env.local未コミット",
+    "Webhook URLとトークンの値は表示しない"
+  ]
+}

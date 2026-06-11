@@ -1829,6 +1829,11 @@ cronは `20 17 * * *`、実行コマンドは `npm run gmail:outbox:prepare-and-
 値は表示、ログ出力、Agent Status保存、Git追加をしない。
 Apps Script側のWeb App受信口を使う場合、GitHub反映後に `Code.gs` をscript.google.comへ手動反映し、Script Properties側にも同期トークンを設定する。
 
+Gmail系Nodeスクリプトは起動時に `scripts/lib/load-local-env.mjs` を読み込み、`.env`、`.env.local` の順に環境変数を読み込む。
+既存の `process.env` は上書きしない。
+2026-06-11のdry-run確認では、`.env.local` の同期設定を読み込んだ結果、Sheet同期ステップは `sheet_sync_disabled` ではなく `sheet_sync_dry_run` で停止した。
+この状態では `sheetSynced=false`、`manualPasteRequired=true` で、Google Sheets本番更新は行われない。
+
 このタスクではGmail送信、`runDailyGmailSalesSend()`、送信済み行のready復帰、Apps Scriptトリガー操作、自動返信、Threads投稿、Instagram操作を行わない。
 メールアドレス、営業先名、本文全文、返信本文、Gmailスレッド全文、Sheet ID、Apps Script URL、Webhook URL、APIキー、トークンを表示/コミットしない。
 

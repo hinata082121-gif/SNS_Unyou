@@ -42,7 +42,8 @@
     "readyRowsVerified": false,
     "safeToSendAgain": false,
     "sheetSyncDryRunChecked": true,
-    "sheetSyncEnabled": false,
+    "sheetSyncEnabled": true,
+    "sheetSyncBlockedReasonAfterEnvLoad": "sheet_sync_dry_run",
     "sheetAutoSyncWorkflowAdded": true,
     "sheetSyncRequiresExplicitFlags": true
   },

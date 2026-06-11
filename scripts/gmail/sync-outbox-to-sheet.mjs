@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { loadLocalEnv } from '../lib/load-local-env.mjs';
 import {
   buildBatchId,
   hasOptOutText,
@@ -10,6 +11,8 @@ import {
   resolveDateArg,
   safeSummary
 } from './pool-utils.mjs';
+
+loadLocalEnv();
 
 function printHelp() {
   console.log(`Usage: node scripts/gmail/sync-outbox-to-sheet.mjs [--date YYYY-MM-DD|today|tomorrow] [--tsv data/gmail/outbox/YYYY-MM-DD-gmail-sales-sheets-ready.tsv]

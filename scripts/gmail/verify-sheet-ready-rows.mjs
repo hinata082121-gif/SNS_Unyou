@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import { loadLocalEnv } from '../lib/load-local-env.mjs';
 import { buildBatchId, parseArgs, resolveDateArg, safeSummary } from './pool-utils.mjs';
+
+loadLocalEnv();
 
 function printHelp() {
   console.log(`Usage: node scripts/gmail/verify-sheet-ready-rows.mjs [--date YYYY-MM-DD|today|tomorrow]

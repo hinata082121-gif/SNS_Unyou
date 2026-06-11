@@ -591,3 +591,7 @@ Agent Officeでは、17:20タスクのSheet反映状態を安全な件数と真�
 本番Sheet同期は、環境変数 `GMAIL_SHEET_SYNC_ENABLED=true` と `GMAIL_SHEET_SYNC_DRY_RUN=false` が明示され、Webhook URLと同期トークンが設定されている場合だけ行う。
 デフォルトは同期無効かつdry-runで、`sheetSynced=false`、`manualPasteRequired=true` として表示する。
 Apps Script Web App受信口を使う場合は、`Code.gs` をscript.google.comへ手動反映してから有効化する。
+
+2026-06-11にGmail系Nodeスクリプトへ `.env.local` 自動読み込みを追加した。
+Agent Officeでは `gmail-sheet-env-load-check-2026-06-11` を表示し、同期設定が読み込まれて `blockedReason=sheet_sync_dry_run` になったことを安全な状態だけで確認する。
+この確認ではGmail送信、Google Sheets本番更新、Apps Scriptトリガー操作は行っていない。

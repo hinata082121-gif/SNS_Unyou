@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { loadLocalEnv } from '../lib/load-local-env.mjs';
 import { DEFAULT_POOL_FILE, OUTBOX_HEADERS, addDaysToDate, asCandidates, buildBatchId, candidateEmail, candidateName, dedupeKey, hasOptOutText, isAvailable, isValidEmail, normalizeEmailBody, normalizeEmailSubject, parseArgs, readJson, resolveDateArg, safeSummary, sourceDomain, toTsv, writeJson } from './pool-utils.mjs';
+
+loadLocalEnv();
 
 function printHelp() {
   console.log(`Usage: node scripts/gmail/select-daily-gmail-outbox.mjs [--date YYYY-MM-DD|today|tomorrow] [--next-action-date YYYY-MM-DD] [--pool data/gmail/pool/gmail-ready-candidate-pool.json] [--history-dir data/gmail/outbox]

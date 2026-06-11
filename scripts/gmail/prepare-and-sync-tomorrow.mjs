@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { loadLocalEnv } from '../lib/load-local-env.mjs';
 import { buildBatchId, parseArgs, readJson, resolveDateArg, safeSummary, writeJson } from './pool-utils.mjs';
+
+loadLocalEnv();
 
 function printHelp() {
   console.log(`Usage: node scripts/gmail/prepare-and-sync-tomorrow.mjs [--date YYYY-MM-DD|tomorrow]
