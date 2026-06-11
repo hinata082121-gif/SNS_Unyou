@@ -1723,6 +1723,10 @@ ICHI Socialの新部門としてThreads運用を追加する。Gmail営業が個
 Threads投稿は、`THREADS_PUBLISH_ENABLED=true` かつ `THREADS_DRY_RUN=false` が確認できる場合のみ、公式APIまたは正式に許可された投稿経路で実行する。
 初期状態では `THREADS_PUBLISH_ENABLED=false`、`THREADS_DRY_RUN=true` として扱い、API未設定時は `blocked` としてAgent Officeへ反映する。
 
+Threadsスクリプトは、Hermes Agentの定期実行でもプロジェクトルートの `.env.local` を自動読み込みする。
+2026-06-11時点で、11:00/19:00の検証は `apiConfigured=true`、`publishEnabled=false`、`dryRun=true`、`published=false` として確認済み。
+これは投稿許可が無効な安全停止状態であり、blockedReasonは `publish_disabled` としてAgent Officeへ反映する。
+
 Threads運用でも、自動返信、自動いいね、自動フォロー、無断転載、ログイン画面操作、ブラウザ操作による投稿は行わない。
 APIトークン、投稿先ID、App Secret、Client Secret、APIレスポンスの秘密情報は表示・保存・Git追加しない。
 

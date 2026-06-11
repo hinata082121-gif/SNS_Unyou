@@ -1,0 +1,41 @@
+{
+  "id": "threads-api-env-check-2026-06-08",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads API .env.local 読み込み確認",
+  "category": "threads_automation",
+  "status": "success",
+  "phase": "Threads .env.local 読み込み確認済み・dry-run継続",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-06-08T00:00:00.000Z",
+  "updatedAt": "2026-06-11T02:14:50.651Z",
+  "summary": "Threads投稿スクリプトが .env.local を自動読み込みできるようになり、API設定が確認済みになった。現在はpublish disabled / dry-runのため実投稿は行わない。",
+  "metrics": {
+    "envLocalExists": true,
+    "accessTokenConfigured": true,
+    "userIdConfigured": true,
+    "apiConfiguredAfterEnvLoad": true,
+    "publishEnabled": false,
+    "dryRun": true,
+    "published": false,
+    "morningDryRunChecked": true,
+    "eveningDryRunChecked": true,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "本番投稿前にTHREADS_PUBLISH_ENABLED=true / THREADS_DRY_RUN=falseへ切り替える。ただし初回は人間確認後。",
+  "safeToAct": true,
+  "notes": [
+    "トークン値は保存していない",
+    "User ID値は保存していない",
+    "今回Threads投稿なし",
+    "自動返信/自動いいね/自動フォローなし"
+  ],
+  "artifacts": [
+    "scripts/lib/load-local-env.mjs",
+    "scripts/threads/publish-scheduled-thread.mjs",
+    "docs/threads/threads-api-automation-design-2026-06-05.md"
+  ]
+}

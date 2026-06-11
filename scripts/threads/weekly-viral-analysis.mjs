@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../lib/load-local-env.mjs";
+
+loadLocalEnv();
 
 if (process.argv.includes("--help")) {
   console.log("Usage: node scripts/threads/weekly-viral-analysis.mjs\nCreates a safe weekly analysis placeholder. Does not scrape, login, like, follow, or repost.");

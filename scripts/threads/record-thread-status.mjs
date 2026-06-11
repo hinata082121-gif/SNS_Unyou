@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../lib/load-local-env.mjs";
+
+loadLocalEnv();
 
 function showHelp() {
   console.log(`Usage: node scripts/threads/record-thread-status.mjs --slot 11|19|weekly --status scheduled|blocked|needs_review|success\n\nWrites safe Agent Status JSON for Threads automation. Does not publish.`);

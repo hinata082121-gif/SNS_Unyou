@@ -35,6 +35,25 @@ API接続が未設定の場合は投稿をblockedにし、投稿文だけ生成�
 
 完全自動化へ移行するのは、API設定、投稿先確認、dry-run検証、Agent Office反映が完了した後に限る。
 
+## .env.local 自動読み込み
+
+Hermes Agentの定期実行でもThreads API設定を参照できるように、Threadsスクリプトは起動時にプロジェクトルートの `.env` と `.env.local` を読み込む。
+既存の環境変数がある場合はそれを優先し、ファイル内の値で不用意に上書きしない。
+
+読み込む値の有無だけを判定し、アクセストークン、User ID、App Secret、Client Secretなどの値はログ、Agent Status、docs、Gitに出さない。
+
+2026-06-11時点の確認結果:
+
+- apiConfigured: true
+- publishEnabled: false
+- dryRun: true
+- 11:00 slot: published=false
+- 19:00 slot: published=false
+- blockedReason: publish_disabled
+
+現在は投稿許可が無効でdry-run状態のため、Threads投稿は行わない。
+本番投稿へ進める場合は、人間確認後に `THREADS_PUBLISH_ENABLED=true` と `THREADS_DRY_RUN=false` を設定する。
+
 ## Hermes登録済みタスク
 
 - 毎日11:00: `2c6a2309255f` / `0 11 * * *` / 次回 `2026-06-06T11:00:00+09:00`

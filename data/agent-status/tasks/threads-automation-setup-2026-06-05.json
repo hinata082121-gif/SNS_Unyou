@@ -5,12 +5,12 @@
   "title": "Threads運用自動化セットアップ",
   "category": "threads_automation",
   "status": "needs_review",
-  "phase": "Threads運用3タスク登録済み・API設定/初回実行待ち",
+  "phase": "Threads API設定確認済み・本番投稿は人間承認待ち",
   "progress": 90,
   "priority": "high",
   "createdAt": "2026-06-05T00:00:00.000Z",
-  "updatedAt": "2026-06-05T22:23:28+09:00",
-  "summary": "Threadsで毎日11:00/19:00の2投稿と、毎週金曜20:00のバズ投稿分析・投稿文改善を行う3タスクをHermesへ登録済み。API設定と初回実行結果の確認待ち。",
+  "updatedAt": "2026-06-11T02:14:50.651Z",
+  "summary": "Threadsで毎日11:00/19:00の2投稿と、毎週金曜20:00の分析タスクをHermesへ登録済み。.env.local 自動読み込みによりAPI設定は確認済み。現在はpublish disabled / dry-runのため実投稿なし。",
   "metrics": {
     "dailyPostsPlanned": 2,
     "morningPostTime": "11:00",
@@ -34,16 +34,23 @@
     "requiresApiTokenSetup": true,
     "autoReplyEnabled": false,
     "autoLikeEnabled": false,
-    "autoFollowEnabled": false
+    "autoFollowEnabled": false,
+    "apiConfigured": true,
+    "accessTokenConfigured": true,
+    "userIdConfigured": true,
+    "dryRun": true,
+    "firstDryRunChecked": true,
+    "morningDryRunChecked": true,
+    "eveningDryRunChecked": true
   },
-  "nextAction": "Threads API設定とpublish/dryRun設定を確認し、初回11:00/19:00投稿の実行結果をAgent Officeで確認する。",
+  "nextAction": "本番投稿前にTHREADS_PUBLISH_ENABLED=true / THREADS_DRY_RUN=falseへ切り替える。ただし初回は人間確認後。",
   "safeToAct": true,
   "notes": [
     "Threads投稿は今回未実行",
-    "3タスクはHermes登録済み",
-    "API設定完了後に完全自動化へ移行",
+    "API設定は.env.local自動読み込みで確認済み",
+    "publish disabled / dry-run継続",
     "自動返信/自動いいね/自動フォローなし",
-    "投稿結果はAgent OfficeのThreads運用タブへ反映"
+    "トークン値とUser ID値は保存しない"
   ],
   "artifacts": [
     "docs/threads/threads-automation-strategy-2026-06-05.md",

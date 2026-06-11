@@ -106,6 +106,20 @@ Threads運用タブでは、`postPrepared`、`postValidated`、`posted`、`block
 全体管理タブでは、Threadsの `blocked`、`needs_review`、`stale` もGmailと同じ重要アラートとして横断表示します。
 API未設定時は投稿せず `blocked` でよく、初日から完全自動化する場合も `THREADS_PUBLISH_ENABLED=true` と `THREADS_DRY_RUN=false` の設定確認を必須にします。
 
+2026-06-11時点で、Threadsスクリプトは `.env.local` を自動読み込みできるようになりました。
+Agent Officeでは `threads-api-env-check-2026-06-08` を表示し、以下の安全な状態だけを確認します。
+
+- apiConfiguredAfterEnvLoad: true
+- publishEnabled: false
+- dryRun: true
+- published: false
+- autoReplyEnabled: false
+- autoLikeEnabled: false
+- autoFollowEnabled: false
+
+アクセストークン、User ID、App Secret、Client Secret、APIレスポンスの秘密情報は表示しません。
+現在はpublish disabled / dry-runのため、11:00/19:00の検証でも投稿は行いません。
+
 表示禁止:
 
 - 営業先名、メールアドレス、送信先URL

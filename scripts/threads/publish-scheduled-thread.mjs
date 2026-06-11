@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { loadLocalEnv } from "../lib/load-local-env.mjs";
+
+loadLocalEnv();
 
 if (process.argv.includes("--help")) {
   console.log("Usage: node scripts/threads/publish-scheduled-thread.mjs --slot 11|19\nPublishes only when THREADS_PUBLISH_ENABLED=true and THREADS_DRY_RUN=false. Otherwise records blocked/dry-run status.");
@@ -31,8 +34,10 @@ const result = {
 if (!hasToken || !hasUserId) {
   result.blockedReason = "threads_api_not_configured";
 } else if (!publishEnabled) {
+  result.ok = true;
   result.blockedReason = "publish_disabled";
 } else if (dryRun) {
+  result.ok = true;
   result.blockedReason = "dry_run_enabled";
 } else {
   result.ok = false;
@@ -47,4 +52,4 @@ fs.writeFileSync(
 );
 
 console.log(JSON.stringify(result));
-process.exit(result.published ? 0 : 1);
+process.exit(result.ok ? 0 : 1);
