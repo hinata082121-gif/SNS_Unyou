@@ -1,0 +1,50 @@
+{
+  "id": "ichi-social-kpi-growth-plan-2026-06-12",
+  "agent": "Hermes",
+  "avatar": "sales-scout",
+  "title": "ICHI Social KPI改善運用",
+  "category": "sales_growth",
+  "status": "needs_review",
+  "phase": "Gmail/Threadsを売上KPI改善へ接続",
+  "progress": 85,
+  "priority": "high",
+  "createdAt": "2026-06-12T00:00:00.000Z",
+  "updatedAt": "2026-06-12T00:00:00.000Z",
+  "summary": "Gmail営業30件/日とThreads投稿を、返信率・ポジティブ返信率・商談化・初売上へ接続するKPI改善運用として整理した。",
+  "metrics": {
+    "gmailDailyTarget": 30,
+    "target30DaysReplyRate": 0.02,
+    "target60DaysReplyRate": 0.03,
+    "target90DaysReplyRateMin": 0.0343,
+    "target90DaysReplyRateMax": 0.055,
+    "copyVariantEnabled": true,
+    "copyVariantMode": "local_metadata_only",
+    "copyVariantA": 15,
+    "copyVariantB": 15,
+    "copyVariantSheetColumnAdded": false,
+    "kpiRecordScriptAdded": true,
+    "kpiSummaryScriptAdded": true,
+    "threadsMorningIdeaCount": 7,
+    "threadsEveningIdeaCount": 7,
+    "autoReplyEnabled": false,
+    "gmailSendExecutedByThisTask": false,
+    "threadsPostExecutedByThisTask": false,
+    "googleSheetsUpdatedByThisTask": false
+  },
+  "nextAction": "金曜20時のHermes週次レビューでGmail返信KPIとThreads反応を確認し、翌週の件名・本文・CTA・投稿導線の改善案をneeds_reviewで作成する。",
+  "safeToAct": true,
+  "notes": [
+    "KPI改善設計のみ",
+    "Gmail送信なし",
+    "Threads投稿なし",
+    "Google Sheets更新なし",
+    "本番テンプレート自動差し替えなし",
+    "メールアドレス・営業先名・返信本文は記録しない"
+  ],
+  "artifacts": [
+    "docs/sales/ichi-social-kpi-plan-2026-06-12.md",
+    "data/templates/gmail-sales-copy-v2.json",
+    "scripts/sales/record-reply-kpis.mjs",
+    "scripts/sales/summarize-sales-kpis.mjs"
+  ]
+}

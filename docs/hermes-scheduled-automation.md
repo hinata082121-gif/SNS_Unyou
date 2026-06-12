@@ -1742,7 +1742,7 @@ Threads投稿タスクはAI推論不要のため、以下のno-agent cronへ再�
 |---|---|---|---|---|---|
 | 毎日 11:00 | `6fbea6039fcf` | ICHI Threads 毎日11時 ノウハウ投稿 | `0 11 * * *` | no-agent | `ichi_threads_post_11.py` -> `npm run threads:post:11` |
 | 毎日 19:00 | `ee568dbda7ab` | ICHI Threads 毎日19時 共感・導線投稿 | `0 19 * * *` | no-agent | `ichi_threads_post_19.py` -> `npm run threads:post:19` |
-| 金曜 20:00 | `96bd94126b9d` | ICHI Threads 金曜20時 バズ投稿分析・投稿文改善 | `0 20 * * 5` | no-agent | `ichi_threads_weekly_analyze.py` -> `npm run threads:weekly:analyze` |
+| 金曜 20:00 | `96bd94126b9d` | ICHI Social 金曜20時 営業・Threads KPI改善レビュー | `0 20 * * 5` | no-agent | `ichi_threads_weekly_analyze.py` -> `npm run threads:weekly:analyze` と `npm run sales:kpi:summary` の安全な件数レビュー |
 
 no-agent実行のため、投稿タスクはprovider/model解決に依存しない。
 Hermes gatewayは手動バックグラウンド起動済みだが、Windowsログイン時の自動起動にはUAC付きで `hermes gateway install` を完了する必要がある。
@@ -1750,6 +1750,18 @@ Hermes gatewayは手動バックグラウンド起動済みだが、Windowsロ�
 
 Threads運用でも、自動返信、自動いいね、自動フォロー、無断転載、ログイン画面操作、ブラウザ操作による投稿は行わない。
 APIトークン、投稿先ID、App Secret、Client Secret、APIレスポンスの秘密情報は表示・保存・Git追加しない。
+
+### ICHI Social KPI改善レビュー
+
+金曜20:00のno-agent週次タスクは、Threads投稿改善に加えてGmail営業KPI改善レビューも担当します。
+
+- Gmail返信KPIは `npm run sales:kpi:summary` の安全な件数だけを確認する
+- Gmail outboxのcopyVariant A/BはローカルJSONメタデータで比較し、TSV/Sheet列は初期運用では増やさない
+- 30/60/90日の返信率、ポジティブ返信率、商談化、初売上KPIに対して改善案を作る
+- Threads 11:00はノウハウ/権威づけ、19:00は共感/DM導線として翌週案を見直す
+- 改善案は `needs_review` とし、本番GmailテンプレートやThreads投稿へ自動反映しない
+
+禁止事項は従来通りです。Gmail送信、Threads投稿、自動返信、自動いいね、自動フォロー、Google Sheets更新、Apps Scriptトリガー操作、秘密情報表示は行いません。
 
 ### Gmail日次batchローテーション監視
 

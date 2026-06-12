@@ -179,8 +179,33 @@ Vercelの自動デプロイ後、スマホの `/agent-office` に反映されま
 - `gmail_list_refresh`: Gmail-ready候補補充
 - `hermes_monitoring`: Hermes監視
 - `market_analysis`: 金曜市場分析
+- `sales_growth`: Gmail/Threads KPI改善
 - `instagram`: 自社Instagram運用
 - `dashboard`: Agent Office本体
+
+## ICHI Social KPI改善表示
+
+Agent Officeでは、Gmail営業とThreads発信を売上KPIへ接続する `ichi-social-kpi-growth-plan-2026-06-12` を表示します。
+
+表示する安全な項目:
+
+- 30日/60日/90日の返信率、ポジティブ返信率、商談化、初売上KPI
+- Gmail copyVariant A/Bの割り当て状態
+- copyVariantがTSV/Sheet列ではなくローカルメタデータのみであること
+- KPI記録/集計スクリプトの追加状態
+- Threads 11:00ノウハウ投稿案と19:00共感投稿案の数
+- 次に人間が承認すべき改善案
+
+表示しない項目:
+
+- メールアドレス
+- 営業先名
+- 返信本文
+- Gmailスレッド全文
+- outbox/TSV本文
+- APIキー、トークン、Webhook URL、Sheet ID
+
+初期運用では、改善案は `needs_review` として表示し、本番Gmailテンプレート差し替えやThreads投稿の自動反映は行いません。
 
 ## Phase 3: VS Code Webview拡張
 

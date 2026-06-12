@@ -1,0 +1,36 @@
+{
+  "version": "gmail-sales-copy-v2",
+  "description": "ICHI Social Gmail sales copy variants. Uses placeholders only and contains no real recipients.",
+  "variants": [
+    {
+      "variantId": "A",
+      "subject": "{businessName}のSNS導線について1点だけ",
+      "body": "{contactName}様\n\n突然のご連絡失礼します。\n{businessName}様のSNS/予約導線を拝見し、投稿から問い合わせまでの流れに少し改善余地があるかもしれないと感じました。\n\nもしよければ、営業ではなく「最初に見直すならここ」という3項目だけ無料でお送りします。\n\n必要でしたら「送ってください」とだけご返信ください。\n不要でしたら、このメールへの返信一言で以後ご連絡を控えます。",
+      "offerType": "free_audit",
+      "ctaType": "light_reply",
+      "maxBodyLength": 500,
+      "intendedSegment": "small_local_business",
+      "active": true
+    },
+    {
+      "variantId": "B",
+      "subject": "{businessName}のInstagram/Threads導線について",
+      "body": "{contactName}様\n\n{businessName}様の発信を拝見しました。\n投稿内容はあるのに、プロフィール・固定投稿・予約導線で少し損をしている可能性があります。\n\nまずは有料提案ではなく、改善できそうな箇所を3つだけ整理してお送りします。\n\n必要でしたら「見たいです」とだけご返信ください。\n不要でしたら、以後ご連絡を控えます。",
+      "offerType": "free_audit",
+      "ctaType": "light_reply",
+      "maxBodyLength": 500,
+      "intendedSegment": "instagram_active_business",
+      "active": true
+    },
+    {
+      "variantId": "C",
+      "subject": "{businessName}向けに改善仮説を1つ作りました",
+      "body": "{contactName}様\n\n{businessName}様のSNS導線を拝見し、問い合わせ前の離脱を減らせそうな改善仮説を1つ作りました。\n\n長い提案ではなく、15分で判断できる内容です。\n先に1枚メモでお送りすることもできます。\n\n必要でしたら「資料希望」とだけご返信ください。\n不要でしたら、以後ご連絡を控えます。",
+      "offerType": "free_audit",
+      "ctaType": "light_reply",
+      "maxBodyLength": 500,
+      "intendedSegment": "hypothesis_ready_business",
+      "active": false
+    }
+  ]
+}

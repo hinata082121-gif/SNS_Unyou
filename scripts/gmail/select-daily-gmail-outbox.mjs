@@ -63,6 +63,7 @@ for (const candidate of candidates) {
   }
   if (usedEmail.has(email) || usedDedupe.has(key) || usedBusiness.has(businessKey)) continue;
   if (!hasOptOutText(body)) continue;
+  const copyVariant = selected.length < 15 ? 'A' : 'B';
   selected.push({
     prospectId: candidate.prospectId || key,
     name: candidate.name || '',
@@ -76,6 +77,8 @@ for (const candidate of candidates) {
     salesAngle: candidate.salesAngle || '',
     subject,
     body,
+    copyVariant,
+    campaignVariant: copyVariant,
     status: 'ready',
     sendDate,
     nextActionDate,
@@ -101,6 +104,11 @@ summary.selected = selected.length;
 summary.shortage = Math.max(0, 30 - selected.length);
 summary.duplicateCount = countHistoricalDuplicates(selected, historicalExclusions);
 summary.duplicateWithPreviousBatch = summary.duplicateCount > 0;
+summary.copyVariantMode = 'local_metadata_only';
+summary.copyVariantA = selected.filter((row) => row.copyVariant === 'A').length;
+summary.copyVariantB = selected.filter((row) => row.copyVariant === 'B').length;
+summary.copyVariantC = 0;
+summary.copyVariantSheetColumnAdded = false;
 
 if (selected.length !== 30 || summary.duplicateWithPreviousBatch) {
   console.log(safeSummary(summary));

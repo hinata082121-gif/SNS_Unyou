@@ -140,7 +140,14 @@ Agent OfficeのThreads運用タブでは、`postPrepared`、`postValidated`、`p
 - 無断転載
 - 本文丸コピー
 
-## 週次分析
+## 週次分析とKPI改善
 
 毎週金曜20:00に、公開情報の安全な範囲でバズ投稿の構造を分析する。
 分析結果は `docs/threads/weekly-analysis/` に保存し、Agent Statusは安全な件数とnextActionだけを記録する。
+
+2026-06-12以降は、Threads分析をGmail営業KPI改善にも接続する。
+11:00投稿はノウハウ/権威づけ、19:00投稿は共感/DM導線に役割を固定し、7日分の投稿案をローテーションする。
+金曜20:00レビューでは、`npm run sales:kpi:summary` の安全な件数とThreads投稿状態を確認し、翌週の件名、本文、CTA、無料SNS診断導線、Threads投稿テーマの改善案を作る。
+
+改善案は `needs_review` として扱い、本番メールテンプレートやThreads投稿への自動反映はしない。
+Gmail送信、Threads投稿、自動返信、自動いいね、自動フォロー、Google Sheets更新は行わない。
