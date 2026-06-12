@@ -33,6 +33,8 @@
     "logsSensitiveData": false,
     "publishDisabledCheckPassed": true,
     "dryRunPublishGuardChecked": true
+    ,"hermesProviderResetChecked": true
+    ,"livePostExecutedByResetRun": false
   },
   "nextAction": "人間がPowerShellで一時環境変数 THREADS_PUBLISH_ENABLED=true / THREADS_DRY_RUN=false を設定し、1件だけテスト投稿する。",
   "safeToAct": true,

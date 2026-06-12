@@ -24,6 +24,7 @@
     "localStubRemoved": true,
     "textPostApiImplemented": true,
     "livePostExecutedByCodex": false,
+    "hermesProviderResetChecked": true,
     "autoReplyEnabled": false,
     "autoLikeEnabled": false,
     "autoFollowEnabled": false

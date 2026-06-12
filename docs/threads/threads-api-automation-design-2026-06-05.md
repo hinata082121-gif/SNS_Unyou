@@ -98,6 +98,21 @@ Hermes Agentの定期実行でもThreads API設定を参照できるように、
 - `api_publish_not_implemented_in_local_stub` は出ない
 - Codex作業中の実投稿は行っていない
 
+## Hermes provider/model障害と再セットアップ
+
+2026-06-12の11時投稿は、Threads APIではなくHermes側のprovider/model設定エラーで停止した。
+エラーは `Unknown provider 'openai'` で、投稿スクリプトへ到達していなかった。
+
+Threads投稿はAI推論不要のため、Hermes cronはno-agentのスクリプト実行方式へ再作成する。
+
+- 11時投稿: `6fbea6039fcf` / `ichi_threads_post_11.py` / `npm run threads:post:11`
+- 19時投稿: `ee568dbda7ab` / `ichi_threads_post_19.py` / `npm run threads:post:19`
+- 金曜20時分析: `96bd94126b9d` / `ichi_threads_weekly_analyze.py` / `npm run threads:weekly:analyze`
+
+安全テストでは一時環境変数 `THREADS_PUBLISH_ENABLED=false`、`THREADS_DRY_RUN=true` を指定し、投稿なしでコマンド到達を確認する。
+本番投稿は次回Hermes自動実行後にThreads画面とAgent Officeで確認する。
+Windowsログイン時の自動起動は、UAC付きで `hermes gateway install` を完了する必要がある。
+
 ## Hermes登録済みタスク
 
 - 毎日11:00: `2c6a2309255f` / `0 11 * * *` / 次回 `2026-06-06T11:00:00+09:00`

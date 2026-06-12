@@ -1734,6 +1734,20 @@ Threadsスクリプトは、Hermes Agentの定期実行でもプロジェクト�
 `THREADS_PUBLISH_ENABLED=true` でも `THREADS_DRY_RUN=true` なら `threads_dry_run` で停止し、API投稿は行わない。
 初回本番投稿はHermes自動化ではなく、人間がPowerShellの一時環境変数で1件だけ実施して結果を確認する。
 
+2026-06-12の11時投稿未実行は、Threads APIではなくHermes provider/model設定の問題だった。
+エラーは `Unknown provider 'openai'` で、`npm run threads:post:11` へ到達していなかった。
+Threads投稿タスクはAI推論不要のため、以下のno-agent cronへ再作成した。
+
+| 時刻 | 新ジョブID | タスク | cron | 実行方式 | command/script |
+|---|---|---|---|---|---|
+| 毎日 11:00 | `6fbea6039fcf` | ICHI Threads 毎日11時 ノウハウ投稿 | `0 11 * * *` | no-agent | `ichi_threads_post_11.py` -> `npm run threads:post:11` |
+| 毎日 19:00 | `ee568dbda7ab` | ICHI Threads 毎日19時 共感・導線投稿 | `0 19 * * *` | no-agent | `ichi_threads_post_19.py` -> `npm run threads:post:19` |
+| 金曜 20:00 | `96bd94126b9d` | ICHI Threads 金曜20時 バズ投稿分析・投稿文改善 | `0 20 * * 5` | no-agent | `ichi_threads_weekly_analyze.py` -> `npm run threads:weekly:analyze` |
+
+no-agent実行のため、投稿タスクはprovider/model解決に依存しない。
+Hermes gatewayは手動バックグラウンド起動済みだが、Windowsログイン時の自動起動にはUAC付きで `hermes gateway install` を完了する必要がある。
+安全テストでは `THREADS_PUBLISH_ENABLED=false`、`THREADS_DRY_RUN=true` を一時指定し、11時/19時コマンド到達と `publish_disabled` を確認した。
+
 Threads運用でも、自動返信、自動いいね、自動フォロー、無断転載、ログイン画面操作、ブラウザ操作による投稿は行わない。
 APIトークン、投稿先ID、App Secret、Client Secret、APIレスポンスの秘密情報は表示・保存・Git追加しない。
 

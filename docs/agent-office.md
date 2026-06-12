@@ -121,6 +121,20 @@ Agent Officeでは `threads-api-publish-implementation-2026-06-11` を表示し�
 初回本番投稿は、人間がPowerShellの一時環境変数で1件だけ実施します。
 投稿ID、アクセストークン、User ID、APIレスポンス全文は表示しません。
 
+2026-06-12の11時未投稿は、Threads APIではなくHermes provider/model設定エラーで `npm run threads:post:11` へ到達していなかったことが原因です。
+Agent Officeでは `threads-hermes-provider-reset-2026-06-12` を表示し、以下を安全な状態だけで確認します。
+
+- originalError: `Unknown provider 'openai'`
+- providerDependencyRemovedOrFixed: true
+- noAgentMode: true
+- new11JobId: `6fbea6039fcf`
+- new19JobId: `ee568dbda7ab`
+- newWeeklyJobId: `96bd94126b9d`
+- gatewayRunning: true
+- livePostExecutedByThisRun: false
+
+Windowsログイン時の自動起動はUAC付きの `hermes gateway install` 完了が必要です。
+
 2026-06-11時点で、Threadsスクリプトは `.env.local` を自動読み込みできるようになりました。
 Agent Officeでは `threads-api-env-check-2026-06-08` を表示し、以下の安全な状態だけを確認します。
 
