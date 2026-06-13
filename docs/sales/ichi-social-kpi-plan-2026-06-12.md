@@ -98,3 +98,12 @@ Threads投稿は公式API設定とpublish許可が揃った場合だけ実行す
 - Gmailスレッド全文
 - outbox/TSV本文
 - APIキー、トークン、Webhook URL、Sheet ID
+
+## 11. 2026-06-13 Gmail readyRows停止の扱い
+
+2026-06-13のGmail Preflightでは、sendDateとsendBatchIdは正しかったが、Sheet上の30行がreadyではなく、readyRows=0、statusMismatchCount=30だった。
+この状態ではGmail送信を行わない。
+
+通常運用では、翌日outbox生成だけでなく、Sheet同期後に30行すべてが送信可能なready状態になっていることを確認する。
+readyRows=30、validationErrorCount=0、duplicateInSheetCount=0、previouslySentCount=0、remainingQuota>=30を満たした場合だけ、その日限りの送信許可を有効化する。
+送信後はLIVE_SEND_ENABLED/AUTO_SEND_ENABLEDをOFFへ戻す設計を維持し、恒久的にtrueにしない。

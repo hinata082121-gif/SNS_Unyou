@@ -1763,6 +1763,20 @@ APIトークン、投稿先ID、App Secret、Client Secret、APIレスポンス�
 
 禁止事項は従来通りです。Gmail送信、Threads投稿、自動返信、自動いいね、自動フォロー、Google Sheets更新、Apps Scriptトリガー操作、秘密情報表示は行いません。
 
+### 2026-06-13 Threads/Gmail入力データ保証
+
+2026-06-13のThreads 11時投稿は、Hermes cronとno-agent実行自体は正常で、`npm run threads:post:11` まで到達した。
+新しい障害原因は `post_date_not_found` で、当日分の投稿計画が未生成だったことです。
+
+今後の11時/19時投稿タスクは、投稿コマンド実行前に `npm run threads:plan:ensure:rolling` を実行する。
+投稿スクリプト側でも当日分計画を自動補完し、今日、翌日、翌々日の3日分をAsia/Tokyo基準で保証する。
+API_SERVER_KEY警告はこのcron停止の直接原因ではありません。
+
+Gmail 2026-06-13のPreflightでは、sendDateとsendBatchIdは正しかったが、Sheet上の30行がreadyではなく `statusMismatchCount=30` だった。
+自動化では「実行ジョブ」と「実行前データ生成/ready遷移」の両方を監視する。
+17:20翌日準備後は、outbox30件、Sheet同期、status=ready、Preflight成功を確認し、条件未達なら12:00送信はblockedにする。
+送信許可は恒久的にtrueにせず、Preflight成功後に当日分だけ有効化し、送信後はOFFへ戻す設計を維持する。
+
 ### Gmail日次batchローテーション監視
 
 Gmail営業30件/日の通常運用では、12:00の送信チェックはJST当日を対象にし、sendBatchIdは原則 `gmail-sales-YYYY-MM-DD` とする。

@@ -207,6 +207,31 @@ Agent Officeでは、Gmail営業とThreads発信を売上KPIへ接続する `ich
 
 初期運用では、改善案は `needs_review` として表示し、本番Gmailテンプレート差し替えやThreads投稿の自動反映は行いません。
 
+## 2026-06-13 自動化入力データ障害表示
+
+Agent Officeでは `ichi-social-automation-incident-2026-06-13` を表示し、Threads/Gmailの実行前データ保証を確認します。
+
+表示する安全な項目:
+
+- Threads cronが発火したか
+- no-agentコマンドへ到達したか
+- `post_date_not_found` が原因だったか
+- ローリング投稿計画生成が実装済みか
+- GmailのexpectedSendDate / expectedSendBatchIdが正しかったか
+- Gmail readyRowsとstatusMismatchCount
+- liveThreadsPostExecutedByThisRun=false
+- liveGmailSendExecutedByThisRun=false
+- liveSheetUpdatedByThisRun=false
+- sensitiveDataLogged=false
+
+表示しない項目:
+
+- Threads投稿本文
+- Threadsアクセストークン、User ID、APIレスポンス全文
+- Gmail本文、メールアドレス、営業先名、Sheet ID、Webhook URL
+
+本番投稿、Gmail送信、Google Sheets本番更新はAgent Officeから実行しません。
+
 ## Phase 3: VS Code Webview拡張
 
 最終的にはVS Code Webview拡張として、Codex/Hermes作業中に同じ画面で進捗を確認できるようにします。

@@ -151,3 +151,20 @@ Agent OfficeのThreads運用タブでは、`postPrepared`、`postValidated`、`p
 
 改善案は `needs_review` として扱い、本番メールテンプレートやThreads投稿への自動反映はしない。
 Gmail送信、Threads投稿、自動返信、自動いいね、自動フォロー、Google Sheets更新は行わない。
+
+## 2026-06-13 post_date_not_found対策
+
+2026-06-13の11時投稿は、Hermes cron、no-agentスクリプト、`.env.local` 読み込み、Threads API設定までは正常だった。
+停止原因は当日分の投稿計画が存在しない `post_date_not_found` だった。
+
+対策:
+
+- `threads:post:11` / `threads:post:19` の実行時に、当日分JSON計画を自動確認する
+- 当日分がない場合は、投稿処理の前に `create-daily-post-plan.mjs` 相当で当日分を生成する
+- `threads:plan:ensure:rolling` でAsia/Tokyo基準の今日、翌日、翌々日の3日分を保証する
+- 既存計画がある日は上書きしない
+- 投稿時は `data/threads/post-plans/YYYY-MM-DD.json` を優先し、固定Markdown計画に依存しない
+- published済みログがある同日同slotは再投稿しない
+
+ログには、計画生成有無、slot、日付、公開許可、dry-run、API設定有無、投稿準備/検証状態、blockedReasonだけを残す。
+投稿本文、アクセストークン、User ID、APIレスポンス全文は出さない。

@@ -1,0 +1,53 @@
+{
+  "id": "ichi-social-automation-incident-2026-06-13",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "ICHI Social自動化入力データ保証修正",
+  "category": "automation_incident",
+  "status": "success",
+  "phase": "Threads/Gmail実行前データ保証修正",
+  "progress": 90,
+  "priority": "critical",
+  "createdAt": "2026-06-13T00:00:00.000Z",
+  "updatedAt": "2026-06-13T00:00:00.000Z",
+  "summary": "2026-06-13のThreads 11時投稿とGmail 12時送信停止について、実行ジョブではなく実行前データ準備不足が原因であることを記録し、投稿計画の自動補完とGmail ready状態検査を強化した。",
+  "artifacts": [
+    "scripts/threads/publish-scheduled-thread.mjs",
+    "scripts/threads/ensure-rolling-post-plans.mjs",
+    "scripts/gmail/sync-outbox-to-sheet.mjs",
+    "docs/threads/threads-api-automation-design-2026-06-05.md",
+    "docs/hermes-scheduled-automation.md"
+  ],
+  "metrics": {
+    "threadsCronTriggered": true,
+    "threadsCommandReached": true,
+    "threadsApiConfigured": true,
+    "threadsPublishEnabled": true,
+    "threadsDryRun": false,
+    "threadsFailureReason": "post_date_not_found",
+    "threadsDailyPlanMissing": true,
+    "threadsRollingPlanImplemented": true,
+    "threadsPublishScriptAutoEnsuresPlan": true,
+    "gmailExpectedDateCorrect": true,
+    "gmailExpectedBatchCorrect": true,
+    "gmailReadyRows": 0,
+    "gmailStatusMismatchCount": 30,
+    "gmailLiveSendEnabled": false,
+    "gmailAutoSendEnabled": false,
+    "gmailReadyStatusValidationAdded": true,
+    "liveThreadsPostExecutedByThisRun": false,
+    "liveGmailSendExecutedByThisRun": false,
+    "liveSheetUpdatedByThisRun": false,
+    "sensitiveDataLogged": false
+  },
+  "nextAction": "19時Threads実行と翌日Gmail準備を監視し、Threads計画生成、Gmail ready行30件、Sheet同期、Preflight成功を確認する。",
+  "safeToAct": true,
+  "notes": [
+    "Hermes cron自体は正常発火",
+    "失敗原因は実行前データ未生成",
+    "Threads本番投稿なし",
+    "Gmail送信なし",
+    "Google Sheets本番更新なし",
+    "秘密情報なし"
+  ]
+}

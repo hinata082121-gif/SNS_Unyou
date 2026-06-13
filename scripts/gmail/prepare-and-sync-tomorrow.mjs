@@ -28,6 +28,7 @@ const summary = {
   sheetSynced: false,
   manualPasteRequired: true,
   readyRowsVerified: false,
+  readyStateCompleted: false,
   gmailSendExecuted: false,
   googleSheetsUpdatedByThisRun: false,
   blockedReason: ''
@@ -55,8 +56,13 @@ if (sync.status !== 0) {
 const verify = run('node', ['scripts/gmail/verify-sheet-ready-rows.mjs', '--date', sendDate]);
 const verifySummary = parseJson(verify.stdout);
 summary.readyRowsVerified = Boolean(verifySummary.readyRowsVerified);
+summary.readyStateCompleted = summary.sheetSynced && summary.readyRowsVerified;
 summary.ok = true;
-summary.blockedReason = summary.sheetSynced ? '' : (syncSummary.blockedReason || 'sheet_sync_dry_run');
+summary.blockedReason = summary.readyStateCompleted
+  ? ''
+  : summary.sheetSynced
+    ? 'apps_script_preflight_required'
+    : (syncSummary.blockedReason || 'sheet_sync_dry_run');
 updateAgentStatus(summary, syncSummary, verifySummary);
 console.log(safeSummary(summary));
 process.exit(0);
@@ -89,7 +95,10 @@ function updateAgentStatus(result, syncResult, verifyResult) {
     sheetSyncEnabled: Boolean(syncResult.syncEnabled),
     syncValidationErrorCount: Number(syncResult.validationErrorCount || 0),
     syncDuplicateCount: Number(syncResult.duplicateCount || 0),
+    syncStatusValueMatched: Boolean(syncResult.statusValueMatched),
+    syncStatusMismatchCount: Number(syncResult.statusMismatchCount || 0),
     expectedReadyRows: Number(verifyResult.expectedReadyRows || 30),
+    readyStateCompleted: result.readyStateCompleted,
     gmailSendExecuted: false,
     googleSheetsUpdatedByThisScript: result.sheetSynced
   });

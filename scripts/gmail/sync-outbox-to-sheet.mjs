@@ -56,6 +56,8 @@ const summary = {
   headerMatched: false,
   sendDateMatched: false,
   sendBatchIdMatched: false,
+  statusValueMatched: false,
+  statusMismatchCount: 0,
   subjectBodyPresent: false,
   optOutPresent: false,
   blockedReason: ''
@@ -140,6 +142,7 @@ function validateRows(parsed, expected) {
   let duplicateCount = 0;
   let sendDateMismatchCount = 0;
   let sendBatchIdMismatchCount = 0;
+  let statusMismatchCount = 0;
   let missingSubjectBodyCount = 0;
   let missingOptOutTextCount = 0;
   let invalidEmailCount = 0;
@@ -158,6 +161,7 @@ function validateRows(parsed, expected) {
     const email = cell(cells, index.email) || cell(cells, index.contactEmail);
     const subject = cell(cells, index.subject);
     const body = cell(cells, index.body);
+    const status = cell(cells, index.status).toLowerCase();
     const rowSendDate = cell(cells, index.sendDate);
     const rowBatchId = cell(cells, index.sendBatchId);
 
@@ -171,6 +175,7 @@ function validateRows(parsed, expected) {
     }
     if (rowSendDate !== expected.sendDate) sendDateMismatchCount += 1;
     if (rowBatchId !== expected.sendBatchId) sendBatchIdMismatchCount += 1;
+    if (status !== 'ready') statusMismatchCount += 1;
     if (!subject || !body) missingSubjectBodyCount += 1;
     if (!hasOptOutText(body)) missingOptOutTextCount += 1;
   });
@@ -179,6 +184,7 @@ function validateRows(parsed, expected) {
   if (invalidEmailCount > 0) errors.push('invalid_email');
   if (sendDateMismatchCount > 0) errors.push('send_date_mismatch');
   if (sendBatchIdMismatchCount > 0) errors.push('send_batch_id_mismatch');
+  if (statusMismatchCount > 0) errors.push('status_not_ready');
   if (missingSubjectBodyCount > 0) errors.push('missing_subject_or_body');
   if (missingOptOutTextCount > 0) errors.push('missing_opt_out_text');
 
@@ -191,6 +197,8 @@ function validateRows(parsed, expected) {
       headerMatched,
       sendDateMatched: sendDateMismatchCount === 0,
       sendBatchIdMatched: sendBatchIdMismatchCount === 0,
+      statusValueMatched: statusMismatchCount === 0,
+      statusMismatchCount,
       subjectBodyPresent: missingSubjectBodyCount === 0,
       optOutPresent: missingOptOutTextCount === 0
     }
