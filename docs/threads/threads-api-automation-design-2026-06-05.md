@@ -168,3 +168,20 @@ Gmail送信、Threads投稿、自動返信、自動いいね、自動フォロ�
 
 ログには、計画生成有無、slot、日付、公開許可、dry-run、API設定有無、投稿準備/検証状態、blockedReasonだけを残す。
 投稿本文、アクセストークン、User ID、APIレスポンス全文は出さない。
+
+## 2026-06-15 Threads復旧
+
+2026-06-13 19時以降の停止は、Gatewayが動いておらずcron tickerが進まなかったことが原因。
+2026-06-15にGatewayを単一起動し、19時ジョブの次回実行が確認できる状態にした。
+
+19時投稿のdry-run確認では、以下の安全な状態を確認した。
+
+- planEnsured=true
+- postPrepared=true
+- postValidated=true
+- published=false
+- blockedReason=publish_disabled
+- post_date_not_foundなし
+
+Codex作業中に本番投稿は行わない。
+19時前に復旧できている場合はcronに任せ、19時を過ぎた場合の本番手動投稿はユーザーの明示承認後のみ行う。

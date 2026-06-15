@@ -1777,6 +1777,26 @@ Gmail 2026-06-13のPreflightでは、sendDateとsendBatchIdは正しかったが
 17:20翌日準備後は、outbox30件、Sheet同期、status=ready、Preflight成功を確認し、条件未達なら12:00送信はblockedにする。
 送信許可は恒久的にtrueにせず、Preflight成功後に当日分だけ有効化し、送信後はOFFへ戻す設計を維持する。
 
+### 2026-06-15 緊急復旧後の現行スケジュール
+
+Threads:
+
+- `6fbea6039fcf`: ICHI Threads 毎日11時 ノウハウ投稿 / `0 11 * * *` / no-agent / `ichi_threads_post_11.py`
+- `ee568dbda7ab`: ICHI Threads 毎日19時 共感・導線投稿 / `0 19 * * *` / no-agent / `ichi_threads_post_19.py`
+- `96bd94126b9d`: ICHI Social 金曜20時 営業・Threads KPI改善レビュー / `0 20 * * 5` / no-agent / `ichi_threads_weekly_analyze.py`
+
+Gmail:
+
+- `b1aa88ba6cd4`: ICHI Gmail 毎日10:30 候補リスト不足確認 / `30 10 * * *`
+- `22286e4c7945`: ICHI Gmail 毎日11:30 Preflight監視 / `30 11 * * *`
+- `e6c05b32f9ff`: ICHI Gmail 毎日12:10 送信結果確認 / `10 12 * * *`
+- `c1f9aad68b12`: ICHI Gmail 毎日12:30 KPI集計 / `30 12 * * *`
+- `9c19cdb3b3c8`: ICHI Gmail 毎日17:20 翌日outbox生成・Sheet同期 / `20 17 * * *`
+- `3f86f0242f56`: ICHI Gmail 毎日17:30 翌日準備結果確認 / `30 17 * * *`
+
+Gmail本送信はHermesから二重実行しない。
+12時の本送信はApps Script側の既存安全条件を正とし、Hermesは準備、監視、Agent Office反映を担当する。
+
 ### Gmail日次batchローテーション監視
 
 Gmail営業30件/日の通常運用では、12:00の送信チェックはJST当日を対象にし、sendBatchIdは原則 `gmail-sales-YYYY-MM-DD` とする。

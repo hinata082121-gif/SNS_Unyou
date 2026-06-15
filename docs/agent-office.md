@@ -232,6 +232,36 @@ Agent Officeでは `ichi-social-automation-incident-2026-06-13` を表示し、T
 
 本番投稿、Gmail送信、Google Sheets本番更新はAgent Officeから実行しません。
 
+## 2026-06-15 緊急復旧表示
+
+Agent Officeでは `ichi-social-emergency-recovery-2026-06-15` を表示します。
+
+安全な表示項目:
+
+- lastConfirmedGmailSendDate: `2026-06-12`
+- gmailMissingDates: 3
+- gmailBacklogReplayAllowed: false
+- gmailResumeTargetDate: `2026-06-16`
+- threadsResumeTargetSlot: `2026-06-15 19:00`
+- gatewaySingleInstance
+- gatewayApiKeyConfigured
+- threadsJobsRegistered
+- gmailJobsRegistered
+- threadsRollingPlansReady
+- gmailTomorrowOutboxReady
+- liveThreadsPostExecutedByThisRun=false
+- liveGmailSendExecutedByThisRun=false
+- liveSheetUpdatedByThisRun=false
+
+表示しない項目:
+
+- `.env` / `.env.local` の値
+- API_SERVER_KEY
+- Threads token/User ID/APIレスポンス全文
+- Gmail本文、メールアドレス、営業先名、Sheet ID、Webhook URL
+
+Sheet同期とGmail送信は、人間の明示承認とPreflight成功後にのみ進めます。
+
 ## Phase 3: VS Code Webview拡張
 
 最終的にはVS Code Webview拡張として、Codex/Hermes作業中に同じ画面で進捗を確認できるようにします。

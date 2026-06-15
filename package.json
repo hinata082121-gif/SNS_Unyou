@@ -32,7 +32,10 @@
     "threads:weekly:analyze": "node scripts/threads/weekly-viral-analysis.mjs",
     "threads:status:record": "node scripts/threads/record-thread-status.mjs",
     "sales:kpi:record": "node scripts/sales/record-reply-kpis.mjs",
-    "sales:kpi:summary": "node scripts/sales/summarize-sales-kpis.mjs"
+    "sales:kpi:summary": "node scripts/sales/summarize-sales-kpis.mjs",
+    "automation:health": "node scripts/automation/check-ichi-social-health.mjs",
+    "automation:health:threads": "node scripts/automation/check-ichi-social-health.mjs",
+    "automation:health:gmail": "node scripts/automation/check-ichi-social-health.mjs"
   },
   "dependencies": {
     "next": "16.2.6",

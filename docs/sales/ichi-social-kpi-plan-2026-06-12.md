@@ -107,3 +107,21 @@ Threads投稿は公式API設定とpublish許可が揃った場合だけ実行す
 通常運用では、翌日outbox生成だけでなく、Sheet同期後に30行すべてが送信可能なready状態になっていることを確認する。
 readyRows=30、validationErrorCount=0、duplicateInSheetCount=0、previouslySentCount=0、remainingQuota>=30を満たした場合だけ、その日限りの送信許可を有効化する。
 送信後はLIVE_SEND_ENABLED/AUTO_SEND_ENABLEDをOFFへ戻す設計を維持し、恒久的にtrueにしない。
+
+## 12. 2026-06-16 Gmail通常再開
+
+2026-06-13、2026-06-14、2026-06-15の未送信分はバックログ送信しない。
+2026-06-16から30件/日で通常再開する。
+
+2026-06-16用のローカル準備状態:
+
+- sendDate: `2026-06-16`
+- sendBatchId: `gmail-sales-2026-06-16`
+- selectedCount: 30
+- duplicateCount: 0
+- copyVariant A: 15
+- copyVariant B: 15
+- Sheet本番同期: 未実行
+- Gmail本番送信: 未実行
+
+次の必須手順は、Sheet反映、Preflight成功、当日限りの送信許可、有効化後の12:00送信、送信後OFF確認。
