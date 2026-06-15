@@ -704,3 +704,25 @@ Apps Script Web App受信口を使う場合は、`Code.gs` をscript.google.com�
 2026-06-11にGmail系Nodeスクリプトへ `.env.local` 自動読み込みを追加した。
 Agent Officeでは `gmail-sheet-env-load-check-2026-06-11` を表示し、同期設定が読み込まれて `blockedReason=sheet_sync_dry_run` になったことを安全な状態だけで確認する。
 この確認ではGmail送信、Google Sheets本番更新、Apps Scriptトリガー操作は行っていない。
+
+## Windows Wake Scheduler反映（2026-06-15）
+
+ICHI Socialのローカル自動化は、PCスリープ中の未実行を避けるためWindows Task Schedulerを主実行基盤として追加しました。
+
+Agent Officeで確認する安全な項目:
+
+- `windowsWakeTasksRegistered`
+- `wakeToRunEnabledCount`
+- `startWhenAvailableEnabledCount`
+- `wakeTimersAcEnabled`
+- `wakeTimersDcEnabled`
+- `gatewayTaskRegistrationBlockedByPermission`
+- `liveThreadsPostExecutedByThisRun`
+- `liveGmailSendExecutedByThisRun`
+- `liveSheetUpdatedByThisRun`
+
+現在、時刻指定14タスクは登録済みです。
+Gateway起動/ログオンタスクは通常権限で登録拒否されたため、既存 `Hermes_Gateway` の維持と管理者権限での追加登録が次アクションです。
+
+Gmail本送信はWindows側から実行せず、Apps Script側の安全条件に限定します。
+Threads投稿は同一slotの多重起動をロックとTask Schedulerの `IgnoreNew` で抑止します。

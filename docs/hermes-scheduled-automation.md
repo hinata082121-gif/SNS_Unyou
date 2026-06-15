@@ -167,6 +167,35 @@ Hermes CLIに貼る登録文:
 
 このタスクでは、Googleスプレッドシートの自動更新も行いません。出力は、人間が確認・手動送信するための候補整理に限定します。
 
+## Windows Wake Task Scheduler併用（2026-06-15）
+
+PCスリープ中にHermes cronだけでは予定時刻実行できないため、Windows Task Schedulerをローカル処理の主実行基盤として追加しました。
+Hermes cronは削除せず、履歴・補助・確認用として保持します。
+
+登録先は `\ICHI-Social\` です。
+
+登録済み:
+
+- Threads時刻指定タスク 7件
+- Gmail準備・監視タスク 7件
+- 合計14件
+
+標準設定:
+
+- `WakeToRun=true`
+- `StartWhenAvailable=true`
+- `RunOnlyIfNetworkAvailable=true`
+- `MultipleInstancesPolicy=IgnoreNew`
+- AC/DCバッテリー時も開始許可
+
+Gateway起動/ログオンタスク2件は、通常権限ではWindowsから登録拒否されました。
+既存 `Hermes_Gateway` は保持し、Gatewayの起動時/ログオン時保証は管理者権限で追加登録します。
+
+Windows側はGmail本送信を実行しません。
+Apps ScriptのGmail本送信、Windowsのoutbox/Sheet準備、Hermes/Agent Office監視を分離します。
+
+詳細手順は `docs/runbooks/ichi-social-windows-wake-tasks.md` を参照します。
+
 候補取得では、`data/prospects/*.json` を横断確認し、`expanded-area` 系JSONを優先します。さらに `docs/reports/sales/research/*.md` の最新リサーチレポートを参照し、10件未満の場合は対象地域内でWeb補助リサーチを行います。Web補助リサーチで見つけた候補は `新規候補` として扱い、スプレッドシートへ自動投入しません。
 
 実行結果はHermes localに表示し、さらに以下へMarkdown保存します。

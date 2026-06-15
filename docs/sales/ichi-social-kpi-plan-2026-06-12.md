@@ -125,3 +125,13 @@ readyRows=30、validationErrorCount=0、duplicateInSheetCount=0、previouslySent
 - Gmail本番送信: 未実行
 
 次の必須手順は、Sheet反映、Preflight成功、当日限りの送信許可、有効化後の12:00送信、送信後OFF確認。
+
+## 13. Windows Wake Task Scheduler連携
+
+2026-06-15以降、KPI集計と関連監視はWindows Task Schedulerからも実行します。
+
+- 毎日12:30 `ICHI-Gmail-KPI-1230`
+- 金曜20:00 `ICHI-Threads-Weekly-Friday-2000`
+
+どちらも `WakeToRun=true`、`StartWhenAvailable=true`、`MultipleInstancesPolicy=IgnoreNew` です。
+Gmail本送信、Threads投稿本文、営業先名、メールアドレス、返信本文はKPIログに残しません。

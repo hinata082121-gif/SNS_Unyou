@@ -35,7 +35,8 @@
     "sales:kpi:summary": "node scripts/sales/summarize-sales-kpis.mjs",
     "automation:health": "node scripts/automation/check-ichi-social-health.mjs",
     "automation:health:threads": "node scripts/automation/check-ichi-social-health.mjs",
-    "automation:health:gmail": "node scripts/automation/check-ichi-social-health.mjs"
+    "automation:health:gmail": "node scripts/automation/check-ichi-social-health.mjs",
+    "automation:health:wake": "node scripts/automation/check-ichi-social-health.mjs"
   },
   "dependencies": {
     "next": "16.2.6",

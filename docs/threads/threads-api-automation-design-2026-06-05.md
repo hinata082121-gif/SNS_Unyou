@@ -185,3 +185,19 @@ Gmail送信、Threads投稿、自動返信、自動いいね、自動フォロ�
 
 Codex作業中に本番投稿は行わない。
 19時前に復旧できている場合はcronに任せ、19時を過ぎた場合の本番手動投稿はユーザーの明示承認後のみ行う。
+
+## 2026-06-15 Windows Wake Task Scheduler運用
+
+Threadsローカル投稿処理は、Windows Task Scheduler `\ICHI-Social\` のWakeToRun付きタスクを主実行基盤にします。
+
+- 10:50 `ICHI-Threads-Plan-1050`
+- 11:00 `ICHI-Threads-Post-1100`
+- 11:10 `ICHI-Threads-Verify-1110`
+- 18:50 `ICHI-Threads-Plan-1850`
+- 19:00 `ICHI-Threads-Post-1900`
+- 19:10 `ICHI-Threads-Verify-1910`
+- 金曜20:00 `ICHI-Threads-Weekly-Friday-2000`
+
+各タスクは `StartWhenAvailable=true`、`WakeToRun=true`、`MultipleInstancesPolicy=IgnoreNew` で登録します。
+テスト時は `THREADS_PUBLISH_ENABLED=false` と `THREADS_DRY_RUN=true` を使い、本番投稿を行いません。
+ログには投稿本文、認証値、User ID、APIレスポンス本文を残しません。

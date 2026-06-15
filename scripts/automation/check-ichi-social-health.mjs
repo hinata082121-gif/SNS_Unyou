@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { loadLocalEnv } from "../lib/load-local-env.mjs";
 
 loadLocalEnv();
@@ -13,6 +14,7 @@ const jobsPath = hermesRoot ? path.join(hermesRoot, "cron", "jobs.json") : "";
 const targetDate = argValue("date", jstDate(1));
 const outboxTask = readJson(path.join(root, "data", "agent-status", "tasks", `gmail-next-day-outbox-${targetDate}.json`), null);
 const jobs = readHermesJobs(jobsPath);
+const windowsScheduler = readWindowsSchedulerHealth();
 const threadJobs = jobs.filter((job) => String(job.name || "").includes("Threads"));
 const gmailJobs = jobs.filter((job) => String(job.name || "").includes("Gmail"));
 const rollingPlansReady = [jstDate(0), jstDate(1), jstDate(2)].every((date) => {
@@ -44,6 +46,7 @@ const summary = {
     sheetSynced: Boolean(metrics.sheetSynced),
     manualPasteRequired: Boolean(metrics.manualPasteRequired)
   },
+  windowsScheduler,
   sensitiveDataLogged: false
 };
 
@@ -83,4 +86,76 @@ function jstDate(daysFromToday = 0) {
     jstNow.getUTCDate() + daysFromToday
   ));
   return base.toISOString().slice(0, 10);
+}
+
+function readWindowsSchedulerHealth() {
+  if (process.platform !== "win32") {
+    return {
+      available: false,
+      taskCount: 0,
+      enabledCount: 0,
+      wakeToRunCount: 0,
+      startWhenAvailableCount: 0,
+      failedTaskCount: 0,
+      nextCriticalRun: null,
+      wakeTimersAcEnabled: null,
+      wakeTimersDcEnabled: null
+    };
+  }
+
+  const taskScript = `
+    $tasks = Get-ScheduledTask -TaskPath '\\ICHI-Social\\' -ErrorAction SilentlyContinue;
+    $rows = foreach ($task in $tasks) {
+      $info = Get-ScheduledTaskInfo -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction SilentlyContinue;
+      [pscustomobject]@{
+        enabled = ($task.State -ne 'Disabled');
+        wakeToRun = [bool]$task.Settings.WakeToRun;
+        startWhenAvailable = [bool]$task.Settings.StartWhenAvailable;
+        lastTaskResult = $info.LastTaskResult;
+        nextRunTime = $info.NextRunTime;
+      }
+    };
+    [pscustomobject]@{
+      taskCount = @($rows).Count;
+      enabledCount = @($rows | Where-Object enabled).Count;
+      wakeToRunCount = @($rows | Where-Object wakeToRun).Count;
+      startWhenAvailableCount = @($rows | Where-Object startWhenAvailable).Count;
+      failedTaskCount = @($rows | Where-Object { $_.lastTaskResult -notin @(0,267011,$null) }).Count;
+      nextCriticalRun = if (@($rows | Where-Object nextRunTime).Count -gt 0) { (@($rows | Where-Object nextRunTime | Sort-Object nextRunTime | Select-Object -First 1).nextRunTime).ToString('o') } else { $null };
+    } | ConvertTo-Json -Compress
+  `;
+
+  const powerScript = `
+    $q = powercfg /QUERY SCHEME_CURRENT SUB_SLEEP 2>$null | Out-String;
+    [pscustomobject]@{
+      wakeTimersAcEnabled = [bool]($q -match '(?s)(Allow wake timers|RTCWAKE|スリープ解除タイマー).*?(Current AC Power Setting Index|現在の AC 電源設定のインデックス):\\s*0x00000001');
+      wakeTimersDcEnabled = [bool]($q -match '(?s)(Allow wake timers|RTCWAKE|スリープ解除タイマー).*?(Current DC Power Setting Index|現在の DC 電源設定のインデックス):\\s*0x00000001');
+    } | ConvertTo-Json -Compress
+  `;
+
+  const taskHealth = readPowerShellJson(taskScript, {});
+  const powerHealth = readPowerShellJson(powerScript, {});
+  return {
+    available: true,
+    taskCount: Number(taskHealth.taskCount || 0),
+    enabledCount: Number(taskHealth.enabledCount || 0),
+    wakeToRunCount: Number(taskHealth.wakeToRunCount || 0),
+    startWhenAvailableCount: Number(taskHealth.startWhenAvailableCount || 0),
+    failedTaskCount: Number(taskHealth.failedTaskCount || 0),
+    nextCriticalRun: taskHealth.nextCriticalRun || null,
+    wakeTimersAcEnabled: typeof powerHealth.wakeTimersAcEnabled === "boolean" ? powerHealth.wakeTimersAcEnabled : null,
+    wakeTimersDcEnabled: typeof powerHealth.wakeTimersDcEnabled === "boolean" ? powerHealth.wakeTimersDcEnabled : null
+  };
+}
+
+function readPowerShellJson(command, fallback) {
+  try {
+    const output = execFileSync("powershell.exe", ["-NoProfile", "-Command", command], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return output ? JSON.parse(output) : fallback;
+  } catch {
+    return fallback;
+  }
 }

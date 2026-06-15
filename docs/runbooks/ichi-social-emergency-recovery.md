@@ -74,3 +74,16 @@ Codex作業中はGmail本番送信、Google Sheets本番更新、Apps Scriptト�
 - Threads過去日分を遡って投稿しない
 - メールアドレス、営業先名、Gmail本文、返信本文、Threads token、User ID、APIレスポンス全文、Sheet ID、Webhook URLを表示しない
 - `data/gmail/`、`data/threads/`、`data/prospects/`、`docs/reports/sales/`、`tmp/`、`.env`、`.env.local` をGit追加しない
+
+## Windows Wake Task Scheduler移行
+
+2026-06-15に、PCスリープ中でも予定時刻に復帰してローカル処理を実行できるよう、Windows Task Schedulerへ `WakeToRun` 付きタスクを追加しました。
+
+- Threads投稿計画、投稿、結果確認
+- Gmail候補確認、当日ready確認、Preflight監視、送信結果監視、KPI
+- 翌日outbox生成・Sheet同期
+
+時刻指定14タスクは `WakeToRun=true` / `StartWhenAvailable=true` / `IgnoreNew` で登録済みです。
+Gateway起動/ログオンタスクは通常権限では登録拒否されたため、管理者権限での追加登録または既存 `Hermes_Gateway` の維持確認が必要です。
+
+詳細は `docs/runbooks/ichi-social-windows-wake-tasks.md` を参照します。
