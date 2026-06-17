@@ -820,3 +820,36 @@ Instagram初期12投稿とReels企画はdraftとして扱い、Canvaまたは画
 - 表示しない情報: Meta token、App ID、App Secret、Instagram User ID、Facebook Page ID、Threads User ID、APIレスポンス全文、caption全文、署名付きURL
 - nextAction: Meta App権限、Professional account、公開メディアURL、feature flagsを確認し、7件目の素材を用意して人間承認する。
 - 今回はInstagram本番投稿、Threads本番投稿、Gmail送信、Google Sheets更新を行わない。
+
+## Gmail営業誤送信事故監査（2026-06-18）
+
+Agent Officeでは `gmail-sales-incident-2026-06-18` と `gmail-noon-recovery-2026-06-18` を表示し、Gmail営業送信の停止・監査・復旧可否を確認します。
+
+安全な表示項目:
+
+- outboxFileCount
+- totalRowsAudited
+- duplicateAcrossOutboxes
+- repeatedOutboxPairCount
+- outsideAllowedWindowCount
+- actualGmailSentMailboxAudited
+- availableAfterIncidentExclusion
+- recoveryOutboxCreated
+- gmailSendExecutedByThisRun
+- googleSheetsUpdatedByThisRun
+
+表示しない項目:
+
+- メールアドレス
+- 営業先名
+- Gmail本文全文
+- 返信本文
+- Gmailスレッド全文
+- Sheet ID
+- Apps Script URL
+- Webhook URL
+- APIキー
+- トークン
+
+2026-06-18 00:38-00:40 JSTの30件は時間外送信扱いとし、人間がApps ScriptログとGmail送信済みを確認するまで正当な営業送信完了として扱いません。
+Apps Script側には許可時間窓、明示承認チェックサム、宛名整合検査を追加し、同じ候補セットや誤宛名本文の送信を送信直前で停止します。

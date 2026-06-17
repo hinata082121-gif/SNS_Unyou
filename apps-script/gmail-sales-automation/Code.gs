@@ -347,6 +347,28 @@ function runPreflightDiagnosticsOnly() {
   }, summary));
 }
 
+function runBatchApprovalChecksumPreviewOnly() {
+  const preflight = runPreflight_(false);
+  const checksum = calculateBatchApprovalChecksum_(preflight.config, preflight.batchId, preflight.readyRows);
+  appendSafeLog_({
+    event: 'batch_approval_checksum_preview_only',
+    sendDate: preflight.config.sendDate,
+    sendBatchId: preflight.batchId,
+    readyCount: preflight.readyCount,
+    targetCount: preflight.targetCount,
+    approvalChecksum: checksum,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false
+  });
+  return {
+    sendDate: preflight.config.sendDate,
+    sendBatchId: preflight.batchId,
+    readyCount: preflight.readyCount,
+    targetCount: preflight.targetCount,
+    approvalChecksum: checksum
+  };
+}
+
 function runScheduledPreflight() {
   const result = runPreflight_(false);
   appendAutomationStatusLog_({
@@ -476,6 +498,37 @@ function executeDailyGmailSalesSend_(options) {
     }
 
     const config = preflight.config;
+    const windowCheck = validateDailySendWindow_(config);
+    if (!windowCheck.ok) {
+      appendSafeLog_({
+        event: 'daily_job_blocked',
+        source: settings.source || 'unknown',
+        blockedReason: windowCheck.blockedReason,
+        currentJstMinutes: windowCheck.currentJstMinutes,
+        allowedStartMinutes: windowCheck.allowedStartMinutes,
+        allowedEndMinutes: windowCheck.allowedEndMinutes,
+        sendBatchId: preflight.batchId,
+        readyCount: preflight.readyCount
+      });
+      return;
+    }
+
+    const approvalCheck = validateExplicitBatchApproval_(config, preflight.batchId, preflight.readyRows);
+    if (!approvalCheck.ok) {
+      appendSafeLog_({
+        event: 'daily_job_blocked',
+        source: settings.source || 'unknown',
+        blockedReason: approvalCheck.blockedReason,
+        sendBatchId: preflight.batchId,
+        expectedApprovalChecksum: approvalCheck.expectedApprovalChecksum,
+        approvedBatchIdMatched: approvalCheck.approvedBatchIdMatched,
+        approvedChecksumMatched: approvalCheck.approvedChecksumMatched,
+        approvalNotExpired: approvalCheck.approvalNotExpired,
+        readyCount: preflight.readyCount
+      });
+      return;
+    }
+
     const maxToProcess = preflight.targetCount;
     const rows = preflight.readyRows;
     let processed = 0;
@@ -491,6 +544,7 @@ function executeDailyGmailSalesSend_(options) {
         assertSafeToSend_(row);
         const message = buildInitialSalesEmail_(row);
         assertMessageSafe_(message);
+        assertRecipientPersonalizationSafe_(row, message);
         MailApp.sendEmail({
           to: email,
           subject: message.subject,
@@ -508,7 +562,7 @@ function executeDailyGmailSalesSend_(options) {
           event: 'send_executed',
           rowIndex,
           recipientHash: hashValue_(email),
-          subject: message.subject
+          subjectHash: hashValue_(message.subject)
         });
         processed += 1;
       } catch (error) {
@@ -1063,6 +1117,10 @@ function getConfig_() {
     preflightHour: normalizeHour_(props.getProperty('PREFLIGHT_HOUR'), 11),
     sendHour: normalizeHour_(props.getProperty('SEND_HOUR'), 12),
     postSendCheckHour: normalizeHour_(props.getProperty('POST_SEND_CHECK_HOUR'), 12),
+    allowedSendStartHour: normalizeHour_(props.getProperty('ALLOWED_SEND_START_HOUR'), 11),
+    allowedSendStartMinute: normalizeMinute_(props.getProperty('ALLOWED_SEND_START_MINUTE'), 55),
+    allowedSendEndHour: normalizeHour_(props.getProperty('ALLOWED_SEND_END_HOUR'), 12),
+    allowedSendEndMinute: normalizeMinute_(props.getProperty('ALLOWED_SEND_END_MINUTE'), 15),
     sendBatchIdPrefix: props.getProperty('SEND_BATCH_ID_PREFIX') || 'gmail-sales',
     sendBatchId: sendContext.sendBatchId,
     currentJstDate: sendContext.currentJstDate,
@@ -1075,6 +1133,10 @@ function getConfig_() {
     requireExactReadyCount: props.getProperty('REQUIRE_EXACT_READY_COUNT') !== 'false',
     requireOptOutText: props.getProperty('REQUIRE_OPT_OUT_TEXT') !== 'false',
     requireUniqueBatch: props.getProperty('REQUIRE_UNIQUE_BATCH') !== 'false',
+    requireExplicitBatchApproval: props.getProperty('REQUIRE_EXPLICIT_BATCH_APPROVAL') !== 'false',
+    approvedBatchId: String(props.getProperty('APPROVED_BATCH_ID') || '').trim(),
+    approvedBatchChecksum: String(props.getProperty('APPROVED_BATCH_CHECKSUM') || '').trim(),
+    approvalExpiresAt: String(props.getProperty('APPROVAL_EXPIRES_AT') || '').trim(),
     maxFailuresBeforeStop: Math.max(1, Number(props.getProperty('MAX_FAILURES_BEFORE_STOP') || '1')),
     sendDate: sendContext.sendDate,
     nextActionDate: props.getProperty('NEXT_ACTION_DATE') || '',
@@ -1518,6 +1580,70 @@ function buildRecommendedNextAction_(blockedReason, readyCount, targetCount, con
   return 'Ready for the configured daily send window.';
 }
 
+function validateDailySendWindow_(config) {
+  const timezone = Session.getScriptTimeZone() || 'Asia/Tokyo';
+  const hhmm = Utilities.formatDate(new Date(), timezone, 'HH:mm').split(':');
+  const current = Number(hhmm[0]) * 60 + Number(hhmm[1]);
+  const start = config.allowedSendStartHour * 60 + config.allowedSendStartMinute;
+  const end = config.allowedSendEndHour * 60 + config.allowedSendEndMinute;
+  const inWindow = start <= end
+    ? current >= start && current <= end
+    : current >= start || current <= end;
+
+  return {
+    ok: inWindow,
+    blockedReason: inWindow ? '' : 'outside_allowed_send_window',
+    currentJstMinutes: current,
+    allowedStartMinutes: start,
+    allowedEndMinutes: end
+  };
+}
+
+function validateExplicitBatchApproval_(config, batchId, readyRows) {
+  const expectedChecksum = calculateBatchApprovalChecksum_(config, batchId, readyRows);
+  const approvedBatchIdMatched = config.approvedBatchId === batchId;
+  const approvedChecksumMatched = config.approvedBatchChecksum === expectedChecksum;
+  const approvalNotExpired = isApprovalNotExpired_(config.approvalExpiresAt);
+  const ok = !config.requireExplicitBatchApproval ||
+    (approvedBatchIdMatched && approvedChecksumMatched && approvalNotExpired);
+
+  return {
+    ok,
+    blockedReason: ok ? '' : 'explicit_batch_approval_required',
+    expectedApprovalChecksum: expectedChecksum,
+    approvedBatchIdMatched,
+    approvedChecksumMatched,
+    approvalNotExpired
+  };
+}
+
+function calculateBatchApprovalChecksum_(config, batchId, readyRows) {
+  const rowHashes = (readyRows || []).map((item) => {
+    const row = item.row || {};
+    const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
+    const businessName = normalizeTextForComparison_(row.name || row['店舗名']);
+    const subject = normalizeEmailSubject_(row.subject || row['件名']);
+    return hashValue_([item.rowIndex || '', email, businessName, subject].join('|'));
+  }).sort();
+  return hashValue_([
+    config.sendDate,
+    batchId,
+    Math.min(config.dailySendLimit, 30),
+    rowHashes.join(',')
+  ].join('|'));
+}
+
+function isApprovalNotExpired_(value) {
+  if (!value) {
+    return false;
+  }
+  const expiry = new Date(value);
+  if (Number.isNaN(expiry.getTime())) {
+    return false;
+  }
+  return expiry.getTime() > Date.now();
+}
+
 function assertMessageSafe_(message) {
   const config = getConfig_();
   const subject = normalizeEmailSubject_((message && message.subject) || '');
@@ -1528,6 +1654,17 @@ function assertMessageSafe_(message) {
   }
   if (includesAny_(text, ['必ず売上', '絶対', '売上保証', '成果保証'])) {
     throw new Error('guaranteed_result_expression');
+  }
+}
+
+function assertRecipientPersonalizationSafe_(row, message) {
+  const body = normalizeEmailBody_((message && message.body) || '');
+  const businessName = String(row.name || row['店舗名'] || '').trim();
+  if (businessName && body.indexOf(businessName) === -1) {
+    throw new Error('personalization_name_mismatch');
+  }
+  if (includesAny_(body, ['{{', '}}', '${name}', '${storeName}', 'undefined', 'null さま'])) {
+    throw new Error('personalization_placeholder_detected');
   }
 }
 
@@ -1557,6 +1694,10 @@ function hasEscapedNewline_(value) {
 
 function normalizeEmail_(email) {
   return String(email || '').trim().toLowerCase();
+}
+
+function normalizeTextForComparison_(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 function shouldSkipRecipient_(row) {
@@ -1722,6 +1863,14 @@ function normalizeHour_(value, fallback) {
     return fallback;
   }
   return Math.floor(hour);
+}
+
+function normalizeMinute_(value, fallback) {
+  const minute = Number(value);
+  if (!Number.isFinite(minute) || minute < 0 || minute > 59) {
+    return fallback;
+  }
+  return Math.floor(minute);
 }
 
 function normalizeDateText_(value) {

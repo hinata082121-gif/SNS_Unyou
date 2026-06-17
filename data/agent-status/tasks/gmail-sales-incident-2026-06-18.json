@@ -1,0 +1,39 @@
+{
+  "id": "gmail-sales-incident-2026-06-18",
+  "agent": "Codex",
+  "avatar": "ops-monitor",
+  "title": "Gmail営業誤送信事故監査",
+  "category": "gmail_send",
+  "status": "blocked",
+  "phase": "送信停止・安全監査中",
+  "progress": 70,
+  "priority": "critical",
+  "createdAt": "2026-06-18T00:00:00.000+09:00",
+  "updatedAt": "2026-06-17T16:02:46.211Z",
+  "summary": "2026-06-11以降のGmail営業outboxを安全なハッシュと件数だけで監査し、重複・再利用・時間外送信扱いを記録した。",
+  "artifacts": [
+    "docs/gmail/gmail-sales-incident-safe-summary-2026-06-18.md",
+    "docs/gmail/gmail-sales-incident-response-2026-06-18.md",
+    "docs/gmail/gmail-sales-safety-guard-runbook-2026-06-18.md"
+  ],
+  "metrics": {
+    "fromDate": "2026-06-11",
+    "outboxFileCount": 5,
+    "totalRowsAudited": 150,
+    "duplicateAcrossOutboxes": 120,
+    "repeatedOutboxPairCount": 10,
+    "outsideAllowedWindowCount": 30,
+    "actualGmailSentMailboxAudited": false,
+    "gmailSendExecutedByThisRun": false,
+    "googleSheetsUpdatedByThisRun": false,
+    "liveRecoveryBatchReady": false
+  },
+  "nextAction": "Gmail送信を停止したまま、人間がApps ScriptログとGmail送信済みを照合し、正当送信/無効送信の最終分類を確認する。",
+  "safeToAct": false,
+  "notes": [
+    "Gmail送信なし",
+    "Google Sheets更新なし",
+    "メールアドレス・営業先名・本文全文は記録しない",
+    "2026-06-18 00:38-00:40 JSTの30件は時間外送信扱い"
+  ]
+}

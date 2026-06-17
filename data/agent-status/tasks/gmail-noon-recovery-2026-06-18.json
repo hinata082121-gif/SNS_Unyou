@@ -1,0 +1,37 @@
+{
+  "id": "gmail-noon-recovery-2026-06-18",
+  "agent": "Codex",
+  "avatar": "ops-monitor",
+  "title": "Gmail営業 2026-06-18 昼再開判定",
+  "category": "gmail_send",
+  "status": "blocked",
+  "phase": "事故監査未完了・昼再開停止",
+  "progress": 60,
+  "priority": "critical",
+  "createdAt": "2026-06-18T00:00:00.000+09:00",
+  "updatedAt": "2026-06-17T16:02:46.429Z",
+  "summary": "2026-06-18の昼再開可否を、事故以降のoutbox履歴を除外した安全件数だけで判定した。",
+  "artifacts": [
+    "docs/gmail/gmail-sales-incident-response-2026-06-18.md",
+    "docs/gmail/gmail-sales-safety-guard-runbook-2026-06-18.md"
+  ],
+  "metrics": {
+    "targetDate": "2026-06-18",
+    "availableAfterIncidentExclusion": 70,
+    "minimumRequired": 30,
+    "shortage": 0,
+    "humanApproved": false,
+    "recoveryOutboxCreated": false,
+    "gmailSendExecutedByThisRun": false,
+    "googleSheetsUpdatedByThisRun": false,
+    "excludedHistoricalWindowFrom": "2026-06-11"
+  },
+  "nextAction": "Gmail送信を停止したまま、事故監査と安全候補補充を完了する。",
+  "safeToAct": false,
+  "notes": [
+    "このスクリプトは復旧用outbox/TSVを作成しない",
+    "Gmail送信なし",
+    "Google Sheets更新なし",
+    "候補詳細・メールアドレス・営業先名は表示しない"
+  ]
+}
