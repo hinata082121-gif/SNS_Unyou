@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "instagram-publish-history-v1",
+  "updatedAt": "2026-06-17T11:28:31.907Z",
+  "entries": [
+    {
+      "id": "instagram-manual-2026-seq-01",
+      "sequence": 1,
+      "format": "carousel",
+      "manuallyPublished": true,
+      "published": true,
+      "publishedAt": null,
+      "safePublishedMediaIdHash": null,
+      "retryAllowed": false,
+      "autoPublishEligible": false
+    },
+    {
+      "id": "instagram-manual-2026-seq-02",
+      "sequence": 2,
+      "format": "carousel",
+      "manuallyPublished": true,
+      "published": true,
+      "publishedAt": null,
+      "safePublishedMediaIdHash": null,
+      "retryAllowed": false,
+      "autoPublishEligible": false
+    },
+    {
+      "id": "instagram-manual-2026-seq-03",
+      "sequence": 3,
+      "format": "carousel",
+      "manuallyPublished": true,
+      "published": true,
+      "publishedAt": null,
+      "safePublishedMediaIdHash": null,
+      "retryAllowed": false,
+      "autoPublishEligible": false
+    },
+    {
+      "id": "instagram-manual-2026-seq-04",
+      "sequence": 4,
+      "format": "carousel",
+      "manuallyPublished": true,
+      "published": true,
+      "publishedAt": null,
+      "safePublishedMediaIdHash": null,
+      "retryAllowed": false,
+      "autoPublishEligible": false
+    },
+    {
+      "id": "instagram-manual-2026-seq-05",
+      "sequence": 5,
+      "format": "carousel",
+      "manuallyPublished": true,
+      "published": true,
+      "publishedAt": null,
+      "safePublishedMediaIdHash": null,
+      "retryAllowed": false,
+      "autoPublishEligible": false
+    },
+    {
+      "id": "instagram-manual-2026-seq-06",
+      "sequence": 6,
+      "format": "carousel",
+      "manuallyPublished": true,
+      "published": true,
+      "publishedAt": null,
+      "safePublishedMediaIdHash": null,
+      "retryAllowed": false,
+      "autoPublishEligible": false
+    }
+  ]
+}

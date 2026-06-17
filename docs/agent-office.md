@@ -807,3 +807,16 @@ Instagram初期12投稿とReels企画はdraftとして扱い、Canvaまたは画
 - 表示しない情報: 顧客情報、営業先情報、メール情報、秘密情報、投稿実行用の認証情報。
 - nextAction: Canvaまたは画像生成で実素材を制作し、人間レビュー後に公開可否を判断する。
 - 今回はInstagram/Threads本番投稿、Gmail送信、Google Sheets更新を行わない。
+
+## Instagram自動投稿・Threads連動基盤（2026-06-17）
+
+- taskId: instagram-publishing-automation-2026-06-17
+- status: needs_review
+- phase: dry-run基盤実装済み・Meta設定と人間承認待ち
+- 対応予定format: image / carousel / reel
+- 既存手動公開1〜6件目は published_manual / autoPublishEligible=false として安全に記録
+- 次回自動化対象: sequence 7以降
+- /agent-office表示項目: supportedFormatCount、manualPublishedRecordedCount、nextAutoEligibleSequence、humanApprovalRequired、livePublishExecuted、threadsLivePostExecuted、blockedReasons
+- 表示しない情報: Meta token、App ID、App Secret、Instagram User ID、Facebook Page ID、Threads User ID、APIレスポンス全文、caption全文、署名付きURL
+- nextAction: Meta App権限、Professional account、公開メディアURL、feature flagsを確認し、7件目の素材を用意して人間承認する。
+- 今回はInstagram本番投稿、Threads本番投稿、Gmail送信、Google Sheets更新を行わない。

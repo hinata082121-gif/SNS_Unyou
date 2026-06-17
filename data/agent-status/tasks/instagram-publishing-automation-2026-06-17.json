@@ -1,0 +1,46 @@
+{
+  "id": "instagram-publishing-automation-2026-06-17",
+  "agent": "Codex",
+  "avatar": "pr-writer",
+  "title": "Instagram自動投稿・Threads連動基盤",
+  "category": "instagram",
+  "status": "needs_review",
+  "phase": "dry-run基盤実装済み・Meta設定と人間承認待ち",
+  "progress": 82,
+  "priority": "high",
+  "createdAt": "2026-06-17T00:00:00.000+09:00",
+  "updatedAt": "2026-06-17T11:28:31.907Z",
+  "summary": "Instagram画像・カルーセル・Reels投稿のAPIクライアント、readiness、承認、preflight、dry-run、Threads連動準備の安全基盤を整備。既定では本番公開せず、人間承認とMeta設定が揃うまでblockedにする。",
+  "artifacts": [
+    "scripts/meta/check-instagram-publishing-readiness.mjs",
+    "scripts/meta/check-threads-publishing-readiness.mjs",
+    "scripts/instagram/lib/instagram-api-client.mjs",
+    "scripts/instagram/lib/instagram-publishing-utils.mjs",
+    "scripts/instagram/publish-scheduled-post.mjs",
+    "data/instagram/publishing/scheduled-posts.json",
+    "docs/runbooks/instagram-automated-publishing.md"
+  ],
+  "metrics": {
+    "supportedFormatCount": 3,
+    "imageSupported": true,
+    "carouselSupported": true,
+    "reelsSupported": true,
+    "manualPublishedRecordedCount": 6,
+    "nextAutoEligibleSequence": 7,
+    "humanApprovalRequired": true,
+    "livePublishExecuted": false,
+    "threadsLivePostExecuted": false,
+    "gmailSendExecuted": false,
+    "googleSheetsUpdated": false
+  },
+  "nextAction": "Meta App権限、Professional account、公開メディアURL、feature flagsを確認し、7件目の画像素材を用意して人間承認する",
+  "safeToAct": true,
+  "notes": [
+    "Instagram本番投稿なし",
+    "Threads本番投稿なし",
+    "Gmail送信なし",
+    "Google Sheets更新なし",
+    "秘密情報なし",
+    "feature flags既定はpublish disabled/dry-run"
+  ]
+}
