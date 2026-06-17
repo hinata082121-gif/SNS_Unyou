@@ -38,16 +38,15 @@ for (const row of poolRows) {
   availableAfterIncidentExclusion += 1;
 }
 
-const readyForRecovery = availableAfterIncidentExclusion >= 30 && args['human-approved'] === true;
 const task = {
   id: 'gmail-noon-recovery-2026-06-18',
   agent: 'Codex',
   avatar: 'ops-monitor',
   title: 'Gmail営業 2026-06-18 昼再開判定',
   category: 'gmail_send',
-  status: readyForRecovery ? 'needs_review' : 'blocked',
-  phase: readyForRecovery ? '候補数は足りるが人間承認待ち' : '事故監査未完了・昼再開停止',
-  progress: readyForRecovery ? 80 : 60,
+  status: 'blocked',
+  phase: 'cancelled_due_to_incident・本日再送中止',
+  progress: 100,
   priority: 'critical',
   createdAt: '2026-06-18T00:00:00.000+09:00',
   updatedAt: new Date().toISOString(),
@@ -62,14 +61,13 @@ const task = {
     minimumRequired: 30,
     shortage: Math.max(0, 30 - availableAfterIncidentExclusion),
     humanApproved: args['human-approved'] === true,
+    recoveryCancelledDueToIncident: true,
     recoveryOutboxCreated: false,
     gmailSendExecutedByThisRun: false,
     googleSheetsUpdatedByThisRun: false,
     excludedHistoricalWindowFrom: fromDate
   },
-  nextAction: readyForRecovery
-    ? '人間が監査結果を確認し、明示承認後にだけ復旧用outboxを別途作成する。'
-    : 'Gmail送信を停止したまま、事故監査と安全候補補充を完了する。',
+  nextAction: '2026-06-18は追加送信せず、Gmail Sent監査結果をsuppression ledgerへ登録して翌日以降の新規候補だけを準備する。',
   safeToAct: false,
   notes: [
     'このスクリプトは復旧用outbox/TSVを作成しない',
@@ -84,6 +82,7 @@ console.log(JSON.stringify({
   targetDate,
   availableAfterIncidentExclusion,
   invalidOrUnavailableCount,
+  recoveryCancelledDueToIncident: true,
   recoveryOutboxCreated: false,
   statusFile
 }, null, 2));

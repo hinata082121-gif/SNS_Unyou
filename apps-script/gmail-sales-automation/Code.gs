@@ -369,6 +369,121 @@ function runBatchApprovalChecksumPreviewOnly() {
   };
 }
 
+function runSentHistoryIncidentAuditOnly() {
+  const config = getConfig_();
+  const incidentConfig = getSentHistoryIncidentConfig_();
+  const query = buildSentHistoryIncidentQuery_(incidentConfig);
+  const threads = GmailApp.search(query, 0, incidentConfig.maxThreads);
+  const ledger = {};
+  const dailyCounts = {};
+  let totalSent = 0;
+  let missingGreetingCount = 0;
+  let outsideWindowCount = 0;
+  let invalidNotCountedCount = 0;
+
+  threads.forEach((thread) => {
+    thread.getMessages().forEach((message) => {
+      if (!isIncidentAuditMessage_(message, incidentConfig)) {
+        return;
+      }
+
+      const sentAt = message.getDate();
+      const sentAtIso = sentAt.toISOString();
+      const day = Utilities.formatDate(sentAt, incidentConfig.timezone, 'yyyy-MM-dd');
+      const body = normalizeEmailBody_(message.getPlainBody() || '');
+      const greetingName = extractGreetingName_(body);
+      const greetingIssue = classifyGreetingIssue_(body, greetingName);
+      const outsideWindow = isOutsideAllowedIncidentWindow_(sentAt, config, incidentConfig);
+      const batchId = extractBatchIdFromSubjectOrBody_(message.getSubject(), body);
+      const recipients = parseRecipientEmailsFromHeader_(message.getTo());
+
+      recipients.forEach((email) => {
+        const recipientHash = hashValue_(email);
+        const domainHash = hashValue_(extractEmailDomain_(email));
+        const businessFingerprint = hashValue_(normalizeTextForComparison_(greetingName || 'missing_greeting') + '|' + domainHash);
+        const existing = ledger[recipientHash] || {
+          recipientHash,
+          normalizedDomainHash: domainHash,
+          businessFingerprint,
+          firstSentAt: sentAtIso,
+          lastSentAt: sentAtIso,
+          sendCount: 0,
+          batchIds: [],
+          deliveryStatus: 'sent',
+          salesCompletionStatus: 'unverified',
+          invalidReasons: {},
+          suppressed: true,
+          futureEligible: false
+        };
+
+        existing.sendCount += 1;
+        existing.firstSentAt = sentAtIso < existing.firstSentAt ? sentAtIso : existing.firstSentAt;
+        existing.lastSentAt = sentAtIso > existing.lastSentAt ? sentAtIso : existing.lastSentAt;
+        if (batchId && existing.batchIds.indexOf(batchId) === -1) {
+          existing.batchIds.push(batchId);
+        }
+        if (greetingIssue) {
+          existing.invalidReasons[greetingIssue] = true;
+        }
+        if (outsideWindow) {
+          existing.invalidReasons.outside_window = true;
+        }
+        ledger[recipientHash] = existing;
+      });
+
+      totalSent += recipients.length;
+      dailyCounts[day] = (dailyCounts[day] || 0) + recipients.length;
+      if (greetingIssue) {
+        missingGreetingCount += recipients.length;
+      }
+      if (outsideWindow) {
+        outsideWindowCount += recipients.length;
+      }
+    });
+  });
+
+  Object.keys(ledger).forEach((recipientHash) => {
+    const entry = ledger[recipientHash];
+    if (entry.sendCount > 1) {
+      entry.invalidReasons.duplicate = true;
+    }
+    const invalidReasons = Object.keys(entry.invalidReasons);
+    entry.invalidReasons = invalidReasons;
+    entry.salesCompletionStatus = invalidReasons.length === 0 && entry.sendCount === 1
+      ? 'valid_first_send'
+      : 'invalid_not_counted';
+    if (entry.salesCompletionStatus === 'invalid_not_counted') {
+      invalidNotCountedCount += entry.sendCount;
+    }
+  });
+
+  const recipientHashes = Object.keys(ledger);
+  const duplicatedRecipients = recipientHashes.filter((hash) => ledger[hash].sendCount > 1).length;
+  const maxSendCount = recipientHashes.reduce((max, hash) => Math.max(max, ledger[hash].sendCount), 0);
+  const summary = {
+    event: 'sent_history_incident_audit_only',
+    sinceJst: incidentConfig.sinceJst,
+    subjectHash: hashValue_(incidentConfig.subject),
+    totalSent,
+    uniqueRecipients: recipientHashes.length,
+    duplicatedRecipients,
+    duplicateRecipientCount: totalSent - recipientHashes.length,
+    maxSendCount,
+    missingGreetingCount,
+    outsideWindowCount,
+    invalidNotCountedCount,
+    suppressedCount: recipientHashes.length,
+    dailyCounts,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  };
+
+  storeSuppressionLedger_(ledger, summary);
+  appendSafeLog_(summary);
+  return summary;
+}
+
 function runScheduledPreflight() {
   const result = runPreflight_(false);
   appendAutomationStatusLog_({
@@ -1642,6 +1757,121 @@ function isApprovalNotExpired_(value) {
     return false;
   }
   return expiry.getTime() > Date.now();
+}
+
+function getSentHistoryIncidentConfig_() {
+  return {
+    sinceJst: '2026-06-11T00:00:00+09:00',
+    queryAfter: '2026/6/10',
+    subject: 'SNSの見え方について、簡単な無料確認のご案内',
+    timezone: Session.getScriptTimeZone() || 'Asia/Tokyo',
+    maxThreads: 500
+  };
+}
+
+function buildSentHistoryIncidentQuery_(incidentConfig) {
+  return 'in:sent after:' + incidentConfig.queryAfter + ' subject:"' + incidentConfig.subject + '"';
+}
+
+function isIncidentAuditMessage_(message, incidentConfig) {
+  const sentAt = message.getDate();
+  if (sentAt.getTime() < new Date(incidentConfig.sinceJst).getTime()) {
+    return false;
+  }
+  if (String(message.getSubject() || '') !== incidentConfig.subject) {
+    return false;
+  }
+  return parseRecipientEmailsFromHeader_(message.getTo()).length > 0;
+}
+
+function parseRecipientEmailsFromHeader_(header) {
+  const text = String(header || '');
+  const matches = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+  const seen = {};
+  return matches.map((email) => normalizeEmail_(email)).filter((email) => {
+    if (!email || seen[email]) {
+      return false;
+    }
+    seen[email] = true;
+    return true;
+  });
+}
+
+function extractEmailDomain_(email) {
+  const normalized = normalizeEmail_(email);
+  const parts = normalized.split('@');
+  return parts.length === 2 ? parts[1] : '';
+}
+
+function extractGreetingName_(body) {
+  const lines = normalizeEmailBody_(body).split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    return '';
+  }
+  const firstLine = lines[0];
+  const match = firstLine.match(/^(.{1,80})\s*(さま|様)$/);
+  if (!match) {
+    return '';
+  }
+  return String(match[1] || '').trim();
+}
+
+function classifyGreetingIssue_(body, greetingName) {
+  const text = normalizeEmailBody_(body);
+  const firstLine = text.split('\n').map((line) => line.trim()).filter(Boolean)[0] || '';
+  if (!firstLine) {
+    return 'missing_name';
+  }
+  if (firstLine.indexOf('突然のご連絡失礼いたします') === 0) {
+    return 'missing_name';
+  }
+  if (!greetingName) {
+    return 'missing_name';
+  }
+  if (includesAny_(firstLine.toLowerCase(), ['{{', '}}', '${name}', '${storename}', 'undefined', 'null'])) {
+    return 'placeholder_remaining';
+  }
+  if (includesAny_(greetingName.toLowerCase(), ['ご担当者', '担当者', 'お客様', 'customer', 'sample', 'test'])) {
+    return 'fixed_or_generic_greeting';
+  }
+  return '';
+}
+
+function isOutsideAllowedIncidentWindow_(sentAt, config, incidentConfig) {
+  const hhmm = Utilities.formatDate(sentAt, incidentConfig.timezone, 'HH:mm').split(':');
+  const current = Number(hhmm[0]) * 60 + Number(hhmm[1]);
+  const start = config.allowedSendStartHour * 60 + config.allowedSendStartMinute;
+  const end = config.allowedSendEndHour * 60 + config.allowedSendEndMinute;
+  return start <= end
+    ? current < start || current > end
+    : current < start && current > end;
+}
+
+function extractBatchIdFromSubjectOrBody_(subject, body) {
+  const text = String(subject || '') + '\n' + String(body || '');
+  const match = text.match(/gmail-sales-\d{4}-\d{2}-\d{2}(?:-[a-z0-9]+)?/i);
+  return match ? match[0] : '';
+}
+
+function storeSuppressionLedger_(ledger, summary) {
+  const props = PropertiesService.getScriptProperties();
+  const previousChunkCount = Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_CHUNK_COUNT') || '0');
+  const payload = JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    summary,
+    entries: Object.keys(ledger).sort().map((hash) => ledger[hash])
+  });
+  const chunkSize = 7500;
+  const chunkCount = Math.ceil(payload.length / chunkSize);
+  for (let index = 0; index < previousChunkCount; index += 1) {
+    props.deleteProperty('GMAIL_SUPPRESSION_LEDGER_' + index);
+  }
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_CHUNK_COUNT', String(chunkCount));
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_UPDATED_AT', new Date().toISOString());
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_SUPPRESSED_COUNT', String(summary.suppressedCount));
+  for (let index = 0; index < chunkCount; index += 1) {
+    props.setProperty('GMAIL_SUPPRESSION_LEDGER_' + index, payload.slice(index * chunkSize, (index + 1) * chunkSize));
+  }
 }
 
 function assertMessageSafe_(message) {

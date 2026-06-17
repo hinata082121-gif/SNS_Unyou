@@ -60,6 +60,19 @@ runBatchApprovalChecksumPreviewOnly()
 
 これらは、人間確認が終わるまで営業送信完了数に含めない。
 
+## Gmail Sent suppression ledger
+
+Gmail Sent実体を最優先の送信済み事実として取り込むため、Apps Scriptで以下を実行する。
+
+```text
+runSentHistoryIncidentAuditOnly()
+```
+
+この関数はGmail送信、自動返信、Google Sheets更新、トリガー操作を行わない。
+対象件名の送信済みメールを2026-06-11 00:00 JST以降で監査し、宛先・営業先・本文をログに出さず、再送禁止用のハッシュ台帳をScript Propertiesへ保存する。
+
+6月11日以降に一度でも送った宛先は、誤送信であっても `suppressed=true` / `futureEligible=false` とする。
+
 ## ローカル監査コマンド
 
 以下はGmail送信・Google Sheets更新を行わず、件数とハッシュだけを記録する。

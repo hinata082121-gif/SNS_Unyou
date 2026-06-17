@@ -853,3 +853,7 @@ Agent Officeでは `gmail-sales-incident-2026-06-18` と `gmail-noon-recovery-20
 
 2026-06-18 00:38-00:40 JSTの30件は時間外送信扱いとし、人間がApps ScriptログとGmail送信済みを確認するまで正当な営業送信完了として扱いません。
 Apps Script側には許可時間窓、明示承認チェックサム、宛名整合検査を追加し、同じ候補セットや誤宛名本文の送信を送信直前で停止します。
+
+Gmail Sent実体を最優先の送信済み事実として扱うため、`runSentHistoryIncidentAuditOnly()` で2026-06-11以降の対象送信を監査し、ハッシュ化suppression ledgerへ登録します。
+6月11日以降に一度でも送った宛先は、正誤を問わず `futureEligible=false` とし、明日以降の候補選定から除外します。
+2026-06-18の追加送信は `cancelled_due_to_incident` として中止します。

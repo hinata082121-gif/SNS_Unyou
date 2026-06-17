@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadLocalEnv } from '../lib/load-local-env.mjs';
-import { DEFAULT_POOL_FILE, OUTBOX_HEADERS, addDaysToDate, asCandidates, buildBatchId, candidateEmail, candidateName, dedupeKey, hasOptOutText, isAvailable, isValidEmail, normalizeEmailBody, normalizeEmailSubject, parseArgs, readJson, resolveDateArg, safeSummary, sourceDomain, toTsv, writeJson } from './pool-utils.mjs';
+import { DEFAULT_POOL_FILE, OUTBOX_HEADERS, addDaysToDate, asCandidates, buildBatchId, candidateEmail, candidateName, dedupeKey, hashValue, hasOptOutText, isAvailable, isValidEmail, normalizeEmailBody, normalizeEmailSubject, parseArgs, readJson, resolveDateArg, safeSummary, sourceDomain, toTsv, writeJson } from './pool-utils.mjs';
 
 loadLocalEnv();
 
@@ -22,18 +22,22 @@ const nextActionDate = args['next-action-date'] || addDaysToDate(sendDate, 2);
 const sendBatchId = buildBatchId(sendDate);
 const historyDir = args['history-dir'] || 'data/gmail/outbox';
 const agentStatusDir = args['agent-status-dir'] || 'data/agent-status/tasks';
+const suppressionLedgerFile = args['suppression-ledger'] || 'data/gmail/suppression/gmail-sent-suppression-ledger.json';
 const sentDates = parseSentDates(args['sent-dates']) || collectSentDatesFromAgentStatus(agentStatusDir, sendDate);
 const pool = readJson(poolFile, { candidates: [] });
 const candidates = asCandidates(pool);
 const historicalExclusions = collectHistoricalExclusions(historyDir, sendDate, sentDates);
+const suppressionExclusions = loadSuppressionExclusions(suppressionLedgerFile);
 const usedEmail = new Set();
 const usedDedupe = new Set();
 const usedBusiness = new Set();
+const usedDomain = new Set();
 const selected = [];
 const summary = {
   poolTotal: candidates.length,
   availableChecked: 0,
   excludedHistorical: 0,
+  excludedSuppressed: 0,
   sentDateExclusionCount: sentDates.size,
   duplicateWithPreviousBatch: false,
   duplicateCount: 0,
@@ -54,6 +58,7 @@ for (const candidate of candidates) {
   const email = candidateEmail(candidate);
   const key = dedupeKey(candidate);
   const businessKey = businessDedupeKey(candidate);
+  const domainKey = sourceDomain(candidate);
   const subject = sanitizeSalesCopy(normalizeEmailSubject(candidate.subject || 'SNSの見え方について、簡単な無料確認のご案内'));
   const body = sanitizeSalesCopy(normalizeEmailBody(candidate.body || buildDefaultBody(candidate)));
   if (!isValidEmail(email)) continue;
@@ -61,7 +66,11 @@ for (const candidate of candidates) {
     summary.excludedHistorical += 1;
     continue;
   }
-  if (usedEmail.has(email) || usedDedupe.has(key) || usedBusiness.has(businessKey)) continue;
+  if (isSuppressed(candidate, suppressionExclusions)) {
+    summary.excludedSuppressed += 1;
+    continue;
+  }
+  if (usedEmail.has(email) || usedDedupe.has(key) || usedBusiness.has(businessKey) || usedDomain.has(domainKey)) continue;
   if (!hasOptOutText(body)) continue;
   const copyVariant = selected.length < 15 ? 'A' : 'B';
   selected.push({
@@ -97,6 +106,7 @@ for (const candidate of candidates) {
   usedEmail.add(email);
   usedDedupe.add(key);
   usedBusiness.add(businessKey);
+  if (domainKey) usedDomain.add(domainKey);
   if (selected.length === 30) break;
 }
 
@@ -186,6 +196,31 @@ function businessDedupeKey(candidate) {
   const name = candidateName(candidate);
   const domain = sourceDomain(candidate);
   return name && domain ? `${domain}|${name}` : '';
+}
+
+function loadSuppressionExclusions(filePath) {
+  const entries = asCandidates(readJson(filePath, { entries: [] }));
+  const exclusions = {
+    recipientHashes: new Set(),
+    businessFingerprints: new Set(),
+    domainHashes: new Set()
+  };
+  for (const entry of entries) {
+    if (entry.suppressed === false || entry.futureEligible === true) continue;
+    if (entry.recipientHash) exclusions.recipientHashes.add(String(entry.recipientHash));
+    if (entry.businessFingerprint) exclusions.businessFingerprints.add(String(entry.businessFingerprint));
+    if (entry.normalizedDomainHash) exclusions.domainHashes.add(String(entry.normalizedDomainHash));
+  }
+  return exclusions;
+}
+
+function isSuppressed(candidate, exclusions) {
+  const email = candidateEmail(candidate);
+  const domain = sourceDomain(candidate);
+  const businessKey = businessDedupeKey(candidate);
+  return exclusions.recipientHashes.has(hashValue(email)) ||
+    (domain && exclusions.domainHashes.has(hashValue(domain))) ||
+    (businessKey && exclusions.businessFingerprints.has(hashValue(businessKey)));
 }
 
 function parseSentDates(value) {

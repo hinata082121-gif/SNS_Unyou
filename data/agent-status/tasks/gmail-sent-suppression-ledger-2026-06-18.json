@@ -1,0 +1,42 @@
+{
+  "id": "gmail-sent-suppression-ledger-2026-06-18",
+  "agent": "Codex",
+  "avatar": "ops-monitor",
+  "title": "Gmail Sent suppression ledger構築",
+  "category": "gmail_send",
+  "status": "needs_review",
+  "phase": "Apps Script上でGmail Sent監査関数の実行待ち",
+  "progress": 85,
+  "priority": "critical",
+  "createdAt": "2026-06-18T00:00:00.000+09:00",
+  "updatedAt": "2026-06-18T00:00:00.000+09:00",
+  "summary": "2026-06-11以降のGmail Sent実体を最優先の送信済み事実として扱い、全送信先をハッシュ化suppression ledgerへ登録する関数と運用を追加した。",
+  "artifacts": [
+    "apps-script/gmail-sales-automation/Code.gs",
+    "docs/gmail/gmail-sent-suppression-ledger-2026-06-18.md",
+    "docs/gmail/gmail-sales-incident-response-2026-06-18.md"
+  ],
+  "metrics": {
+    "confirmedGmailSentTargetCount": 150,
+    "confirmedMaxSendCount": 5,
+    "sentAuditFunctionAdded": true,
+    "sentAuditFunctionExecutedByCodex": false,
+    "suppressionLedgerImplemented": true,
+    "suppressionLedgerPopulated": false,
+    "todayRecoveryCancelledDueToIncident": true,
+    "gmailSendExecutedByThisRun": false,
+    "googleSheetsUpdatedByThisRun": false,
+    "appsScriptTriggerChangedByThisRun": false,
+    "privateReportCommitted": false
+  },
+  "nextAction": "人間がApps ScriptへCode.gsを反映し、runSentHistoryIncidentAuditOnly()を実行して安全ログの件数を確認する。",
+  "safeToAct": false,
+  "notes": [
+    "Gmail送信なし",
+    "自動返信なし",
+    "Google Sheets更新なし",
+    "Apps Scriptトリガー操作なし",
+    "実メールアドレス・営業先名・本文は表示しない",
+    "2026-06-18の追加送信は中止"
+  ]
+}

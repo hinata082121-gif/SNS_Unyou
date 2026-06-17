@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 export const DEFAULT_POOL_FILE = 'data/gmail/pool/gmail-ready-candidate-pool.json';
 export const DEFAULT_EXCLUDED_FILE = 'data/gmail/pool/gmail-candidate-pool-excluded.json';
@@ -57,6 +58,10 @@ export function asCandidates(value) {
 
 export function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+export function hashValue(value, length = 12) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex').slice(0, length);
 }
 
 export function candidateEmail(candidate) {
