@@ -1,0 +1,739 @@
+{
+  "schemaVersion": "instagram-launch3-production-ready-v1",
+  "generatedAt": "2026-06-17T09:26:03.447Z",
+  "platform": "instagram",
+  "brand": {
+    "name": "ICHI Social",
+    "handle": "@ichi_social",
+    "profileUrl": "https://www.instagram.com/ichi_social/"
+  },
+  "publicOrder": [
+    "ICHI Socialとは",
+    "SNSプロフィールで最初に確認したい3項目",
+    "無料SNS整理診断で確認すること"
+  ],
+  "livePublishExecuted": false,
+  "threadsLivePostExecuted": false,
+  "googleSheetsUpdated": false,
+  "gmailSendExecuted": false,
+  "posts": [
+    {
+      "id": "instagram-launch-2026-06-17-01",
+      "sourceDraftId": "instagram-2026-06-17-01",
+      "publishOrder": 1,
+      "title": "ICHI Socialとは",
+      "objective": "初回公開でアカウントとサービスの役割を理解してもらう",
+      "targetAudience": [
+        "小規模店舗",
+        "個人事業主",
+        "SNSを整理したい事業者"
+      ],
+      "format": "carousel",
+      "canvasSize": "1080x1350",
+      "slideCount": 6,
+      "slides": [
+        {
+          "slideNumber": 1,
+          "heading": "ICHI Socialとは？",
+          "subheading": "ICHI Social",
+          "body": [
+            "小規模店舗・個人事業主のSNS整理をサポートします"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "small shop and smartphone line icon",
+          "emphasis": "サービス理解",
+          "footer": "@ichi_social",
+          "accessibilityText": "ICHI Socialとは？。小規模店舗・個人事業主のSNS整理をサポートします"
+        },
+        {
+          "slideNumber": 2,
+          "heading": "こんな悩みはありませんか？",
+          "subheading": "",
+          "body": [
+            "プロフィールで内容が伝わらない",
+            "投稿テーマが決まらない",
+            "予約方法が分かりにくい",
+            "SNS運用が続かない"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "checklist line icon",
+          "emphasis": "悩みの整理",
+          "footer": "@ichi_social",
+          "accessibilityText": "こんな悩みはありませんか？。プロフィールで内容が伝わらない。投稿テーマが決まらない。予約方法が分かりにくい。SNS運用が続かない"
+        },
+        {
+          "slideNumber": 3,
+          "heading": "整理するのはこの4つ",
+          "subheading": "",
+          "body": [
+            "プロフィール",
+            "固定投稿",
+            "発信内容",
+            "予約・問い合わせ導線"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "four cards line icon",
+          "emphasis": "支援範囲",
+          "footer": "@ichi_social",
+          "accessibilityText": "整理するのはこの4つ。プロフィール。固定投稿。発信内容。予約・問い合わせ導線"
+        },
+        {
+          "slideNumber": 4,
+          "heading": "大切にしていること",
+          "subheading": "",
+          "body": [
+            "無理なく続けられる",
+            "分かりやすい",
+            "売り込みすぎない",
+            "小規模事業者に合う"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "heart and document line icon",
+          "emphasis": "運用方針",
+          "footer": "@ichi_social",
+          "accessibilityText": "大切にしていること。無理なく続けられる。分かりやすい。売り込みすぎない。小規模事業者に合う"
+        },
+        {
+          "slideNumber": 5,
+          "heading": "このアカウントで発信すること",
+          "subheading": "",
+          "body": [
+            "SNS改善チェック",
+            "投稿テーマの整理",
+            "導線改善",
+            "保存用チェックリスト"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "calendar and bookmark line icon",
+          "emphasis": "発信内容",
+          "footer": "@ichi_social",
+          "accessibilityText": "このアカウントで発信すること。SNS改善チェック。投稿テーマの整理。導線改善。保存用チェックリスト"
+        },
+        {
+          "slideNumber": 6,
+          "heading": "まずは投稿を保存して気になる項目から確認してください",
+          "subheading": "",
+          "body": [
+            "無料SNS整理診断の案内もプロフィールでご確認いただけます"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "bookmark and profile line icon",
+          "emphasis": "保存とプロフィール確認",
+          "footer": "@ichi_social",
+          "accessibilityText": "まずは投稿を保存して気になる項目から確認してください。無料SNS整理診断の案内もプロフィールでご確認いただけます"
+        }
+      ],
+      "firstLineHook": "SNSをがんばりたいけれど、何から整えればよいか迷う方へ。",
+      "caption": "SNSをがんばりたいけれど、何から整えればよいか迷う方へ。\n\nICHI Socialは、小規模店舗・個人事業主のSNSを「伝わる形」に整理するサポートを行います。\n\n確認するのは、プロフィール、固定投稿、発信内容、予約・問い合わせ導線。新しいことを増やす前に、今ある情報が初めて見る人に伝わるかを一緒に見直します。\n\nまずはこの投稿を保存して、気になる項目から確認してみてください。無料SNS整理診断の案内はプロフィールからご確認いただけます。",
+      "CTA": "投稿を保存して、プロフィールから無料SNS整理診断をご確認ください。",
+      "hashtags": [
+        "#SNS運用",
+        "#Instagram運用",
+        "#個人事業主",
+        "#小規模店舗",
+        "#店舗集客",
+        "#SNS導線",
+        "#ICHIソーシャル"
+      ],
+      "threadsDraft": {
+        "publishStatus": "draft",
+        "slotRecommendation": "19:00",
+        "text": "SNS運用は、投稿を増やす前に「プロフィール・固定投稿・発信内容・予約導線」を整理すると見直しやすくなります。初回投稿ではICHI Socialが何を支援するのかをまとめました。Instagramは @ichi_social から確認できます。",
+        "media": "Instagram 1本目の1枚目または全スライドを添付候補にする"
+      },
+      "altTexts": [
+        "ICHI Socialとは？。小規模店舗・個人事業主のSNS整理をサポートします",
+        "こんな悩みはありませんか？。プロフィールで内容が伝わらない。投稿テーマが決まらない。予約方法が分かりにくい。SNS運用が続かない",
+        "整理するのはこの4つ。プロフィール。固定投稿。発信内容。予約・問い合わせ導線",
+        "大切にしていること。無理なく続けられる。分かりやすい。売り込みすぎない。小規模事業者に合う",
+        "このアカウントで発信すること。SNS改善チェック。投稿テーマの整理。導線改善。保存用チェックリスト",
+        "まずは投稿を保存して気になる項目から確認してください。無料SNS整理診断の案内もプロフィールでご確認いただけます"
+      ],
+      "designTokens": {
+        "canvasSize": "1080x1350",
+        "aspectRatio": "4:5",
+        "background": "#FFFFFF",
+        "primary": "#16324F",
+        "accent": "#5DB7DE",
+        "paleAccent": "#EAF7FC",
+        "supportGray": "#F3F6F8",
+        "bodyText": "#27364A",
+        "footer": "@ichi_social",
+        "typography": {
+          "heading": "bold rounded sans, 70-92px on cover, 52-64px on body slides",
+          "body": "rounded sans, 34-42px, line-height 1.45",
+          "footer": "24px, navy, low contrast"
+        },
+        "rules": [
+          "1 slide 1 message",
+          "large margins",
+          "rounded cards",
+          "line or flat icons",
+          "page number in lower right"
+        ]
+      },
+      "assetRequirements": {
+        "exportFormat": "PNG",
+        "filenames": [
+          "instagram-01-ichi-social-about-01.png",
+          "instagram-01-ichi-social-about-02.png",
+          "instagram-01-ichi-social-about-03.png",
+          "instagram-01-ichi-social-about-04.png",
+          "instagram-01-ichi-social-about-05.png",
+          "instagram-01-ichi-social-about-06.png"
+        ],
+        "safeArea": "outer 90px margin, bottom footer area 80px",
+        "noPhotoDependency": true
+      },
+      "canvaBuildInstructions": {
+        "pageCount": 6,
+        "template": "white background, pale blue rounded cards, navy headings, line icons, small @ichi_social footer",
+        "fontHierarchy": {
+          "heading": "bold rounded sans, 70-92px on cover, 52-64px on body slides",
+          "body": "rounded sans, 34-42px, line-height 1.45",
+          "footer": "24px, navy, low contrast"
+        },
+        "iconSearchTerms": [
+          "small shop and smartphone line icon",
+          "checklist line icon",
+          "four cards line icon",
+          "heart and document line icon",
+          "calendar and bookmark line icon",
+          "bookmark and profile line icon"
+        ],
+        "spacing": "keep generous whitespace; avoid more than 4 short bullet lines per slide",
+        "export": "Export each page as PNG 1080x1350 and keep page order in filename."
+      },
+      "imageGenerationInstructions": {
+        "purpose": "Generate only background and icon decoration. Add all Japanese text in Canva.",
+        "prompts": [
+          {
+            "slideNumber": 1,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about ICHI Socialとは. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 2,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about ICHI Socialとは. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 3,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about ICHI Socialとは. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 4,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about ICHI Socialとは. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 5,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about ICHI Socialとは. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 6,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about ICHI Socialとは. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          }
+        ]
+      },
+      "reviewChecklist": {
+        "noExaggeratedClaims": true,
+        "noFakeResults": true,
+        "noCustomerData": true,
+        "noSecrets": true,
+        "handleVerified": true,
+        "profileUrlVerified": true,
+        "slideCountMatched": true,
+        "humanVisualReviewRequired": true,
+        "instagramLivePublishExecuted": false,
+        "threadsLivePostExecuted": false
+      },
+      "publishStatus": "draft",
+      "approvalStatus": "needs_human_review"
+    },
+    {
+      "id": "instagram-launch-2026-06-17-02",
+      "sourceDraftId": "instagram-2026-06-17-02",
+      "publishOrder": 2,
+      "title": "SNSプロフィールで最初に確認したい3項目",
+      "objective": "保存価値のあるチェックリストとしてプロフィール改善の入口を作る",
+      "targetAudience": [
+        "SNSプロフィールを見直したい店舗",
+        "予約や問い合わせ導線を整えたい個人事業主"
+      ],
+      "format": "carousel",
+      "canvasSize": "1080x1350",
+      "slideCount": 6,
+      "slides": [
+        {
+          "slideNumber": 1,
+          "heading": "SNSプロフィール 最初に見る3項目",
+          "subheading": "ICHI Social",
+          "body": [
+            "まずは3つだけ確認します"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "profile card line icon",
+          "emphasis": "保存チェック",
+          "footer": "@ichi_social",
+          "accessibilityText": "SNSプロフィール 最初に見る3項目。まずは3つだけ確認します"
+        },
+        {
+          "slideNumber": 2,
+          "heading": "1. 誰向けか",
+          "subheading": "",
+          "body": [
+            "対象が分からないと、自分に必要なアカウントか判断できません。",
+            "確認例：地域・業種・対象のお客様"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "target audience line icon",
+          "emphasis": "誰に届けるか",
+          "footer": "@ichi_social",
+          "accessibilityText": "1. 誰向けか。対象が分からないと、自分に必要なアカウントか判断できません。。確認例：地域・業種・対象のお客様"
+        },
+        {
+          "slideNumber": 3,
+          "heading": "2. 何ができるか",
+          "subheading": "",
+          "body": [
+            "サービス内容を、専門用語を減らして伝えます。",
+            "確認例：施術内容・商品・サポート内容・特徴"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "service menu line icon",
+          "emphasis": "提供内容",
+          "footer": "@ichi_social",
+          "accessibilityText": "2. 何ができるか。サービス内容を、専門用語を減らして伝えます。。確認例：施術内容・商品・サポート内容・特徴"
+        },
+        {
+          "slideNumber": 4,
+          "heading": "3. 次に何をすればよいか",
+          "subheading": "",
+          "body": [
+            "プロフィールを読んだ後の行動を1つに絞って案内します。",
+            "確認例：予約・問い合わせ・メニュー確認・店舗情報確認"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "arrow path line icon",
+          "emphasis": "次の行動",
+          "footer": "@ichi_social",
+          "accessibilityText": "3. 次に何をすればよいか。プロフィールを読んだ後の行動を1つに絞って案内します。。確認例：予約・問い合わせ・メニュー確認・店舗情報確認"
+        },
+        {
+          "slideNumber": 5,
+          "heading": "3つがつながるとプロフィールが伝わりやすくなります",
+          "subheading": "",
+          "body": [
+            "誰向け → 何ができる → 次の行動"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "three step flow line icon",
+          "emphasis": "流れを整える",
+          "footer": "@ichi_social",
+          "accessibilityText": "3つがつながるとプロフィールが伝わりやすくなります。誰向け → 何ができる → 次の行動"
+        },
+        {
+          "slideNumber": 6,
+          "heading": "プロフィールを見直すときに保存してご活用ください",
+          "subheading": "",
+          "body": [
+            "他のSNS整理チェックも@ichi_socialで発信しています"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "bookmark line icon",
+          "emphasis": "保存活用",
+          "footer": "@ichi_social",
+          "accessibilityText": "プロフィールを見直すときに保存してご活用ください。他のSNS整理チェックも@ichi_socialで発信しています"
+        }
+      ],
+      "firstLineHook": "プロフィールを見直すなら、最初に見るのはこの3項目です。",
+      "caption": "プロフィールを見直すなら、最初に見るのはこの3項目です。\n\n1. 誰向けか\n2. 何ができるか\n3. 次に何をすればよいか\n\nこの3つがつながると、初めて見た人が「自分に関係があるか」「何を頼めるか」「次にどう動けばよいか」を判断しやすくなります。\n\n文章を長くするより、必要な情報を迷わず見つけられる状態にすることが大切です。見直すときのチェックリストとして保存してご活用ください。",
+      "CTA": "プロフィール見直し用に保存して、他のチェックも@ichi_socialでご確認ください。",
+      "hashtags": [
+        "#SNSプロフィール",
+        "#SNS運用",
+        "#Instagram運用",
+        "#個人事業主",
+        "#小規模店舗",
+        "#発信のコツ",
+        "#ICHIソーシャル"
+      ],
+      "threadsDraft": {
+        "publishStatus": "draft",
+        "slotRecommendation": "19:00",
+        "text": "SNSプロフィールは「誰向けか」「何ができるか」「次に何をすればよいか」が見えるだけで読みやすくなります。まずは3項目だけで十分です。チェック用のカルーセルはInstagram @ichi_social に置いています。",
+        "media": "Instagram 2本目の図解スライドを添付候補にする"
+      },
+      "altTexts": [
+        "SNSプロフィール 最初に見る3項目。まずは3つだけ確認します",
+        "1. 誰向けか。対象が分からないと、自分に必要なアカウントか判断できません。。確認例：地域・業種・対象のお客様",
+        "2. 何ができるか。サービス内容を、専門用語を減らして伝えます。。確認例：施術内容・商品・サポート内容・特徴",
+        "3. 次に何をすればよいか。プロフィールを読んだ後の行動を1つに絞って案内します。。確認例：予約・問い合わせ・メニュー確認・店舗情報確認",
+        "3つがつながるとプロフィールが伝わりやすくなります。誰向け → 何ができる → 次の行動",
+        "プロフィールを見直すときに保存してご活用ください。他のSNS整理チェックも@ichi_socialで発信しています"
+      ],
+      "designTokens": {
+        "canvasSize": "1080x1350",
+        "aspectRatio": "4:5",
+        "background": "#FFFFFF",
+        "primary": "#16324F",
+        "accent": "#5DB7DE",
+        "paleAccent": "#EAF7FC",
+        "supportGray": "#F3F6F8",
+        "bodyText": "#27364A",
+        "footer": "@ichi_social",
+        "typography": {
+          "heading": "bold rounded sans, 70-92px on cover, 52-64px on body slides",
+          "body": "rounded sans, 34-42px, line-height 1.45",
+          "footer": "24px, navy, low contrast"
+        },
+        "rules": [
+          "1 slide 1 message",
+          "large margins",
+          "rounded cards",
+          "line or flat icons",
+          "page number in lower right"
+        ]
+      },
+      "assetRequirements": {
+        "exportFormat": "PNG",
+        "filenames": [
+          "instagram-02-profile-check-01.png",
+          "instagram-02-profile-check-02.png",
+          "instagram-02-profile-check-03.png",
+          "instagram-02-profile-check-04.png",
+          "instagram-02-profile-check-05.png",
+          "instagram-02-profile-check-06.png"
+        ],
+        "safeArea": "outer 90px margin, bottom footer area 80px",
+        "noPhotoDependency": true
+      },
+      "canvaBuildInstructions": {
+        "pageCount": 6,
+        "template": "white background, pale blue rounded cards, navy headings, line icons, small @ichi_social footer",
+        "fontHierarchy": {
+          "heading": "bold rounded sans, 70-92px on cover, 52-64px on body slides",
+          "body": "rounded sans, 34-42px, line-height 1.45",
+          "footer": "24px, navy, low contrast"
+        },
+        "iconSearchTerms": [
+          "profile card line icon",
+          "target audience line icon",
+          "service menu line icon",
+          "arrow path line icon",
+          "three step flow line icon",
+          "bookmark line icon"
+        ],
+        "spacing": "keep generous whitespace; avoid more than 4 short bullet lines per slide",
+        "export": "Export each page as PNG 1080x1350 and keep page order in filename."
+      },
+      "imageGenerationInstructions": {
+        "purpose": "Generate only background and icon decoration. Add all Japanese text in Canva.",
+        "prompts": [
+          {
+            "slideNumber": 1,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about SNSプロフィールで最初に確認したい3項目. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 2,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about SNSプロフィールで最初に確認したい3項目. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 3,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about SNSプロフィールで最初に確認したい3項目. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 4,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about SNSプロフィールで最初に確認したい3項目. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 5,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about SNSプロフィールで最初に確認したい3項目. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 6,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about SNSプロフィールで最初に確認したい3項目. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          }
+        ]
+      },
+      "reviewChecklist": {
+        "noExaggeratedClaims": true,
+        "noFakeResults": true,
+        "noCustomerData": true,
+        "noSecrets": true,
+        "handleVerified": true,
+        "profileUrlVerified": true,
+        "slideCountMatched": true,
+        "humanVisualReviewRequired": true,
+        "instagramLivePublishExecuted": false,
+        "threadsLivePostExecuted": false
+      },
+      "publishStatus": "draft",
+      "approvalStatus": "needs_human_review"
+    },
+    {
+      "id": "instagram-launch-2026-06-17-03",
+      "sourceDraftId": "instagram-2026-06-17-11",
+      "publishOrder": 3,
+      "title": "無料SNS整理診断で確認すること",
+      "objective": "無料診断への自然な導線を作り、確認内容を事前に伝える",
+      "targetAudience": [
+        "SNSを一度整理したい小規模事業者",
+        "無料診断の内容を知りたい個人事業主"
+      ],
+      "format": "carousel",
+      "canvasSize": "1080x1350",
+      "slideCount": 7,
+      "slides": [
+        {
+          "slideNumber": 1,
+          "heading": "無料SNS整理診断で確認すること",
+          "subheading": "ICHI Social",
+          "body": [
+            "診断前に見るポイントをまとめました"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "magnifying glass and phone line icon",
+          "emphasis": "診断内容",
+          "footer": "@ichi_social",
+          "accessibilityText": "無料SNS整理診断で確認すること。診断前に見るポイントをまとめました"
+        },
+        {
+          "slideNumber": 2,
+          "heading": "プロフィール",
+          "subheading": "",
+          "body": [
+            "誰向けか",
+            "サービス内容",
+            "次の行動",
+            "が分かるか確認します"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "profile line icon",
+          "emphasis": "プロフィール確認",
+          "footer": "@ichi_social",
+          "accessibilityText": "プロフィール。誰向けか。サービス内容。次の行動。が分かるか確認します"
+        },
+        {
+          "slideNumber": 3,
+          "heading": "固定投稿",
+          "subheading": "",
+          "body": [
+            "初めて見た人がサービスやアカウントの特徴を理解できるか確認します"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "pin card line icon",
+          "emphasis": "固定投稿確認",
+          "footer": "@ichi_social",
+          "accessibilityText": "固定投稿。初めて見た人がサービスやアカウントの特徴を理解できるか確認します"
+        },
+        {
+          "slideNumber": 4,
+          "heading": "投稿内容",
+          "subheading": "",
+          "body": [
+            "投稿テーマ",
+            "内容の重複",
+            "見返しやすさ",
+            "継続しやすさ",
+            "を整理します"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "grid posts line icon",
+          "emphasis": "投稿整理",
+          "footer": "@ichi_social",
+          "accessibilityText": "投稿内容。投稿テーマ。内容の重複。見返しやすさ。継続しやすさ。を整理します"
+        },
+        {
+          "slideNumber": 5,
+          "heading": "予約・問い合わせ導線",
+          "subheading": "",
+          "body": [
+            "予約方法や連絡方法が迷わず確認できるか見ます"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "calendar message line icon",
+          "emphasis": "導線確認",
+          "footer": "@ichi_social",
+          "accessibilityText": "予約・問い合わせ導線。予約方法や連絡方法が迷わず確認できるか見ます"
+        },
+        {
+          "slideNumber": 6,
+          "heading": "診断で大切にすること",
+          "subheading": "",
+          "body": [
+            "否定するための診断ではありません",
+            "今ある発信を整理します",
+            "無理なく改善できる順番を考えます"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "gentle checklist line icon",
+          "emphasis": "安心して相談",
+          "footer": "@ichi_social",
+          "accessibilityText": "診断で大切にすること。否定するための診断ではありません。今ある発信を整理します。無理なく改善できる順番を考えます"
+        },
+        {
+          "slideNumber": 7,
+          "heading": "SNSを一度整理したい方へ",
+          "subheading": "",
+          "body": [
+            "無料診断の詳細はプロフィールからご確認ください"
+          ],
+          "layout": "white background with one pale blue rounded card",
+          "icon": "profile link line icon",
+          "emphasis": "プロフィール導線",
+          "footer": "@ichi_social",
+          "accessibilityText": "SNSを一度整理したい方へ。無料診断の詳細はプロフィールからご確認ください"
+        }
+      ],
+      "firstLineHook": "無料SNS整理診断では、いきなり投稿数を増やす提案から始めません。",
+      "caption": "無料SNS整理診断では、いきなり投稿数を増やす提案から始めません。\n\nまず確認するのは、プロフィール、固定投稿、投稿内容、予約・問い合わせ導線です。\n\n初めて見た人が内容を理解できるか、次の行動に迷わないか、今ある発信をどう整理すると続けやすいかを見ていきます。\n\n否定するための診断ではなく、今あるSNSを無理なく整えるための入口です。SNSを一度整理したい方は、プロフィールから無料診断の詳細をご確認ください。",
+      "CTA": "SNSを一度整理したい方は、プロフィールから無料診断の詳細をご確認ください。",
+      "hashtags": [
+        "#SNS運用",
+        "#Instagram運用",
+        "#無料診断",
+        "#小規模店舗",
+        "#個人事業主",
+        "#SNS導線",
+        "#ICHIソーシャル"
+      ],
+      "threadsDraft": {
+        "publishStatus": "draft",
+        "slotRecommendation": "19:00",
+        "text": "無料SNS整理診断では、投稿数を増やす前に「プロフィール・固定投稿・投稿内容・予約導線」を確認します。否定ではなく、今ある発信を整理するための診断です。詳細はInstagram @ichi_social のプロフィールから確認できます。",
+        "media": "Instagram 3本目の1枚目または診断項目スライドを添付候補にする"
+      },
+      "altTexts": [
+        "無料SNS整理診断で確認すること。診断前に見るポイントをまとめました",
+        "プロフィール。誰向けか。サービス内容。次の行動。が分かるか確認します",
+        "固定投稿。初めて見た人がサービスやアカウントの特徴を理解できるか確認します",
+        "投稿内容。投稿テーマ。内容の重複。見返しやすさ。継続しやすさ。を整理します",
+        "予約・問い合わせ導線。予約方法や連絡方法が迷わず確認できるか見ます",
+        "診断で大切にすること。否定するための診断ではありません。今ある発信を整理します。無理なく改善できる順番を考えます",
+        "SNSを一度整理したい方へ。無料診断の詳細はプロフィールからご確認ください"
+      ],
+      "designTokens": {
+        "canvasSize": "1080x1350",
+        "aspectRatio": "4:5",
+        "background": "#FFFFFF",
+        "primary": "#16324F",
+        "accent": "#5DB7DE",
+        "paleAccent": "#EAF7FC",
+        "supportGray": "#F3F6F8",
+        "bodyText": "#27364A",
+        "footer": "@ichi_social",
+        "typography": {
+          "heading": "bold rounded sans, 70-92px on cover, 52-64px on body slides",
+          "body": "rounded sans, 34-42px, line-height 1.45",
+          "footer": "24px, navy, low contrast"
+        },
+        "rules": [
+          "1 slide 1 message",
+          "large margins",
+          "rounded cards",
+          "line or flat icons",
+          "page number in lower right"
+        ]
+      },
+      "assetRequirements": {
+        "exportFormat": "PNG",
+        "filenames": [
+          "instagram-03-free-diagnosis-01.png",
+          "instagram-03-free-diagnosis-02.png",
+          "instagram-03-free-diagnosis-03.png",
+          "instagram-03-free-diagnosis-04.png",
+          "instagram-03-free-diagnosis-05.png",
+          "instagram-03-free-diagnosis-06.png",
+          "instagram-03-free-diagnosis-07.png"
+        ],
+        "safeArea": "outer 90px margin, bottom footer area 80px",
+        "noPhotoDependency": true
+      },
+      "canvaBuildInstructions": {
+        "pageCount": 7,
+        "template": "white background, pale blue rounded cards, navy headings, line icons, small @ichi_social footer",
+        "fontHierarchy": {
+          "heading": "bold rounded sans, 70-92px on cover, 52-64px on body slides",
+          "body": "rounded sans, 34-42px, line-height 1.45",
+          "footer": "24px, navy, low contrast"
+        },
+        "iconSearchTerms": [
+          "magnifying glass and phone line icon",
+          "profile line icon",
+          "pin card line icon",
+          "grid posts line icon",
+          "calendar message line icon",
+          "gentle checklist line icon",
+          "profile link line icon"
+        ],
+        "spacing": "keep generous whitespace; avoid more than 4 short bullet lines per slide",
+        "export": "Export each page as PNG 1080x1350 and keep page order in filename."
+      },
+      "imageGenerationInstructions": {
+        "purpose": "Generate only background and icon decoration. Add all Japanese text in Canva.",
+        "prompts": [
+          {
+            "slideNumber": 1,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about 無料SNS整理診断で確認すること. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 2,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about 無料SNS整理診断で確認すること. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 3,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about 無料SNS整理診断で確認すること. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 4,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about 無料SNS整理診断で確認すること. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 5,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about 無料SNS整理診断で確認すること. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 6,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about 無料SNS整理診断で確認すること. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          },
+          {
+            "slideNumber": 7,
+            "prompt": "4:5 vertical clean flat vector background for an Instagram carousel about 無料SNS整理診断で確認すること. White clean background, pale blue accents, navy line icons, generous whitespace, minimal Japanese small business social media support theme, calm practical mood, no text, no logo, no watermark.",
+            "negativePrompt": "text, letters, words, logo, watermark, photorealistic faces, crowded layout, dark background"
+          }
+        ]
+      },
+      "reviewChecklist": {
+        "noExaggeratedClaims": true,
+        "noFakeResults": true,
+        "noCustomerData": true,
+        "noSecrets": true,
+        "handleVerified": true,
+        "profileUrlVerified": true,
+        "slideCountMatched": true,
+        "humanVisualReviewRequired": true,
+        "instagramLivePublishExecuted": false,
+        "threadsLivePostExecuted": false
+      },
+      "publishStatus": "draft",
+      "approvalStatus": "needs_human_review"
+    }
+  ]
+}

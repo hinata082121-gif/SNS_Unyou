@@ -41,7 +41,9 @@
     "automation:health": "node scripts/automation/check-ichi-social-health.mjs",
     "automation:health:threads": "node scripts/automation/check-ichi-social-health.mjs",
     "automation:health:gmail": "node scripts/automation/check-ichi-social-health.mjs",
-    "automation:health:wake": "node scripts/automation/check-ichi-social-health.mjs"
+    "automation:health:wake": "node scripts/automation/check-ichi-social-health.mjs",
+    "instagram:launch3:validate": "node scripts/instagram/validate-instagram-launch3.mjs",
+    "instagram:launch3:render": "node scripts/instagram/render-instagram-launch3-preview.mjs"
   },
   "dependencies": {
     "next": "16.2.6",

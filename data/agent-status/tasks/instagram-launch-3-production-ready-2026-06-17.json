@@ -1,0 +1,44 @@
+{
+  "id": "instagram-launch-3-production-ready-2026-06-17",
+  "agent": "Codex",
+  "avatar": "pr-writer",
+  "title": "Instagram初回3投稿制作準備",
+  "category": "instagram",
+  "status": "needs_review",
+  "phase": "初回公開カルーセル3本の制作確定版作成済み・人間レビュー待ち",
+  "progress": 95,
+  "priority": "high",
+  "createdAt": "2026-06-17T00:00:00.000+09:00",
+  "updatedAt": "2026-06-17T09:26:03.447Z",
+  "summary": "ICHI Socialの初回公開用カルーセル3本について、公開順、スライド構成、キャプション、Canva制作指示、画像生成指示、Threads下書きを安全な制作データとして整備した。",
+  "artifacts": [
+    "data/instagram/production-ready/initial-launch-3-posts-2026-06-17.json",
+    "docs/content/instagram-launch-3-canva-copy.md",
+    "docs/content/instagram-launch-3-preview.md",
+    "scripts/instagram/validate-instagram-launch3.mjs",
+    "scripts/instagram/render-instagram-launch3-preview.mjs"
+  ],
+  "metrics": {
+    "selectedPostCount": 3,
+    "carouselCount": 3,
+    "totalSlideCount": 19,
+    "canvaReady": true,
+    "imageGenerationInstructionsReady": true,
+    "threadsDraftCount": 3,
+    "humanReviewRequired": true,
+    "livePublishExecuted": false,
+    "threadsLivePostExecuted": false,
+    "gmailSendExecuted": false,
+    "googleSheetsUpdated": false
+  },
+  "nextAction": "Canvaまたは画像生成で実素材を制作し、3投稿の見た目と文面を人間レビューしてから公開可否を判断する",
+  "safeToAct": true,
+  "notes": [
+    "Instagram本番投稿なし",
+    "Threads本番投稿なし",
+    "Gmail送信なし",
+    "Google Sheets更新なし",
+    "顧客情報や営業先情報なし",
+    "approvalStatusはneeds_human_review"
+  ]
+}

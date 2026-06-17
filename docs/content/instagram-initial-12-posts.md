@@ -51,3 +51,17 @@ npm run instagram:media:validate
 ```
 
 本番投稿は、画像制作、人間レビュー、プロフィール導線確認後に別途判断する。
+
+## 初回公開3投稿の制作確定版
+
+初回公開では、既存12本draftのうち以下3本を採用し、制作確定版として別ファイルに分離しました。
+
+1. ICHI Socialとは
+2. SNSプロフィールで最初に確認したい3項目
+3. 無料SNS整理診断で確認すること
+
+制作確定版データ: data/instagram/production-ready/initial-launch-3-posts-2026-06-17.json
+Canvaコピー: docs/content/instagram-launch-3-canva-copy.md
+プレビュー: docs/content/instagram-launch-3-preview.md
+
+既存12本draftは全面書き換えせず、初回公開3本だけを個別にレビューできる状態にしています。

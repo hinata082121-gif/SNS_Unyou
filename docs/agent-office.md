@@ -795,3 +795,15 @@ Agent Officeでは `instagram-content-foundation-2026-06-17` を表示し、Inst
 
 Instagram初期12投稿とReels企画はdraftとして扱い、Canvaまたは画像生成で素材化した後に人間がレビューします。
 本番投稿、予約投稿、DM、コメント、フォロー、いいねはAgent Officeから実行しません。
+
+## Instagram初回3投稿制作準備（2026-06-17）
+
+- taskId: instagram-launch-3-production-ready-2026-06-17
+- status: needs_review
+- 対象: ICHI Socialとは / SNSプロフィールで最初に確認したい3項目 / 無料SNS整理診断で確認すること
+- 公開順: 1 → 2 → 3
+- 合計スライド数: 19
+- /agent-office 表示方針: selectedPostCount、canvaReady、imageGenerationInstructionsReady、humanReviewRequired、livePublishExecuted の安全な状態だけを表示する。
+- 表示しない情報: 顧客情報、営業先情報、メール情報、秘密情報、投稿実行用の認証情報。
+- nextAction: Canvaまたは画像生成で実素材を制作し、人間レビュー後に公開可否を判断する。
+- 今回はInstagram/Threads本番投稿、Gmail送信、Google Sheets更新を行わない。
