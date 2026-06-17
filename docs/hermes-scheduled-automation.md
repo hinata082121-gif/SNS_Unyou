@@ -1787,6 +1787,21 @@ Hermesの11:00/19:00/no-agentジョブとWindows Task Schedulerの時刻指定�
 画像投稿はfeature flagが有効な場合のみ許可し、動画/カルーセルは初期運用ではunsupportedとして停止する。
 プロフィール編集と固定投稿は自動化せず、Runbookに沿って人間が手動反映する。
 
+### Instagram自社コンテンツ運用準備
+
+2026-06-17に、正式Instagram情報 `@ichi_social` / `https://www.instagram.com/ichi_social/` を前提に、初期コンテンツと検証基盤を追加した。
+今回、Hermes cronやWindows Task Schedulerの新規登録は行わない。
+
+将来のタスク案:
+
+- 08:30 content readiness
+- 09:00 publish preparation
+- 12:30 result check
+- 18:00 next content preparation
+
+Hermesが担当してよいのは、投稿企画生成、caption検証、禁止表現検証、重複テーマ検証、メディア存在確認、投稿予定確認、投稿後結果確認、KPI記録、Agent Office更新まで。
+Instagram本番投稿、予約投稿、DM、コメント、フォロー、いいね、アカウント設定変更、非公式ブラウザ操作は行わない。
+
 ### ICHI Social KPI改善レビュー
 
 金曜20:00のno-agent週次タスクは、Threads投稿改善に加えてGmail営業KPI改善レビューも担当します。

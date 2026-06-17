@@ -762,3 +762,36 @@ Agent Officeでは `threads-instagram-media-foundation-2026-06-17` を表示し�
 
 Instagram handle/profile URLが未設定の間は、Instagram CTAを自動挿入せず、11時/19時の通常投稿だけを継続します。
 画像投稿はfeature flag配下でdry-run確認後にだけ進めます。
+
+## 2026-06-17 Instagram初期コンテンツ・運用基盤
+
+Agent Officeでは `instagram-content-foundation-2026-06-17` を表示し、Instagram運用開始前の準備状況を確認します。
+
+安全な表示項目:
+
+- brandHandleConfigured
+- profileUrlConfigured
+- initialPostCount
+- carouselCount
+- reelsIdeaCount
+- allPublishStatusDraft
+- contentValidationImplemented
+- mediaValidationImplemented
+- apiReadinessDocumented
+- liveInstagramPublishExecuted
+- instagramAccountSettingsChanged
+- threadsLivePostExecuted
+- gmailSendExecuted
+- googleSheetsUpdated
+
+表示しない項目:
+
+- 認証値
+- 顧客情報
+- Gmail営業先情報
+- メールアドレス
+- 返信本文
+- 実投稿ログ
+
+Instagram初期12投稿とReels企画はdraftとして扱い、Canvaまたは画像生成で素材化した後に人間がレビューします。
+本番投稿、予約投稿、DM、コメント、フォロー、いいねはAgent Officeから実行しません。

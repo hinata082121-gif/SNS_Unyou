@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "platform": "instagram",
+  "brandHandle": "@ichi_social",
+  "livePublishExecuted": false,
+  "ideas": [
+    {
+      "id": "instagram-reel-2026-06-17-01",
+      "title": "3秒で分かるプロフィール改善",
+      "duration": "15s",
+      "hook": "プロフィールは最初の3秒で判断されます",
+      "sceneList": [
+        "プロフィール画面風の白いカードを表示",
+        "誰向けか、何ができるか、次の行動の3項目を順に表示",
+        "3項目が揃った例を並べる"
+      ],
+      "onScreenText": ["誰向け？", "何ができる？", "次に何をする？"],
+      "narration": "プロフィールは長くするより、最初に伝える3項目を揃えるのが大切です。",
+      "requiredAssets": ["プロフィール画面風テンプレート", "チェックアイコン"],
+      "caption": "プロフィール改善は、誰向けか、何ができるか、次の行動から確認します。",
+      "CTA": "保存してプロフィール確認に使ってください。",
+      "bgmPolicy": "落ち着いた軽いBGM。音声なしでも字幕で理解できる構成。",
+      "noFaceRequired": true,
+      "screenRecordingRequired": false,
+      "publishStatus": "draft"
+    },
+    {
+      "id": "instagram-reel-2026-06-17-02",
+      "title": "予約導線のNG例",
+      "duration": "20s",
+      "hook": "予約リンクがあるのに予約されない理由",
+      "sceneList": [
+        "NG例としてリンク名が曖昧な画面を表示",
+        "DM案内が曖昧な例を表示",
+        "改善例として次の行動を明確にする"
+      ],
+      "onScreenText": ["リンク名が曖昧", "DMで何を送るか不明", "次の行動を1つに"],
+      "narration": "予約導線は、リンクがあるだけでは不十分です。見た人が迷わない案内にします。",
+      "requiredAssets": ["リンクボタン風パーツ", "DM吹き出し"],
+      "caption": "予約導線は、リンク名とDM案内を見直すだけでも分かりやすくなります。",
+      "CTA": "自分のアカウントで確認してみてください。",
+      "bgmPolicy": "テンポは速すぎず、チェックリスト向け。",
+      "noFaceRequired": true,
+      "screenRecordingRequired": false,
+      "publishStatus": "draft"
+    },
+    {
+      "id": "instagram-reel-2026-06-17-03",
+      "title": "固定投稿の役割",
+      "duration": "15s",
+      "hook": "固定投稿は実績置き場だけではありません",
+      "sceneList": [
+        "固定投稿アイコンを表示",
+        "サービス内容、相談の流れ、よくある不安を表示",
+        "初めて見た人向けの案内にまとめる"
+      ],
+      "onScreenText": ["サービス内容", "相談の流れ", "よくある不安"],
+      "narration": "固定投稿は、初めて見た人の不安を減らす場所として使えます。",
+      "requiredAssets": ["ピンアイコン", "3枚カード"],
+      "caption": "固定投稿に入れる内容で迷ったら、初めて見た人の不安を減らす情報から置きます。",
+      "CTA": "固定投稿の見直し用に保存してください。",
+      "bgmPolicy": "やさしい説明系BGM。",
+      "noFaceRequired": true,
+      "screenRecordingRequired": false,
+      "publishStatus": "draft"
+    },
+    {
+      "id": "instagram-reel-2026-06-17-04",
+      "title": "投稿ネタを作る方法",
+      "duration": "20s",
+      "hook": "投稿ネタは3つに分けると考えやすい",
+      "sceneList": [
+        "空のメモを表示",
+        "信頼投稿、案内投稿、導線投稿に分ける",
+        "それぞれの例を1つずつ出す"
+      ],
+      "onScreenText": ["信頼投稿", "案内投稿", "導線投稿"],
+      "narration": "投稿ネタに迷う時は、投稿の役割を3つに分けると続けやすくなります。",
+      "requiredAssets": ["メモ帳風背景", "3分類アイコン"],
+      "caption": "投稿ネタは、信頼、案内、導線の3つで整理すると作りやすくなります。",
+      "CTA": "次の投稿案づくりに使ってください。",
+      "bgmPolicy": "作業感のある軽いBGM。",
+      "noFaceRequired": true,
+      "screenRecordingRequired": false,
+      "publishStatus": "draft"
+    },
+    {
+      "id": "instagram-reel-2026-06-17-05",
+      "title": "SNS運用を続けるための整理",
+      "duration": "20s",
+      "hook": "続かない原因はやる気不足だけではありません",
+      "sceneList": [
+        "投稿で悩む様子を抽象イラストで表示",
+        "テーマ、作業量、見直し日をチェック",
+        "小さく続ける方針を表示"
+      ],
+      "onScreenText": ["テーマはある？", "作業量は多すぎない？", "見直し日はある？"],
+      "narration": "SNSが続かない時は、気合いより運用の型を見直します。",
+      "requiredAssets": ["チェックリスト", "カレンダーアイコン"],
+      "caption": "SNS運用を続けるには、投稿テーマ、作業量、見直し日を整えることが大切です。",
+      "CTA": "負担を減らしたい時の確認用に保存してください。",
+      "bgmPolicy": "安心感のある低刺激なBGM。",
+      "noFaceRequired": true,
+      "screenRecordingRequired": false,
+      "publishStatus": "draft"
+    },
+    {
+      "id": "instagram-reel-2026-06-17-06",
+      "title": "無料診断で見るポイント",
+      "duration": "15s",
+      "hook": "無料SNS整理診断で見るのはこの3つ",
+      "sceneList": [
+        "診断シート風画面を表示",
+        "プロフィール、固定投稿、予約導線を順にチェック",
+        "相談導線を自然に表示"
+      ],
+      "onScreenText": ["プロフィール", "固定投稿", "予約導線"],
+      "narration": "無料SNS整理診断では、まず見え方と導線の3点を確認します。",
+      "requiredAssets": ["診断シート", "チェックアイコン"],
+      "caption": "無料SNS整理診断では、プロフィール、固定投稿、予約導線の3点を確認します。",
+      "CTA": "気になる方はプロフィールからご確認ください。",
+      "bgmPolicy": "説明が聞き取りやすい控えめなBGM。",
+      "noFaceRequired": true,
+      "screenRecordingRequired": false,
+      "publishStatus": "draft"
+    }
+  ]
+}

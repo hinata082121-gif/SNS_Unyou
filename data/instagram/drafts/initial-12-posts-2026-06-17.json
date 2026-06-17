@@ -1,0 +1,1309 @@
+{
+  "schemaVersion": 1,
+  "platform": "instagram",
+  "brandHandle": "@ichi_social",
+  "brandProfileUrl": "https://www.instagram.com/ichi_social/",
+  "publishStatus": "draft",
+  "livePublishExecuted": false,
+  "posts": [
+    {
+      "id": "instagram-2026-06-17-01",
+      "title": "ICHI Socialとは",
+      "objective": "初めて見た人にサービスの役割を伝える",
+      "audiencePain": "SNSを整えたいが何から相談すればよいか分からない",
+      "contentPillar": "ブランド紹介",
+      "format": "carousel",
+      "slideCount": 6,
+      "slides": [
+        {
+          "heading": "ICHI Socialとは",
+          "body": "小規模店舗・個人事業主向けにSNSの見え方を整理するサポートです。",
+          "visualInstruction": "白背景に濃紺見出し、淡い青の枠",
+          "iconSuggestion": "store",
+          "emphasis": "誰向けかを大きく",
+          "accessibilityText": "ICHI Socialの紹介"
+        },
+        {
+          "heading": "整える場所",
+          "body": "プロフィール、固定投稿、ハイライト、予約導線を順番に確認します。",
+          "visualInstruction": "4つのチェックカード",
+          "iconSuggestion": "check-square",
+          "emphasis": "4項目",
+          "accessibilityText": "確認する4項目"
+        },
+        {
+          "heading": "大切にすること",
+          "body": "きれいに見せる前に、初めて見た人が迷わない状態を作ります。",
+          "visualInstruction": "迷路から矢印へ",
+          "iconSuggestion": "route",
+          "emphasis": "迷わない",
+          "accessibilityText": "迷わない導線づくり"
+        },
+        {
+          "heading": "こんな時に",
+          "body": "投稿しても予約につながらない、何を投稿するか迷う時に使えます。",
+          "visualInstruction": "悩み吹き出し2つ",
+          "iconSuggestion": "message-circle",
+          "emphasis": "予約と投稿テーマ",
+          "accessibilityText": "よくある相談内容"
+        },
+        {
+          "heading": "無料診断",
+          "body": "まずはプロフィール、固定投稿、予約導線の3点を簡単に確認します。",
+          "visualInstruction": "3点チェックリスト",
+          "iconSuggestion": "clipboard-list",
+          "emphasis": "3点確認",
+          "accessibilityText": "無料診断で見る3点"
+        },
+        {
+          "heading": "保存して見返す",
+          "body": "SNS整理の考え方を、保存しやすい形で発信していきます。",
+          "visualInstruction": "保存アイコンと余白",
+          "iconSuggestion": "bookmark",
+          "emphasis": "保存",
+          "accessibilityText": "保存を促すまとめ"
+        }
+      ],
+      "caption": "ICHI Socialは、小規模店舗・個人事業主向けにSNSの見え方と予約導線を整理するサポートです。まずはプロフィール、固定投稿、予約導線から確認します。",
+      "firstLineHook": "SNSを整えたいけれど、何から直せばいいか迷う方へ。",
+      "callToAction": "気になる方はプロフィールから無料SNS整理診断をご確認ください。",
+      "hashtags": [
+        "SNS運用",
+        "店舗SNS",
+        "プロフィール改善",
+        "予約導線",
+        "小規模事業者",
+        "個人事業主",
+        "ICHI Social"
+      ],
+      "threadsCrossPost": "SNSを整える時は、投稿を増やす前にプロフィール、固定投稿、予約導線を見ると詰まりが見えやすいです。図解版はInstagramの@ichi_socialにまとめています。",
+      "threadsCtaAllowed": true,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-01/slide-01.png",
+            "publicUrl": null,
+            "altText": "ICHI Socialの紹介",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-01/slide-02.png",
+            "publicUrl": null,
+            "altText": "確認する4項目",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-01/slide-03.png",
+            "publicUrl": null,
+            "altText": "迷わない導線づくり",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-01/slide-04.png",
+            "publicUrl": null,
+            "altText": "よくある相談内容",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-01/slide-05.png",
+            "publicUrl": null,
+            "altText": "無料診断で見る3点",
+            "order": 5
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-01/slide-06.png",
+            "publicUrl": null,
+            "altText": "保存を促すまとめ",
+            "order": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-02",
+      "title": "SNSプロフィールで最初に確認したい3項目",
+      "objective": "プロフィール改善の入口を提示する",
+      "audiencePain": "プロフィールに何を書けばよいか分からない",
+      "contentPillar": "プロフィール改善",
+      "format": "carousel",
+      "slideCount": 5,
+      "slides": [
+        {
+          "heading": "最初に見る3項目",
+          "body": "誰向けか、何ができるか、次に何をすればよいか。",
+          "visualInstruction": "大きな数字3つ",
+          "iconSuggestion": "list-checks",
+          "emphasis": "3項目",
+          "accessibilityText": "プロフィールで見る3項目"
+        },
+        {
+          "heading": "1. 誰向けか",
+          "body": "お客様の種類や悩みが見えると、自分ごとにしやすくなります。",
+          "visualInstruction": "人物アイコンと吹き出し",
+          "iconSuggestion": "users",
+          "emphasis": "誰向け",
+          "accessibilityText": "誰向けかの説明"
+        },
+        {
+          "heading": "2. 何ができるか",
+          "body": "メニュー名だけでなく、何を整えられるかまで書くと伝わりやすいです。",
+          "visualInstruction": "サービスカード",
+          "iconSuggestion": "sparkles",
+          "emphasis": "できること",
+          "accessibilityText": "何ができるかの説明"
+        },
+        {
+          "heading": "3. 次の行動",
+          "body": "予約、相談、DMなど次に進む場所を1つに絞ると迷いが減ります。",
+          "visualInstruction": "矢印とボタン風パーツ",
+          "iconSuggestion": "arrow-right",
+          "emphasis": "次の行動",
+          "accessibilityText": "次の行動の説明"
+        },
+        {
+          "heading": "まずはここから",
+          "body": "プロフィールは短くても、3項目が揃うだけで見え方が変わります。",
+          "visualInstruction": "チェック済みリスト",
+          "iconSuggestion": "badge-check",
+          "emphasis": "揃える",
+          "accessibilityText": "3項目のまとめ"
+        }
+      ],
+      "caption": "プロフィール改善は、言葉を増やすことよりも、誰向けか、何ができるか、次に何をすればよいかを揃えることから始めます。",
+      "firstLineHook": "プロフィールで最初に見るのは、この3つです。",
+      "callToAction": "保存して、今のプロフィールと照らし合わせてみてください。",
+      "hashtags": [
+        "プロフィール改善",
+        "SNS導線",
+        "店舗SNS",
+        "小規模店舗",
+        "個人事業主",
+        "SNSチェック"
+      ],
+      "threadsCrossPost": "プロフィールを整える時は、誰向けか、何ができるか、次に何をすればよいか。この3つを見ると改善点が見つけやすいです。 図解版はInstagramの@ichi_socialで確認できます。",
+      "threadsCtaAllowed": true,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-02/slide-01.png",
+            "publicUrl": null,
+            "altText": "プロフィールで見る3項目",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-02/slide-02.png",
+            "publicUrl": null,
+            "altText": "誰向けかの説明",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-02/slide-03.png",
+            "publicUrl": null,
+            "altText": "何ができるかの説明",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-02/slide-04.png",
+            "publicUrl": null,
+            "altText": "次の行動の説明",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-02/slide-05.png",
+            "publicUrl": null,
+            "altText": "3項目のまとめ",
+            "order": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-03",
+      "title": "プロフィールを見ても内容が伝わらない原因",
+      "objective": "伝わらないプロフィールの原因を整理する",
+      "audiencePain": "プロフィールを整えたつもりでも反応が薄い",
+      "contentPillar": "プロフィール改善",
+      "format": "carousel",
+      "slideCount": 6,
+      "slides": [
+        {
+          "heading": "伝わらない原因",
+          "body": "おしゃれな言葉より、具体性が足りないことがあります。",
+          "visualInstruction": "ぼんやりした文字からくっきりした文字へ",
+          "iconSuggestion": "focus",
+          "emphasis": "具体性",
+          "accessibilityText": "プロフィールが伝わらない原因"
+        },
+        {
+          "heading": "肩書きだけ",
+          "body": "肩書きだけでは、どんな悩みに対応できるかが見えにくいです。",
+          "visualInstruction": "肩書きカードと疑問符",
+          "iconSuggestion": "id-card",
+          "emphasis": "悩みが見えない",
+          "accessibilityText": "肩書きだけの問題"
+        },
+        {
+          "heading": "対象が広すぎる",
+          "body": "誰に向けているかが広すぎると、必要な人に届きにくくなります。",
+          "visualInstruction": "広い円と小さな焦点",
+          "iconSuggestion": "target",
+          "emphasis": "対象",
+          "accessibilityText": "対象が広すぎる問題"
+        },
+        {
+          "heading": "行動が分からない",
+          "body": "見た後に予約するのか、DMするのか、リンクを見るのかが曖昧だと離脱します。",
+          "visualInstruction": "分岐した矢印",
+          "iconSuggestion": "git-branch",
+          "emphasis": "行動",
+          "accessibilityText": "次の行動が分からない問題"
+        },
+        {
+          "heading": "改善の考え方",
+          "body": "短くても、相手・内容・次の行動が並ぶと伝わりやすくなります。",
+          "visualInstruction": "3列レイアウト",
+          "iconSuggestion": "columns",
+          "emphasis": "相手 内容 行動",
+          "accessibilityText": "改善の考え方"
+        },
+        {
+          "heading": "見直しメモ",
+          "body": "プロフィールは一度作って終わりではなく、反応を見ながら整えます。",
+          "visualInstruction": "メモとペン",
+          "iconSuggestion": "pencil",
+          "emphasis": "見直し",
+          "accessibilityText": "プロフィール見直しのまとめ"
+        }
+      ],
+      "caption": "プロフィールが伝わりにくい時は、文章量よりも具体性を確認します。誰向けか、何を頼めるか、次に何をすればよいかを見直します。",
+      "firstLineHook": "プロフィールを見ても内容が伝わらない時の原因。",
+      "callToAction": "あとで見返せるように保存しておくと便利です。",
+      "hashtags": [
+        "SNSプロフィール",
+        "プロフィール改善",
+        "店舗集客",
+        "予約導線",
+        "SNS整理"
+      ],
+      "threadsCrossPost": "プロフィールが伝わらない時は、言葉が少ないより、具体性が足りないことがあります。誰向けか、何を頼めるか、次の行動を見直すのが先です。",
+      "threadsCtaAllowed": false,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-03/slide-01.png",
+            "publicUrl": null,
+            "altText": "プロフィールが伝わらない原因",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-03/slide-02.png",
+            "publicUrl": null,
+            "altText": "肩書きだけの問題",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-03/slide-03.png",
+            "publicUrl": null,
+            "altText": "対象が広すぎる問題",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-03/slide-04.png",
+            "publicUrl": null,
+            "altText": "次の行動が分からない問題",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-03/slide-05.png",
+            "publicUrl": null,
+            "altText": "改善の考え方",
+            "order": 5
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-03/slide-06.png",
+            "publicUrl": null,
+            "altText": "プロフィール見直しのまとめ",
+            "order": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-04",
+      "title": "固定投稿に入れるべき3つの内容",
+      "objective": "固定投稿の役割を明確にする",
+      "audiencePain": "固定投稿に何を置けばよいか分からない",
+      "contentPillar": "固定投稿・ハイライト整理",
+      "format": "carousel",
+      "slideCount": 5,
+      "slides": [
+        {
+          "heading": "固定投稿の3つ",
+          "body": "初めて見た人の不安を減らす情報を置きます。",
+          "visualInstruction": "固定ピンと3枚カード",
+          "iconSuggestion": "pin",
+          "emphasis": "不安を減らす",
+          "accessibilityText": "固定投稿の役割"
+        },
+        {
+          "heading": "1. 何をしているか",
+          "body": "サービス内容や得意な相談を短く説明します。",
+          "visualInstruction": "説明カード",
+          "iconSuggestion": "file-text",
+          "emphasis": "サービス内容",
+          "accessibilityText": "サービス内容の説明"
+        },
+        {
+          "heading": "2. 相談の流れ",
+          "body": "問い合わせから予約、来店までの流れが見えると安心しやすいです。",
+          "visualInstruction": "ステップ図",
+          "iconSuggestion": "workflow",
+          "emphasis": "流れ",
+          "accessibilityText": "相談の流れ"
+        },
+        {
+          "heading": "3. よくある不安",
+          "body": "料金、時間、場所、準備物など、迷いやすい点を先に出します。",
+          "visualInstruction": "FAQカード",
+          "iconSuggestion": "circle-help",
+          "emphasis": "不安解消",
+          "accessibilityText": "よくある不安"
+        },
+        {
+          "heading": "置きすぎない",
+          "body": "全部を詰め込まず、最初に見てほしい順番で整理します。",
+          "visualInstruction": "整理された棚",
+          "iconSuggestion": "archive",
+          "emphasis": "順番",
+          "accessibilityText": "固定投稿のまとめ"
+        }
+      ],
+      "caption": "固定投稿は、実績を並べる場所ではなく、初めて見た人の不安を減らす場所です。サービス内容、相談の流れ、よくある不安を整理します。",
+      "firstLineHook": "固定投稿に何を入れるか迷ったら、この3つ。",
+      "callToAction": "自分の固定投稿に入っているか確認してみてください。",
+      "hashtags": [
+        "固定投稿",
+        "Instagram運用",
+        "店舗SNS",
+        "SNS改善",
+        "ハイライト整理"
+      ],
+      "threadsCrossPost": "固定投稿は実績だけでなく、初めて見た人の不安を減らす場所です。サービス内容、相談の流れ、よくある不安の3つを置くと見やすくなります。 図解版はInstagramの@ichi_socialで確認できます。",
+      "threadsCtaAllowed": true,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-04/slide-01.png",
+            "publicUrl": null,
+            "altText": "固定投稿の役割",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-04/slide-02.png",
+            "publicUrl": null,
+            "altText": "サービス内容の説明",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-04/slide-03.png",
+            "publicUrl": null,
+            "altText": "相談の流れ",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-04/slide-04.png",
+            "publicUrl": null,
+            "altText": "よくある不安",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-04/slide-05.png",
+            "publicUrl": null,
+            "altText": "固定投稿のまとめ",
+            "order": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-05",
+      "title": "予約方法が分かりにくいアカウントの特徴",
+      "objective": "予約導線の詰まりを可視化する",
+      "audiencePain": "SNSは見られているのに予約につながらない",
+      "contentPillar": "予約・問い合わせ導線",
+      "format": "carousel",
+      "slideCount": 6,
+      "slides": [
+        {
+          "heading": "予約が分かりにくい特徴",
+          "body": "投稿が良くても、予約まで迷うと離脱しやすくなります。",
+          "visualInstruction": "スマホ画面と迷う人",
+          "iconSuggestion": "smartphone",
+          "emphasis": "予約まで",
+          "accessibilityText": "予約導線の問題"
+        },
+        {
+          "heading": "リンクが見つけにくい",
+          "body": "プロフィール内のリンク名が曖昧だと、次に押す場所が分かりません。",
+          "visualInstruction": "リンクボタン比較",
+          "iconSuggestion": "link",
+          "emphasis": "リンク名",
+          "accessibilityText": "リンクが見つけにくい問題"
+        },
+        {
+          "heading": "DM案内が曖昧",
+          "body": "DMくださいだけでは、何を送ればよいか迷う人もいます。",
+          "visualInstruction": "DM吹き出し",
+          "iconSuggestion": "send",
+          "emphasis": "送る内容",
+          "accessibilityText": "DM案内の問題"
+        },
+        {
+          "heading": "予約前情報が少ない",
+          "body": "料金、所要時間、場所、当日の流れがないと不安が残ります。",
+          "visualInstruction": "4つの情報カード",
+          "iconSuggestion": "info",
+          "emphasis": "予約前情報",
+          "accessibilityText": "予約前情報の不足"
+        },
+        {
+          "heading": "改善ポイント",
+          "body": "プロフィール、固定投稿、ハイライトで予約までの流れをつなげます。",
+          "visualInstruction": "3点を線でつなぐ",
+          "iconSuggestion": "route",
+          "emphasis": "つなげる",
+          "accessibilityText": "改善ポイント"
+        },
+        {
+          "heading": "まず1つ直す",
+          "body": "最初はリンク名やDM案内など、小さな1点から整えます。",
+          "visualInstruction": "小さなチェック",
+          "iconSuggestion": "check",
+          "emphasis": "1点",
+          "accessibilityText": "予約導線改善のまとめ"
+        }
+      ],
+      "caption": "予約につながりにくい時は、投稿だけでなく予約までの道順を確認します。リンク名、DM案内、予約前情報を見直すと詰まりが見えます。",
+      "firstLineHook": "予約方法が分かりにくいアカウントの特徴。",
+      "callToAction": "予約導線を見直す時のチェック用に保存してください。",
+      "hashtags": [
+        "予約導線",
+        "問い合わせ導線",
+        "店舗SNS",
+        "SNS改善",
+        "プロフィール設計"
+      ],
+      "threadsCrossPost": "SNSから予約につながらない時は、投稿内容だけでなく予約までの道順を見るのが大事です。リンク名、DM案内、予約前情報を確認します。",
+      "threadsCtaAllowed": false,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-05/slide-01.png",
+            "publicUrl": null,
+            "altText": "予約導線の問題",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-05/slide-02.png",
+            "publicUrl": null,
+            "altText": "リンクが見つけにくい問題",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-05/slide-03.png",
+            "publicUrl": null,
+            "altText": "DM案内の問題",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-05/slide-04.png",
+            "publicUrl": null,
+            "altText": "予約前情報の不足",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-05/slide-05.png",
+            "publicUrl": null,
+            "altText": "改善ポイント",
+            "order": 5
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-05/slide-06.png",
+            "publicUrl": null,
+            "altText": "予約導線改善のまとめ",
+            "order": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-06",
+      "title": "投稿ネタがなくなる本当の原因",
+      "objective": "投稿テーマ不足を構造化する",
+      "audiencePain": "毎回投稿内容に悩んで止まる",
+      "contentPillar": "投稿ネタ・継続方法",
+      "format": "carousel",
+      "slideCount": 5,
+      "slides": [
+        {
+          "heading": "ネタ切れの原因",
+          "body": "アイデア不足ではなく、投稿の役割が分かれていないことがあります。",
+          "visualInstruction": "空のメモから3分類へ",
+          "iconSuggestion": "notebook",
+          "emphasis": "役割",
+          "accessibilityText": "投稿ネタ切れの原因"
+        },
+        {
+          "heading": "信頼投稿",
+          "body": "人柄、考え方、得意分野を伝える投稿です。",
+          "visualInstruction": "人物とハート",
+          "iconSuggestion": "heart-handshake",
+          "emphasis": "信頼",
+          "accessibilityText": "信頼投稿の説明"
+        },
+        {
+          "heading": "案内投稿",
+          "body": "メニュー、流れ、よくある質問を整理する投稿です。",
+          "visualInstruction": "案内板",
+          "iconSuggestion": "signpost",
+          "emphasis": "案内",
+          "accessibilityText": "案内投稿の説明"
+        },
+        {
+          "heading": "導線投稿",
+          "body": "予約、相談、無料診断など次の行動につなげる投稿です。",
+          "visualInstruction": "矢印とボタン",
+          "iconSuggestion": "arrow-right-circle",
+          "emphasis": "導線",
+          "accessibilityText": "導線投稿の説明"
+        },
+        {
+          "heading": "3つに分ける",
+          "body": "役割を分けると、投稿ネタを毎回ゼロから考えなくて済みます。",
+          "visualInstruction": "3ボックス整理",
+          "iconSuggestion": "layout-grid",
+          "emphasis": "分ける",
+          "accessibilityText": "投稿テーマ整理のまとめ"
+        }
+      ],
+      "caption": "投稿ネタがなくなる時は、アイデアを増やす前に投稿の役割を分けます。信頼、案内、導線の3つにすると考えやすくなります。",
+      "firstLineHook": "投稿ネタがなくなる本当の原因は、アイデア不足だけではありません。",
+      "callToAction": "次の投稿を考える前に、3分類で整理してみてください。",
+      "hashtags": [
+        "投稿ネタ",
+        "SNS継続",
+        "Instagram運用",
+        "店舗SNS",
+        "小規模事業者"
+      ],
+      "threadsCrossPost": "投稿ネタが出ない時は、信頼投稿、案内投稿、導線投稿の3つに分けると考えやすくなります。毎回ゼロから考えなくて済みます。 図解版はInstagramの@ichi_socialで確認できます。",
+      "threadsCtaAllowed": true,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-06/slide-01.png",
+            "publicUrl": null,
+            "altText": "投稿ネタ切れの原因",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-06/slide-02.png",
+            "publicUrl": null,
+            "altText": "信頼投稿の説明",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-06/slide-03.png",
+            "publicUrl": null,
+            "altText": "案内投稿の説明",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-06/slide-04.png",
+            "publicUrl": null,
+            "altText": "導線投稿の説明",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-06/slide-05.png",
+            "publicUrl": null,
+            "altText": "投稿テーマ整理のまとめ",
+            "order": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-07",
+      "title": "毎日投稿より先に整えたいこと",
+      "objective": "投稿頻度より導線整理を優先する考え方を伝える",
+      "audiencePain": "毎日投稿しなければと焦っている",
+      "contentPillar": "投稿ネタ・継続方法",
+      "format": "carousel",
+      "slideCount": 5,
+      "slides": [
+        {
+          "heading": "毎日投稿の前に",
+          "body": "投稿頻度を増やす前に、見た人が迷わない状態を整えます。",
+          "visualInstruction": "カレンダーと導線図",
+          "iconSuggestion": "calendar-check",
+          "emphasis": "迷わない",
+          "accessibilityText": "毎日投稿の前に整えること"
+        },
+        {
+          "heading": "プロフィール",
+          "body": "誰向けで何を頼めるかを短く伝えます。",
+          "visualInstruction": "プロフィール枠",
+          "iconSuggestion": "user-round",
+          "emphasis": "誰向け",
+          "accessibilityText": "プロフィール確認"
+        },
+        {
+          "heading": "固定投稿",
+          "body": "初めて見た人が知りたい情報を置きます。",
+          "visualInstruction": "ピン留めカード",
+          "iconSuggestion": "pin",
+          "emphasis": "初見向け",
+          "accessibilityText": "固定投稿確認"
+        },
+        {
+          "heading": "予約導線",
+          "body": "問い合わせや予約までの流れを分かりやすくします。",
+          "visualInstruction": "矢印フロー",
+          "iconSuggestion": "route",
+          "emphasis": "流れ",
+          "accessibilityText": "予約導線確認"
+        },
+        {
+          "heading": "少なくても伝わる",
+          "body": "整っていれば、投稿数が少なくても見た人が判断しやすくなります。",
+          "visualInstruction": "少数カードとチェック",
+          "iconSuggestion": "badge-check",
+          "emphasis": "判断しやすい",
+          "accessibilityText": "毎日投稿より先のまとめ"
+        }
+      ],
+      "caption": "毎日投稿より先に、プロフィール、固定投稿、予約導線を整えることがあります。投稿を増やす前に、見た人が迷わない状態を作ります。",
+      "firstLineHook": "毎日投稿より先に整えたいこと。",
+      "callToAction": "焦って投稿を増やす前の確認用に保存してください。",
+      "hashtags": [
+        "毎日投稿",
+        "SNS運用",
+        "プロフィール改善",
+        "固定投稿",
+        "予約導線"
+      ],
+      "threadsCrossPost": "毎日投稿より先に、プロフィール、固定投稿、予約導線を整える方が先の場合があります。見た人が迷わない状態を作ることが大事です。",
+      "threadsCtaAllowed": false,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-07/slide-01.png",
+            "publicUrl": null,
+            "altText": "毎日投稿の前に整えること",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-07/slide-02.png",
+            "publicUrl": null,
+            "altText": "プロフィール確認",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-07/slide-03.png",
+            "publicUrl": null,
+            "altText": "固定投稿確認",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-07/slide-04.png",
+            "publicUrl": null,
+            "altText": "予約導線確認",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-07/slide-05.png",
+            "publicUrl": null,
+            "altText": "毎日投稿より先のまとめ",
+            "order": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-08",
+      "title": "SNS運用が続かないときの確認項目",
+      "objective": "継続できない原因を自己診断できるようにする",
+      "audiencePain": "SNSを続けたいが負担が大きい",
+      "contentPillar": "投稿ネタ・継続方法",
+      "format": "carousel",
+      "slideCount": 6,
+      "slides": [
+        {
+          "heading": "続かない時の確認",
+          "body": "気合いではなく、続けるための型があるかを見ます。",
+          "visualInstruction": "チェックリスト表紙",
+          "iconSuggestion": "list-checks",
+          "emphasis": "型",
+          "accessibilityText": "SNS運用が続かない時の確認"
+        },
+        {
+          "heading": "投稿テーマはあるか",
+          "body": "毎回ゼロから考えていると負担が大きくなります。",
+          "visualInstruction": "テーマ箱",
+          "iconSuggestion": "boxes",
+          "emphasis": "テーマ",
+          "accessibilityText": "投稿テーマ確認"
+        },
+        {
+          "heading": "作る量は多すぎないか",
+          "body": "1投稿に情報を詰め込みすぎると続きにくくなります。",
+          "visualInstruction": "重い荷物のアイコン",
+          "iconSuggestion": "package",
+          "emphasis": "作る量",
+          "accessibilityText": "作業量確認"
+        },
+        {
+          "heading": "導線は決まっているか",
+          "body": "投稿の目的が毎回曖昧だと、何を書けばよいか迷います。",
+          "visualInstruction": "目的地マーク",
+          "iconSuggestion": "map-pin",
+          "emphasis": "目的",
+          "accessibilityText": "導線確認"
+        },
+        {
+          "heading": "見直す日があるか",
+          "body": "投稿後に何を見るかを決めると、改善がしやすくなります。",
+          "visualInstruction": "カレンダーと虫眼鏡",
+          "iconSuggestion": "search-check",
+          "emphasis": "見直し",
+          "accessibilityText": "見直し日の確認"
+        },
+        {
+          "heading": "小さく続ける",
+          "body": "まずは週数本でも、役割を決めて続ける方が安定します。",
+          "visualInstruction": "小さなステップ",
+          "iconSuggestion": "footprints",
+          "emphasis": "小さく",
+          "accessibilityText": "続け方のまとめ"
+        }
+      ],
+      "caption": "SNSが続かない時は、気合いではなく型を確認します。投稿テーマ、作る量、導線、見直し日を整えると負担を減らしやすくなります。",
+      "firstLineHook": "SNS運用が続かない時に見るチェック項目。",
+      "callToAction": "今の運用と照らし合わせてみてください。",
+      "hashtags": [
+        "SNS継続",
+        "投稿計画",
+        "Instagram運用",
+        "店舗SNS",
+        "個人事業主"
+      ],
+      "threadsCrossPost": "SNSが続かない時は、気合いより型を見ます。投稿テーマ、作る量、導線、見直し日が決まっているかを確認すると負担が見えます。 図解版はInstagramの@ichi_socialで確認できます。",
+      "threadsCtaAllowed": true,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-08/slide-01.png",
+            "publicUrl": null,
+            "altText": "SNS運用が続かない時の確認",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-08/slide-02.png",
+            "publicUrl": null,
+            "altText": "投稿テーマ確認",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-08/slide-03.png",
+            "publicUrl": null,
+            "altText": "作業量確認",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-08/slide-04.png",
+            "publicUrl": null,
+            "altText": "導線確認",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-08/slide-05.png",
+            "publicUrl": null,
+            "altText": "見直し日の確認",
+            "order": 5
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-08/slide-06.png",
+            "publicUrl": null,
+            "altText": "続け方のまとめ",
+            "order": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-09",
+      "title": "小規模店舗向けSNS基本チェックリスト",
+      "objective": "保存用チェックリストとして使ってもらう",
+      "audiencePain": "SNS全体の見直しポイントが分からない",
+      "contentPillar": "小規模店舗向けSNSチェックリスト",
+      "format": "carousel",
+      "slideCount": 6,
+      "slides": [
+        {
+          "heading": "SNS基本チェック",
+          "body": "小規模店舗が最初に確認したい項目です。",
+          "visualInstruction": "大きなチェックリスト",
+          "iconSuggestion": "clipboard-check",
+          "emphasis": "基本",
+          "accessibilityText": "SNS基本チェックリスト"
+        },
+        {
+          "heading": "プロフィール",
+          "body": "誰向けか、何ができるか、次の行動が分かる。",
+          "visualInstruction": "プロフィール画面",
+          "iconSuggestion": "user",
+          "emphasis": "3点",
+          "accessibilityText": "プロフィールチェック"
+        },
+        {
+          "heading": "固定投稿",
+          "body": "サービス内容、流れ、よくある不安が見える。",
+          "visualInstruction": "ピン留め投稿",
+          "iconSuggestion": "pin",
+          "emphasis": "不安解消",
+          "accessibilityText": "固定投稿チェック"
+        },
+        {
+          "heading": "ハイライト",
+          "body": "料金、予約、事例、FAQなどが探しやすい。",
+          "visualInstruction": "丸いハイライトアイコン",
+          "iconSuggestion": "circle",
+          "emphasis": "探しやすい",
+          "accessibilityText": "ハイライトチェック"
+        },
+        {
+          "heading": "予約導線",
+          "body": "リンク、DM案内、予約方法が迷わず分かる。",
+          "visualInstruction": "矢印とリンク",
+          "iconSuggestion": "link",
+          "emphasis": "迷わず",
+          "accessibilityText": "予約導線チェック"
+        },
+        {
+          "heading": "保存用",
+          "body": "一度に全部直さず、1項目ずつ見直します。",
+          "visualInstruction": "保存アイコン",
+          "iconSuggestion": "bookmark",
+          "emphasis": "1項目ずつ",
+          "accessibilityText": "チェックリストまとめ"
+        }
+      ],
+      "caption": "小規模店舗向けのSNS基本チェックリストです。プロフィール、固定投稿、ハイライト、予約導線を1つずつ確認します。",
+      "firstLineHook": "小規模店舗のSNS、まずはここを確認。",
+      "callToAction": "保存して、月1回の見直しに使ってください。",
+      "hashtags": [
+        "SNSチェックリスト",
+        "小規模店舗",
+        "店舗SNS",
+        "Instagram改善",
+        "予約導線"
+      ],
+      "threadsCrossPost": "小規模店舗のSNSは、プロフィール、固定投稿、ハイライト、予約導線を1つずつ見ると整えやすいです。保存用チェックリストはInstagramの@ichi_socialにあります。",
+      "threadsCtaAllowed": true,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-09/slide-01.png",
+            "publicUrl": null,
+            "altText": "SNS基本チェックリスト",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-09/slide-02.png",
+            "publicUrl": null,
+            "altText": "プロフィールチェック",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-09/slide-03.png",
+            "publicUrl": null,
+            "altText": "固定投稿チェック",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-09/slide-04.png",
+            "publicUrl": null,
+            "altText": "ハイライトチェック",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-09/slide-05.png",
+            "publicUrl": null,
+            "altText": "予約導線チェック",
+            "order": 5
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-09/slide-06.png",
+            "publicUrl": null,
+            "altText": "チェックリストまとめ",
+            "order": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-10",
+      "title": "投稿・ハイライト・プロフィールの役割分担",
+      "objective": "SNS内の各要素の役割を整理する",
+      "audiencePain": "どこに何を書けばよいか分からない",
+      "contentPillar": "固定投稿・ハイライト整理",
+      "format": "carousel",
+      "slideCount": 5,
+      "slides": [
+        {
+          "heading": "役割分担",
+          "body": "投稿、ハイライト、プロフィールはそれぞれ役割が違います。",
+          "visualInstruction": "3つのエリア図",
+          "iconSuggestion": "layout",
+          "emphasis": "役割",
+          "accessibilityText": "SNS要素の役割分担"
+        },
+        {
+          "heading": "プロフィール",
+          "body": "最初に誰向けかと次の行動を伝える場所。",
+          "visualInstruction": "プロフィール枠",
+          "iconSuggestion": "user-round",
+          "emphasis": "入口",
+          "accessibilityText": "プロフィールの役割"
+        },
+        {
+          "heading": "投稿",
+          "body": "考え方、実務メモ、安心材料を積み上げる場所。",
+          "visualInstruction": "投稿カード",
+          "iconSuggestion": "image",
+          "emphasis": "積み上げ",
+          "accessibilityText": "投稿の役割"
+        },
+        {
+          "heading": "ハイライト",
+          "body": "料金、予約、FAQなど探したい情報を置く場所。",
+          "visualInstruction": "ハイライト列",
+          "iconSuggestion": "circle-dot",
+          "emphasis": "探す",
+          "accessibilityText": "ハイライトの役割"
+        },
+        {
+          "heading": "迷ったら",
+          "body": "初めて見た人がどこで迷うかを基準に置き場所を決めます。",
+          "visualInstruction": "人と案内板",
+          "iconSuggestion": "signpost",
+          "emphasis": "初見基準",
+          "accessibilityText": "役割分担のまとめ"
+        }
+      ],
+      "caption": "プロフィール、投稿、ハイライトは役割が違います。初めて見た人が迷わないように、情報の置き場所を分けて考えます。",
+      "firstLineHook": "投稿・ハイライト・プロフィールの役割分担。",
+      "callToAction": "情報が散らかっている時の整理メモとして使ってください。",
+      "hashtags": [
+        "ハイライト整理",
+        "プロフィール改善",
+        "Instagram運用",
+        "店舗SNS",
+        "SNS導線"
+      ],
+      "threadsCrossPost": "プロフィール、投稿、ハイライトは同じ情報を置く場所ではありません。入口、積み上げ、探す場所として分けると見やすくなります。",
+      "threadsCtaAllowed": false,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-10/slide-01.png",
+            "publicUrl": null,
+            "altText": "SNS要素の役割分担",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-10/slide-02.png",
+            "publicUrl": null,
+            "altText": "プロフィールの役割",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-10/slide-03.png",
+            "publicUrl": null,
+            "altText": "投稿の役割",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-10/slide-04.png",
+            "publicUrl": null,
+            "altText": "ハイライトの役割",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-10/slide-05.png",
+            "publicUrl": null,
+            "altText": "役割分担のまとめ",
+            "order": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-11",
+      "title": "無料SNS整理診断で確認すること",
+      "objective": "無料診断の中身を誠実に説明する",
+      "audiencePain": "無料診断で何をされるか分からず不安",
+      "contentPillar": "サービス・無料診断案内",
+      "format": "carousel",
+      "slideCount": 6,
+      "slides": [
+        {
+          "heading": "無料SNS整理診断",
+          "body": "最初に見るのは、プロフィール、固定投稿、予約導線です。",
+          "visualInstruction": "診断チェック表",
+          "iconSuggestion": "clipboard-list",
+          "emphasis": "3点",
+          "accessibilityText": "無料SNS整理診断の説明"
+        },
+        {
+          "heading": "プロフィール",
+          "body": "誰向けか、何を頼めるか、次の行動が分かるかを確認します。",
+          "visualInstruction": "プロフィール画面",
+          "iconSuggestion": "user",
+          "emphasis": "入口",
+          "accessibilityText": "プロフィール診断"
+        },
+        {
+          "heading": "固定投稿",
+          "body": "初めて見た人の不安を減らす情報があるかを見ます。",
+          "visualInstruction": "ピン留めカード",
+          "iconSuggestion": "pin",
+          "emphasis": "不安",
+          "accessibilityText": "固定投稿診断"
+        },
+        {
+          "heading": "予約導線",
+          "body": "予約、相談、問い合わせまでの流れが分かりやすいかを確認します。",
+          "visualInstruction": "導線フロー",
+          "iconSuggestion": "route",
+          "emphasis": "流れ",
+          "accessibilityText": "予約導線診断"
+        },
+        {
+          "heading": "しないこと",
+          "body": "成果保証や強い営業は行わず、まず改善点を整理します。",
+          "visualInstruction": "安心マーク",
+          "iconSuggestion": "shield-check",
+          "emphasis": "誠実",
+          "accessibilityText": "診断でしないこと"
+        },
+        {
+          "heading": "相談の入口",
+          "body": "気になる方は、プロフィールから確認できます。",
+          "visualInstruction": "プロフィール誘導",
+          "iconSuggestion": "arrow-up-right",
+          "emphasis": "プロフィール",
+          "accessibilityText": "相談導線"
+        }
+      ],
+      "caption": "無料SNS整理診断では、プロフィール、固定投稿、予約導線の3点を確認します。成果保証ではなく、まず見え方と導線の改善点を整理します。",
+      "firstLineHook": "無料SNS整理診断で確認すること。",
+      "callToAction": "相談前に内容を知りたい方は保存してご確認ください。",
+      "hashtags": [
+        "無料SNS診断",
+        "SNS整理",
+        "プロフィール改善",
+        "予約導線",
+        "小規模事業者"
+      ],
+      "threadsCrossPost": "無料SNS整理診断では、プロフィール、固定投稿、予約導線の3点を確認します。成果保証ではなく、まず見え方と導線の詰まりを整理します。 図解版はInstagramの@ichi_socialで確認できます。",
+      "threadsCtaAllowed": true,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-11/slide-01.png",
+            "publicUrl": null,
+            "altText": "無料SNS整理診断の説明",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-11/slide-02.png",
+            "publicUrl": null,
+            "altText": "プロフィール診断",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-11/slide-03.png",
+            "publicUrl": null,
+            "altText": "固定投稿診断",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-11/slide-04.png",
+            "publicUrl": null,
+            "altText": "予約導線診断",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-11/slide-05.png",
+            "publicUrl": null,
+            "altText": "診断でしないこと",
+            "order": 5
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-11/slide-06.png",
+            "publicUrl": null,
+            "altText": "相談導線",
+            "order": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram-2026-06-17-12",
+      "title": "保存して見返すSNS整理メモ",
+      "objective": "保存投稿として全体の整理観点をまとめる",
+      "audiencePain": "SNS改善の全体像を手元に置きたい",
+      "contentPillar": "小規模店舗向けSNSチェックリスト",
+      "format": "carousel",
+      "slideCount": 5,
+      "slides": [
+        {
+          "heading": "SNS整理メモ",
+          "body": "投稿を増やす前に、見え方と導線を確認します。",
+          "visualInstruction": "保存用メモ表紙",
+          "iconSuggestion": "bookmark",
+          "emphasis": "保存",
+          "accessibilityText": "SNS整理メモ"
+        },
+        {
+          "heading": "入口",
+          "body": "プロフィールで誰向けか、何ができるか、次の行動を伝える。",
+          "visualInstruction": "入口アイコン",
+          "iconSuggestion": "door-open",
+          "emphasis": "プロフィール",
+          "accessibilityText": "入口の確認"
+        },
+        {
+          "heading": "安心",
+          "body": "固定投稿とハイライトで、よくある不安を減らす。",
+          "visualInstruction": "安心カード",
+          "iconSuggestion": "shield",
+          "emphasis": "安心",
+          "accessibilityText": "安心材料の確認"
+        },
+        {
+          "heading": "行動",
+          "body": "予約、相談、問い合わせの流れを分かりやすくする。",
+          "visualInstruction": "行動フロー",
+          "iconSuggestion": "arrow-right",
+          "emphasis": "行動",
+          "accessibilityText": "行動導線の確認"
+        },
+        {
+          "heading": "1つずつ",
+          "body": "全部を一度に直さず、今いちばん詰まっている場所から整えます。",
+          "visualInstruction": "一歩ずつの階段",
+          "iconSuggestion": "stairs",
+          "emphasis": "1つずつ",
+          "accessibilityText": "SNS整理メモのまとめ"
+        }
+      ],
+      "caption": "保存して見返すSNS整理メモです。入口、安心、行動の3つで見ると、どこから整えるか判断しやすくなります。",
+      "firstLineHook": "SNSを整える時の保存用メモ。",
+      "callToAction": "必要な時に見返せるよう保存してください。",
+      "hashtags": [
+        "SNS整理",
+        "保存投稿",
+        "Instagram運用",
+        "店舗SNS",
+        "SNSチェックリスト"
+      ],
+      "threadsCrossPost": "SNSを整える時は、入口、安心、行動の3つで見ると分かりやすいです。全部を一度に直さず、詰まっている場所から整えます。",
+      "threadsCtaAllowed": false,
+      "mediaStatus": "design_required",
+      "reviewStatus": "needs_review",
+      "publishStatus": "draft",
+      "media": {
+        "type": "carousel",
+        "items": [
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-12/slide-01.png",
+            "publicUrl": null,
+            "altText": "SNS整理メモ",
+            "order": 1
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-12/slide-02.png",
+            "publicUrl": null,
+            "altText": "入口の確認",
+            "order": 2
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-12/slide-03.png",
+            "publicUrl": null,
+            "altText": "安心材料の確認",
+            "order": 3
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-12/slide-04.png",
+            "publicUrl": null,
+            "altText": "行動導線の確認",
+            "order": 4
+          },
+          {
+            "assetPath": "assets/instagram/instagram-2026-06-17-12/slide-05.png",
+            "publicUrl": null,
+            "altText": "SNS整理メモのまとめ",
+            "order": 5
+          }
+        ]
+      }
+    }
+  ]
+}

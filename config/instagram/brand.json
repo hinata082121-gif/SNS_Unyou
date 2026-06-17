@@ -1,0 +1,55 @@
+{
+  "brandName": "ICHI Social",
+  "handle": "@ichi_social",
+  "profileUrl": "https://www.instagram.com/ichi_social/",
+  "targetAudience": [
+    "小規模店舗",
+    "個人事業主",
+    "1人または少人数でSNSを運用している事業者"
+  ],
+  "purpose": [
+    "SNSプロフィールの整理",
+    "固定投稿の整理",
+    "予約・問い合わせ導線の改善",
+    "投稿テーマの整理",
+    "継続しやすいSNS運用設計"
+  ],
+  "tone": [
+    "やさしい",
+    "誠実",
+    "実務的",
+    "簡潔",
+    "煽らない"
+  ],
+  "visualDirection": [
+    "白ベース",
+    "淡い青または水色",
+    "濃紺の見出し",
+    "余白を広く取る",
+    "フラットで清潔",
+    "小規模事業者が安心できる印象",
+    "保存しやすいチェックリスト型"
+  ],
+  "prohibited": [
+    "絶対",
+    "必ず売上が上がる",
+    "集客保証",
+    "誰でも稼げる",
+    "放置で成功",
+    "不安を過度に煽る表現"
+  ],
+  "contentPillars": [
+    "プロフィール改善",
+    "固定投稿・ハイライト整理",
+    "予約・問い合わせ導線",
+    "投稿ネタ・継続方法",
+    "小規模店舗向けSNSチェックリスト"
+  ],
+  "contentMix": {
+    "saveableKnowHow": 0.4,
+    "empathyAndProblem整理": 0.25,
+    "checklist": 0.2,
+    "serviceAndFreeDiagnosis": 0.1,
+    "brandIntroduction": 0.05
+  }
+}

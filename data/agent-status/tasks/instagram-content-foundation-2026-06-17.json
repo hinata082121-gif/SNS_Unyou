@@ -1,0 +1,51 @@
+{
+  "id": "instagram-content-foundation-2026-06-17",
+  "agent": "Codex",
+  "avatar": "codex-engineer",
+  "title": "Instagram初期コンテンツ・運用基盤",
+  "category": "instagram_content",
+  "status": "needs_review",
+  "phase": "初期draft作成完了・デザイン制作と人間レビュー待ち",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-06-17T00:00:00.000+09:00",
+  "updatedAt": "2026-06-17T18:00:00.000+09:00",
+  "summary": "正式Instagram情報を反映し、初期12投稿、Reels企画6本、プロフィール案、制作指示書、検証スクリプト、将来のAPI readiness整理を追加した。",
+  "artifacts": [
+    "config/instagram/brand.json",
+    "data/instagram/drafts/initial-12-posts-2026-06-17.json",
+    "data/instagram/reels/reels-ideas-2026-06-17.json",
+    "docs/content/instagram-initial-12-posts.md",
+    "docs/content/instagram-reels-ideas.md",
+    "docs/content/instagram-design-specs.md",
+    "docs/content/instagram-profile-and-pinned-posts.md",
+    "docs/runbooks/instagram-content-workflow.md",
+    "docs/runbooks/instagram-api-readiness.md"
+  ],
+  "metrics": {
+    "brandHandleConfigured": true,
+    "profileUrlConfigured": true,
+    "initialPostCount": 12,
+    "carouselCount": 12,
+    "reelsIdeaCount": 6,
+    "allPublishStatusDraft": true,
+    "contentValidationImplemented": true,
+    "mediaValidationImplemented": true,
+    "apiReadinessDocumented": true,
+    "liveInstagramPublishExecuted": false,
+    "instagramAccountSettingsChanged": false,
+    "threadsLivePostExecuted": false,
+    "gmailSendExecuted": false,
+    "googleSheetsUpdated": false
+  },
+  "nextAction": "人間がプロフィール案、初期12投稿、Reels企画を確認し、Canvaまたは画像生成で素材化してから投稿可否を判断する",
+  "safeToAct": true,
+  "notes": [
+    "本番Instagram投稿なし",
+    "Instagramアカウント設定変更なし",
+    "Threads本番投稿なし",
+    "Gmail送信なし",
+    "Google Sheets更新なし",
+    "認証値や顧客情報なし"
+  ]
+}
