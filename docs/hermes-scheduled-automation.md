@@ -1780,6 +1780,13 @@ Hermes gatewayは手動バックグラウンド起動済みだが、Windowsロ�
 Threads運用でも、自動返信、自動いいね、自動フォロー、無断転載、ログイン画面操作、ブラウザ操作による投稿は行わない。
 APIトークン、投稿先ID、App Secret、Client Secret、APIレスポンスの秘密情報は表示・保存・Git追加しない。
 
+2026-06-17に、Instagram導線とメディア投稿基盤を既存のThreads投稿フローへ追加した。
+Hermesの11:00/19:00/no-agentジョブとWindows Task Schedulerの時刻指定タスクは変更しない。
+投稿前検証では、Instagram handle/profile URLが未設定ならInstagram CTAを抑止し、`media.type` が `none` 以外の場合はメディア検証を行う。
+メディア検証に失敗した場合、テキストだけで公開せず `blocked` / `needs_review` としてAgent Officeへ安全な件数だけ記録する。
+画像投稿はfeature flagが有効な場合のみ許可し、動画/カルーセルは初期運用ではunsupportedとして停止する。
+プロフィール編集と固定投稿は自動化せず、Runbookに沿って人間が手動反映する。
+
 ### ICHI Social KPI改善レビュー
 
 金曜20:00のno-agent週次タスクは、Threads投稿改善に加えてGmail営業KPI改善レビューも担当します。

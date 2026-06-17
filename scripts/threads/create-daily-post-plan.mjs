@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { loadLocalEnv } from "../lib/load-local-env.mjs";
+import { hasInstagramDestination, loadThreadsBrandConfig, selectInstagramCta } from "./lib/threads-brand.mjs";
 
 loadLocalEnv();
 
@@ -12,6 +13,8 @@ if (process.argv.includes("--help")) {
 
 const date = process.argv[2] || new Date().toISOString().slice(0, 10);
 const rotationIndex = getRotationIndex(date);
+const brand = loadThreadsBrandConfig();
+const instagramReady = hasInstagramDestination(brand);
 const morningIdeas = [
   {
     theme: "プロフィール導線",
@@ -91,13 +94,21 @@ const posts = [
     date,
     time: "11:00",
     ...morningIdeas[rotationIndex],
+    cta: "",
     slotRole: "know_how_authority",
+    instagramCtaSuppressed: true,
+    media: { type: "none", items: [] },
   },
   {
     date,
     time: "19:00",
     ...eveningIdeas[rotationIndex],
+    cta: shouldUseInstagramCta(rotationIndex, brand)
+      ? selectInstagramCta(brand, rotationIndex)
+      : eveningIdeas[rotationIndex].cta,
     slotRole: "empathy_dm_guidance",
+    instagramCtaSuppressed: !instagramReady,
+    media: { type: "none", items: [] },
   },
 ];
 
@@ -105,11 +116,24 @@ const outDir = path.join(process.cwd(), "data", "threads", "post-plans");
 fs.mkdirSync(outDir, { recursive: true });
 const outFile = path.join(outDir, `${date}.json`);
 fs.writeFileSync(outFile, `${JSON.stringify({ date, posts }, null, 2)}\n`);
-console.log(JSON.stringify({ ok: true, postCount: posts.length, morningIdeaCount: morningIdeas.length, eveningIdeaCount: eveningIdeas.length, file: path.relative(process.cwd(), outFile) }));
+console.log(JSON.stringify({
+  ok: true,
+  postCount: posts.length,
+  morningIdeaCount: morningIdeas.length,
+  eveningIdeaCount: eveningIdeas.length,
+  instagramConfigured: instagramReady,
+  instagramCtaCount: posts.filter((post) => post.cta && brand.instagramCtaTemplates.includes(post.cta)).length,
+  file: path.relative(process.cwd(), outFile)
+}));
 
 function getRotationIndex(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return 0;
   const utc = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   return Math.floor(utc / 86400000) % 7;
+}
+
+function shouldUseInstagramCta(index, config) {
+  if (!hasInstagramDestination(config)) return false;
+  return index % 3 === 1 || index % 3 === 2;
 }

@@ -726,3 +726,39 @@ Gateway起動/ログオンタスクは通常権限で登録拒否されたため
 
 Gmail本送信はWindows側から実行せず、Apps Script側の安全条件に限定します。
 Threads投稿は同一slotの多重起動をロックとTask Schedulerの `IgnoreNew` で抑止します。
+
+## 2026-06-17 Threads Instagram導線・メディア投稿基盤
+
+Agent Officeでは `threads-instagram-media-foundation-2026-06-17` を表示し、Threads運用の拡張状況を確認します。
+
+安全な表示項目:
+
+- brandConfigAdded
+- profileDraftReady
+- pinnedPostDraftReady
+- instagramDestinationConfigured
+- instagramCtaSuppressedUntilConfigured
+- textPostRegressionChecked
+- imageFoundationImplemented
+- imagePublishFeatureFlagRequired
+- videoPublishEnabled
+- carouselPublishEnabled
+- mediaValidationImplemented
+- mediaDryRunChecked
+- windowsScheduleChanged
+- hermesScheduleChanged
+
+表示しない項目:
+
+- 認証値
+- 投稿先識別子
+- App Secret
+- APIレスポンス全文
+- メディアの署名付きURL
+- 投稿本文の全文ログ
+
+プロフィール文と固定投稿文はGit管理された下書きとして用意しますが、Threads APIで安全に編集/固定できることを今回の投稿仕様では確認できないため、自動反映しません。
+人間が `docs/runbooks/threads-profile-and-pinned-post.md` を見て手動で反映します。
+
+Instagram handle/profile URLが未設定の間は、Instagram CTAを自動挿入せず、11時/19時の通常投稿だけを継続します。
+画像投稿はfeature flag配下でdry-run確認後にだけ進めます。

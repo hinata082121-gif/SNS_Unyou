@@ -1,0 +1,22 @@
+{
+  "brandName": "ICHI Social",
+  "purpose": "小規模店舗・個人事業主向けSNS整理支援",
+  "instagramHandle": "",
+  "instagramProfileUrl": "",
+  "profileDraft": "小規模店舗・個人事業主向けに\nSNSの見え方と予約導線を整理します。\n\nプロフィール・固定投稿・発信内容を\n無理なく続けられる形へ。\n\n実例やチェックリストはInstagramで発信中\nInstagram：未設定",
+  "pinnedPostDraft": "はじめまして。ICHI Socialです。\n\n小規模店舗・個人事業主の方に向けて、\n\n・プロフィールを見ても内容が伝わりにくい\n・何を投稿すればよいか決まらない\n・投稿しても予約や問い合わせにつながらない\n・SNS運用に時間をかけられない\n\nといった悩みを整理するサポートを行っています。\n\nこのThreadsでは、すぐ確認できるSNS改善ポイントや、発信を続けやすくする考え方を投稿します。\n\nInstagramでは、図解・チェックリスト・保存用コンテンツを中心に掲載していきます。\n\n詳しく見たい方はプロフィールからInstagramをご覧ください。",
+  "instagramCtaTemplates": [
+    "図解版はInstagramにまとめています。",
+    "保存用チェックリストはInstagramで公開しています。",
+    "実際の整理例はプロフィールのInstagramから確認できます。",
+    "画像で見返したい方向けにInstagramにも掲載しています。"
+  ],
+  "ctaFrequencyPolicy": {
+    "targetMinRatio": 0.25,
+    "targetMaxRatio": 0.4,
+    "allowedSlots": ["19:00"],
+    "disallowConsecutiveSameCta": true,
+    "requireStandaloneValue": true,
+    "suppressWhenInstagramUnset": true
+  }
+}

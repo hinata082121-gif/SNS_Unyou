@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { loadLocalEnv } from "../lib/load-local-env.mjs";
+import { validateThreadsMedia } from "./lib/media-validation.mjs";
+import { publishThread } from "./lib/threads-api-client.mjs";
 
 loadLocalEnv();
 
@@ -10,7 +12,7 @@ const DEFAULT_PLAN = "docs/threads/post-plans/threads-post-plan-2026-06-week1.md
 const MAX_LENGTH = 500;
 
 if (process.argv.includes("--help")) {
-  console.log("Usage: node scripts/threads/publish-scheduled-thread.mjs --slot 11|19 [--date YYYY-MM-DD] [--plan docs/threads/post-plans/file.md]\nPublishes text posts only when THREADS_PUBLISH_ENABLED=true and THREADS_DRY_RUN=false. Otherwise records blocked/dry-run status.");
+  console.log("Usage: node scripts/threads/publish-scheduled-thread.mjs --slot 11|19 [--date YYYY-MM-DD] [--plan docs/threads/post-plans/file.md]\nPublishes text or enabled image posts only when THREADS_PUBLISH_ENABLED=true and THREADS_DRY_RUN=false. Otherwise records blocked/dry-run status.");
   process.exit(0);
 }
 
@@ -28,6 +30,12 @@ const accessToken = process.env.THREADS_ACCESS_TOKEN || "";
 const threadsUserId = process.env.THREADS_USER_ID || "";
 const apiVersion = normalizeApiVersion(process.env.THREADS_API_VERSION || "v1.0");
 const graphBaseUrl = normalizeBaseUrl(process.env.THREADS_GRAPH_BASE_URL || "https://graph.threads.net");
+const mediaFeatureFlags = {
+  media: process.env.THREADS_MEDIA_PUBLISH_ENABLED === "true",
+  image: process.env.THREADS_IMAGE_PUBLISH_ENABLED === "true",
+  video: process.env.THREADS_VIDEO_PUBLISH_ENABLED === "true",
+  carousel: process.env.THREADS_CAROUSEL_PUBLISH_ENABLED === "true"
+};
 const hasToken = Boolean(accessToken);
 const hasUserId = Boolean(threadsUserId);
 const planEnsure = ensureDailyThreadsPlan({
@@ -53,6 +61,10 @@ const result = {
   planGenerated: planEnsure.generated,
   postPrepared: Boolean(draft.text),
   postValidated: draft.ok,
+  mediaType: draft.media?.type || "none",
+  mediaItemCount: Array.isArray(draft.media?.items) ? draft.media.items.length : 0,
+  mediaValidated: false,
+  mediaValidationErrorCount: 0,
   wouldPublish: false,
   published: false,
   blockedReason: "",
@@ -61,10 +73,20 @@ const result = {
   errorSummary: ""
 };
 
+const mediaValidation = draft.ok
+  ? await validateThreadsMedia(draft.media, { network: publishEnabled && !dryRun })
+  : { ok: true, errors: [], media: { type: "none", items: [] } };
+result.mediaValidated = draft.ok ? mediaValidation.ok : false;
+result.mediaValidationErrorCount = mediaValidation.errors.length;
+
 if (alreadyPublished) {
   result.blockedReason = "already_published";
 } else if (!draft.ok) {
   result.blockedReason = draft.blockedReason;
+} else if (!mediaValidation.ok) {
+  result.blockedReason = "media_validation_failed";
+} else if (!isMediaPublishEnabled(draft.media, mediaFeatureFlags)) {
+  result.blockedReason = `${draft.media?.type || "media"}_publish_disabled`;
 } else if (!hasToken || !hasUserId) {
   result.blockedReason = "threads_api_not_configured";
 } else if (!publishEnabled) {
@@ -76,12 +98,14 @@ if (alreadyPublished) {
   result.wouldPublish = true;
   result.blockedReason = "threads_dry_run";
 } else {
-  const publishResult = await publishTextThread({
+  const publishResult = await publishThread({
     baseUrl: graphBaseUrl,
     apiVersion,
     userId: threadsUserId,
     accessToken,
-    text: draft.text
+    text: draft.text,
+    media: draft.media,
+    featureFlags: mediaFeatureFlags
   });
   result.ok = publishResult.ok;
   result.published = publishResult.published;
@@ -125,7 +149,7 @@ function readDraft({ planFile, postDate, slot }) {
   if (draftText.length > MAX_LENGTH) {
     return { ok: false, text: "", blockedReason: "post_text_too_long" };
   }
-  return { ok: true, text: draftText, blockedReason: "" };
+  return { ok: true, text: draftText, media: { type: "none", items: [] }, blockedReason: "" };
 }
 
 function readJsonDraft({ postDate, slot }) {
@@ -142,7 +166,7 @@ function readJsonDraft({ postDate, slot }) {
     const draftText = [post.text, post.cta].filter(Boolean).join("\n\n").trim();
     if (!draftText) return { ok: false, text: "", blockedReason: "post_text_empty" };
     if (draftText.length > MAX_LENGTH) return { ok: false, text: "", blockedReason: "post_text_too_long" };
-    return { ok: true, text: draftText, blockedReason: "" };
+    return { ok: true, text: draftText, media: post.media || { type: "none", items: [] }, blockedReason: "" };
   } catch {
     return { ok: false, text: "", blockedReason: "generated_plan_invalid" };
   }
@@ -207,73 +231,6 @@ function findSection(source, heading, nextHeadingPattern) {
   return next >= 0 ? rest.slice(0, next) : rest;
 }
 
-async function publishTextThread({ baseUrl, apiVersion, userId, accessToken, text }) {
-  try {
-    const createBody = new URLSearchParams();
-    createBody.set("media_type", "TEXT");
-    createBody.set("text", text);
-    createBody.set("access_token", accessToken);
-    const createResponse = await fetch(`${baseUrl}/${apiVersion}/${encodeURIComponent(userId)}/threads`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: createBody
-    });
-    const createJson = await safeJson(createResponse);
-    const creationId = String(createJson.id || createJson.creation_id || "");
-    if (!createResponse.ok || !creationId) {
-      return {
-        ok: false,
-        published: false,
-        postIdPresent: false,
-        postIdHash: "",
-        errorSummary: safeErrorSummary(createResponse.status, createJson)
-      };
-    }
-
-    const publishBody = new URLSearchParams();
-    publishBody.set("creation_id", creationId);
-    publishBody.set("access_token", accessToken);
-    const publishResponse = await fetch(`${baseUrl}/${apiVersion}/${encodeURIComponent(userId)}/threads_publish`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: publishBody
-    });
-    const publishJson = await safeJson(publishResponse);
-    const postId = String(publishJson.id || publishJson.thread_id || "");
-    return {
-      ok: publishResponse.ok && Boolean(postId),
-      published: publishResponse.ok && Boolean(postId),
-      postIdPresent: Boolean(postId),
-      postIdHash: postId ? hashValue(postId) : "",
-      errorSummary: publishResponse.ok ? "" : safeErrorSummary(publishResponse.status, publishJson)
-    };
-  } catch {
-    return {
-      ok: false,
-      published: false,
-      postIdPresent: false,
-      postIdHash: "",
-      errorSummary: "request_failed"
-    };
-  }
-}
-
-async function safeJson(response) {
-  try {
-    return await response.json();
-  } catch {
-    return {};
-  }
-}
-
-function safeErrorSummary(status, body) {
-  const error = body && body.error ? body.error : {};
-  const code = error.code || body.code || "";
-  const type = error.type || body.type || "";
-  const message = String(error.message || body.message || "").slice(0, 120);
-  return JSON.stringify({ status, code, type, message });
-}
-
 function writeSafePublishLog(value) {
   const safe = {
     ok: value.ok,
@@ -287,6 +244,10 @@ function writeSafePublishLog(value) {
     planGenerated: value.planGenerated,
     postPrepared: value.postPrepared,
     postValidated: value.postValidated,
+    mediaType: value.mediaType,
+    mediaItemCount: value.mediaItemCount,
+    mediaValidated: value.mediaValidated,
+    mediaValidationErrorCount: value.mediaValidationErrorCount,
     wouldPublish: value.wouldPublish,
     published: value.published,
     blockedReason: value.blockedReason,
@@ -322,10 +283,12 @@ function normalizeBaseUrl(value) {
   return String(value || "https://graph.threads.net").trim().replace(/\/+$/, "");
 }
 
-function hashValue(value) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0").slice(0, 12);
+function isMediaPublishEnabled(media, flags) {
+  const type = String(media?.type || "none").toLowerCase();
+  if (type === "none") return true;
+  if (!flags.media) return false;
+  if (type === "image") return flags.image;
+  if (type === "video") return flags.video;
+  if (type === "carousel") return flags.carousel;
+  return false;
 }

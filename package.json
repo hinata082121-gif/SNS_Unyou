@@ -27,6 +27,8 @@
     "threads:plan:ensure": "node scripts/threads/create-daily-post-plan.mjs",
     "threads:plan:ensure:rolling": "node scripts/threads/ensure-rolling-post-plans.mjs",
     "threads:plan:validate": "node scripts/threads/validate-thread-posts.mjs data/threads/post-plans",
+    "threads:media:validate": "node scripts/threads/validate-thread-media.mjs",
+    "threads:media:test": "node scripts/threads/test-media-validation.mjs",
     "threads:post:11": "node scripts/threads/publish-scheduled-thread.mjs --slot 11",
     "threads:post:19": "node scripts/threads/publish-scheduled-thread.mjs --slot 19",
     "threads:weekly:analyze": "node scripts/threads/weekly-viral-analysis.mjs",

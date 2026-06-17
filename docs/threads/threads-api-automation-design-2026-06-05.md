@@ -201,3 +201,37 @@ Threadsローカル投稿処理は、Windows Task Scheduler `\ICHI-Social\` のW
 各タスクは `StartWhenAvailable=true`、`WakeToRun=true`、`MultipleInstancesPolicy=IgnoreNew` で登録します。
 テスト時は `THREADS_PUBLISH_ENABLED=false` と `THREADS_DRY_RUN=true` を使い、本番投稿を行いません。
 ログには投稿本文、認証値、User ID、APIレスポンス本文を残しません。
+
+## 2026-06-17 Instagram導線・メディア投稿基盤
+
+Threads投稿をInstagram保存コンテンツへ自然につなげるため、秘密情報を含まないブランド設定を `config/threads/brand.json` に追加する。
+Instagram handle/profile URLが未設定の場合は、架空の誘導先を入れず、Instagram CTAを自動挿入しない。
+
+投稿プランJSONは後方互換で `media` を任意フィールドとして持てる。
+
+- `media.type=none`: 既存どおりテキスト投稿
+- `media.type=image`: feature flagが有効な場合だけ画像投稿へ進む
+- `media.type=video`: 初期運用ではunsupportedとして停止
+- `media.type=carousel`: 初期運用ではunsupportedとして停止
+
+Meta公式のThreads投稿仕様、Meta公式Postman collection、`fbsamples/threads_api` では、テキスト/画像/動画/カルーセル投稿がコンテナ作成後にpublishする2段階フローとして示されている。
+画像は公開到達可能なHTTPS URLを `image_url` として渡す必要があるため、ローカルパス、認証付きURL、期限付きURLは使わない。
+
+安全実装:
+
+- `scripts/threads/lib/media-validation.mjs` でHTTPS、private IP、localhost、拡張子、MIME、altText、件数、取得可否を検証する
+- メディア検証失敗時はテキストだけで勝手に投稿しない
+- `scripts/threads/lib/threads-api-client.mjs` でテキストと画像の投稿フローを分離する
+- 画像投稿は `THREADS_MEDIA_PUBLISH_ENABLED=true` かつ `THREADS_IMAGE_PUBLISH_ENABLED=true` の場合だけ許可する
+- 動画/カルーセルは公式仕様上の存在を確認したが、処理待機、リトライ、実メディア検証の運用が未確認のため初期状態では止める
+
+既存スケジュールへの影響:
+
+- 10:50/18:50の投稿計画確認は維持
+- 11:00/19:00の投稿コマンドは維持
+- 11:10/19:10の確認は維持
+- Windows Task SchedulerとHermes no-agentジョブは今回変更しない
+- メディアなし投稿は従来通り動作する
+
+プロフィール編集と固定投稿は、今回確認した投稿系仕様では安全に自動化しない。
+`docs/runbooks/threads-profile-and-pinned-post.md` に手動反映手順を置き、人間がThreadsアプリ上で確認して反映する。

@@ -1,0 +1,52 @@
+{
+  "id": "threads-instagram-media-foundation-2026-06-17",
+  "agent": "Codex",
+  "avatar": "codex-engineer",
+  "title": "Threadsプロフィール・Instagram導線・メディア投稿基盤",
+  "category": "threads_automation",
+  "status": "needs_review",
+  "phase": "実装完了・プロフィールと固定投稿は手動反映待ち",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-06-17T00:00:00.000+09:00",
+  "updatedAt": "2026-06-17T17:34:24.3260685+09:00",
+  "summary": "既存11時・19時Threads投稿を維持しながら、ブランド設定、Instagram誘導ルール、画像投稿の安全な下地、メディア検証、手動プロフィール/固定投稿Runbookを追加した。",
+  "artifacts": [
+    "config/threads/brand.json",
+    "scripts/threads/lib/threads-brand.mjs",
+    "scripts/threads/lib/media-validation.mjs",
+    "scripts/threads/lib/threads-api-client.mjs",
+    "docs/threads/threads-instagram-funnel-and-media-foundation-2026-06-17.md",
+    "docs/runbooks/threads-profile-and-pinned-post.md",
+    "docs/threads/threads-content-bank-2026-06-17.md"
+  ],
+  "metrics": {
+    "brandConfigAdded": true,
+    "profileDraftReady": true,
+    "pinnedPostDraftReady": true,
+    "instagramDestinationConfigured": false,
+    "instagramCtaSuppressedUntilConfigured": true,
+    "textPostRegressionChecked": true,
+    "imageFoundationImplemented": true,
+    "imagePublishFeatureFlagRequired": true,
+    "videoPublishEnabled": false,
+    "carouselPublishEnabled": false,
+    "mediaValidationImplemented": true,
+    "mediaDryRunChecked": true,
+    "liveThreadsPostExecuted": false,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false,
+    "windowsScheduleChanged": false,
+    "hermesScheduleChanged": false
+  },
+  "nextAction": "人間が実Instagram情報を設定し、Threadsプロフィール文と固定投稿文を手動反映する。画像投稿は公開到達可能なメディアURLを用意し、dry-run確認後に承認する。",
+  "safeToAct": true,
+  "notes": [
+    "本番Threads投稿なし",
+    "プロフィール編集と固定投稿は手動",
+    "Instagram未設定時は誘導CTAを自動挿入しない",
+    "メディア検証失敗時は公開しない",
+    "投稿先識別子や認証値は表示しない"
+  ]
+}
