@@ -1,6 +1,6 @@
 {
   "schemaVersion": "instagram-publishing-v1",
-  "updatedAt": "2026-06-17T11:28:31.907Z",
+  "updatedAt": "2026-06-17T14:15:50.962Z",
   "platform": "instagram",
   "timezone": "Asia/Tokyo",
   "policy": {
@@ -17,9 +17,9 @@
       "sequence": 1,
       "format": "carousel",
       "title": "手動公開済み通常投稿1",
-      "caption": "手動公開済み投稿の安全な履歴レコード。本文全文は保存しない。",
+      "caption": "手動公開済み投稿の安全な履歴レコード。本文は保存しない。",
       "hashtags": [],
-      "altText": "手動公開済み投稿の安全な要約",
+      "altText": "手動公開済み投稿の安全な履歴",
       "media": {
         "items": []
       },
@@ -38,7 +38,7 @@
       "autoPublishEligible": false,
       "manuallyPublished": true,
       "createdAt": "2026-06-17T00:00:00.000+09:00",
-      "updatedAt": "2026-06-17T11:28:31.907Z"
+      "updatedAt": "2026-06-17T14:15:50.962Z"
     },
     {
       "id": "instagram-manual-2026-seq-02",
@@ -46,9 +46,9 @@
       "sequence": 2,
       "format": "carousel",
       "title": "手動公開済み通常投稿2",
-      "caption": "手動公開済み投稿の安全な履歴レコード。本文全文は保存しない。",
+      "caption": "手動公開済み投稿の安全な履歴レコード。本文は保存しない。",
       "hashtags": [],
-      "altText": "手動公開済み投稿の安全な要約",
+      "altText": "手動公開済み投稿の安全な履歴",
       "media": {
         "items": []
       },
@@ -67,7 +67,7 @@
       "autoPublishEligible": false,
       "manuallyPublished": true,
       "createdAt": "2026-06-17T00:00:00.000+09:00",
-      "updatedAt": "2026-06-17T11:28:31.907Z"
+      "updatedAt": "2026-06-17T14:15:50.962Z"
     },
     {
       "id": "instagram-manual-2026-seq-03",
@@ -75,9 +75,9 @@
       "sequence": 3,
       "format": "carousel",
       "title": "手動公開済み通常投稿3",
-      "caption": "手動公開済み投稿の安全な履歴レコード。本文全文は保存しない。",
+      "caption": "手動公開済み投稿の安全な履歴レコード。本文は保存しない。",
       "hashtags": [],
-      "altText": "手動公開済み投稿の安全な要約",
+      "altText": "手動公開済み投稿の安全な履歴",
       "media": {
         "items": []
       },
@@ -96,7 +96,7 @@
       "autoPublishEligible": false,
       "manuallyPublished": true,
       "createdAt": "2026-06-17T00:00:00.000+09:00",
-      "updatedAt": "2026-06-17T11:28:31.907Z"
+      "updatedAt": "2026-06-17T14:15:50.962Z"
     },
     {
       "id": "instagram-manual-2026-seq-04",
@@ -104,9 +104,9 @@
       "sequence": 4,
       "format": "carousel",
       "title": "手動公開済み通常投稿4",
-      "caption": "手動公開済み投稿の安全な履歴レコード。本文全文は保存しない。",
+      "caption": "手動公開済み投稿の安全な履歴レコード。本文は保存しない。",
       "hashtags": [],
-      "altText": "手動公開済み投稿の安全な要約",
+      "altText": "手動公開済み投稿の安全な履歴",
       "media": {
         "items": []
       },
@@ -125,7 +125,7 @@
       "autoPublishEligible": false,
       "manuallyPublished": true,
       "createdAt": "2026-06-17T00:00:00.000+09:00",
-      "updatedAt": "2026-06-17T11:28:31.907Z"
+      "updatedAt": "2026-06-17T14:15:50.962Z"
     },
     {
       "id": "instagram-manual-2026-seq-05",
@@ -133,9 +133,9 @@
       "sequence": 5,
       "format": "carousel",
       "title": "手動公開済み通常投稿5",
-      "caption": "手動公開済み投稿の安全な履歴レコード。本文全文は保存しない。",
+      "caption": "手動公開済み投稿の安全な履歴レコード。本文は保存しない。",
       "hashtags": [],
-      "altText": "手動公開済み投稿の安全な要約",
+      "altText": "手動公開済み投稿の安全な履歴",
       "media": {
         "items": []
       },
@@ -154,7 +154,7 @@
       "autoPublishEligible": false,
       "manuallyPublished": true,
       "createdAt": "2026-06-17T00:00:00.000+09:00",
-      "updatedAt": "2026-06-17T11:28:31.907Z"
+      "updatedAt": "2026-06-17T14:15:50.962Z"
     },
     {
       "id": "instagram-manual-2026-seq-06",
@@ -162,9 +162,9 @@
       "sequence": 6,
       "format": "carousel",
       "title": "手動公開済み通常投稿6",
-      "caption": "手動公開済み投稿の安全な履歴レコード。本文全文は保存しない。",
+      "caption": "手動公開済み投稿の安全な履歴レコード。本文は保存しない。",
       "hashtags": [],
-      "altText": "手動公開済み投稿の安全な要約",
+      "altText": "手動公開済み投稿の安全な履歴",
       "media": {
         "items": []
       },
@@ -183,7 +183,7 @@
       "autoPublishEligible": false,
       "manuallyPublished": true,
       "createdAt": "2026-06-17T00:00:00.000+09:00",
-      "updatedAt": "2026-06-17T11:28:31.907Z"
+      "updatedAt": "2026-06-17T14:15:50.962Z"
     },
     {
       "id": "instagram-auto-2026-seq-07",
@@ -199,7 +199,7 @@
         "#個人事業主",
         "#SNS導線"
       ],
-      "altText": "SNS導線を見直すためのチェックリスト型カルーセル",
+      "altText": "SNS導線を見直すためのチェックリスト形式カルーセル",
       "media": {
         "items": [
           {
@@ -264,13 +264,13 @@
           }
         ]
       },
-      "scheduledAt": "2026-06-18T12:00:00+09:00",
+      "scheduledAt": null,
       "timezone": "Asia/Tokyo",
       "crossPost": {
         "enabled": true,
         "platform": "threads",
-        "text": "SNSから予約や問い合わせにつなげるには、投稿内容だけでなくプロフィールやリンク導線も確認したいところです。Instagramではチェックリスト形式でまとめます。@ichi_social",
-        "scheduledAt": "2026-06-18T19:00:00+09:00",
+        "text": "SNSから予約や問い合わせにつなげるには、投稿だけでなくプロフィールやリンク導線も重要です。Instagramではチェックリスト形式でまとめます。@ichi_social",
+        "scheduledAt": null,
         "slot": "19",
         "mediaMode": "instagram_cover",
         "instagramPostId": "instagram-auto-2026-seq-07",
@@ -288,7 +288,7 @@
       "autoPublishEligible": true,
       "manuallyPublished": false,
       "createdAt": "2026-06-17T00:00:00.000+09:00",
-      "updatedAt": "2026-06-17T11:28:31.907Z"
+      "updatedAt": "2026-06-17T14:15:50.962Z"
     }
   ]
 }
