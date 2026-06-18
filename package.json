@@ -28,6 +28,7 @@
     "gmail:sales:safety:test": "node scripts/gmail/test-sales-safety-guards.mjs",
     "gmail:sales:prepare-safe": "node scripts/gmail/prepare-daily-safe-sales-batch.mjs",
     "gmail:sales:prepare-safe:test": "node scripts/gmail/test-daily-safe-sales-batch.mjs",
+    "gmail:sheet-history:export-safe:test": "node scripts/gmail/test-google-sheet-send-history-safe-export.mjs",
     "threads:post:validate": "node scripts/threads/validate-thread-posts.mjs",
     "threads:plan:ensure": "node scripts/threads/create-daily-post-plan.mjs",
     "threads:plan:ensure:rolling": "node scripts/threads/ensure-rolling-post-plans.mjs",

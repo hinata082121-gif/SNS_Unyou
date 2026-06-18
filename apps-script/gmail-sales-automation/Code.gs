@@ -564,6 +564,64 @@ function logSentSuppressionLedgerSafeJsonOnly() {
   };
 }
 
+function logGoogleSheetSendHistorySafeJsonOnly() {
+  const maxPayloadLength = 5600;
+  const generatedAt = new Date().toISOString();
+  let safePayload;
+
+  try {
+    const config = getConfig_();
+    const knownSentEmails = loadKnownSentEmails_(config);
+    const recipientHashes = Object.keys(knownSentEmails)
+      .map((value) => hashValue_(normalizeEmail_(value)))
+      .filter(Boolean);
+    const uniqueRecipientHashes = Array.from(new Set(recipientHashes)).sort();
+    safePayload = {
+      event: 'google_sheet_send_history_safe_json',
+      historyLoaded: true,
+      generatedAt,
+      entryCount: uniqueRecipientHashes.length,
+      entries: uniqueRecipientHashes.map((recipientHash) => ({ recipientHash }))
+    };
+  } catch (error) {
+    safePayload = {
+      event: 'google_sheet_send_history_safe_json',
+      historyLoaded: false,
+      generatedAt,
+      entryCount: 0,
+      entries: [],
+      blockedReason: 'sheet_history_read_failed'
+    };
+  }
+
+  const json = JSON.stringify(safePayload);
+  const chunkCount = Math.max(1, Math.ceil(json.length / maxPayloadLength));
+  for (let index = 0; index < chunkCount; index += 1) {
+    Logger.log(JSON.stringify({
+      event: 'google_sheet_send_history_export_chunk',
+      chunkIndex: index + 1,
+      chunkCount,
+      payload: json.slice(index * maxPayloadLength, (index + 1) * maxPayloadLength)
+    }));
+  }
+
+  const complete = {
+    event: 'google_sheet_send_history_export_complete',
+    historyLoaded: safePayload.historyLoaded,
+    entryCount: safePayload.entryCount,
+    chunkCount,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false,
+    scriptPropertiesUpdated: false
+  };
+  if (!safePayload.historyLoaded) {
+    complete.blockedReason = safePayload.blockedReason;
+  }
+  Logger.log(JSON.stringify(complete));
+  return complete;
+}
+
 function runPreparedBatchDiagnosticsOnly() {
   const preflight = runPreflight_(false);
   const ledger = loadSuppressionLedgerFromProperties_();
