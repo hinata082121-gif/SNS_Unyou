@@ -23,8 +23,8 @@ const privatePreview = path.join(TMP, 'private.tsv');
 fs.mkdirSync(historyDir, { recursive: true });
 
 writeJson(poolFile, {
-  generatedAt: `${DATE}T00:00:00+09:00`,
-  candidates: buildCandidates(35)
+  updatedAt: `${DATE}T00:00:00+09:00`,
+  candidates: buildCandidates(35, { lastCheckedAt: `${DATE}T00:00:00+09:00` })
 });
 writeJson(suppressionFile, {
   generatedAt: `${DATE}T00:00:00+09:00`,
@@ -57,6 +57,10 @@ assert.equal(success.targetDate, DATE);
 assert.equal(success.sendBatchId, `gmail-sales-${DATE}`);
 assert.equal(status.id, `gmail-sales-safe-preparation-${DATE}`);
 assert.equal(status.status, 'needs_review');
+assert.equal(status.metrics.sourceFresh, true);
+assert.equal(status.metrics.sourceFreshnessReason, 'enough_fresh_candidates');
+assert.equal(status.metrics.freshCandidateCount, 35);
+assert.equal(status.metrics.staleSourceCount, 0);
 assert.equal(status.metrics.selectedCount, 30);
 assert.equal(status.metrics.outboxCreated, true);
 assert.equal(status.metrics.liveSendEnabled, false);
@@ -86,8 +90,8 @@ assert.equal(fs.existsSync(path.join(TMP, 'blocked-outbox.json')), false);
 
 const shortPoolFile = path.join(TMP, 'short-pool.json');
 writeJson(shortPoolFile, {
-  generatedAt: `${DATE}T00:00:00+09:00`,
-  candidates: buildCandidates(2)
+  updatedAt: `${DATE}T00:00:00+09:00`,
+  candidates: buildCandidates(2, { lastCheckedAt: `${DATE}T00:00:00+09:00` })
 });
 const shortStatusFile = path.join(TMP, 'short-status.json');
 const short = runPrepare([
@@ -102,34 +106,128 @@ const short = runPrepare([
   '--sheets-tsv', path.join(TMP, 'short-sheets.tsv'),
   '--private-preview', path.join(TMP, 'short-private.tsv')
 ]);
-assert.equal(short.selectedCount, 2);
-assert.equal(readJson(shortStatusFile).metrics.selectedCount, 2);
+assert.equal(short.selectedCount, 0);
+assert.equal(short.blockedReasons.includes('insufficient_fresh_candidates'), true);
+assert.equal(readJson(shortStatusFile).metrics.selectedCount, 0);
+assert.equal(fs.existsSync(path.join(TMP, 'short-outbox.json')), false);
+
+const staleCandidateStatus = runScenario('pool-updated-fresh-candidate-stale', {
+  poolUpdatedAt: `${DATE}T00:00:00+09:00`,
+  candidates: buildCandidates(30, { lastCheckedAt: '2026-06-10T00:00:00+09:00' })
+});
+assert.equal(staleCandidateStatus.metrics.sourceFresh, false);
+assert.equal(staleCandidateStatus.metrics.freshCandidateCount, 0);
+assert.equal(staleCandidateStatus.metrics.staleSourceCount, 30);
+assert.equal(staleCandidateStatus.metrics.selectedCount, 0);
+assert.equal(staleCandidateStatus.metrics.outboxCreated, false);
+
+const freshCandidateStatus = runScenario('pool-updated-stale-candidate-fresh', {
+  poolUpdatedAt: '2026-06-10T00:00:00+09:00',
+  candidates: buildCandidates(30, { lastCheckedAt: `${DATE}T00:00:00+09:00` })
+});
+assert.equal(freshCandidateStatus.metrics.sourceFresh, true);
+assert.equal(freshCandidateStatus.metrics.freshCandidateCount, 30);
+assert.equal(freshCandidateStatus.metrics.selectedCount, 30);
+assert.equal(freshCandidateStatus.metrics.outboxCreated, true);
+
+const mixedFreshStatus = runScenario('fresh-30-stale-70', {
+  candidates: [
+    ...buildCandidates(70, { startIndex: 100, lastCheckedAt: '2026-06-10T00:00:00+09:00' }),
+    ...buildCandidates(30, { startIndex: 1000, lastCheckedAt: `${DATE}T00:00:00+09:00` })
+  ]
+});
+assert.equal(mixedFreshStatus.metrics.sourceFresh, true);
+assert.equal(mixedFreshStatus.metrics.freshCandidateCount, 30);
+assert.equal(mixedFreshStatus.metrics.staleSourceCount, 70);
+assert.equal(mixedFreshStatus.metrics.selectedCount, 30);
+assert.equal(mixedFreshStatus.metrics.outboxCreated, true);
+
+const insufficientFreshStatus = runScenario('fresh-29-stale-71', {
+  candidates: [
+    ...buildCandidates(71, { startIndex: 2000, lastCheckedAt: '2026-06-10T00:00:00+09:00' }),
+    ...buildCandidates(29, { startIndex: 3000, lastCheckedAt: `${DATE}T00:00:00+09:00` })
+  ]
+});
+assert.equal(insufficientFreshStatus.metrics.sourceFresh, false);
+assert.equal(insufficientFreshStatus.metrics.freshCandidateCount, 29);
+assert.equal(insufficientFreshStatus.metrics.staleSourceCount, 71);
+assert.equal(insufficientFreshStatus.metrics.outboxCreated, false);
+assert.equal(insufficientFreshStatus.metrics.blockedReasons.includes('insufficient_fresh_candidates'), true);
+
+const missingTimestampStatus = runScenario('missing-timestamp', {
+  candidates: buildCandidates(1, { omitTimestamp: true })
+});
+assert.equal(missingTimestampStatus.metrics.missingCandidateTimestampCount, 1);
+assert.equal(missingTimestampStatus.metrics.staleSourceCount, 1);
+
+const invalidTimestampStatus = runScenario('invalid-timestamp', {
+  candidates: buildCandidates(1, { lastCheckedAt: 'not-a-date' })
+});
+assert.equal(invalidTimestampStatus.metrics.invalidCandidateTimestampCount, 1);
+assert.equal(invalidTimestampStatus.metrics.staleSourceCount, 1);
+
+const futureTimestampStatus = runScenario('future-timestamp', {
+  candidates: buildCandidates(1, { lastCheckedAt: '2026-06-20T00:00:00+09:00' })
+});
+assert.equal(futureTimestampStatus.metrics.futureCandidateTimestampCount, 1);
+assert.equal(futureTimestampStatus.metrics.staleSourceCount, 1);
 
 console.log(JSON.stringify({
-  syntheticTestCount: 25,
+  syntheticTestCount: 45,
   passed: true,
   targetDate: DATE,
   gmailSendExecuted: false,
   googleSheetsUpdated: false
 }, null, 2));
 
-function buildCandidates(count) {
+function runScenario(name, { candidates, poolUpdatedAt = `${DATE}T00:00:00+09:00` }) {
+  const scenarioDir = path.join(TMP, name);
+  fs.mkdirSync(scenarioDir, { recursive: true });
+  const scenarioPool = path.join(scenarioDir, 'pool.json');
+  const scenarioStatus = path.join(scenarioDir, 'status.json');
+  const scenarioOutbox = path.join(scenarioDir, 'outbox.json');
+  writeJson(scenarioPool, {
+    updatedAt: poolUpdatedAt,
+    candidates
+  });
+  runPrepare([
+    '--date', DATE,
+    '--pool', scenarioPool,
+    '--suppression-ledger', suppressionFile,
+    '--sheet-history', sheetHistoryFile,
+    '--history-dir', historyDir,
+    '--status-file', scenarioStatus,
+    '--outbox-file', scenarioOutbox,
+    '--sheets-json', path.join(scenarioDir, 'sheets.json'),
+    '--sheets-tsv', path.join(scenarioDir, 'sheets.tsv'),
+    '--private-preview', path.join(scenarioDir, 'private.tsv')
+  ]);
+  return readJson(scenarioStatus);
+}
+
+function buildCandidates(count, options = {}) {
+  const startIndex = options.startIndex || 0;
   return Array.from({ length: count }, (_, index) => {
-    const businessName = `Safe Business ${index}`;
-    return {
-      prospectId: `prospect-${index}`,
-      sourceRowId: `source-row-${index}`,
+    const candidateIndex = startIndex + index;
+    const businessName = `Safe Business ${candidateIndex}`;
+    const candidate = {
+      prospectId: `prospect-${candidateIndex}`,
+      sourceRowId: `source-row-${candidateIndex}`,
       name: businessName,
       customerName: businessName,
       businessType: 'test',
       area: 'test',
-      email: `safe-${index}${at}sample-${index}.invalid`,
-      sourceUrl: `https://sample-${index}.invalid`,
+      email: `safe-${candidateIndex}${at}sample-${candidateIndex}.invalid`,
+      sourceUrl: `https://sample-${candidateIndex}.invalid`,
       subject: 'SNSの見え方について、簡単な無料確認のご案内',
       body: `${businessName} さま\n\n突然のご連絡失礼いたします。\n${businessName} 向けのSNS導線確認です。\n\n今後のご案内が不要な場合は、その旨をご返信ください。`,
       status: 'available',
       templateVersion: 'test-v1'
     };
+    if (!options.omitTimestamp) {
+      candidate.lastCheckedAt = options.lastCheckedAt || `${DATE}T00:00:00+09:00`;
+    }
+    return candidate;
   });
 }
 

@@ -45,7 +45,7 @@ const candidates = asCandidates(pool);
 const suppression = loadSuppressionLedger(suppressionLedgerFile);
 const sheetHistory = loadHistoryHashes(sheetHistoryFile);
 const localHistory = loadLocalHistoryHashes(localHistoryDir);
-const freshness = evaluateSourceFreshness(pool, targetDate, args['freshness-days']);
+const freshnessDays = Number(args['freshness-days'] || 3);
 const seen = {
   email: new Set(),
   business: new Set(),
@@ -56,19 +56,23 @@ const metrics = {
   targetDate,
   sendBatchId,
   inferredDate: !args.date,
-  sourceFresh: freshness.ok,
-  sourceFreshnessReason: freshness.reason,
+  sourceFresh: false,
+  sourceFreshnessReason: 'insufficient_fresh_candidates',
   suppressionLedgerLoaded: suppression.loaded,
   gmailSentHistoryLoaded: suppression.loaded,
   sheetHistoryLoaded: sheetHistory.loaded,
   localHistoryLoaded: localHistory.loaded,
   availablePoolCount: 0,
+  freshCandidateCount: 0,
   suppressedRecipientCount: 0,
   suppressedDomainCount: 0,
   suppressedBusinessCount: 0,
   sheetHistoryExcludedCount: 0,
   localHistoryExcludedCount: 0,
-  staleSourceCount: freshness.ok ? 0 : candidates.length,
+  staleSourceCount: 0,
+  missingCandidateTimestampCount: 0,
+  invalidCandidateTimestampCount: 0,
+  futureCandidateTimestampCount: 0,
   invalidPersonalizationCount: 0,
   duplicateWithinCandidateCount: 0,
   invalidEmailCount: 0,
@@ -85,8 +89,26 @@ const metrics = {
   appsScriptTriggerChangedByThisRun: false
 };
 
+const freshCandidates = [];
+for (const candidate of candidates) {
+  if (!isAvailable(candidate)) continue;
+  metrics.availablePoolCount += 1;
+  const candidateFreshness = evaluateCandidateFreshness(candidate, targetDate, freshnessDays);
+  if (candidateFreshness.fresh) {
+    metrics.freshCandidateCount += 1;
+    freshCandidates.push(candidate);
+    continue;
+  }
+  metrics.staleSourceCount += 1;
+  if (candidateFreshness.reason === 'missing_candidate_timestamp') metrics.missingCandidateTimestampCount += 1;
+  if (candidateFreshness.reason === 'invalid_candidate_timestamp') metrics.invalidCandidateTimestampCount += 1;
+  if (candidateFreshness.reason === 'future_candidate_timestamp') metrics.futureCandidateTimestampCount += 1;
+}
+metrics.sourceFresh = metrics.freshCandidateCount >= 30;
+metrics.sourceFreshnessReason = metrics.sourceFresh ? 'enough_fresh_candidates' : 'insufficient_fresh_candidates';
+
 const blockingReasons = [];
-if (!freshness.ok) blockingReasons.push('stale_source_list');
+if (!metrics.sourceFresh) blockingReasons.push('insufficient_fresh_candidates');
 if (!suppression.loaded) blockingReasons.push('suppression_ledger_missing');
 if (!sheetHistory.loaded) blockingReasons.push('sheet_history_missing');
 if (!localHistory.loaded) blockingReasons.push('local_history_missing');
@@ -97,9 +119,7 @@ const safeRows = [];
 const previewRows = [];
 
 if (blockingReasons.length === 0) {
-  for (const candidate of candidates) {
-    if (!isAvailable(candidate)) continue;
-    metrics.availablePoolCount += 1;
+  for (const candidate of freshCandidates) {
     const normalized = normalizeCandidate(candidate, targetDate, sendBatchId);
     if (!normalized.email || !isValidEmail(normalized.email)) {
       metrics.invalidEmailCount += 1;
@@ -146,7 +166,7 @@ if (blockingReasons.length === 0) {
 metrics.safeCandidateCount = safeRows.length;
 metrics.selectedCount = safeRows.length;
 
-if (blockingReasons.length === 0 && safeRows.length > 0) {
+if (blockingReasons.length === 0 && safeRows.length === 30) {
   writePrivatePreview(privatePreview, safeRows);
   metrics.previewCreated = true;
   writeJson(outboxFile, {
@@ -166,8 +186,11 @@ if (blockingReasons.length === 0 && safeRows.length > 0) {
   fs.writeFileSync(sheetsReadyTsv, toTsv(safeRows), 'utf8');
   metrics.outboxCreated = true;
   metrics.sheetsReadyTsvCreated = true;
-} else if (safeRows.length === 0 && blockingReasons.length === 0) {
-  blockingReasons.push('no_safe_candidates');
+} else if (safeRows.length < 30 && blockingReasons.length === 0) {
+  blockingReasons.push('insufficient_safe_candidates');
+  metrics.previewCreated = false;
+  metrics.outboxCreated = false;
+  metrics.sheetsReadyTsvCreated = false;
 }
 
 const status = buildStatusTask({
@@ -191,6 +214,11 @@ console.log(JSON.stringify({
   sheetHistoryLoaded: metrics.sheetHistoryLoaded,
   localHistoryLoaded: metrics.localHistoryLoaded,
   availablePoolCount: metrics.availablePoolCount,
+  freshCandidateCount: metrics.freshCandidateCount,
+  staleSourceCount: metrics.staleSourceCount,
+  missingCandidateTimestampCount: metrics.missingCandidateTimestampCount,
+  invalidCandidateTimestampCount: metrics.invalidCandidateTimestampCount,
+  futureCandidateTimestampCount: metrics.futureCandidateTimestampCount,
   suppressedRecipientCount: metrics.suppressedRecipientCount,
   suppressedDomainCount: metrics.suppressedDomainCount,
   suppressedBusinessCount: metrics.suppressedBusinessCount,
@@ -225,14 +253,32 @@ function isWeekend(dateText) {
   return day === 0 || day === 6;
 }
 
-function evaluateSourceFreshness(poolValue, targetDateText, freshnessDaysArg) {
+function candidateCheckedAt(candidate) {
+  return candidate.lastCheckedAt ||
+    candidate.sourceCheckedAt ||
+    candidate.verifiedAt ||
+    candidate.updatedAt ||
+    candidate.firstSeenAt ||
+    '';
+}
+
+function evaluateCandidateFreshness(candidate, targetDateText, freshnessDaysArg) {
   const freshnessDays = Number(freshnessDaysArg || 3);
-  const raw = poolValue.generatedAt || poolValue.updatedAt || poolValue.sourceGeneratedAt || poolValue.selectedAt || poolValue.lastRefreshedAt;
-  if (!raw) return { ok: false, reason: 'missing_source_timestamp' };
-  const sourceDate = String(raw).slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(sourceDate)) return { ok: false, reason: 'invalid_source_timestamp' };
-  const ageDays = Math.floor((new Date(`${targetDateText}T00:00:00+09:00`) - new Date(`${sourceDate}T00:00:00+09:00`)) / 86400000);
-  return { ok: ageDays >= 0 && ageDays <= freshnessDays, reason: ageDays >= 0 && ageDays <= freshnessDays ? 'fresh' : 'stale_source_list' };
+  const raw = candidateCheckedAt(candidate);
+  if (!raw) return { fresh: false, reason: 'missing_candidate_timestamp' };
+  const candidateDate = String(raw).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidateDate)) {
+    return { fresh: false, reason: 'invalid_candidate_timestamp' };
+  }
+  const target = new Date(`${targetDateText}T00:00:00+09:00`);
+  const checked = new Date(`${candidateDate}T00:00:00+09:00`);
+  if (Number.isNaN(checked.getTime())) {
+    return { fresh: false, reason: 'invalid_candidate_timestamp' };
+  }
+  const ageDays = Math.floor((target.getTime() - checked.getTime()) / 86400000);
+  if (ageDays < 0) return { fresh: false, reason: 'future_candidate_timestamp' };
+  if (ageDays <= freshnessDays) return { fresh: true, reason: 'fresh_candidate' };
+  return { fresh: false, reason: 'stale_candidate_timestamp' };
 }
 
 function loadSuppressionLedger(filePath) {
