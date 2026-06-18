@@ -30,6 +30,8 @@
     "gmail:sales:prepare-safe": "node scripts/gmail/prepare-daily-safe-sales-batch.mjs",
     "gmail:sales:audit-safe": "node scripts/gmail/prepare-daily-safe-sales-batch.mjs --audit-only",
     "gmail:sales:prepare-safe:test": "node scripts/gmail/test-daily-safe-sales-batch.mjs",
+    "gmail:sales:approve-outbox": "node scripts/gmail/approve-gmail-sales-outbox.mjs",
+    "gmail:sales:approve-outbox:test": "node scripts/gmail/test-approve-gmail-sales-outbox.mjs",
     "gmail:sheet-history:export-safe:test": "node scripts/gmail/test-google-sheet-send-history-safe-export.mjs",
     "threads:post:validate": "node scripts/threads/validate-thread-posts.mjs",
     "threads:plan:ensure": "node scripts/threads/create-daily-post-plan.mjs",
