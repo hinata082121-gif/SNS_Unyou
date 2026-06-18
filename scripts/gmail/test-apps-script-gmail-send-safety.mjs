@@ -46,7 +46,10 @@ assertIncludesAll([
   'releaseSheetMaintenanceLease_',
   'GMAIL_SALES_SHEET_MAINTENANCE',
   'send_attempt_limit_exceeded',
-  'attemptLimitExceededCount'
+  'attemptLimitExceededCount',
+  'runGmailSuppressionLedgerReadOnlyDiagnostic',
+  'diagnoseSuppressionLedgerProperties_',
+  'GMAIL_SUPPRESSION_LEDGER_REQUIRED_PROPERTIES'
 ]);
 
 const executorBody = functionBody('executeApprovedGmailSalesBatch_');
@@ -80,6 +83,11 @@ const analyzeBody = functionBody('analyzeApprovedGmailSalesBatch_');
 assert.equal(/findPossibleGmailSentMatch_/.test(analyzeBody) || /validateSingleCandidatePreSend_/.test(analyzeBody), true);
 assert.equal(/isSuppressedByLedger_/.test(code), true);
 assert.equal(/hasSheetSentHistory_/.test(code), true);
+const diagnosticBody = functionBody('runGmailSuppressionLedgerReadOnlyDiagnostic');
+const diagnosticValidatorBody = functionBody('diagnoseSuppressionLedgerProperties_');
+assert.equal(/setProperty|setProperties|deleteProperty|deleteAllProperties|MailApp\.sendEmail|GmailApp\.createDraft|SpreadsheetApp\.flush|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(diagnosticBody), false);
+assert.equal(/setProperty|setProperties|deleteProperty|deleteAllProperties|MailApp\.sendEmail|GmailApp\.createDraft|SpreadsheetApp\.flush|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(diagnosticValidatorBody), false);
+assert.equal(/getProperty/.test(diagnosticValidatorBody), true);
 
 const logFunction = functionBody('appendSafeLog_');
 assert.equal(/delete safe\.candidateDigest/.test(logFunction), true);
@@ -87,7 +95,7 @@ assert.equal(/delete safe\.approvedCandidateDigest/.test(logFunction), true);
 assert.equal(/delete safe\.manifest/.test(logFunction), true);
 
 console.log(JSON.stringify({
-  syntheticTestCount: 30,
+  syntheticTestCount: 38,
   passed: true,
   mailSendCallSiteCount: count(/MailApp\.sendEmail\s*\(/g),
   gmailSendExecuted: false,

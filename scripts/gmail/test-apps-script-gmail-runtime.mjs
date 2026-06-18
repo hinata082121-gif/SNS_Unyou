@@ -207,6 +207,83 @@ const scenarios = [
     assert.equal(joined.includes(env.rows[0].sourceUrl), false);
     assert.equal(joined.includes(env.rows[0].body), false);
     assert.equal(joined.includes(env.manifest.candidateDigests[0]), false);
+  }],
+  ['suppression diagnostic valid bundle is read-only', (env) => {
+    env.entry = 'suppressionDiagnostic';
+    useThirtySuppressionEntries(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.ledgerLoaded, true);
+    assert.equal(result.propertyCountExpected, 10);
+    assert.equal(result.propertyCountPresent, 10);
+    assert.equal(result.missingPropertyCount, 0);
+    assert.equal(result.chunkCount, 1);
+    assert.equal(result.chunkChecksumValid, true);
+    assert.equal(result.bundleChecksumValid, true);
+    assert.equal(result.sourceEntryCount, 30);
+    assert.equal(result.recipientCount, 30);
+    assert.equal(result.domainCount, 30);
+    assert.equal(result.businessCount, 30);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['suppression diagnostic property missing is read-only', (env) => {
+    env.entry = 'suppressionDiagnostic';
+    useThirtySuppressionEntries(env);
+    env.afterInstall = () => delete env.props.GMAIL_SUPPRESSION_LEDGER_CREATED_AT;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.missingPropertyCount > 0, true);
+    assert.equal(result.blockedReason, 'property_missing');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['suppression diagnostic chunk missing is read-only', (env) => {
+    env.entry = 'suppressionDiagnostic';
+    useThirtySuppressionEntries(env);
+    env.afterInstall = () => delete env.props.GMAIL_SUPPRESSION_LEDGER_0;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'property_missing');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['suppression diagnostic chunk checksum mismatch is read-only', (env) => {
+    env.entry = 'suppressionDiagnostic';
+    useThirtySuppressionEntries(env);
+    env.afterInstall = () => { env.props.GMAIL_SUPPRESSION_LEDGER_0_CHECKSUM = 'mismatch'; };
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'chunk_checksum_mismatch');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['suppression diagnostic bundle checksum mismatch is read-only', (env) => {
+    env.entry = 'suppressionDiagnostic';
+    useThirtySuppressionEntries(env);
+    env.afterInstall = () => { env.props.GMAIL_SUPPRESSION_LEDGER_BUNDLE_CHECKSUM = 'mismatch'; };
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'bundle_checksum_mismatch');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['suppression diagnostic JSON parse failure is read-only', (env) => {
+    env.entry = 'suppressionDiagnostic';
+    useThirtySuppressionEntries(env);
+    env.afterInstall = () => {
+      env.props.GMAIL_SUPPRESSION_LEDGER_0 = '{bad';
+      env.props.GMAIL_SUPPRESSION_LEDGER_0_CHECKSUM = sha256('{bad');
+      env.props.GMAIL_SUPPRESSION_LEDGER_BUNDLE_CHECKSUM = sha256('{bad');
+    };
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'json_parse_failure');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['suppression diagnostic count mismatch is read-only', (env) => {
+    env.entry = 'suppressionDiagnostic';
+    useThirtySuppressionEntries(env);
+    env.afterInstall = () => { env.props.GMAIL_SUPPRESSION_LEDGER_RECIPIENT_COUNT = '29'; };
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'count_mismatch');
+    assertDiagnosticReadOnly(env);
   }]
 ];
 
@@ -401,6 +478,7 @@ function buildContext(env) {
 function runEntry(env) {
   if (env.entry === 'scheduled') return env.context.executeDailyGmailSalesSend_({ source: 'scheduled', requireAutoSend: true, dryRun: false });
   if (env.entry === 'dryRun') return env.context.runGmailSalesPreSendDryRun();
+  if (env.entry === 'suppressionDiagnostic') return env.context.runGmailSuppressionLedgerReadOnlyDiagnostic();
   return env.context.executeDailyGmailSalesSend_({ source: 'manual', requireAutoSend: false, dryRun: false });
 }
 
@@ -475,8 +553,32 @@ function assertDryRunWriteFree(env) {
   assert.equal(resetLogCount(env), 0);
 }
 
+function assertDiagnosticReadOnly(env) {
+  assert.equal(env.setPropertyCount, 0);
+  assert.equal(env.setPropertiesCount, 0);
+  assert.equal(env.deletePropertyCount, 0);
+  assert.equal(env.propertyWriteCount, 0);
+  assert.equal(env.mailSendCount, 0);
+  assert.equal(env.draftCreateCount, 0);
+  assert.equal(env.sheetWriteCount, 0);
+  assert.equal(env.flushCount, 0);
+  assert.equal(env.triggerWriteCount, 0);
+  assert.equal(env.leaseWriteCount, 0);
+}
+
 function resetLogCount(env) {
   return env.logs.filter((line) => line.includes('live_send_reset_after_run')).length;
+}
+
+function useThirtySuppressionEntries(env) {
+  env.suppression = {
+    schemaVersion: 1,
+    createdAt: '2026-06-19T00:00:00.000Z',
+    sourceEntryCount: 30,
+    recipientHashes: Array.from({ length: 30 }, (_, index) => `recipient_hash_${index}`),
+    domainHashes: Array.from({ length: 30 }, (_, index) => `domain_hash_${index}`),
+    businessFingerprints: Array.from({ length: 30 }, (_, index) => `business_hash_${index}`)
+  };
 }
 
 function readCell(env, rowIndex, header) {

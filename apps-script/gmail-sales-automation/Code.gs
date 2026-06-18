@@ -53,6 +53,16 @@ const GMAIL_SALES_SHEET_MAINTENANCE_HEADERS = [
   'heartbeatAt',
   'leaseVersion'
 ];
+const GMAIL_SUPPRESSION_LEDGER_REQUIRED_PROPERTIES = [
+  'GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION',
+  'GMAIL_SUPPRESSION_LEDGER_CREATED_AT',
+  'GMAIL_SUPPRESSION_LEDGER_SOURCE_ENTRY_COUNT',
+  'GMAIL_SUPPRESSION_LEDGER_RECIPIENT_COUNT',
+  'GMAIL_SUPPRESSION_LEDGER_DOMAIN_COUNT',
+  'GMAIL_SUPPRESSION_LEDGER_BUSINESS_COUNT',
+  'GMAIL_SUPPRESSION_LEDGER_BUNDLE_CHECKSUM',
+  'GMAIL_SUPPRESSION_LEDGER_CHUNK_COUNT'
+];
 const GMAIL_SEND_STATE = {
   ready: 'READY',
   reserved: 'SEND_RESERVED',
@@ -2938,6 +2948,127 @@ function loadSuppressionLedgerFromProperties_() {
   } catch (error) {
     return { loaded: false, generatedAt: '', entries: [] };
   }
+}
+
+function runGmailSuppressionLedgerReadOnlyDiagnostic() {
+  const result = diagnoseSuppressionLedgerProperties_();
+  appendSafeLog_(result);
+  return result;
+}
+
+function diagnoseSuppressionLedgerProperties_() {
+  const props = PropertiesService.getScriptProperties();
+  const expectedBase = GMAIL_SUPPRESSION_LEDGER_REQUIRED_PROPERTIES.slice();
+  const rawChunkCount = props.getProperty('GMAIL_SUPPRESSION_LEDGER_CHUNK_COUNT');
+  const chunkCount = Number(rawChunkCount || '0');
+  const chunkCountValid = Number.isInteger(chunkCount) && chunkCount > 0;
+  const expectedProperties = expectedBase.slice();
+  if (chunkCountValid) {
+    for (let index = 0; index < chunkCount; index += 1) {
+      expectedProperties.push('GMAIL_SUPPRESSION_LEDGER_' + index);
+      expectedProperties.push('GMAIL_SUPPRESSION_LEDGER_' + index + '_CHECKSUM');
+    }
+  } else {
+    expectedProperties.push('GMAIL_SUPPRESSION_LEDGER_0');
+    expectedProperties.push('GMAIL_SUPPRESSION_LEDGER_0_CHECKSUM');
+  }
+
+  const missingPropertyNames = expectedProperties.filter((name) => !String(props.getProperty(name) || '').trim());
+  const result = {
+    event: 'gmail_suppression_ledger_read_only_diagnostic',
+    status: 'blocked',
+    ledgerLoaded: false,
+    schemaVersionValid: false,
+    propertyCountExpected: expectedProperties.length,
+    propertyCountPresent: expectedProperties.length - missingPropertyNames.length,
+    missingPropertyCount: missingPropertyNames.length,
+    missingPropertyNames,
+    chunkCount: chunkCountValid ? chunkCount : 0,
+    chunkCountValid,
+    chunkChecksumValid: false,
+    bundleChecksumValid: false,
+    jsonValid: false,
+    sourceEntryCount: 0,
+    recipientCount: 0,
+    domainCount: 0,
+    businessCount: 0,
+    countsValid: false,
+    blockedReason: ''
+  };
+
+  if (missingPropertyNames.length > 0) {
+    result.blockedReason = 'property_missing';
+    return result;
+  }
+  if (!chunkCountValid) {
+    result.blockedReason = 'invalid_chunk_count';
+    return result;
+  }
+
+  let payload = '';
+  for (let index = 0; index < chunkCount; index += 1) {
+    const chunk = props.getProperty('GMAIL_SUPPRESSION_LEDGER_' + index);
+    const chunkChecksum = String(props.getProperty('GMAIL_SUPPRESSION_LEDGER_' + index + '_CHECKSUM') || '').trim();
+    if (!chunk) {
+      result.blockedReason = 'missing_chunk';
+      return result;
+    }
+    if (!chunkChecksum) {
+      result.blockedReason = 'missing_chunk_checksum';
+      return result;
+    }
+    if (sha256Hex_(chunk) !== chunkChecksum) {
+      result.blockedReason = 'chunk_checksum_mismatch';
+      return result;
+    }
+    payload += chunk;
+  }
+  result.chunkChecksumValid = true;
+
+  const bundleChecksum = String(props.getProperty('GMAIL_SUPPRESSION_LEDGER_BUNDLE_CHECKSUM') || '').trim();
+  if (!bundleChecksum || sha256Hex_(payload) !== bundleChecksum) {
+    result.blockedReason = 'bundle_checksum_mismatch';
+    return result;
+  }
+  result.bundleChecksumValid = true;
+
+  let ledger;
+  try {
+    ledger = JSON.parse(payload);
+    result.jsonValid = true;
+  } catch (error) {
+    result.blockedReason = 'json_parse_failure';
+    return result;
+  }
+
+  result.schemaVersionValid = Number(ledger && ledger.schemaVersion) === GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION;
+  if (!result.schemaVersionValid) {
+    result.blockedReason = 'schema_version_mismatch';
+    return result;
+  }
+
+  const recipientCount = Array.isArray(ledger.recipientHashes) ? ledger.recipientHashes.length : 0;
+  const domainCount = Array.isArray(ledger.domainHashes) ? ledger.domainHashes.length : 0;
+  const businessCount = Array.isArray(ledger.businessFingerprints) ? ledger.businessFingerprints.length : 0;
+  result.sourceEntryCount = Number(ledger.sourceEntryCount || 0);
+  result.recipientCount = recipientCount;
+  result.domainCount = domainCount;
+  result.businessCount = businessCount;
+  result.countsValid = result.sourceEntryCount > 0 &&
+    recipientCount === Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_RECIPIENT_COUNT') || '0') &&
+    domainCount === Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_DOMAIN_COUNT') || '0') &&
+    businessCount === Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_BUSINESS_COUNT') || '0') &&
+    result.sourceEntryCount === Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_SOURCE_ENTRY_COUNT') || '0') &&
+    recipientCount + domainCount + businessCount > 0;
+  if (!result.countsValid) {
+    result.blockedReason = 'count_mismatch';
+    return result;
+  }
+
+  result.status = 'pass';
+  result.ledgerLoaded = true;
+  result.blockedReason = '';
+  return result;
 }
 
 function buildSuppressionLedgerPayload_(entries, metadata) {
