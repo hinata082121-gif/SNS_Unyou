@@ -38,6 +38,21 @@ const CLASSIFICATION = {
 const GMAIL_SEND_MANIFEST_SCHEMA_VERSION = 1;
 const GMAIL_SEND_DEFAULT_MAX_SEND_COUNT = 1;
 const GMAIL_SEND_SAFE_MAX_SEND_COUNT = 30;
+const GMAIL_SEND_MAX_ATTEMPTS = 1;
+const GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION = 1;
+const GMAIL_SUPPRESSION_LEDGER_CHUNK_SIZE = 7000;
+const GMAIL_SALES_SHEET_MAINTENANCE_LOCK = 'GMAIL_SALES_SHEET_MAINTENANCE';
+const GMAIL_SALES_SHEET_MAINTENANCE_SHEET = '_gmail_maintenance';
+const GMAIL_SALES_SHEET_MAINTENANCE_LEASE_MS = 10 * 60 * 1000;
+const GMAIL_SALES_SHEET_MAINTENANCE_HEADERS = [
+  'lockName',
+  'holderType',
+  'holderId',
+  'acquiredAt',
+  'expiresAt',
+  'heartbeatAt',
+  'leaseVersion'
+];
 const GMAIL_SEND_STATE = {
   ready: 'READY',
   reserved: 'SEND_RESERVED',
@@ -165,7 +180,37 @@ function handleGmailOutboxSheetSync_(e) {
   }
 
   const config = getConfig_();
-  const result = writeGmailOutboxRowsToSheet_(payload, config);
+  const holderId = String((payload.maintenanceLease && payload.maintenanceLease.holderId) || Utilities.getUuid()).trim();
+  const lease = acquireSheetMaintenanceLease_(config, {
+    holderType: 'local_sync',
+    holderId,
+    dryRun: false
+  });
+  if (!lease.ok) {
+    appendSafeLog_(Object.assign({
+      event: 'gmail_sheet_sync_rejected',
+      sendDate: validation.sendDate,
+      sendBatchId: validation.sendBatchId,
+      rowCount: validation.rowCount,
+      payloadHash: validation.payloadHash,
+      blockedReason: lease.blockedReason
+    }, validation.safeCounts));
+    return buildSheetSyncResponse_({
+      ok: false,
+      sheetSynced: false,
+      sendDate: validation.sendDate,
+      sendBatchId: validation.sendBatchId,
+      rowCount: validation.rowCount,
+      blockedReason: lease.blockedReason
+    });
+  }
+
+  let result;
+  try {
+    result = writeGmailOutboxRowsToSheet_(payload, config);
+  } finally {
+    releaseSheetMaintenanceLease_(config, lease);
+  }
   appendSafeLog_({
     event: 'gmail_sheet_sync_completed',
     sendDate: validation.sendDate,
@@ -788,7 +833,61 @@ function executeApprovedGmailSalesBatch_(options) {
   }
 
   let configForReset = null;
+  let maintenanceLease = null;
   try {
+    const preliminaryConfig = getConfig_();
+    if (!settings.dryRun && preliminaryConfig.dryRun) {
+      const result = buildPreSendDryRunResult_({
+        mode: 'send',
+        status: 'blocked',
+        blockedReasons: ['dry_run_enabled'],
+        targetDate: preliminaryConfig.sendDate
+      });
+      appendSafeLog_({ event: 'approved_gmail_sales_send_blocked', blockedReason: 'dry_run_enabled' });
+      return result;
+    }
+    if (!settings.dryRun && !preliminaryConfig.liveSendEnabled) {
+      const result = buildPreSendDryRunResult_({
+        mode: 'send',
+        status: 'blocked',
+        blockedReasons: ['live_send_disabled'],
+        targetDate: preliminaryConfig.sendDate
+      });
+      appendSafeLog_({ event: 'approved_gmail_sales_send_blocked', blockedReason: 'live_send_disabled' });
+      return result;
+    }
+    if (!settings.dryRun && settings.requireAutoSend === true && !preliminaryConfig.autoSendEnabled) {
+      const result = buildPreSendDryRunResult_({
+        mode: 'send',
+        status: 'blocked',
+        blockedReasons: ['auto_send_disabled'],
+        targetDate: preliminaryConfig.sendDate
+      });
+      appendSafeLog_({ event: 'approved_gmail_sales_send_blocked', blockedReason: 'auto_send_disabled' });
+      return result;
+    }
+    if (!settings.dryRun) {
+      maintenanceLease = acquireSheetMaintenanceLease_(preliminaryConfig, {
+        holderType: 'apps_script_send',
+        holderId: buildSendRunId_(preliminaryConfig.sendDate),
+        dryRun: false
+      });
+      if (!maintenanceLease.ok) {
+        appendSafeLog_({
+          event: 'approved_gmail_sales_send_blocked',
+          blockedReason: maintenanceLease.blockedReason,
+          gmailSendExecuted: false,
+          googleSheetsUpdated: false,
+          scriptPropertiesUpdated: false
+        });
+        return buildPreSendDryRunResult_({
+          mode: 'send',
+          status: 'blocked',
+          blockedReasons: [maintenanceLease.blockedReason],
+          targetDate: preliminaryConfig.sendDate
+        });
+      }
+    }
     const analysis = analyzeApprovedGmailSalesBatch_({
       dryRun: Boolean(settings.dryRun),
       requireAutoSend: settings.requireAutoSend === true
@@ -883,6 +982,7 @@ function executeApprovedGmailSalesBatch_(options) {
         failed += 1;
         updateSheetAfterSend_(analysis.config, rowIndex, {
           sendState: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
+          status: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
           sentStatus: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
           deliveryUncertainAt: mailAttempted ? new Date().toISOString() : '',
           lastSendErrorCode: safeErrorCode_(error),
@@ -925,6 +1025,9 @@ function executeApprovedGmailSalesBatch_(options) {
       scriptPropertiesUpdated: processed > 0 && failed === 0
     };
   } finally {
+    if (maintenanceLease) {
+      releaseSheetMaintenanceLease_(configForReset || getConfig_(), maintenanceLease);
+    }
     if (configForReset) {
       resetLiveSendAfterRun_(configForReset);
     }
@@ -984,6 +1087,8 @@ function analyzeApprovedGmailSalesBatch_(settings) {
   let sheetHistoryMatchCount = 0;
   let candidateDigestMismatchCount = manifestCheck.candidateDigestMismatchCount;
   let manualReviewRequiredCount = sheetState.manualReviewRequiredCount;
+  let attemptLimitExceededCount = 0;
+  let candidateStateNotReadyCount = sheetState.sendReservedCount + sheetState.sentStateCount + sheetState.deliveryUnknownCount + sheetState.manualReviewRequiredCount;
 
   if (blockedReasons.length === 0 || dryRun) {
     validation.readyRows.forEach((item) => {
@@ -998,6 +1103,8 @@ function analyzeApprovedGmailSalesBatch_(settings) {
       if (check.gmailSentMatched) gmailSentMatchCount += 1;
       if (check.sheetHistoryMatched) sheetHistoryMatchCount += 1;
       if (check.digestMismatched) candidateDigestMismatchCount += 1;
+      if (check.attemptLimitExceeded) attemptLimitExceededCount += 1;
+      if (check.blockedReason === 'candidate_state_not_ready') candidateStateNotReadyCount += 1;
       if (check.manualReviewRequired) manualReviewRequiredCount += 1;
       if (check.ok && blockedReasons.length === 0) {
         eligibleRows.push(item);
@@ -1009,6 +1116,8 @@ function analyzeApprovedGmailSalesBatch_(settings) {
   if (gmailSentMatchCount > 0) blockedReasons.push('gmail_sent_history_match');
   if (sheetHistoryMatchCount > 0) blockedReasons.push('sheet_history_match');
   if (candidateDigestMismatchCount > 0) blockedReasons.push('candidate_digest_mismatch');
+  if (attemptLimitExceededCount > 0) blockedReasons.push('send_attempt_limit_exceeded');
+  if (candidateStateNotReadyCount > 0) blockedReasons.push('candidate_state_not_ready');
 
   const maxSendCount = Math.min(
     manifestCheck.maxSendCount || GMAIL_SEND_DEFAULT_MAX_SEND_COUNT,
@@ -1033,6 +1142,8 @@ function analyzeApprovedGmailSalesBatch_(settings) {
     candidateCount: validation.readyRows.length,
     candidateDigestMatchCount: manifestCheck.candidateDigestMatchCount,
     candidateDigestMismatchCount,
+    attemptLimitExceededCount,
+    candidateStateNotReadyCount,
     suppressionMatchCount,
     gmailSentMatchCount,
     sheetHistoryMatchCount,
@@ -1064,6 +1175,8 @@ function toPreSendPublicResult_(analysis, mode) {
     candidateCount: analysis.candidateCount,
     candidateDigestMatchCount: analysis.candidateDigestMatchCount,
     candidateDigestMismatchCount: analysis.candidateDigestMismatchCount,
+    attemptLimitExceededCount: analysis.attemptLimitExceededCount,
+    candidateStateNotReadyCount: analysis.candidateStateNotReadyCount,
     suppressionMatchCount: analysis.suppressionMatchCount,
     gmailSentMatchCount: analysis.gmailSentMatchCount,
     sheetHistoryMatchCount: analysis.sheetHistoryMatchCount,
@@ -1095,6 +1208,8 @@ function buildPreSendDryRunResult_(overrides) {
     candidateCount: 0,
     candidateDigestMatchCount: 0,
     candidateDigestMismatchCount: 0,
+    attemptLimitExceededCount: 0,
+    candidateStateNotReadyCount: 0,
     suppressionMatchCount: 0,
     gmailSentMatchCount: 0,
     sheetHistoryMatchCount: 0,
@@ -1185,6 +1300,14 @@ function normalizeManifestMaxSendCount_(value) {
   return Math.floor(parsed);
 }
 
+function normalizeMaxSendAttempts_(value) {
+  const parsed = Number(value || GMAIL_SEND_MAX_ATTEMPTS);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > GMAIL_SEND_MAX_ATTEMPTS) {
+    return GMAIL_SEND_MAX_ATTEMPTS;
+  }
+  return Math.floor(parsed);
+}
+
 function isManifestExpired_(manifest) {
   const expiresAt = new Date(String((manifest && manifest.expiresAt) || ''));
   if (Number.isNaN(expiresAt.getTime())) {
@@ -1203,6 +1326,7 @@ function validateSingleCandidatePreSend_(row, context) {
     gmailSentMatched: false,
     sheetHistoryMatched: false,
     digestMismatched: false,
+    attemptLimitExceeded: false,
     manualReviewRequired: false
   };
   if (!context.manifestDigestSet || !context.manifestDigestSet[digest]) {
@@ -1213,6 +1337,12 @@ function validateSingleCandidatePreSend_(row, context) {
   }
   if (state !== GMAIL_SEND_STATE.ready) {
     return blockedPreSendResult_(result, 'candidate_state_not_ready', { sheetHistoryMatched: state === GMAIL_SEND_STATE.sent });
+  }
+  if (Number(row.sendAttemptCount || 0) >= (context.config.maxSendAttempts || GMAIL_SEND_MAX_ATTEMPTS)) {
+    return blockedPreSendResult_(result, 'send_attempt_limit_exceeded', {
+      attemptLimitExceeded: true,
+      manualReviewRequired: true
+    });
   }
   if (isSuppressedByLedger_(row, context.suppression)) {
     return blockedPreSendResult_(result, 'suppression_match', { suppressionMatched: true, manualReviewRequired: true });
@@ -1285,7 +1415,12 @@ function isSuppressedByLedger_(row, ledger) {
   const recipientHash = hashValue_(normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']));
   const domainHash = hashValue_(sourceDomainFromRow_(row));
   const businessHash = businessFingerprintFromRow_(row);
-  return ledger.entries.some((entry) => {
+  if ((ledger.recipientHashes && ledger.recipientHashes[recipientHash]) ||
+    (ledger.domainHashes && ledger.domainHashes[domainHash]) ||
+    (ledger.businessFingerprints && ledger.businessFingerprints[businessHash])) {
+    return true;
+  }
+  return (ledger.entries || []).some((entry) => {
     if (entry.suppressed === false || entry.futureEligible === true) return false;
     return String(entry.recipientHash || '') === recipientHash ||
       String(entry.normalizedDomainHash || entry.domainHash || '') === domainHash ||
@@ -1946,6 +2081,7 @@ function getConfig_() {
     approvedSendManifestJson: String(props.getProperty('APPROVED_SEND_MANIFEST_JSON') || '').trim(),
     approvalExpiresAt: String(props.getProperty('APPROVAL_EXPIRES_AT') || '').trim(),
     runtimeMaxSendCount: normalizePositiveInt_(props.getProperty('GMAIL_SEND_MAX_SEND_COUNT'), GMAIL_SEND_DEFAULT_MAX_SEND_COUNT, GMAIL_SEND_SAFE_MAX_SEND_COUNT),
+    maxSendAttempts: normalizeMaxSendAttempts_(props.getProperty('GMAIL_SEND_MAX_ATTEMPTS')),
     maxFailuresBeforeStop: Math.max(1, Number(props.getProperty('MAX_FAILURES_BEFORE_STOP') || '1')),
     sendDate: sendContext.sendDate,
     nextActionDate: props.getProperty('NEXT_ACTION_DATE') || '',
@@ -2258,6 +2394,138 @@ function verifyNoSensitiveLogging_() {
   return true;
 }
 
+function acquireSheetMaintenanceLease_(config, options) {
+  const settings = options || {};
+  if (settings.dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      lockName: GMAIL_SALES_SHEET_MAINTENANCE_LOCK,
+      holderType: settings.holderType || '',
+      holderId: settings.holderId || ''
+    };
+  }
+  if (!config || !config.sheetId) {
+    return { ok: false, blockedReason: 'maintenance_lease_missing_sheet_id' };
+  }
+
+  const holderType = String(settings.holderType || '').trim();
+  const holderId = String(settings.holderId || '').trim();
+  if (!holderType || !holderId) {
+    return { ok: false, blockedReason: 'maintenance_lease_missing_holder' };
+  }
+
+  const spreadsheet = SpreadsheetApp.openById(config.sheetId);
+  const sheetName = getMaintenanceSheetName_();
+  const sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 1 || sheet.getLastColumn() < GMAIL_SALES_SHEET_MAINTENANCE_HEADERS.length) {
+    return { ok: false, blockedReason: 'maintenance_sheet_missing' };
+  }
+
+  const headers = sheet.getRange(1, 1, 1, GMAIL_SALES_SHEET_MAINTENANCE_HEADERS.length).getValues()[0].map((value) => String(value));
+  if (!maintenanceHeadersValid_(headers)) {
+    return { ok: false, blockedReason: 'maintenance_sheet_header_invalid' };
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + GMAIL_SALES_SHEET_MAINTENANCE_LEASE_MS);
+  const values = sheet.getDataRange().getValues();
+  let rowIndex = 0;
+  for (let index = 1; index < values.length; index += 1) {
+    if (String(values[index][0] || '') === GMAIL_SALES_SHEET_MAINTENANCE_LOCK) {
+      rowIndex = index + 1;
+      break;
+    }
+  }
+
+  if (rowIndex > 0) {
+    const current = values[rowIndex - 1];
+    const currentHolderId = String(current[2] || '');
+    const currentExpiresAt = parseIsoDate_(current[4]);
+    if (!currentExpiresAt) {
+      return { ok: false, blockedReason: 'maintenance_lease_expiry_invalid' };
+    }
+    if (currentExpiresAt.getTime() > now.getTime() && currentHolderId && currentHolderId !== holderId) {
+      return { ok: false, blockedReason: 'maintenance_lease_held' };
+    }
+  } else {
+    rowIndex = Math.max(2, sheet.getLastRow() + 1);
+  }
+
+  sheet.getRange(rowIndex, 1, 1, GMAIL_SALES_SHEET_MAINTENANCE_HEADERS.length).setValues([[
+    GMAIL_SALES_SHEET_MAINTENANCE_LOCK,
+    holderType,
+    holderId,
+    now.toISOString(),
+    expiresAt.toISOString(),
+    now.toISOString(),
+    '1'
+  ]]);
+  SpreadsheetApp.flush();
+
+  const reread = sheet.getRange(rowIndex, 1, 1, GMAIL_SALES_SHEET_MAINTENANCE_HEADERS.length).getValues()[0];
+  if (String(reread[0] || '') !== GMAIL_SALES_SHEET_MAINTENANCE_LOCK ||
+    String(reread[1] || '') !== holderType ||
+    String(reread[2] || '') !== holderId) {
+    return { ok: false, blockedReason: 'maintenance_lease_owner_verification_failed' };
+  }
+  const rereadExpiresAt = parseIsoDate_(reread[4]);
+  if (!rereadExpiresAt || rereadExpiresAt.getTime() <= now.getTime()) {
+    return { ok: false, blockedReason: 'maintenance_lease_expiry_invalid' };
+  }
+
+  return {
+    ok: true,
+    dryRun: false,
+    sheetName,
+    rowIndex,
+    lockName: GMAIL_SALES_SHEET_MAINTENANCE_LOCK,
+    holderType,
+    holderId
+  };
+}
+
+function releaseSheetMaintenanceLease_(config, lease) {
+  try {
+    if (!lease || !lease.ok || lease.dryRun || !config || !config.sheetId) {
+      return;
+    }
+    const sheet = SpreadsheetApp.openById(config.sheetId).getSheetByName(lease.sheetName || getMaintenanceSheetName_());
+    if (!sheet || !lease.rowIndex) {
+      return;
+    }
+    const current = sheet.getRange(lease.rowIndex, 1, 1, GMAIL_SALES_SHEET_MAINTENANCE_HEADERS.length).getValues()[0];
+    if (String(current[0] || '') !== GMAIL_SALES_SHEET_MAINTENANCE_LOCK || String(current[2] || '') !== lease.holderId) {
+      return;
+    }
+    sheet.getRange(lease.rowIndex, 1, 1, GMAIL_SALES_SHEET_MAINTENANCE_HEADERS.length).setValues([[
+      GMAIL_SALES_SHEET_MAINTENANCE_LOCK,
+      '',
+      '',
+      '',
+      new Date(Date.now() - 1000).toISOString(),
+      '',
+      '1'
+    ]]);
+    SpreadsheetApp.flush();
+  } catch (error) {
+    appendSafeLog_({ event: 'maintenance_lease_release_failed', reason: safeErrorCode_(error) });
+  }
+}
+
+function getMaintenanceSheetName_() {
+  return String(PropertiesService.getScriptProperties().getProperty('GMAIL_MAINTENANCE_SHEET_NAME') || GMAIL_SALES_SHEET_MAINTENANCE_SHEET);
+}
+
+function maintenanceHeadersValid_(headers) {
+  return GMAIL_SALES_SHEET_MAINTENANCE_HEADERS.every((header, index) => String(headers[index] || '') === header);
+}
+
+function parseIsoDate_(value) {
+  const date = new Date(String(value || ''));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function updateSheetAfterSend_(config, rowIndex, updates) {
   ensureSendStateColumns_(config);
   markSheetRow_(config, rowIndex, updates);
@@ -2551,44 +2819,127 @@ function extractBatchIdFromSubjectOrBody_(subject, body) {
 function storeSuppressionLedger_(ledger, summary) {
   const props = PropertiesService.getScriptProperties();
   const previousChunkCount = Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_CHUNK_COUNT') || '0');
-  const payload = JSON.stringify({
-    generatedAt: new Date().toISOString(),
-    summary,
-    entries: Object.keys(ledger).sort().map((hash) => ledger[hash])
+  const payloadObject = buildSuppressionLedgerPayload_(Object.keys(ledger).sort().map((hash) => ledger[hash]), {
+    createdAt: new Date().toISOString(),
+    sourceEntryCount: Object.keys(ledger).length,
+    summary
   });
-  const chunkSize = 7500;
+  const payload = JSON.stringify(payloadObject);
+  const chunkSize = GMAIL_SUPPRESSION_LEDGER_CHUNK_SIZE;
   const chunkCount = Math.ceil(payload.length / chunkSize);
   for (let index = 0; index < previousChunkCount; index += 1) {
     props.deleteProperty('GMAIL_SUPPRESSION_LEDGER_' + index);
+    props.deleteProperty('GMAIL_SUPPRESSION_LEDGER_' + index + '_CHECKSUM');
   }
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION', String(GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION));
   props.setProperty('GMAIL_SUPPRESSION_LEDGER_CHUNK_COUNT', String(chunkCount));
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_BUNDLE_CHECKSUM', sha256Hex_(payload));
   props.setProperty('GMAIL_SUPPRESSION_LEDGER_UPDATED_AT', new Date().toISOString());
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_CREATED_AT', payloadObject.createdAt);
   props.setProperty('GMAIL_SUPPRESSION_LEDGER_SUPPRESSED_COUNT', String(summary.suppressedCount));
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_SOURCE_ENTRY_COUNT', String(payloadObject.sourceEntryCount));
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_RECIPIENT_COUNT', String(payloadObject.recipientHashes.length));
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_DOMAIN_COUNT', String(payloadObject.domainHashes.length));
+  props.setProperty('GMAIL_SUPPRESSION_LEDGER_BUSINESS_COUNT', String(payloadObject.businessFingerprints.length));
   for (let index = 0; index < chunkCount; index += 1) {
-    props.setProperty('GMAIL_SUPPRESSION_LEDGER_' + index, payload.slice(index * chunkSize, (index + 1) * chunkSize));
+    const chunk = payload.slice(index * chunkSize, (index + 1) * chunkSize);
+    props.setProperty('GMAIL_SUPPRESSION_LEDGER_' + index, chunk);
+    props.setProperty('GMAIL_SUPPRESSION_LEDGER_' + index + '_CHECKSUM', sha256Hex_(chunk));
   }
 }
 
 function loadSuppressionLedgerFromProperties_() {
   const props = PropertiesService.getScriptProperties();
   const chunkCount = Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_CHUNK_COUNT') || '0');
-  if (!chunkCount) {
+  const schemaVersion = Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION') || '0');
+  const bundleChecksum = String(props.getProperty('GMAIL_SUPPRESSION_LEDGER_BUNDLE_CHECKSUM') || '').trim();
+  if (!chunkCount || schemaVersion !== GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION || !bundleChecksum) {
     return { loaded: false, generatedAt: '', entries: [] };
   }
   let payload = '';
   for (let index = 0; index < chunkCount; index += 1) {
-    payload += props.getProperty('GMAIL_SUPPRESSION_LEDGER_' + index) || '';
+    const chunk = props.getProperty('GMAIL_SUPPRESSION_LEDGER_' + index);
+    const chunkChecksum = String(props.getProperty('GMAIL_SUPPRESSION_LEDGER_' + index + '_CHECKSUM') || '').trim();
+    if (!chunk || !chunkChecksum || sha256Hex_(chunk) !== chunkChecksum) {
+      return { loaded: false, generatedAt: '', entries: [] };
+    }
+    payload += chunk;
+  }
+  if (sha256Hex_(payload) !== bundleChecksum) {
+    return { loaded: false, generatedAt: '', entries: [] };
   }
   try {
     const ledger = JSON.parse(payload);
+    if (!ledger || Number(ledger.schemaVersion) !== GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION) {
+      return { loaded: false, generatedAt: '', entries: [] };
+    }
+    const recipientHashes = arrayToLookup_(ledger.recipientHashes);
+    const domainHashes = arrayToLookup_(ledger.domainHashes);
+    const businessFingerprints = arrayToLookup_(ledger.businessFingerprints);
+    const suppressedCount = Object.keys(recipientHashes).length + Object.keys(domainHashes).length + Object.keys(businessFingerprints).length;
+    if (suppressedCount < 1) {
+      return { loaded: false, generatedAt: '', entries: [] };
+    }
+    const entries = buildSuppressionEntriesFromBundle_(recipientHashes, domainHashes, businessFingerprints);
     return {
-      loaded: Array.isArray(ledger.entries),
-      generatedAt: ledger.generatedAt || props.getProperty('GMAIL_SUPPRESSION_LEDGER_UPDATED_AT') || '',
-      entries: Array.isArray(ledger.entries) ? ledger.entries : []
+      loaded: true,
+      schemaVersion: ledger.schemaVersion,
+      generatedAt: ledger.createdAt || props.getProperty('GMAIL_SUPPRESSION_LEDGER_UPDATED_AT') || '',
+      sourceEntryCount: Number(ledger.sourceEntryCount || 0),
+      recipientHashes,
+      domainHashes,
+      businessFingerprints,
+      entries
     };
   } catch (error) {
     return { loaded: false, generatedAt: '', entries: [] };
   }
+}
+
+function buildSuppressionLedgerPayload_(entries, metadata) {
+  const recipientHashes = {};
+  const domainHashes = {};
+  const businessFingerprints = {};
+  (entries || []).forEach((entry) => {
+    if (!entry || entry.suppressed === false || entry.futureEligible === true) {
+      return;
+    }
+    const recipientHash = String(entry.recipientHash || '').trim();
+    const domainHash = String(entry.normalizedDomainHash || entry.domainHash || '').trim();
+    const businessFingerprint = String(entry.businessFingerprint || '').trim();
+    if (recipientHash) recipientHashes[recipientHash] = true;
+    if (domainHash) domainHashes[domainHash] = true;
+    if (businessFingerprint) businessFingerprints[businessFingerprint] = true;
+  });
+  return {
+    schemaVersion: GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION,
+    createdAt: String((metadata && metadata.createdAt) || new Date().toISOString()),
+    sourceEntryCount: Number((metadata && metadata.sourceEntryCount) || (entries || []).length),
+    recipientHashes: Object.keys(recipientHashes).sort(),
+    domainHashes: Object.keys(domainHashes).sort(),
+    businessFingerprints: Object.keys(businessFingerprints).sort(),
+    summary: (metadata && metadata.summary) || {}
+  };
+}
+
+function buildSuppressionEntriesFromBundle_(recipientHashes, domainHashes, businessFingerprints) {
+  const entries = [];
+  Object.keys(recipientHashes || {}).forEach((hash) => entries.push({ recipientHash: hash, suppressed: true }));
+  Object.keys(domainHashes || {}).forEach((hash) => entries.push({ normalizedDomainHash: hash, suppressed: true }));
+  Object.keys(businessFingerprints || {}).forEach((hash) => entries.push({ businessFingerprint: hash, suppressed: true }));
+  return entries;
+}
+
+function arrayToLookup_(values) {
+  const lookup = {};
+  if (!Array.isArray(values)) {
+    return lookup;
+  }
+  values.forEach((value) => {
+    const normalized = String(value || '').trim();
+    if (normalized) lookup[normalized] = true;
+  });
+  return lookup;
 }
 
 function assertMessageSafe_(message) {

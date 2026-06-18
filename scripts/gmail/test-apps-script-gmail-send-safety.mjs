@@ -18,6 +18,7 @@ assert.equal(/function\s+executeDailyGmailSalesSend_\s*\([^)]*\)\s*\{\s*return e
 assert.equal(/liveSendEnabled:\s*props\.getProperty\('LIVE_SEND_ENABLED'\)\s*===\s*'true'/.test(code), true);
 assert.equal(/autoSendEnabled:\s*props\.getProperty\('AUTO_SEND_ENABLED'\)\s*===\s*'true'/.test(code), true);
 assert.equal(/const GMAIL_SEND_DEFAULT_MAX_SEND_COUNT = 1;/.test(code), true);
+assert.equal(/const GMAIL_SEND_MAX_ATTEMPTS = 1;/.test(code), true);
 assert.equal(/LockService\.getScriptLock\(\)/.test(code), true);
 assert.equal(/if \(!lock\.tryLock\(30000\)\)/.test(code), true);
 
@@ -38,6 +39,15 @@ assertIncludesAll([
   'gmail_sent_history_match',
   'sheet_history_match'
 ]);
+assertIncludesAll([
+  'GMAIL_SUPPRESSION_LEDGER_BUNDLE_CHECKSUM',
+  "'_CHECKSUM'",
+  'acquireSheetMaintenanceLease_',
+  'releaseSheetMaintenanceLease_',
+  'GMAIL_SALES_SHEET_MAINTENANCE',
+  'send_attempt_limit_exceeded',
+  'attemptLimitExceededCount'
+]);
 
 const executorBody = functionBody('executeApprovedGmailSalesBatch_');
 assertBodyOrder(executorBody, 'reserveCandidateBeforeSend_', 'MailApp.sendEmail');
@@ -52,6 +62,7 @@ assert.equal(/state === GMAIL_SEND_STATE\.deliveryUnknown/.test(code), true);
 assert.equal(/state === GMAIL_SEND_STATE\.sent/.test(code), true);
 assert.equal(/manualReviewRequired/.test(code), true);
 assert.equal(/sendAttemptCount:\s*reservation\.attemptCount/.test(code), true);
+assert.equal(/Number\(row\.sendAttemptCount \|\| 0\) >=/.test(code), true);
 assert.equal(/Number\(row\.sendAttemptCount \|\| 0\) \+ 1/.test(code), true);
 
 const dryRunFunction = functionBody('runGmailSalesPreSendDryRun');

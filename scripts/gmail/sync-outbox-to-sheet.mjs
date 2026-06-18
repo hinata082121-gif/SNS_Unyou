@@ -38,6 +38,12 @@ const targetName = process.env.GMAIL_SHEET_TARGET_NAME || '';
 const readyTabName = process.env.GMAIL_SHEET_READY_TAB_NAME || '';
 const webhookConfigured = Boolean(webhookUrl);
 const tokenConfigured = Boolean(syncToken);
+const maintenanceLease = {
+  lockName: 'GMAIL_SALES_SHEET_MAINTENANCE',
+  holderType: 'local_sync',
+  holderId: `local-sync-${Date.now()}-${process.pid}`,
+  leaseVersion: 1
+};
 
 const summary = {
   ok: false,
@@ -102,6 +108,7 @@ try {
       sendBatchId,
       targetName,
       readyTabName,
+      maintenanceLease,
       rowCount: parsed.rows.length,
       headers: parsed.headers,
       rows: parsed.rows
