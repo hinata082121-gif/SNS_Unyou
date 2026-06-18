@@ -518,6 +518,52 @@ function exportSentSuppressionLedgerSafeOnly() {
   return result;
 }
 
+function logSentSuppressionLedgerSafeJsonOnly() {
+  const exported = exportSentSuppressionLedgerSafeOnly();
+  const safePayload = {
+    event: 'sent_suppression_ledger_export_safe_json',
+    ledgerLoaded: exported.ledgerLoaded,
+    generatedAt: exported.generatedAt,
+    ledgerVersion: exported.ledgerVersion,
+    suppressedCount: exported.suppressedCount,
+    entries: exported.entries.map((entry) => ({
+      recipientHash: entry.recipientHash,
+      normalizedDomainHash: entry.normalizedDomainHash,
+      businessFingerprint: entry.businessFingerprint,
+      suppressed: entry.suppressed !== false,
+      futureEligible: entry.futureEligible === true,
+      ledgerVersion: entry.ledgerVersion,
+      generatedAt: entry.generatedAt
+    }))
+  };
+  const json = JSON.stringify(safePayload);
+  const maxPayloadLength = 5600;
+  const chunkCount = Math.max(1, Math.ceil(json.length / maxPayloadLength));
+  for (let index = 0; index < chunkCount; index += 1) {
+    Logger.log(JSON.stringify({
+      event: 'sent_suppression_ledger_export_chunk',
+      chunkIndex: index + 1,
+      chunkCount,
+      payload: json.slice(index * maxPayloadLength, (index + 1) * maxPayloadLength)
+    }));
+  }
+  Logger.log(JSON.stringify({
+    event: 'sent_suppression_ledger_export_complete',
+    chunkCount,
+    suppressedCount: safePayload.suppressedCount,
+    ledgerLoaded: safePayload.ledgerLoaded
+  }));
+  return {
+    event: 'sent_suppression_ledger_export_complete',
+    chunkCount,
+    suppressedCount: safePayload.suppressedCount,
+    ledgerLoaded: safePayload.ledgerLoaded,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  };
+}
+
 function runPreparedBatchDiagnosticsOnly() {
   const preflight = runPreflight_(false);
   const ledger = loadSuppressionLedgerFromProperties_();
