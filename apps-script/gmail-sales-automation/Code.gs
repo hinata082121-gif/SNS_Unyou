@@ -484,6 +484,74 @@ function runSentHistoryIncidentAuditOnly() {
   return summary;
 }
 
+function exportSentSuppressionLedgerSafeOnly() {
+  const ledger = loadSuppressionLedgerFromProperties_();
+  const entries = ledger.entries.map((entry) => ({
+    recipientHash: entry.recipientHash,
+    normalizedDomainHash: entry.normalizedDomainHash,
+    businessFingerprint: entry.businessFingerprint,
+    suppressed: entry.suppressed !== false,
+    futureEligible: entry.futureEligible === true,
+    ledgerVersion: ledger.generatedAt,
+    generatedAt: ledger.generatedAt
+  }));
+  const result = {
+    event: 'sent_suppression_ledger_export_safe_only',
+    ledgerLoaded: ledger.loaded,
+    generatedAt: ledger.generatedAt,
+    ledgerVersion: ledger.generatedAt,
+    suppressedCount: entries.filter((entry) => entry.suppressed && !entry.futureEligible).length,
+    entries,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  };
+  appendSafeLog_({
+    event: result.event,
+    ledgerLoaded: result.ledgerLoaded,
+    generatedAt: result.generatedAt,
+    suppressedCount: result.suppressedCount,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  });
+  return result;
+}
+
+function runPreparedBatchDiagnosticsOnly() {
+  const preflight = runPreflight_(false);
+  const ledger = loadSuppressionLedgerFromProperties_();
+  const personalization = preflight.readyRows.map((item) => {
+    try {
+      assertRecipientPersonalizationSafe_(item.row, buildInitialSalesEmail_(item.row));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  });
+  const failedPersonalizationCount = personalization.filter((ok) => !ok).length;
+  const windowCheck = validateDailySendWindow_(preflight.config);
+  const result = {
+    event: 'prepared_batch_diagnostics_only',
+    sendDate: preflight.config.sendDate,
+    sendBatchId: preflight.batchId,
+    targetCount: preflight.targetCount,
+    readyCount: preflight.readyCount,
+    blockedReason: preflight.blockedReason,
+    suppressionLedgerLoaded: ledger.loaded,
+    suppressedCount: ledger.entries.length,
+    personalizationCheckedCount: personalization.length,
+    failedPersonalizationCount,
+    insideAllowedSendWindowNow: windowCheck.ok,
+    approvalRequiredLater: preflight.config.requireExplicitBatchApproval,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  };
+  appendSafeLog_(result);
+  return result;
+}
+
 function runScheduledPreflight() {
   const result = runPreflight_(false);
   appendAutomationStatusLog_({
@@ -1871,6 +1939,28 @@ function storeSuppressionLedger_(ledger, summary) {
   props.setProperty('GMAIL_SUPPRESSION_LEDGER_SUPPRESSED_COUNT', String(summary.suppressedCount));
   for (let index = 0; index < chunkCount; index += 1) {
     props.setProperty('GMAIL_SUPPRESSION_LEDGER_' + index, payload.slice(index * chunkSize, (index + 1) * chunkSize));
+  }
+}
+
+function loadSuppressionLedgerFromProperties_() {
+  const props = PropertiesService.getScriptProperties();
+  const chunkCount = Number(props.getProperty('GMAIL_SUPPRESSION_LEDGER_CHUNK_COUNT') || '0');
+  if (!chunkCount) {
+    return { loaded: false, generatedAt: '', entries: [] };
+  }
+  let payload = '';
+  for (let index = 0; index < chunkCount; index += 1) {
+    payload += props.getProperty('GMAIL_SUPPRESSION_LEDGER_' + index) || '';
+  }
+  try {
+    const ledger = JSON.parse(payload);
+    return {
+      loaded: Array.isArray(ledger.entries),
+      generatedAt: ledger.generatedAt || props.getProperty('GMAIL_SUPPRESSION_LEDGER_UPDATED_AT') || '',
+      entries: Array.isArray(ledger.entries) ? ledger.entries : []
+    };
+  } catch (error) {
+    return { loaded: false, generatedAt: '', entries: [] };
   }
 }
 

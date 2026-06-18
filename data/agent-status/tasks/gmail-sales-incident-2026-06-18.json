@@ -9,7 +9,7 @@
   "progress": 70,
   "priority": "critical",
   "createdAt": "2026-06-18T00:00:00.000+09:00",
-  "updatedAt": "2026-06-17T18:03:12.266Z",
+  "updatedAt": "2026-06-18T06:46:39.566Z",
   "summary": "2026-06-11以降のGmail営業outboxを安全なハッシュと件数だけで監査し、重複・再利用・時間外送信扱いを記録した。",
   "artifacts": [
     "docs/gmail/gmail-sales-incident-safe-summary-2026-06-18.md",

@@ -9,7 +9,7 @@
   "progress": 100,
   "priority": "critical",
   "createdAt": "2026-06-18T00:00:00.000+09:00",
-  "updatedAt": "2026-06-17T18:03:13.147Z",
+  "updatedAt": "2026-06-18T06:08:05.145Z",
   "summary": "2026-06-18の昼再開可否を、事故以降のoutbox履歴を除外した安全件数だけで判定した。",
   "artifacts": [
     "docs/gmail/gmail-sales-incident-response-2026-06-18.md",
