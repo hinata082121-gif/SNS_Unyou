@@ -20,6 +20,7 @@ const summary = {
   poolFileExists: candidates.length > 0,
   total: candidates.length,
   available: 0,
+  ready: 0,
   reserved: 0,
   sent: 0,
   replied: 0,

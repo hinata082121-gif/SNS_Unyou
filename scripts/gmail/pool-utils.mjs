@@ -93,7 +93,8 @@ export function isValidEmail(email) {
 }
 
 export function isAvailable(candidate) {
-  return String(candidate.status || 'available').toLowerCase() === 'available';
+  const status = String(candidate.status || 'available').toLowerCase();
+  return status === 'available' || status === 'ready';
 }
 
 export function hasOptOutText(body) {
