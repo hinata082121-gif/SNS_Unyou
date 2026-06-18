@@ -172,8 +172,93 @@ const futureTimestampStatus = runScenario('future-timestamp', {
 assert.equal(futureTimestampStatus.metrics.futureCandidateTimestampCount, 1);
 assert.equal(futureTimestampStatus.metrics.staleSourceCount, 1);
 
+const auditDomainDuplicate30 = runAuditScenario('audit-domain-duplicate-30', {
+  candidates: withDuplicateDomain(buildCandidates(30, { startIndex: 4000, lastCheckedAt: `${DATE}T00:00:00+09:00` }))
+});
+assert.equal(auditDomainDuplicate30.mode, 'audit_only');
+assert.equal(auditDomainDuplicate30.duplicateDomainWithinCandidateCount, 1);
+assert.equal(auditDomainDuplicate30.duplicateWithinCandidateCount, 1);
+assert.equal(auditDomainDuplicate30.safeCandidateCount, 29);
+assert.equal(auditDomainDuplicate30.wouldSelectCount, 0);
+assert.equal(auditDomainDuplicate30.wouldCreateOutbox, false);
+assert.equal(auditDomainDuplicate30.blockedReasons.includes('insufficient_safe_candidates'), true);
+assert.equal(auditDomainDuplicate30.outboxCreated, false);
+assert.equal(auditDomainDuplicate30.privatePreviewCreated, false);
+assert.equal(auditDomainDuplicate30.statusFileUpdated, false);
+
+const auditDomainDuplicate31 = runAuditScenario('audit-domain-duplicate-31', {
+  candidates: withDuplicateDomain(buildCandidates(31, { startIndex: 5000, lastCheckedAt: `${DATE}T00:00:00+09:00` }))
+});
+assert.equal(auditDomainDuplicate31.duplicateDomainWithinCandidateCount, 1);
+assert.equal(auditDomainDuplicate31.safeCandidateCount, 30);
+assert.equal(auditDomainDuplicate31.wouldSelectCount, 30);
+assert.equal(auditDomainDuplicate31.wouldCreateOutbox, true);
+assert.equal(auditDomainDuplicate31.outboxCreated, false);
+assert.equal(auditDomainDuplicate31.privatePreviewCreated, false);
+assert.equal(auditDomainDuplicate31.statusFileUpdated, false);
+
+const auditPreserveDir = path.join(TMP, 'audit-preserve');
+fs.mkdirSync(auditPreserveDir, { recursive: true });
+const preservedOutbox = path.join(auditPreserveDir, 'outbox.json');
+const preservedPreview = path.join(auditPreserveDir, 'private.tsv');
+const preservedStatus = path.join(auditPreserveDir, 'status.json');
+writeJson(preservedOutbox, { preserved: 'outbox' });
+fs.writeFileSync(preservedPreview, 'preserved-preview\n', 'utf8');
+writeJson(preservedStatus, { preserved: 'status' });
+const beforePreserved = snapshotFiles([preservedOutbox, preservedPreview, preservedStatus]);
+runAuditScenario('audit-preserve-files', {
+  candidates: buildCandidates(31, { startIndex: 6000, lastCheckedAt: `${DATE}T00:00:00+09:00` }),
+  statusFile: preservedStatus,
+  outboxFile: preservedOutbox,
+  privatePreview: preservedPreview,
+  sheetsJson: path.join(auditPreserveDir, 'sheets.json'),
+  sheetsTsv: path.join(auditPreserveDir, 'sheets.tsv')
+});
+assert.deepEqual(snapshotFiles([preservedOutbox, preservedPreview, preservedStatus]), beforePreserved);
+
+const noMkdirDir = path.join(TMP, 'audit-no-mkdir', 'missing-output-dir');
+assert.equal(fs.existsSync(noMkdirDir), false);
+runAuditScenario('audit-no-mkdir', {
+  candidates: buildCandidates(31, { startIndex: 7000, lastCheckedAt: `${DATE}T00:00:00+09:00` }),
+  statusFile: path.join(noMkdirDir, 'status.json'),
+  outboxFile: path.join(noMkdirDir, 'outbox.json'),
+  privatePreview: path.join(noMkdirDir, 'private.tsv'),
+  sheetsJson: path.join(noMkdirDir, 'sheets.json'),
+  sheetsTsv: path.join(noMkdirDir, 'sheets.tsv')
+});
+assert.equal(fs.existsSync(noMkdirDir), false);
+
+const parityCandidates = withDuplicateDomain(buildCandidates(31, { startIndex: 8000, lastCheckedAt: `${DATE}T00:00:00+09:00` }));
+const auditParity = runAuditScenario('audit-parity', { candidates: parityCandidates });
+const normalParity = runScenario('normal-parity', { candidates: parityCandidates });
+assert.equal(auditParity.safeCandidateCount, normalParity.metrics.safeCandidateCount);
+assert.equal(auditParity.duplicateWithinCandidateCount, normalParity.metrics.duplicateWithinCandidateCount);
+assert.equal(auditParity.invalidPersonalizationCount, normalParity.metrics.invalidPersonalizationCount);
+
+const auditRaw = runAuditRaw([
+  '--date', DATE,
+  '--pool', poolFile,
+  '--suppression-ledger', suppressionFile,
+  '--sheet-history', sheetHistoryFile,
+  '--history-dir', historyDir,
+  '--status-file', path.join(TMP, 'audit-redaction-status.json'),
+  '--outbox-file', path.join(TMP, 'audit-redaction-outbox.json'),
+  '--sheets-json', path.join(TMP, 'audit-redaction-sheets.json'),
+  '--sheets-tsv', path.join(TMP, 'audit-redaction-sheets.tsv'),
+  '--private-preview', path.join(TMP, 'audit-redaction-private.tsv')
+]);
+assert.equal(/safe-\d+@sample-\d+\.invalid/i.test(auditRaw), false);
+assert.equal(auditRaw.includes('Safe Business'), false);
+assert.equal(auditRaw.includes('https://'), false);
+assert.equal(auditRaw.includes('SNSの見え方について、簡単な無料確認のご案内'), false);
+assert.equal(auditRaw.includes('prospect-'), false);
+assert.equal(auditRaw.includes('|safe business'), false);
+assert.equal(auditRaw.includes('recipientHash'), false);
+assert.equal(auditRaw.includes('domainHash'), false);
+assert.equal(auditRaw.includes('businessFingerprint'), false);
+
 console.log(JSON.stringify({
-  syntheticTestCount: 45,
+  syntheticTestCount: 51,
   passed: true,
   targetDate: DATE,
   gmailSendExecuted: false,
@@ -203,6 +288,36 @@ function runScenario(name, { candidates, poolUpdatedAt = `${DATE}T00:00:00+09:00
     '--private-preview', path.join(scenarioDir, 'private.tsv')
   ]);
   return readJson(scenarioStatus);
+}
+
+function runAuditScenario(name, {
+  candidates,
+  poolUpdatedAt = `${DATE}T00:00:00+09:00`,
+  statusFile: statusFileArg,
+  outboxFile: outboxFileArg,
+  sheetsJson: sheetsJsonArg,
+  sheetsTsv: sheetsTsvArg,
+  privatePreview: privatePreviewArg
+}) {
+  const scenarioDir = path.join(TMP, name);
+  fs.mkdirSync(scenarioDir, { recursive: true });
+  const scenarioPool = path.join(scenarioDir, 'pool.json');
+  writeJson(scenarioPool, {
+    updatedAt: poolUpdatedAt,
+    candidates
+  });
+  return runAudit([
+    '--date', DATE,
+    '--pool', scenarioPool,
+    '--suppression-ledger', suppressionFile,
+    '--sheet-history', sheetHistoryFile,
+    '--history-dir', historyDir,
+    '--status-file', statusFileArg || path.join(scenarioDir, 'status.json'),
+    '--outbox-file', outboxFileArg || path.join(scenarioDir, 'outbox.json'),
+    '--sheets-json', sheetsJsonArg || path.join(scenarioDir, 'sheets.json'),
+    '--sheets-tsv', sheetsTsvArg || path.join(scenarioDir, 'sheets.tsv'),
+    '--private-preview', privatePreviewArg || path.join(scenarioDir, 'private.tsv')
+  ]);
 }
 
 function buildCandidates(count, options = {}) {
@@ -238,6 +353,35 @@ function runPrepare(args) {
     stdio: ['ignore', 'pipe', 'pipe']
   });
   return JSON.parse(output);
+}
+
+function runAudit(args) {
+  return JSON.parse(runAuditRaw(args));
+}
+
+function runAuditRaw(args) {
+  return execFileSync(process.execPath, ['scripts/gmail/prepare-daily-safe-sales-batch.mjs', '--audit-only', ...args], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+}
+
+function withDuplicateDomain(candidates) {
+  const copy = candidates.map((candidate) => ({ ...candidate }));
+  copy[1].sourceUrl = copy[0].sourceUrl;
+  return copy;
+}
+
+function snapshotFiles(files) {
+  return Object.fromEntries(files.map((file) => {
+    const stat = fs.statSync(file);
+    return [file, {
+      content: fs.readFileSync(file, 'utf8'),
+      mtimeMs: stat.mtimeMs,
+      size: stat.size
+    }];
+  }));
 }
 
 function writeJson(filePath, value) {

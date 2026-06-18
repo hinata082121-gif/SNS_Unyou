@@ -27,6 +27,7 @@ if (args.help || args.h) {
   process.exit(0);
 }
 
+const auditOnly = Boolean(args['audit-only']);
 const targetDate = resolveTargetDate(args.date);
 const sendBatchId = buildBatchId(targetDate);
 const taskId = `gmail-sales-safe-preparation-${targetDate}`;
@@ -75,6 +76,10 @@ const metrics = {
   futureCandidateTimestampCount: 0,
   invalidPersonalizationCount: 0,
   duplicateWithinCandidateCount: 0,
+  duplicateEmailWithinCandidateCount: 0,
+  duplicateBusinessWithinCandidateCount: 0,
+  duplicateDomainWithinCandidateCount: 0,
+  duplicateSourceRowWithinCandidateCount: 0,
   invalidEmailCount: 0,
   safeCandidateCount: 0,
   selectedCount: 0,
@@ -146,8 +151,10 @@ if (blockingReasons.length === 0) {
       metrics.localHistoryExcludedCount += 1;
       continue;
     }
-    if (hasDuplicateWithinBatch(normalized, seen)) {
+    const duplicateReason = duplicateReasonWithinBatch(normalized, seen);
+    if (duplicateReason) {
       metrics.duplicateWithinCandidateCount += 1;
+      incrementDuplicateReason(metrics, duplicateReason);
       continue;
     }
     const personalization = validatePersonalization(normalized);
@@ -165,6 +172,20 @@ if (blockingReasons.length === 0) {
 
 metrics.safeCandidateCount = safeRows.length;
 metrics.selectedCount = safeRows.length;
+
+if (safeRows.length < 30 && blockingReasons.length === 0) {
+  blockingReasons.push('insufficient_safe_candidates');
+}
+
+if (auditOnly) {
+  console.log(JSON.stringify(buildAuditOnlySummary({
+    targetDate,
+    metrics,
+    blockingReasons,
+    safeRows
+  }), null, 2));
+  process.exit(0);
+}
 
 if (blockingReasons.length === 0 && safeRows.length === 30) {
   writePrivatePreview(privatePreview, safeRows);
@@ -186,8 +207,7 @@ if (blockingReasons.length === 0 && safeRows.length === 30) {
   fs.writeFileSync(sheetsReadyTsv, toTsv(safeRows), 'utf8');
   metrics.outboxCreated = true;
   metrics.sheetsReadyTsvCreated = true;
-} else if (safeRows.length < 30 && blockingReasons.length === 0) {
-  blockingReasons.push('insufficient_safe_candidates');
+} else if (safeRows.length < 30) {
   metrics.previewCreated = false;
   metrics.outboxCreated = false;
   metrics.sheetsReadyTsvCreated = false;
@@ -222,6 +242,11 @@ console.log(JSON.stringify({
   suppressedRecipientCount: metrics.suppressedRecipientCount,
   suppressedDomainCount: metrics.suppressedDomainCount,
   suppressedBusinessCount: metrics.suppressedBusinessCount,
+  duplicateWithinCandidateCount: metrics.duplicateWithinCandidateCount,
+  duplicateEmailWithinCandidateCount: metrics.duplicateEmailWithinCandidateCount,
+  duplicateBusinessWithinCandidateCount: metrics.duplicateBusinessWithinCandidateCount,
+  duplicateDomainWithinCandidateCount: metrics.duplicateDomainWithinCandidateCount,
+  duplicateSourceRowWithinCandidateCount: metrics.duplicateSourceRowWithinCandidateCount,
   invalidPersonalizationCount: metrics.invalidPersonalizationCount,
   safeCandidateCount: metrics.safeCandidateCount,
   selectedCount: metrics.selectedCount,
@@ -232,7 +257,7 @@ console.log(JSON.stringify({
 }, null, 2));
 
 function printHelp() {
-  console.log('Usage: node scripts/gmail/prepare-daily-safe-sales-batch.mjs --date YYYY-MM-DD');
+  console.log('Usage: node scripts/gmail/prepare-daily-safe-sales-batch.mjs --date YYYY-MM-DD [--audit-only]');
 }
 
 function resolveTargetDate(value) {
@@ -398,11 +423,19 @@ function isInHistory(candidate, history) {
     history.businessFingerprints.has(candidate.businessFingerprint);
 }
 
-function hasDuplicateWithinBatch(candidate, seen) {
-  return seen.email.has(candidate.recipientHash) ||
-    seen.business.has(candidate.businessFingerprint) ||
-    seen.domain.has(candidate.domainHash) ||
-    seen.sourceRow.has(candidate.sourceRowHash);
+function duplicateReasonWithinBatch(candidate, seen) {
+  if (seen.email.has(candidate.recipientHash)) return 'email';
+  if (seen.business.has(candidate.businessFingerprint)) return 'business';
+  if (seen.domain.has(candidate.domainHash)) return 'domain';
+  if (seen.sourceRow.has(candidate.sourceRowHash)) return 'sourceRow';
+  return '';
+}
+
+function incrementDuplicateReason(metricsArg, reason) {
+  if (reason === 'email') metricsArg.duplicateEmailWithinCandidateCount += 1;
+  if (reason === 'business') metricsArg.duplicateBusinessWithinCandidateCount += 1;
+  if (reason === 'domain') metricsArg.duplicateDomainWithinCandidateCount += 1;
+  if (reason === 'sourceRow') metricsArg.duplicateSourceRowWithinCandidateCount += 1;
 }
 
 function markSeen(candidate, seen) {
@@ -440,6 +473,45 @@ function buildSafePreviewRow(candidate, personalization) {
     sourceFresh: true,
     eligible: true,
     blockedReasons: personalization.reasons
+  };
+}
+
+function buildAuditOnlySummary({ targetDate: targetDateArg, metrics: metricsArg, blockingReasons: blockingReasonsArg, safeRows: safeRowsArg }) {
+  const wouldCreateOutbox = blockingReasonsArg.length === 0 && safeRowsArg.length >= 30;
+  return {
+    mode: 'audit_only',
+    targetDate: targetDateArg,
+    status: blockingReasonsArg.length === 0 ? 'pass' : 'blocked',
+    blockedReasons: blockingReasonsArg,
+    sourceFresh: metricsArg.sourceFresh,
+    suppressionLedgerLoaded: metricsArg.suppressionLedgerLoaded,
+    gmailSentHistoryLoaded: metricsArg.gmailSentHistoryLoaded,
+    sheetHistoryLoaded: metricsArg.sheetHistoryLoaded,
+    localHistoryLoaded: metricsArg.localHistoryLoaded,
+    availablePoolCount: metricsArg.availablePoolCount,
+    freshCandidateCount: metricsArg.freshCandidateCount,
+    staleSourceCount: metricsArg.staleSourceCount,
+    suppressedRecipientCount: metricsArg.suppressedRecipientCount,
+    suppressedDomainCount: metricsArg.suppressedDomainCount,
+    suppressedBusinessCount: metricsArg.suppressedBusinessCount,
+    gmailSentHistoryExcludedCount: metricsArg.suppressedRecipientCount + metricsArg.suppressedDomainCount + metricsArg.suppressedBusinessCount,
+    sheetHistoryExcludedCount: metricsArg.sheetHistoryExcludedCount,
+    localHistoryExcludedCount: metricsArg.localHistoryExcludedCount,
+    duplicateWithinCandidateCount: metricsArg.duplicateWithinCandidateCount,
+    duplicateEmailWithinCandidateCount: metricsArg.duplicateEmailWithinCandidateCount,
+    duplicateBusinessWithinCandidateCount: metricsArg.duplicateBusinessWithinCandidateCount,
+    duplicateDomainWithinCandidateCount: metricsArg.duplicateDomainWithinCandidateCount,
+    duplicateSourceRowWithinCandidateCount: metricsArg.duplicateSourceRowWithinCandidateCount,
+    invalidEmailCount: metricsArg.invalidEmailCount,
+    invalidPersonalizationCount: metricsArg.invalidPersonalizationCount,
+    safeCandidateCount: metricsArg.safeCandidateCount,
+    wouldSelectCount: wouldCreateOutbox ? 30 : 0,
+    wouldCreateOutbox,
+    outboxCreated: false,
+    privatePreviewCreated: false,
+    statusFileUpdated: false,
+    gmailSendExecutedByThisRun: false,
+    googleSheetsUpdatedByThisRun: false
   };
 }
 
