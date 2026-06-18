@@ -35,6 +35,29 @@ const CLASSIFICATION = {
   needsHuman: 'needs_human'
 };
 
+const GMAIL_SEND_MANIFEST_SCHEMA_VERSION = 1;
+const GMAIL_SEND_DEFAULT_MAX_SEND_COUNT = 1;
+const GMAIL_SEND_SAFE_MAX_SEND_COUNT = 30;
+const GMAIL_SEND_STATE = {
+  ready: 'READY',
+  reserved: 'SEND_RESERVED',
+  sent: 'SENT',
+  deliveryUnknown: 'DELIVERY_UNKNOWN',
+  failedBeforeSend: 'FAILED_BEFORE_SEND',
+  blocked: 'BLOCKED',
+  manualReviewRequired: 'MANUAL_REVIEW_REQUIRED'
+};
+const GMAIL_SEND_STATE_COLUMNS = [
+  'sendState',
+  'sendRunId',
+  'sendReservedAt',
+  'sendAttemptCount',
+  'approvedBatchId',
+  'approvedCandidateDigest',
+  'deliveryUncertainAt',
+  'lastSendErrorCode'
+];
+
 function setupGmailSalesAutomation() {
   const config = getConfig_();
   Object.keys(LABELS).forEach((key) => createOrGetLabel_(LABELS[key]));
@@ -96,7 +119,7 @@ function removeDailyAutoSendTriggers() {
 }
 
 function dailySalesEmailJob() {
-  runDailyGmailSalesSend();
+  executeApprovedGmailSalesBatch_({ source: 'legacy_scheduled', requireAutoSend: true, dryRun: false });
 }
 
 function doPost(e) {
@@ -686,7 +709,7 @@ function runScheduledPreflight() {
 }
 
 function runScheduledDailySend() {
-  executeDailyGmailSalesSend_({ source: 'scheduled', requireAutoSend: true });
+  executeApprovedGmailSalesBatch_({ source: 'scheduled', requireAutoSend: true, dryRun: false });
 }
 
 function runPostSendCheck() {
@@ -740,113 +763,117 @@ function runFailureRecoveryCheck() {
 }
 
 function runDailyGmailSalesSend() {
-  executeDailyGmailSalesSend_({ source: 'manual', requireAutoSend: false });
+  executeApprovedGmailSalesBatch_({ source: 'manual', requireAutoSend: false, dryRun: false });
 }
 
 function executeDailyGmailSalesSend_(options) {
+  return executeApprovedGmailSalesBatch_(options);
+}
+
+function runGmailSalesPreSendDryRun() {
+  return executeApprovedGmailSalesBatch_({ source: 'dry_run', requireAutoSend: false, dryRun: true });
+}
+
+function executeApprovedGmailSalesBatch_(options) {
   const settings = options || {};
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
-    appendSafeLog_({ event: 'daily_job_lock_skipped' });
-    return;
+    const lockedResult = buildPreSendDryRunResult_({
+      mode: settings.dryRun ? 'dry_run' : 'send',
+      status: 'blocked',
+      blockedReasons: ['lock_unavailable']
+    });
+    appendSafeLog_({ event: 'approved_gmail_sales_send_blocked', blockedReason: 'lock_unavailable' });
+    return lockedResult;
   }
 
   let configForReset = null;
   try {
-    const preflight = runPreflight_(true);
-    configForReset = preflight.config;
+    const analysis = analyzeApprovedGmailSalesBatch_({
+      dryRun: Boolean(settings.dryRun),
+      requireAutoSend: settings.requireAutoSend === true
+    });
+    configForReset = analysis.config;
 
-    if (settings.requireAutoSend && !preflight.config.autoSendEnabled) {
+    if (analysis.status !== 'pass' || settings.dryRun) {
       appendSafeLog_({
-        event: 'daily_job_blocked',
+        event: settings.dryRun ? 'approved_gmail_sales_pre_send_dry_run' : 'approved_gmail_sales_send_blocked',
         source: settings.source || 'unknown',
-        blockedReason: 'auto_send_disabled',
-        dryRun: preflight.dryRun,
-        liveSendEnabled: preflight.liveSendEnabled,
-        autoSendEnabled: preflight.config.autoSendEnabled,
-        readyCount: preflight.readyCount
+        status: analysis.status,
+        blockedReason: analysis.blockedReasons.join(',') || '',
+        targetDate: analysis.targetDate,
+        candidateCount: analysis.candidateCount,
+        eligibleCount: analysis.eligibleRows.length,
+        wouldAttemptCount: analysis.wouldAttemptCount,
+        maxSendCount: analysis.maxSendCount,
+        gmailSendExecuted: false,
+        googleSheetsUpdated: false,
+        scriptPropertiesUpdated: false
       });
-      return;
+      return toPreSendPublicResult_(analysis, settings.dryRun ? 'dry_run' : 'send');
     }
 
-    if (!preflight.safeToSend) {
-      appendSafeLog_({
-        event: 'daily_job_blocked',
-        source: settings.source || 'unknown',
-        blockedReason: preflight.blockedReason,
-        dryRun: preflight.dryRun,
-        liveSendEnabled: preflight.liveSendEnabled,
-        autoSendEnabled: preflight.config.autoSendEnabled,
-        readyCount: preflight.readyCount,
-        remainingQuota: preflight.remainingQuota,
-        sendBatchId: preflight.batchId
-      });
-      return;
-    }
-
-    const config = preflight.config;
-    const windowCheck = validateDailySendWindow_(config);
-    if (!windowCheck.ok) {
-      appendSafeLog_({
-        event: 'daily_job_blocked',
-        source: settings.source || 'unknown',
-        blockedReason: windowCheck.blockedReason,
-        currentJstMinutes: windowCheck.currentJstMinutes,
-        allowedStartMinutes: windowCheck.allowedStartMinutes,
-        allowedEndMinutes: windowCheck.allowedEndMinutes,
-        sendBatchId: preflight.batchId,
-        readyCount: preflight.readyCount
-      });
-      return;
-    }
-
-    const approvalCheck = validateExplicitBatchApproval_(config, preflight.batchId, preflight.readyRows);
-    if (!approvalCheck.ok) {
-      appendSafeLog_({
-        event: 'daily_job_blocked',
-        source: settings.source || 'unknown',
-        blockedReason: approvalCheck.blockedReason,
-        sendBatchId: preflight.batchId,
-        expectedApprovalChecksum: approvalCheck.expectedApprovalChecksum,
-        approvedBatchIdMatched: approvalCheck.approvedBatchIdMatched,
-        approvedChecksumMatched: approvalCheck.approvedChecksumMatched,
-        approvalNotExpired: approvalCheck.approvalNotExpired,
-        readyCount: preflight.readyCount
-      });
-      return;
-    }
-
-    const maxToProcess = preflight.targetCount;
-    const rows = preflight.readyRows;
+    const runId = buildSendRunId_(analysis.config.sendDate);
+    const rows = analysis.eligibleRows.slice(0, analysis.wouldAttemptCount);
     let processed = 0;
     let failed = 0;
 
-    for (let i = 0; i < rows.length && processed < maxToProcess; i += 1) {
+    for (let i = 0; i < rows.length; i += 1) {
       const item = rows[i];
       const row = item.row;
       const rowIndex = item.rowIndex;
       const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
+      const digest = computeCandidateDigest_(row, analysis.config.sendDate, analysis.batchId);
+      let mailAttempted = false;
 
       try {
+        const preSend = validateSingleCandidatePreSend_(row, analysis);
+        if (!preSend.ok) {
+          updateSheetAfterSend_(analysis.config, rowIndex, {
+            sendState: GMAIL_SEND_STATE.manualReviewRequired,
+            sentStatus: GMAIL_SEND_STATE.manualReviewRequired,
+            lastSendErrorCode: preSend.blockedReason,
+            approvedBatchId: analysis.batchId,
+            approvedCandidateDigest: digest,
+            lastCheckedAt: new Date().toISOString()
+          });
+          failed += 1;
+          break;
+        }
         assertSafeToSend_(row);
         const message = buildInitialSalesEmail_(row);
         assertMessageSafe_(message);
         assertRecipientPersonalizationSafe_(row, message);
+        reserveCandidateBeforeSend_(analysis.config, rowIndex, row, {
+          runId,
+          batchId: analysis.batchId,
+          digest,
+          attemptCount: Number(row.sendAttemptCount || 0) + 1
+        });
+        const reserved = reloadCandidateRow_(analysis.config, rowIndex);
+        const reservationCheck = verifyReservationPersisted_(reserved.row, { runId, digest });
+        if (!reservationCheck.ok) {
+          failed += 1;
+          break;
+        }
+        mailAttempted = true;
         MailApp.sendEmail({
           to: email,
           subject: message.subject,
           body: message.body,
-          name: config.fromName
+          name: analysis.config.fromName
         });
-        updateSheetAfterSend_(config, rowIndex, {
+        updateSheetAfterSend_(analysis.config, rowIndex, {
+          sendState: GMAIL_SEND_STATE.sent,
           status: 'sent',
           sentStatus: '送信済',
           sentAt: new Date().toISOString(),
           sentBy: 'Apps Script',
+          lastSendErrorCode: '',
           lastCheckedAt: new Date().toISOString()
         });
         appendSafeLog_({
-          event: 'send_executed',
+          event: 'approved_gmail_sales_send_executed',
           rowIndex,
           recipientHash: hashValue_(email),
           subjectHash: hashValue_(message.subject)
@@ -854,42 +881,530 @@ function executeDailyGmailSalesSend_(options) {
         processed += 1;
       } catch (error) {
         failed += 1;
-        updateSheetAfterSend_(config, rowIndex, {
-          sentStatus: 'needs_review',
-          errorMessage: String(error.message || 'send_failed'),
+        updateSheetAfterSend_(analysis.config, rowIndex, {
+          sendState: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
+          sentStatus: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
+          deliveryUncertainAt: mailAttempted ? new Date().toISOString() : '',
+          lastSendErrorCode: safeErrorCode_(error),
           lastCheckedAt: new Date().toISOString()
         });
         appendSafeLog_({
-          event: 'send_failed_stopped',
+          event: 'approved_gmail_sales_send_stopped',
           rowIndex,
           errorName: error.name || 'Error',
-          reason: error.message
+          reason: safeErrorCode_(error),
+          deliveryUnknown: mailAttempted
         });
-        if (failed >= config.maxFailuresBeforeStop) {
-          break;
-        }
+        break;
       }
     }
 
-    if (processed === maxToProcess && failed === 0) {
-      markBatchSent_(preflight.batchId);
+    if (processed > 0 && failed === 0 && processed === rows.length) {
+      markBatchSent_(analysis.batchId);
     }
 
     appendSafeLog_({
-      event: 'daily_job_finished',
+      event: 'approved_gmail_sales_send_finished',
       source: settings.source || 'unknown',
-      sendBatchId: preflight.batchId,
+      sendBatchId: analysis.batchId,
       processed,
       failed,
-      dryRun: config.dryRun,
-      liveSendEnabled: config.liveSendEnabled
+      dryRun: analysis.config.dryRun,
+      liveSendEnabled: analysis.config.liveSendEnabled,
+      maxSendCount: analysis.maxSendCount
     });
+    return {
+      mode: 'send',
+      status: failed === 0 ? 'pass' : 'blocked',
+      blockedReasons: failed === 0 ? [] : ['send_stopped_for_manual_review'],
+      targetDate: analysis.targetDate,
+      sentCount: processed,
+      failedCount: failed,
+      gmailSendExecuted: processed > 0,
+      googleSheetsUpdated: processed > 0 || failed > 0,
+      scriptPropertiesUpdated: processed > 0 && failed === 0
+    };
   } finally {
     if (configForReset) {
       resetLiveSendAfterRun_(configForReset);
     }
     lock.releaseLock();
   }
+}
+
+function analyzeApprovedGmailSalesBatch_(settings) {
+  const blockedReasons = [];
+  const production = validateProductionConfig_();
+  const config = production.config;
+  const batchId = buildSendBatchId_(config.sendDate);
+  const dryRun = settings.dryRun === true;
+  let rows = [];
+  let validation = { readyRows: [], errors: [] };
+  let manifestCheck = buildManifestValidationResult_(null, ['manifest_not_loaded'], [], config, batchId);
+  let suppression = { loaded: false, entries: [] };
+
+  blockedReasons.push.apply(blockedReasons, production.errors);
+
+  try {
+    rows = loadCandidateRows_(config);
+    validation = validateOutboxRows_(rows, config);
+  } catch (error) {
+    blockedReasons.push('sheet_or_outbox_load_failed');
+  }
+
+  try {
+    const manifest = loadApprovedSendManifest_(config);
+    manifestCheck = validateApprovedSendManifest_(manifest, config, batchId, validation.readyRows);
+  } catch (error) {
+    manifestCheck = buildManifestValidationResult_(null, ['manifest_load_failed'], validation.readyRows, config, batchId);
+  }
+
+  try {
+    suppression = loadSuppressionLedgerFromProperties_();
+  } catch (error) {
+    suppression = { loaded: false, entries: [] };
+  }
+
+  if (validation.errors.length > 0) blockedReasons.push('outbox_validation_errors');
+  if (!manifestCheck.ok) blockedReasons.push.apply(blockedReasons, manifestCheck.blockedReasons);
+  if (!suppression.loaded) blockedReasons.push('suppression_ledger_missing');
+  if (config.requireUniqueBatch && !verifyBatchNotSent_(batchId)) blockedReasons.push('batch_already_sent');
+  if (!dryRun && config.dryRun) blockedReasons.push('dry_run_enabled');
+  if (!dryRun && !config.liveSendEnabled) blockedReasons.push('live_send_disabled');
+  if (!dryRun && settings.requireAutoSend && !config.autoSendEnabled) blockedReasons.push('auto_send_disabled');
+  if (!dryRun) {
+    const windowCheck = validateDailySendWindow_(config);
+    if (!windowCheck.ok) blockedReasons.push(windowCheck.blockedReason);
+  }
+
+  const sheetState = countSendStates_(validation.readyRows);
+  const eligibleRows = [];
+  let suppressionMatchCount = 0;
+  let gmailSentMatchCount = 0;
+  let sheetHistoryMatchCount = 0;
+  let candidateDigestMismatchCount = manifestCheck.candidateDigestMismatchCount;
+  let manualReviewRequiredCount = sheetState.manualReviewRequiredCount;
+
+  if (blockedReasons.length === 0 || dryRun) {
+    validation.readyRows.forEach((item) => {
+      const check = validateSingleCandidatePreSend_(item.row, {
+        config,
+        batchId,
+        manifest: manifestCheck.manifest,
+        manifestDigestSet: manifestCheck.manifestDigestSet,
+        suppression
+      });
+      if (check.suppressionMatched) suppressionMatchCount += 1;
+      if (check.gmailSentMatched) gmailSentMatchCount += 1;
+      if (check.sheetHistoryMatched) sheetHistoryMatchCount += 1;
+      if (check.digestMismatched) candidateDigestMismatchCount += 1;
+      if (check.manualReviewRequired) manualReviewRequiredCount += 1;
+      if (check.ok && blockedReasons.length === 0) {
+        eligibleRows.push(item);
+      }
+    });
+  }
+
+  if (suppressionMatchCount > 0) blockedReasons.push('suppression_match');
+  if (gmailSentMatchCount > 0) blockedReasons.push('gmail_sent_history_match');
+  if (sheetHistoryMatchCount > 0) blockedReasons.push('sheet_history_match');
+  if (candidateDigestMismatchCount > 0) blockedReasons.push('candidate_digest_mismatch');
+
+  const maxSendCount = Math.min(
+    manifestCheck.maxSendCount || GMAIL_SEND_DEFAULT_MAX_SEND_COUNT,
+    config.runtimeMaxSendCount || GMAIL_SEND_DEFAULT_MAX_SEND_COUNT,
+    GMAIL_SEND_SAFE_MAX_SEND_COUNT
+  );
+  const wouldAttemptCount = blockedReasons.length === 0
+    ? Math.min(eligibleRows.length, maxSendCount)
+    : 0;
+
+  return {
+    mode: dryRun ? 'dry_run' : 'send',
+    status: blockedReasons.length === 0 ? 'pass' : 'blocked',
+    blockedReasons: uniqueArray_(blockedReasons),
+    config,
+    targetDate: config.sendDate,
+    batchId,
+    manifestLoaded: manifestCheck.manifestLoaded,
+    manifestValid: manifestCheck.ok,
+    manifestExpired: manifestCheck.manifestExpired,
+    approvalVerified: manifestCheck.approvalVerified,
+    candidateCount: validation.readyRows.length,
+    candidateDigestMatchCount: manifestCheck.candidateDigestMatchCount,
+    candidateDigestMismatchCount,
+    suppressionMatchCount,
+    gmailSentMatchCount,
+    sheetHistoryMatchCount,
+    sendReservedCount: sheetState.sendReservedCount,
+    sentStateCount: sheetState.sentStateCount,
+    deliveryUnknownCount: sheetState.deliveryUnknownCount,
+    manualReviewRequiredCount,
+    eligibleRows,
+    eligibleCount: eligibleRows.length,
+    wouldAttemptCount,
+    maxSendCount,
+    manifest: manifestCheck.manifest,
+    manifestDigestSet: manifestCheck.manifestDigestSet,
+    suppression
+  };
+}
+
+function toPreSendPublicResult_(analysis, mode) {
+  return {
+    mode,
+    status: analysis.status,
+    blockedReasons: analysis.blockedReasons,
+    targetDate: analysis.targetDate,
+    batchIdPresent: Boolean(analysis.batchId),
+    manifestLoaded: analysis.manifestLoaded,
+    manifestValid: analysis.manifestValid,
+    manifestExpired: analysis.manifestExpired,
+    approvalVerified: analysis.approvalVerified,
+    candidateCount: analysis.candidateCount,
+    candidateDigestMatchCount: analysis.candidateDigestMatchCount,
+    candidateDigestMismatchCount: analysis.candidateDigestMismatchCount,
+    suppressionMatchCount: analysis.suppressionMatchCount,
+    gmailSentMatchCount: analysis.gmailSentMatchCount,
+    sheetHistoryMatchCount: analysis.sheetHistoryMatchCount,
+    sendReservedCount: analysis.sendReservedCount,
+    sentStateCount: analysis.sentStateCount,
+    deliveryUnknownCount: analysis.deliveryUnknownCount,
+    manualReviewRequiredCount: analysis.manualReviewRequiredCount,
+    eligibleCount: analysis.eligibleCount,
+    wouldAttemptCount: analysis.wouldAttemptCount,
+    maxSendCount: analysis.maxSendCount,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false
+  };
+}
+
+function buildPreSendDryRunResult_(overrides) {
+  return Object.assign({
+    mode: 'dry_run',
+    status: 'blocked',
+    blockedReasons: [],
+    targetDate: '',
+    batchIdPresent: false,
+    manifestLoaded: false,
+    manifestValid: false,
+    manifestExpired: false,
+    approvalVerified: false,
+    candidateCount: 0,
+    candidateDigestMatchCount: 0,
+    candidateDigestMismatchCount: 0,
+    suppressionMatchCount: 0,
+    gmailSentMatchCount: 0,
+    sheetHistoryMatchCount: 0,
+    sendReservedCount: 0,
+    sentStateCount: 0,
+    deliveryUnknownCount: 0,
+    manualReviewRequiredCount: 0,
+    eligibleCount: 0,
+    wouldAttemptCount: 0,
+    maxSendCount: GMAIL_SEND_DEFAULT_MAX_SEND_COUNT,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false
+  }, overrides || {});
+}
+
+function loadApprovedSendManifest_(config) {
+  if (!config.approvedSendManifestJson) {
+    throw new Error('manifest_property_missing');
+  }
+  const manifest = JSON.parse(config.approvedSendManifestJson);
+  if (!manifest || typeof manifest !== 'object') {
+    throw new Error('manifest_invalid_json');
+  }
+  return manifest;
+}
+
+function validateApprovedSendManifest_(manifest, config, batchId, readyRows) {
+  const blockedReasons = [];
+  if (!manifest) {
+    return buildManifestValidationResult_(manifest, ['manifest_missing'], readyRows, config, batchId);
+  }
+  if (Number(manifest.schemaVersion) !== GMAIL_SEND_MANIFEST_SCHEMA_VERSION) blockedReasons.push('manifest_schema_unsupported');
+  if (String(manifest.targetDate || '') !== config.sendDate) blockedReasons.push('manifest_target_date_mismatch');
+  if (String(manifest.batchId || '') !== batchId) blockedReasons.push('manifest_batch_id_mismatch');
+  if (Number(manifest.candidateCount || 0) !== readyRows.length) blockedReasons.push('manifest_candidate_count_mismatch');
+  if (!String(manifest.approvedOutboxHash || '').trim()) blockedReasons.push('manifest_approved_outbox_hash_missing');
+  if (manifest.approvalStatus !== 'approved') blockedReasons.push('manifest_approval_status_not_approved');
+  if (manifest.humanReviewCompleted !== true) blockedReasons.push('manifest_human_review_not_completed');
+  if (!Array.isArray(manifest.candidateDigests)) blockedReasons.push('manifest_candidate_digests_missing');
+  if (isManifestExpired_(manifest)) blockedReasons.push('manifest_expired');
+  const maxSendCount = normalizeManifestMaxSendCount_(manifest.maxSendCount);
+  if (!maxSendCount) blockedReasons.push('manifest_max_send_count_invalid');
+  return buildManifestValidationResult_(manifest, blockedReasons, readyRows, config, batchId, maxSendCount);
+}
+
+function buildManifestValidationResult_(manifest, blockedReasons, readyRows, config, batchId, maxSendCount) {
+  const manifestDigests = Array.isArray(manifest && manifest.candidateDigests)
+    ? manifest.candidateDigests.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+  const manifestDigestSet = {};
+  let duplicateDigestCount = 0;
+  manifestDigests.forEach((digest) => {
+    if (manifestDigestSet[digest]) duplicateDigestCount += 1;
+    manifestDigestSet[digest] = true;
+  });
+  const rowDigests = (readyRows || []).map((item) => computeCandidateDigest_(item.row, config.sendDate, batchId));
+  let matchCount = 0;
+  rowDigests.forEach((digest) => {
+    if (manifestDigestSet[digest]) matchCount += 1;
+  });
+  const mismatchCount = Math.max(0, rowDigests.length - matchCount) +
+    Math.max(0, manifestDigests.length - rowDigests.length) +
+    duplicateDigestCount;
+  const reasons = (blockedReasons || []).slice();
+  if (duplicateDigestCount > 0) reasons.push('manifest_candidate_digest_duplicate');
+  if (mismatchCount > 0) reasons.push('manifest_candidate_digest_mismatch');
+  return {
+    manifest,
+    manifestLoaded: Boolean(manifest),
+    ok: reasons.length === 0,
+    blockedReasons: uniqueArray_(reasons),
+    manifestExpired: Boolean(manifest && isManifestExpired_(manifest)),
+    approvalVerified: Boolean(manifest && manifest.approvalStatus === 'approved' && manifest.humanReviewCompleted === true),
+    candidateDigestMatchCount: matchCount,
+    candidateDigestMismatchCount: mismatchCount,
+    manifestDigestSet,
+    maxSendCount: maxSendCount || GMAIL_SEND_DEFAULT_MAX_SEND_COUNT
+  };
+}
+
+function normalizeManifestMaxSendCount_(value) {
+  const parsed = Number(value || GMAIL_SEND_DEFAULT_MAX_SEND_COUNT);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > GMAIL_SEND_SAFE_MAX_SEND_COUNT) {
+    return 0;
+  }
+  return Math.floor(parsed);
+}
+
+function isManifestExpired_(manifest) {
+  const expiresAt = new Date(String((manifest && manifest.expiresAt) || ''));
+  if (Number.isNaN(expiresAt.getTime())) {
+    return true;
+  }
+  return expiresAt.getTime() <= Date.now();
+}
+
+function validateSingleCandidatePreSend_(row, context) {
+  const digest = computeCandidateDigest_(row, context.config.sendDate, context.batchId);
+  const state = normalizeSendState_(row);
+  const result = {
+    ok: true,
+    blockedReason: '',
+    suppressionMatched: false,
+    gmailSentMatched: false,
+    sheetHistoryMatched: false,
+    digestMismatched: false,
+    manualReviewRequired: false
+  };
+  if (!context.manifestDigestSet || !context.manifestDigestSet[digest]) {
+    return blockedPreSendResult_(result, 'candidate_digest_mismatch', { digestMismatched: true });
+  }
+  if (isManifestExpired_(context.manifest)) {
+    return blockedPreSendResult_(result, 'manifest_expired');
+  }
+  if (state !== GMAIL_SEND_STATE.ready) {
+    return blockedPreSendResult_(result, 'candidate_state_not_ready', { sheetHistoryMatched: state === GMAIL_SEND_STATE.sent });
+  }
+  if (isSuppressedByLedger_(row, context.suppression)) {
+    return blockedPreSendResult_(result, 'suppression_match', { suppressionMatched: true, manualReviewRequired: true });
+  }
+  if (hasSheetSentHistory_(row)) {
+    return blockedPreSendResult_(result, 'sheet_history_match', { sheetHistoryMatched: true, manualReviewRequired: true });
+  }
+  const sentCheck = findPossibleGmailSentMatch_(row, context.config);
+  if (!sentCheck.ok) {
+    return blockedPreSendResult_(result, sentCheck.blockedReason, { gmailSentMatched: true, manualReviewRequired: true });
+  }
+  if (sentCheck.matched) {
+    return blockedPreSendResult_(result, 'gmail_sent_history_match', { gmailSentMatched: true, manualReviewRequired: true });
+  }
+  return result;
+}
+
+function blockedPreSendResult_(result, reason, flags) {
+  const merged = Object.assign(result, flags || {});
+  merged.ok = false;
+  merged.blockedReason = reason;
+  return merged;
+}
+
+function normalizeSendState_(row) {
+  const state = String(row.sendState || '').trim().toUpperCase();
+  if (state === GMAIL_SEND_STATE.reserved ||
+    state === GMAIL_SEND_STATE.sent ||
+    state === GMAIL_SEND_STATE.deliveryUnknown ||
+    state === GMAIL_SEND_STATE.failedBeforeSend ||
+    state === GMAIL_SEND_STATE.blocked ||
+    state === GMAIL_SEND_STATE.manualReviewRequired) {
+    return state;
+  }
+  if (hasSheetSentHistory_(row)) {
+    return GMAIL_SEND_STATE.sent;
+  }
+  if (String(row.status || '').toLowerCase() === 'ready') {
+    return GMAIL_SEND_STATE.ready;
+  }
+  return GMAIL_SEND_STATE.blocked;
+}
+
+function countSendStates_(items) {
+  const counts = {
+    sendReservedCount: 0,
+    sentStateCount: 0,
+    deliveryUnknownCount: 0,
+    manualReviewRequiredCount: 0
+  };
+  (items || []).forEach((item) => {
+    const state = normalizeSendState_(item.row || {});
+    if (state === GMAIL_SEND_STATE.reserved) counts.sendReservedCount += 1;
+    if (state === GMAIL_SEND_STATE.sent) counts.sentStateCount += 1;
+    if (state === GMAIL_SEND_STATE.deliveryUnknown) counts.deliveryUnknownCount += 1;
+    if (state === GMAIL_SEND_STATE.manualReviewRequired) counts.manualReviewRequiredCount += 1;
+  });
+  return counts;
+}
+
+function hasSheetSentHistory_(row) {
+  const statusText = String(row.sentStatus || row['送信ステータス'] || '').toLowerCase();
+  return Boolean(String(row.sentAt || '').trim()) || includesAny_(statusText, ['送信済', 'sent', 'delivered', 'success']);
+}
+
+function isSuppressedByLedger_(row, ledger) {
+  if (!ledger || !ledger.loaded) {
+    return true;
+  }
+  const recipientHash = hashValue_(normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']));
+  const domainHash = hashValue_(sourceDomainFromRow_(row));
+  const businessHash = businessFingerprintFromRow_(row);
+  return ledger.entries.some((entry) => {
+    if (entry.suppressed === false || entry.futureEligible === true) return false;
+    return String(entry.recipientHash || '') === recipientHash ||
+      String(entry.normalizedDomainHash || entry.domainHash || '') === domainHash ||
+      String(entry.businessFingerprint || '') === businessHash;
+  });
+}
+
+function findPossibleGmailSentMatch_(row, config) {
+  try {
+    const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
+    const subject = normalizeEmailSubject_(row.subject || row['件名']);
+    if (!email || !subject) {
+      return { ok: false, matched: false, blockedReason: 'gmail_sent_query_missing_fields' };
+    }
+    const after = String(config.sendDate || '').replace(/-/g, '/');
+    const query = 'in:sent to:"' + escapeGmailSearchText_(email) + '" after:' + after +
+      ' subject:"' + escapeGmailSearchText_(subject) + '"';
+    const threads = GmailApp.search(query, 0, 10);
+    return { ok: true, matched: threads.length > 0, blockedReason: '' };
+  } catch (error) {
+    return { ok: false, matched: false, blockedReason: 'gmail_sent_search_failed' };
+  }
+}
+
+function reserveCandidateBeforeSend_(config, rowIndex, row, reservation) {
+  ensureSendStateColumns_(config);
+  updateSheetAfterSend_(config, rowIndex, {
+    sendState: GMAIL_SEND_STATE.reserved,
+    sendRunId: reservation.runId,
+    sendReservedAt: new Date().toISOString(),
+    sendAttemptCount: reservation.attemptCount,
+    approvedBatchId: reservation.batchId,
+    approvedCandidateDigest: reservation.digest,
+    sentStatus: GMAIL_SEND_STATE.reserved,
+    lastSendErrorCode: '',
+    lastCheckedAt: new Date().toISOString()
+  });
+  SpreadsheetApp.flush();
+}
+
+function reloadCandidateRow_(config, rowIndex) {
+  const sheet = SpreadsheetApp.openById(config.sheetId).getSheetByName(config.sheetName);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map((value) => String(value));
+  const values = sheet.getRange(rowIndex, 1, 1, header.length).getValues()[0];
+  const row = {};
+  header.forEach((key, index) => {
+    row[key] = values[index];
+  });
+  row.email = row.email || row['宛先メール'] || row['メール'];
+  row.contactEmail = row.contactEmail || row['連絡先メール'];
+  row.name = row.name || row['店舗名'];
+  return { row, rowIndex };
+}
+
+function verifyReservationPersisted_(row, expected) {
+  const ok = String(row.sendState || '') === GMAIL_SEND_STATE.reserved &&
+    String(row.sendRunId || '') === expected.runId &&
+    String(row.approvedCandidateDigest || '') === expected.digest;
+  return {
+    ok,
+    blockedReason: ok ? '' : 'send_reservation_not_persisted'
+  };
+}
+
+function ensureSendStateColumns_(config) {
+  const sheet = SpreadsheetApp.openById(config.sheetId).getSheetByName(config.sheetName);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map((value) => String(value));
+  const missing = GMAIL_SEND_STATE_COLUMNS.filter((column) => header.indexOf(column) === -1);
+  if (missing.length === 0) {
+    return;
+  }
+  sheet.getRange(1, header.length + 1, 1, missing.length).setValues([missing]);
+  SpreadsheetApp.flush();
+}
+
+function computeCandidateDigest_(row, targetDate, batchId) {
+  const candidateId = String(row.prospectId || row.dedupeKey || '').trim().toLowerCase();
+  return sha256Hex_([
+    normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']),
+    normalizeEmailSubject_(row.subject || row['件名']),
+    normalizeEmailBody_(row.body || row['本文']),
+    candidateId,
+    normalizeDateText_(targetDate),
+    String(batchId || '').trim()
+  ].join('\n'));
+}
+
+function sha256Hex_(value) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ''));
+  return digest.map((byte) => {
+    const normalized = byte < 0 ? byte + 256 : byte;
+    return ('0' + normalized.toString(16)).slice(-2);
+  }).join('');
+}
+
+function sourceDomainFromRow_(row) {
+  const raw = String(row.sourceUrl || row.publicSource || row.source || '').trim().toLowerCase();
+  const match = raw.match(/^https?:\/\/([^\/?#]+)/);
+  return match ? match[1].replace(/^www\./, '') : String(row.sourceDomain || '').trim().toLowerCase();
+}
+
+function businessFingerprintFromRow_(row) {
+  return hashValue_(sourceDomainFromRow_(row) + '|' + normalizeTextForComparison_(row.name || row['店舗名']));
+}
+
+function buildSendRunId_(targetDate) {
+  return 'gmail-sales-send-' + normalizeDateText_(targetDate) + '-' + Utilities.getUuid();
+}
+
+function safeErrorCode_(error) {
+  const text = String(error && error.message ? error.message : 'send_failed').toLowerCase();
+  if (text.indexOf('quota') !== -1) return 'quota_error';
+  if (text.indexOf('permission') !== -1 || text.indexOf('auth') !== -1) return 'permission_error';
+  if (text.indexOf('reservation') !== -1) return 'reservation_error';
+  return 'send_error';
+}
+
+function uniqueArray_(values) {
+  return values.filter((value, index, array) => value && array.indexOf(value) === index);
 }
 
 function scanGmailRepliesJob() {
@@ -1319,6 +1834,11 @@ function appendSafeLog_(event) {
   delete safe.payload;
   delete safe.rows;
   delete safe.headers;
+  delete safe.candidateDigest;
+  delete safe.approvedCandidateDigest;
+  delete safe.approvedSendManifestJson;
+  delete safe.manifest;
+  delete safe.query;
   Logger.log(JSON.stringify(safe));
 }
 
@@ -1423,7 +1943,9 @@ function getConfig_() {
     requireExplicitBatchApproval: props.getProperty('REQUIRE_EXPLICIT_BATCH_APPROVAL') !== 'false',
     approvedBatchId: String(props.getProperty('APPROVED_BATCH_ID') || '').trim(),
     approvedBatchChecksum: String(props.getProperty('APPROVED_BATCH_CHECKSUM') || '').trim(),
+    approvedSendManifestJson: String(props.getProperty('APPROVED_SEND_MANIFEST_JSON') || '').trim(),
     approvalExpiresAt: String(props.getProperty('APPROVAL_EXPIRES_AT') || '').trim(),
+    runtimeMaxSendCount: normalizePositiveInt_(props.getProperty('GMAIL_SEND_MAX_SEND_COUNT'), GMAIL_SEND_DEFAULT_MAX_SEND_COUNT, GMAIL_SEND_SAFE_MAX_SEND_COUNT),
     maxFailuresBeforeStop: Math.max(1, Number(props.getProperty('MAX_FAILURES_BEFORE_STOP') || '1')),
     sendDate: sendContext.sendDate,
     nextActionDate: props.getProperty('NEXT_ACTION_DATE') || '',
@@ -1737,6 +2259,7 @@ function verifyNoSensitiveLogging_() {
 }
 
 function updateSheetAfterSend_(config, rowIndex, updates) {
+  ensureSendStateColumns_(config);
   markSheetRow_(config, rowIndex, updates);
 }
 
@@ -2287,6 +2810,14 @@ function normalizeHour_(value, fallback) {
     return fallback;
   }
   return Math.floor(hour);
+}
+
+function normalizePositiveInt_(value, fallback, maxValue) {
+  const parsed = Number(value || fallback);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return Math.min(Math.floor(parsed), maxValue);
 }
 
 function normalizeMinute_(value, fallback) {
