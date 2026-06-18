@@ -68,6 +68,13 @@ assert.equal(/Number\(row\.sendAttemptCount \|\| 0\) \+ 1/.test(code), true);
 const dryRunFunction = functionBody('runGmailSalesPreSendDryRun');
 assert.equal(/MailApp\.sendEmail/.test(dryRunFunction), false);
 assert.equal(/setValue|setValues|setProperty|deleteProperty|newTrigger|deleteTrigger/.test(dryRunFunction), false);
+assert.equal(dryRunFunction.includes('executeApprovedGmailSalesPreSendDryRun_'), true);
+assert.equal(dryRunFunction.includes('executeApprovedGmailSalesBatch_'), false);
+const dryRunExecutorBody = functionBody('executeApprovedGmailSalesPreSendDryRun_');
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(dryRunExecutorBody), false);
+assert.equal(/setValue|setValues|setProperty|setProperties|deleteProperty|newTrigger|deleteTrigger|SpreadsheetApp\.flush|acquireSheetMaintenanceLease_/.test(dryRunExecutorBody), false);
+assert.equal(/if \(settings\.dryRun === true\) \{\s*return executeApprovedGmailSalesPreSendDryRun_/.test(executorBody), true);
+assert.equal(/if \(configForReset && settings\.dryRun !== true\)/.test(executorBody), true);
 
 const analyzeBody = functionBody('analyzeApprovedGmailSalesBatch_');
 assert.equal(/findPossibleGmailSentMatch_/.test(analyzeBody) || /validateSingleCandidatePreSend_/.test(analyzeBody), true);
@@ -80,7 +87,7 @@ assert.equal(/delete safe\.approvedCandidateDigest/.test(logFunction), true);
 assert.equal(/delete safe\.manifest/.test(logFunction), true);
 
 console.log(JSON.stringify({
-  syntheticTestCount: 24,
+  syntheticTestCount: 30,
   passed: true,
   mailSendCallSiteCount: count(/MailApp\.sendEmail\s*\(/g),
   gmailSendExecuted: false,

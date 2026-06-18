@@ -129,16 +129,59 @@ const scenarios = [
     assertBlockedNoMail(env, result, 'send_attempt_limit_exceeded');
     assert.equal(result.attemptLimitExceededCount, 1);
   }],
-  ['dry-run does not write Sheet or Properties', (env) => { env.entry = 'dryRun'; }, (env, result) => {
+  ['dry-run success does not write any external state', (env) => { env.entry = 'dryRun'; env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true'; }, (env, result) => {
     assert.equal(result.status, 'pass');
-    assert.equal(env.mailSendCount, 0);
-    assert.equal(env.sheetWriteCount, 0);
-    assert.equal(env.flushCount, 0);
-    assert.equal(env.propertyWriteCount, 0);
     assert.equal(result.wouldAttemptCount, 1);
+    assertDryRunWriteFree(env);
+  }],
+  ['dry-run blocked does not reset live send flags', (env) => {
+    env.entry = 'dryRun';
+    env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
+    delete env.props.APPROVED_SEND_MANIFEST_JSON;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReasons || []).includes('manifest_load_failed'), true);
+    assertDryRunWriteFree(env);
+  }],
+  ['dry-run sheet load exception remains write-free', (env) => {
+    env.entry = 'dryRun';
+    env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
+    env.openSheetThrows = true;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assertDryRunWriteFree(env);
   }],
   ['manual then manual rerun sends only once', (env) => { env.afterRun = () => env.context.executeDailyGmailSalesSend_({ source: 'manual', requireAutoSend: false, dryRun: false }); }, (env) => {
     assert.equal(env.mailSendCount, 1);
+  }],
+  ['real send success resets live flags once', (env) => {
+    env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(env.mailSendCount, 1);
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(resetLogCount(env), 1);
+  }],
+  ['real send blocked resets live flags once', (env) => {
+    env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
+    delete env.props.APPROVED_SEND_MANIFEST_JSON;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(resetLogCount(env), 1);
+  }],
+  ['real send exception resets live flags once', (env) => {
+    env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
+    env.mailSendThrows = true;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(env.mailSendCount, 1);
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(resetLogCount(env), 1);
   }],
   ['local_sync lease conflict blocks Apps Script send', (env) => {
     env.workbook.sheets._gmail_maintenance.rows[1] = ['GMAIL_SALES_SHEET_MAINTENANCE', 'local_sync', 'local-holder', new Date().toISOString(), '2099-01-01T00:00:00.000Z', new Date().toISOString(), '1'];
@@ -222,6 +265,13 @@ function createEnvironment() {
     flushCount: 0,
     sheetWriteCount: 0,
     propertyWriteCount: 0,
+    setPropertyCount: 0,
+    setPropertiesCount: 0,
+    deletePropertyCount: 0,
+    triggerWriteCount: 0,
+    draftCreateCount: 0,
+    leaseWriteCount: 0,
+    openSheetThrows: false,
     failSentUpdate: false,
     logs: []
   };
@@ -276,10 +326,19 @@ function buildContext(env) {
       getScriptProperties: () => ({
         getProperty: (key) => env.props[key],
         setProperty: (key, value) => {
+          env.setPropertyCount += 1;
           env.propertyWriteCount += 1;
           env.props[key] = String(value);
         },
+        setProperties: (values) => {
+          env.setPropertiesCount += 1;
+          env.propertyWriteCount += 1;
+          Object.keys(values || {}).forEach((key) => {
+            env.props[key] = String(values[key]);
+          });
+        },
         deleteProperty: (key) => {
+          env.deletePropertyCount += 1;
           env.propertyWriteCount += 1;
           delete env.props[key];
         }
@@ -292,13 +351,20 @@ function buildContext(env) {
       })
     },
     SpreadsheetApp: {
-      openById: () => env.workbook,
+      openById: () => {
+        if (env.openSheetThrows) throw new Error('mock_sheet_load_failed');
+        return env.workbook;
+      },
       flush: () => { env.flushCount += 1; }
     },
     GmailApp: {
       search: () => {
         if (env.gmailSearchThrows) throw new Error('mock_gmail_search_failed');
         return Array.from({ length: env.gmailSearchResultCount }, () => ({}));
+      },
+      createDraft: () => {
+        env.draftCreateCount += 1;
+        return {};
       },
       getUserLabelByName: () => null,
       createLabel: () => ({ addToThread: () => {} })
@@ -316,8 +382,18 @@ function buildContext(env) {
     },
     ScriptApp: {
       getProjectTriggers: () => [],
-      deleteTrigger: () => {},
-      newTrigger: () => ({ timeBased: () => ({ everyDays: () => ({ atHour: () => ({ nearMinute: () => ({ create: () => {} }), create: () => {} }) }) }) })
+      deleteTrigger: () => { env.triggerWriteCount += 1; },
+      newTrigger: () => ({
+        timeBased: () => ({
+          everyDays: () => ({
+            atHour: () => ({
+              nearMinute: () => ({ create: () => { env.triggerWriteCount += 1; } }),
+              create: () => { env.triggerWriteCount += 1; }
+            })
+          }),
+          everyHours: () => ({ create: () => { env.triggerWriteCount += 1; } })
+        })
+      })
     }
   };
 }
@@ -383,6 +459,24 @@ function assertBlockedNoMail(env, result, reason) {
 function assertBlockedNoMailCount(env, result, mailCount) {
   assert.equal(result.status, 'blocked');
   assert.equal(env.mailSendCount, mailCount);
+}
+
+function assertDryRunWriteFree(env) {
+  assert.equal(env.setPropertyCount, 0);
+  assert.equal(env.setPropertiesCount, 0);
+  assert.equal(env.deletePropertyCount, 0);
+  assert.equal(env.propertyWriteCount, 0);
+  assert.equal(env.mailSendCount, 0);
+  assert.equal(env.draftCreateCount, 0);
+  assert.equal(env.sheetWriteCount, 0);
+  assert.equal(env.flushCount, 0);
+  assert.equal(env.triggerWriteCount, 0);
+  assert.equal(env.leaseWriteCount, 0);
+  assert.equal(resetLogCount(env), 0);
+}
+
+function resetLogCount(env) {
+  return env.logs.filter((line) => line.includes('live_send_reset_after_run')).length;
 }
 
 function readCell(env, rowIndex, header) {
@@ -496,6 +590,7 @@ class MockRange {
   assertCanWrite(_targetRowIndex, targetColumnIndex, value) {
     const env = this.sheet.env;
     if (env) env.sheetWriteCount += 1;
+    if (env && this.sheet.name === '_gmail_maintenance') env.leaseWriteCount += 1;
     if (env?.failSentUpdate && this.sheet.name === 'sales' && this.sheet.rows[0][targetColumnIndex] === 'sendState' && value === 'SENT') {
       throw new Error('mock_sent_update_failed');
     }

@@ -816,15 +816,58 @@ function executeDailyGmailSalesSend_(options) {
 }
 
 function runGmailSalesPreSendDryRun() {
-  return executeApprovedGmailSalesBatch_({ source: 'dry_run', requireAutoSend: false, dryRun: true });
+  return executeApprovedGmailSalesPreSendDryRun_({ source: 'dry_run' });
+}
+
+function executeApprovedGmailSalesPreSendDryRun_(options) {
+  const settings = options || {};
+  try {
+    const analysis = analyzeApprovedGmailSalesBatch_({
+      dryRun: true,
+      requireAutoSend: false
+    });
+    appendSafeLog_({
+      event: 'approved_gmail_sales_pre_send_dry_run',
+      source: settings.source || 'dry_run',
+      status: analysis.status,
+      blockedReason: analysis.blockedReasons.join(',') || '',
+      targetDate: analysis.targetDate,
+      candidateCount: analysis.candidateCount,
+      eligibleCount: analysis.eligibleRows.length,
+      wouldAttemptCount: analysis.wouldAttemptCount,
+      maxSendCount: analysis.maxSendCount,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false
+    });
+    return toPreSendPublicResult_(analysis, 'dry_run');
+  } catch (error) {
+    appendSafeLog_({
+      event: 'approved_gmail_sales_pre_send_dry_run',
+      status: 'blocked',
+      blockedReason: 'dry_run_analysis_failed',
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false
+    });
+    return buildPreSendDryRunResult_({
+      mode: 'dry_run',
+      status: 'blocked',
+      blockedReasons: ['dry_run_analysis_failed']
+    });
+  }
 }
 
 function executeApprovedGmailSalesBatch_(options) {
   const settings = options || {};
+  if (settings.dryRun === true) {
+    return executeApprovedGmailSalesPreSendDryRun_({ source: settings.source || 'dry_run' });
+  }
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) {
+    resetLiveSendAfterRun_(getConfig_(), { dryRun: false });
     const lockedResult = buildPreSendDryRunResult_({
-      mode: settings.dryRun ? 'dry_run' : 'send',
+      mode: 'send',
       status: 'blocked',
       blockedReasons: ['lock_unavailable']
     });
@@ -836,6 +879,7 @@ function executeApprovedGmailSalesBatch_(options) {
   let maintenanceLease = null;
   try {
     const preliminaryConfig = getConfig_();
+    configForReset = preliminaryConfig;
     if (!settings.dryRun && preliminaryConfig.dryRun) {
       const result = buildPreSendDryRunResult_({
         mode: 'send',
@@ -889,14 +933,14 @@ function executeApprovedGmailSalesBatch_(options) {
       }
     }
     const analysis = analyzeApprovedGmailSalesBatch_({
-      dryRun: Boolean(settings.dryRun),
+      dryRun: false,
       requireAutoSend: settings.requireAutoSend === true
     });
     configForReset = analysis.config;
 
-    if (analysis.status !== 'pass' || settings.dryRun) {
+    if (analysis.status !== 'pass') {
       appendSafeLog_({
-        event: settings.dryRun ? 'approved_gmail_sales_pre_send_dry_run' : 'approved_gmail_sales_send_blocked',
+        event: 'approved_gmail_sales_send_blocked',
         source: settings.source || 'unknown',
         status: analysis.status,
         blockedReason: analysis.blockedReasons.join(',') || '',
@@ -909,7 +953,7 @@ function executeApprovedGmailSalesBatch_(options) {
         googleSheetsUpdated: false,
         scriptPropertiesUpdated: false
       });
-      return toPreSendPublicResult_(analysis, settings.dryRun ? 'dry_run' : 'send');
+      return toPreSendPublicResult_(analysis, 'send');
     }
 
     const runId = buildSendRunId_(analysis.config.sendDate);
@@ -1028,7 +1072,7 @@ function executeApprovedGmailSalesBatch_(options) {
     if (maintenanceLease) {
       releaseSheetMaintenanceLease_(configForReset || getConfig_(), maintenanceLease);
     }
-    if (configForReset) {
+    if (configForReset && settings.dryRun !== true) {
       resetLiveSendAfterRun_(configForReset);
     }
     lock.releaseLock();
@@ -3121,7 +3165,11 @@ function markBatchSent_(batchId) {
   appendSafeLog_({ event: 'batch_marked_sent', sendBatchId: batchId });
 }
 
-function resetLiveSendAfterRun_(config) {
+function resetLiveSendAfterRun_(config, options) {
+  const settings = options || {};
+  if (settings.dryRun === true) {
+    return;
+  }
   if (!config.autoResetLiveSendAfterRun) {
     return;
   }
