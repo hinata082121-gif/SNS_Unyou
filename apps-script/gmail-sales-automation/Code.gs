@@ -182,6 +182,9 @@ function handleGmailOutboxSheetSync_(e) {
   if (modeResolution.mode === 'connected_dry_run') {
     return handleConnectedSheetSyncDryRun_(payload, validation);
   }
+  if (modeResolution.mode === 'read_only_snapshot') {
+    return handleSheetSyncReadOnlySnapshot_(payload, validation);
+  }
 
   if (!validation.ok) {
     appendSafeLog_(Object.assign({
@@ -268,6 +271,12 @@ function resolveSheetSyncOperationMode_(payload) {
   if (mode === 'connected_dry_run') {
     if (payload.dryRun !== true) {
       return { ok: false, mode: '', blockedReason: 'connected_dry_run_requires_dry_run_true' };
+    }
+    return { ok: true, mode };
+  }
+  if (mode === 'read_only_snapshot') {
+    if (payload.dryRun !== true) {
+      return { ok: false, mode: '', blockedReason: 'read_only_snapshot_requires_dry_run_true' };
     }
     return { ok: true, mode };
   }
@@ -360,6 +369,101 @@ function handleConnectedSheetSyncDryRun_(payload, validation) {
   result.blockedReason = '';
   appendSafeLog_(result);
   return buildSheetSyncResponse_(result);
+}
+
+function handleSheetSyncReadOnlySnapshot_(payload, validation) {
+  const result = buildConnectedSheetSyncDryRunResult_({
+    event: 'gmail_sheet_sync_read_only_snapshot',
+    mode: 'read_only_snapshot',
+    status: 'blocked',
+    sendDate: validation.sendDate,
+    sendBatchId: validation.sendBatchId,
+    incomingHeaderCount: Array.isArray(payload.headers) ? payload.headers.length : 0,
+    incomingCandidateCount: Array.isArray(payload.rows) ? payload.rows.length : 0,
+    schemaValid: validation.ok,
+    requiredHeadersPresent: sheetSyncRequiredHeadersPresent_(payload.headers),
+    incomingDuplicateCount: validation.safeCounts.duplicateInPayloadCount || 0,
+    blockedReason: validation.ok ? '' : validation.blockedReason,
+    headers: [],
+    rows: []
+  });
+
+  if (!validation.ok) {
+    appendSafeLog_(sheetSyncSnapshotSafeLog_(result));
+    return buildSheetSyncResponse_(result);
+  }
+
+  const config = getConfig_();
+  if (!config.sheetId) {
+    result.blockedReason = 'missing_sheet_id';
+    appendSafeLog_(sheetSyncSnapshotSafeLog_(result));
+    return buildSheetSyncResponse_(result);
+  }
+
+  const targetSheetName = resolveSheetSyncTargetName_(payload, config);
+  result.targetWorksheetResolved = Boolean(targetSheetName);
+  if (!targetSheetName) {
+    result.blockedReason = 'missing_sheet_name';
+    appendSafeLog_(sheetSyncSnapshotSafeLog_(result));
+    return buildSheetSyncResponse_(result);
+  }
+
+  let spreadsheet;
+  try {
+    spreadsheet = SpreadsheetApp.openById(config.sheetId);
+    result.connectedToGoogleSheet = true;
+  } catch (error) {
+    result.blockedReason = 'spreadsheet_open_failed';
+    appendSafeLog_(sheetSyncSnapshotSafeLog_(result));
+    return buildSheetSyncResponse_(result);
+  }
+
+  const sheet = spreadsheet.getSheetByName(targetSheetName);
+  result.targetWorksheetExists = Boolean(sheet);
+  if (!sheet) {
+    result.blockedReason = 'target_sheet_missing';
+    appendSafeLog_(sheetSyncSnapshotSafeLog_(result));
+    return buildSheetSyncResponse_(result);
+  }
+
+  const lastRow = Math.max(0, Number(sheet.getLastRow() || 0));
+  const lastColumn = Math.max(0, Number(sheet.getLastColumn() || 0));
+  const values = lastRow > 0 && lastColumn > 0
+    ? sheet.getRange(1, 1, lastRow, lastColumn).getValues()
+    : [];
+  const existingHeaders = values[0] ? values[0].map((value) => String(value || '').trim()) : [];
+  const existingRows = values.slice(1).map((row) => existingHeaders.map((_, index) => String(row[index] || '')));
+  result.headers = existingHeaders;
+  result.rows = existingRows;
+  result.currentHeaderCount = existingHeaders.filter(Boolean).length;
+  result.currentRowCount = existingRows.length;
+
+  if (existingRows.length > 0 && !sheetSyncHasIdentityHeaders_(existingHeaders)) {
+    result.blockedReason = 'existing_identity_header_missing';
+    appendSafeLog_(sheetSyncSnapshotSafeLog_(result));
+    return buildSheetSyncResponse_(result);
+  }
+
+  const comparison = compareSheetSyncRows_(payload.headers, payload.rows, existingHeaders, existingRows);
+  Object.assign(result, comparison.safeCounts);
+  if (comparison.blockedReason) {
+    result.blockedReason = comparison.blockedReason;
+    appendSafeLog_(sheetSyncSnapshotSafeLog_(result));
+    return buildSheetSyncResponse_(result);
+  }
+
+  result.status = 'pass';
+  result.ok = true;
+  result.blockedReason = '';
+  appendSafeLog_(sheetSyncSnapshotSafeLog_(result));
+  return buildSheetSyncResponse_(result);
+}
+
+function sheetSyncSnapshotSafeLog_(result) {
+  const safe = Object.assign({}, result || {});
+  delete safe.headers;
+  delete safe.rows;
+  return safe;
 }
 
 function buildConnectedSheetSyncDryRunResult_(overrides) {

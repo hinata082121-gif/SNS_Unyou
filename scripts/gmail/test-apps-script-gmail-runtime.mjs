@@ -418,6 +418,27 @@ const scenarios = [
     assert.equal(result.status, 'blocked');
     assert.equal(result.blockedReason, 'unknown_sheet_sync_mode');
     assertSheetSyncReadOnly(env);
+  }],
+  ['sheet read-only snapshot returns rows only to response and writes nothing', (env) => {
+    env.entry = 'sheetSyncReadOnlySnapshot';
+    env.workbook.sheets.ready.rows = [OUTBOX_HEADERS, ...env.outboxRows.map(outboxRowToCells)];
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.event, 'gmail_sheet_sync_read_only_snapshot');
+    assert.equal(result.mode, 'read_only_snapshot');
+    assert.equal(result.headers.length, 26);
+    assert.equal(result.rows.length, 30);
+    assert.equal(result.currentRowCount, 30);
+    assert.equal(env.logs.join('\n').includes(result.rows[0][0]), false);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['sheet read-only snapshot requires dryRun true and writes nothing', (env) => {
+    env.entry = 'sheetSyncReadOnlySnapshot';
+    env.sheetSyncPayload.dryRun = false;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'read_only_snapshot_requires_dry_run_true');
+    assertSheetSyncReadOnly(env);
   }]
 ];
 
@@ -629,7 +650,12 @@ function runEntry(env) {
   if (env.entry === 'scheduled') return env.context.executeDailyGmailSalesSend_({ source: 'scheduled', requireAutoSend: true, dryRun: false });
   if (env.entry === 'dryRun') return env.context.runGmailSalesPreSendDryRun();
   if (env.entry === 'suppressionDiagnostic') return env.context.runGmailSuppressionLedgerReadOnlyDiagnostic();
-  if (env.entry === 'sheetSyncConnectedDryRun') {
+  if (env.entry === 'sheetSyncConnectedDryRun' || env.entry === 'sheetSyncReadOnlySnapshot') {
+    if (env.entry === 'sheetSyncReadOnlySnapshot') {
+      env.sheetSyncPayload.action = 'read_only_snapshot';
+      env.sheetSyncPayload.operation = 'read_only_snapshot';
+      env.sheetSyncPayload.mode = 'read_only_snapshot';
+    }
     const output = env.context.handleGmailOutboxSheetSync_({
       postData: { contents: JSON.stringify(env.sheetSyncPayload) }
     });

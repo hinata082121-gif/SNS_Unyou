@@ -91,6 +91,25 @@ const summary = {
   maintenanceLeaseCreated: false,
   googleSheetsUpdated: false,
   scriptPropertiesUpdated: false,
+  privateSnapshotCreated: false,
+  privateSnapshotPath: '',
+  privateSnapshotTsvPath: '',
+  safeDiffCreated: false,
+  safeDiffPath: '',
+  identitySetMatchCount: 0,
+  headerSetsMatch: false,
+  differingColumnCount: 0,
+  normalizationOnlyColumnCount: 0,
+  substantiveDifferenceColumnCount: 0,
+  substantiveDifferenceRowCount: 0,
+  identityDifferenceCount: 0,
+  subjectDifferenceCount: 0,
+  bodyDifferenceCount: 0,
+  protectedStatusRowCount: 0,
+  runtimeHistoryDifferenceCount: 0,
+  currentDataWouldBeLostByReplacement: false,
+  exactReasonAll30WouldUpdate: '',
+  safeForRealSheetSync: false,
   blockedReason: ''
 };
 
@@ -117,7 +136,7 @@ if (syncMode === 'local_dry_run') {
   process.exit(0);
 }
 
-if (syncMode === 'connected_dry_run' && !syncEnabled) {
+if ((syncMode === 'connected_dry_run' || syncMode === 'read_only_snapshot') && !syncEnabled) {
   summary.blockedReason = 'sheet_sync_disabled';
   console.log(safeSummary(summary));
   process.exit(1);
@@ -144,10 +163,10 @@ try {
       sendDate,
       targetDate: sendDate,
       sendBatchId,
-      action: syncMode === 'connected_dry_run' ? 'connected_dry_run' : 'write',
-      operation: syncMode === 'connected_dry_run' ? 'connected_dry_run' : 'write',
+      action: syncMode === 'write' ? 'write' : syncMode,
+      operation: syncMode === 'write' ? 'write' : syncMode,
       mode: syncMode,
-      dryRun: syncMode === 'connected_dry_run',
+      dryRun: syncMode !== 'write',
       candidateCount: parsed.rows.length,
       schemaVersion: 1,
       requestId: `sheet-sync-${Date.now()}-${process.pid}`,
@@ -172,6 +191,9 @@ try {
   summary.manualPasteRequired = !summary.sheetSynced;
   summary.blockedReason = summary.ok ? '' : String(body.blockedReason || 'sheet_sync_failed');
   Object.assign(summary, safeSheetSyncResponse(body));
+  if (syncMode === 'read_only_snapshot' && summary.ok && body.mode === 'read_only_snapshot') {
+    Object.assign(summary, writeSheetSnapshotAudit(body, parsed, { sendDate }));
+  }
   console.log(safeSummary(summary));
   process.exit(summary.ok ? 0 : 1);
 } catch {
@@ -182,6 +204,7 @@ try {
 
 function resolveSyncMode(parsedArgs, settings) {
   const explicitMode = String(parsedArgs.mode || process.env.GMAIL_SHEET_SYNC_MODE || '').trim();
+  if (parsedArgs['read-only-snapshot'] === true || explicitMode === 'read_only_snapshot') return 'read_only_snapshot';
   if (parsedArgs['connected-dry-run'] === true || explicitMode === 'connected_dry_run') return 'connected_dry_run';
   if (parsedArgs.write === true || explicitMode === 'write') return 'write';
   if (parsedArgs['local-dry-run'] === true || explicitMode === 'local_dry_run') return 'local_dry_run';
@@ -213,12 +236,277 @@ function safeSheetSyncResponse(body) {
     'unrelatedExistingRowCount',
     'maintenanceLeaseCreated',
     'googleSheetsUpdated',
-    'scriptPropertiesUpdated'
+    'scriptPropertiesUpdated',
+    'event',
+    'mode',
+    'status',
+    'blockedReason'
   ];
   return keys.reduce((safe, key) => {
     if (Object.prototype.hasOwnProperty.call(body || {}, key)) safe[key] = body[key];
     return safe;
   }, {});
+}
+
+function writeSheetSnapshotAudit(body, incoming, settings) {
+  const currentHeaders = Array.isArray(body.headers) ? body.headers.map((value) => String(value || '')) : [];
+  const currentRows = Array.isArray(body.rows) ? body.rows.map((row) => Array.isArray(row) ? row.map((value) => String(value ?? '')) : []) : [];
+  const outputDir = process.env.GMAIL_SHEET_AUDIT_OUTPUT_DIR || path.join('tmp', 'gmail-sheet-audit', settings.sendDate);
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const privateSnapshotPath = path.join(outputDir, 'current-sheet-private.json');
+  const privateSnapshotTsvPath = path.join(outputDir, 'current-sheet-private.tsv');
+  const safeDiffPath = path.join(outputDir, 'sheet-vs-incoming-diff-safe.json');
+  const snapshot = {
+    createdAt: new Date().toISOString(),
+    mode: 'read_only_snapshot',
+    targetDate: settings.sendDate,
+    headerCount: currentHeaders.length,
+    rowCount: currentRows.length,
+    headers: currentHeaders,
+    rows: currentRows
+  };
+  fs.writeFileSync(privateSnapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(privateSnapshotTsvPath, toTsv(currentHeaders, currentRows), 'utf8');
+
+  const diff = compareCurrentSheetToIncoming(currentHeaders, currentRows, incoming.headers, incoming.rows);
+  fs.writeFileSync(safeDiffPath, `${JSON.stringify(diff, null, 2)}\n`, 'utf8');
+
+  return {
+    privateSnapshotCreated: true,
+    privateSnapshotPath: path.resolve(privateSnapshotPath),
+    privateSnapshotTsvPath: path.resolve(privateSnapshotTsvPath),
+    safeDiffCreated: true,
+    safeDiffPath: path.resolve(safeDiffPath),
+    identitySetMatchCount: diff.identitySetMatchCount,
+    headerSetsMatch: diff.headerSetsMatch,
+    currentDuplicateCount: diff.currentDuplicateCount,
+    incomingDuplicateCount: diff.incomingDuplicateCount,
+    differingColumnCount: diff.differingColumnCount,
+    normalizationOnlyColumnCount: diff.normalizationOnlyColumnCount,
+    substantiveDifferenceColumnCount: diff.substantiveDifferenceColumnCount,
+    substantiveDifferenceRowCount: diff.substantiveDifferenceRowCount,
+    identityDifferenceCount: diff.identityDifferenceCount,
+    subjectDifferenceCount: diff.subjectDifferenceCount,
+    bodyDifferenceCount: diff.bodyDifferenceCount,
+    protectedStatusRowCount: diff.protectedStatusRowCount,
+    runtimeHistoryDifferenceCount: diff.runtimeHistoryDifferenceCount,
+    currentDataWouldBeLostByReplacement: diff.currentDataWouldBeLostByReplacement,
+    exactReasonAll30WouldUpdate: diff.exactReasonAll30WouldUpdate,
+    safeForRealSheetSync: diff.safeForRealSheetSync
+  };
+}
+
+function compareCurrentSheetToIncoming(currentHeaders, currentRows, incomingHeaders, incomingRows) {
+  const currentIndex = Object.fromEntries(currentHeaders.map((header, index) => [header, index]));
+  const incomingIndex = Object.fromEntries(incomingHeaders.map((header, index) => [header, index]));
+  const allColumns = Array.from(new Set([...currentHeaders, ...incomingHeaders])).filter(Boolean);
+  const currentMap = buildIdentityMap(currentRows, currentIndex);
+  const incomingMap = buildIdentityMap(incomingRows, incomingIndex);
+  const sharedIdentities = Object.keys(incomingMap.rows).filter((identity) => currentMap.rows[identity]);
+  const headerSetsMatch = currentHeaders.length === incomingHeaders.length &&
+    currentHeaders.every((header) => incomingHeaders.includes(header));
+  const columnDiffs = allColumns.map((columnName) => compareColumn(columnName, sharedIdentities, currentMap.rows, incomingMap.rows, currentIndex, incomingIndex));
+  const substantiveColumns = columnDiffs.filter((column) => column.substantiveDifferenceCount > 0);
+  const normalizationColumns = columnDiffs.filter((column) => column.differingRowCount > 0 && column.substantiveDifferenceCount === 0);
+  const identityColumns = ['prospectId', 'dedupeKey', 'email', 'contactEmail'];
+  const subjectDiff = columnDiffs.find((column) => column.columnName === 'subject');
+  const bodyDiff = columnDiffs.find((column) => column.columnName === 'body');
+  const protectedStatusRowCount = countProtectedStatusRows(currentRows, currentIndex);
+  const runtimeHistoryDifferenceCount = countRuntimeHistoryDifferences(sharedIdentities, currentMap.rows, incomingMap.rows, currentIndex, incomingIndex);
+  const identityDifferenceCount = columnDiffs
+    .filter((column) => identityColumns.includes(column.columnName))
+    .reduce((sum, column) => sum + column.substantiveDifferenceCount, 0);
+  const substantiveDifferenceRowCount = countRowsWithSubstantiveDifferences(columnDiffs);
+  const currentOnlyCount = Object.keys(currentMap.rows).filter((identity) => !incomingMap.rows[identity]).length;
+  const currentDataWouldBeLostByReplacement = currentOnlyCount > 0 || runtimeHistoryDifferenceCount > 0;
+  const exactReasonAll30WouldUpdate = summarizeAllRowsWouldUpdate(columnDiffs, sharedIdentities.length);
+  const safeForRealSheetSync = headerSetsMatch &&
+    currentMap.duplicateCount === 0 &&
+    incomingMap.duplicateCount === 0 &&
+    identityDifferenceCount === 0 &&
+    protectedStatusRowCount === 0 &&
+    runtimeHistoryDifferenceCount === 0 &&
+    substantiveDifferenceRowCount === 0 &&
+    currentOnlyCount === 0;
+
+  return {
+    headerSetsMatch,
+    currentHeaderCount: currentHeaders.length,
+    currentRowCount: currentRows.length,
+    incomingHeaderCount: incomingHeaders.length,
+    incomingRowCount: incomingRows.length,
+    identitySetMatchCount: sharedIdentities.length,
+    currentDuplicateCount: currentMap.duplicateCount,
+    incomingDuplicateCount: incomingMap.duplicateCount,
+    currentOnlyIdentityCount: currentOnlyCount,
+    incomingOnlyIdentityCount: Object.keys(incomingMap.rows).filter((identity) => !currentMap.rows[identity]).length,
+    differingColumnCount: columnDiffs.filter((column) => column.differingRowCount > 0).length,
+    normalizationOnlyColumnCount: normalizationColumns.length,
+    substantiveDifferenceColumnCount: substantiveColumns.length,
+    substantiveDifferenceRowCount,
+    identityDifferenceCount,
+    subjectDifferenceCount: subjectDiff ? subjectDiff.substantiveDifferenceCount : 0,
+    bodyDifferenceCount: bodyDiff ? bodyDiff.substantiveDifferenceCount : 0,
+    protectedStatusRowCount,
+    runtimeHistoryDifferenceCount,
+    currentDataWouldBeLostByReplacement,
+    exactReasonAll30WouldUpdate,
+    safeForRealSheetSync,
+    columns: columnDiffs
+  };
+}
+
+function buildIdentityMap(rows, index) {
+  const identities = {};
+  let duplicateCount = 0;
+  rows.forEach((row) => {
+    const identity = rowIdentity(row, index);
+    if (!identity) return;
+    if (identities[identity]) duplicateCount += 1;
+    identities[identity] = row;
+  });
+  return { rows: identities, duplicateCount };
+}
+
+function rowIdentity(row, index) {
+  const prospectId = cell(row, index.prospectId);
+  if (prospectId) return `prospect:${prospectId.toLowerCase()}`;
+  const dedupeKey = cell(row, index.dedupeKey);
+  if (dedupeKey) return `dedupe:${dedupeKey.toLowerCase()}`;
+  const email = String(cell(row, index.email) || cell(row, index.contactEmail)).toLowerCase();
+  return email ? `email:${email}` : '';
+}
+
+function compareColumn(columnName, identities, currentRowsByIdentity, incomingRowsByIdentity, currentIndex, incomingIndex) {
+  const result = {
+    columnName,
+    columnClass: classifyColumn(columnName),
+    differingRowCount: 0,
+    equalRowCount: 0,
+    currentMissingCount: 0,
+    incomingMissingCount: 0,
+    whitespaceOnlyDifferenceCount: 0,
+    lineEndingOnlyDifferenceCount: 0,
+    dateFormatOnlyDifferenceCount: 0,
+    booleanFormatOnlyDifferenceCount: 0,
+    numericStringOnlyDifferenceCount: 0,
+    nullEmptyOnlyDifferenceCount: 0,
+    substantiveDifferenceCount: 0
+  };
+  identities.forEach((identity) => {
+    const currentValue = valueAt(currentRowsByIdentity[identity], currentIndex[columnName]);
+    const incomingValue = valueAt(incomingRowsByIdentity[identity], incomingIndex[columnName]);
+    const kind = differenceKind(currentValue, incomingValue);
+    if (kind === 'equal') {
+      result.equalRowCount += 1;
+      return;
+    }
+    result.differingRowCount += 1;
+    if (currentValue === '') result.currentMissingCount += 1;
+    if (incomingValue === '') result.incomingMissingCount += 1;
+    if (kind === 'whitespace') result.whitespaceOnlyDifferenceCount += 1;
+    else if (kind === 'line_ending') result.lineEndingOnlyDifferenceCount += 1;
+    else if (kind === 'date_format') result.dateFormatOnlyDifferenceCount += 1;
+    else if (kind === 'boolean_format') result.booleanFormatOnlyDifferenceCount += 1;
+    else if (kind === 'numeric_string') result.numericStringOnlyDifferenceCount += 1;
+    else if (kind === 'null_empty') result.nullEmptyOnlyDifferenceCount += 1;
+    else result.substantiveDifferenceCount += 1;
+  });
+  return result;
+}
+
+function differenceKind(left, right) {
+  if (left === right) return 'equal';
+  if (isEmptyLike(left) && isEmptyLike(right)) return 'null_empty';
+  if (left.trim() === right.trim()) return 'whitespace';
+  if (normalizeLineEnding(left) === normalizeLineEnding(right)) return 'line_ending';
+  if (normalizeDateText(left) && normalizeDateText(left) === normalizeDateText(right)) return 'date_format';
+  if (normalizeBoolean(left) !== '' && normalizeBoolean(left) === normalizeBoolean(right)) return 'boolean_format';
+  if (normalizeNumber(left) !== '' && normalizeNumber(left) === normalizeNumber(right)) return 'numeric_string';
+  return 'substantive';
+}
+
+function classifyColumn(columnName) {
+  if (['prospectId', 'dedupeKey'].includes(columnName)) return 'identity';
+  if (['status', 'sendDate', 'sendBatchId', 'sentStatus', 'sentAt', 'sendState', 'sendRunId', 'sendReservedAt', 'sendAttemptCount', 'errorMessage'].includes(columnName)) return 'send_control';
+  if (['subject', 'body'].includes(columnName)) return 'message_content';
+  if (['name', 'businessType', 'area', 'email', 'contactEmail', 'publicSource', 'sourceUrl'].includes(columnName)) return 'recipient_business';
+  if (['sentBy', 'replyStatus', 'unsubscribe', 'doNotContact', 'lastCheckedAt', 'notes'].includes(columnName)) return 'history_runtime';
+  return 'metadata';
+}
+
+function countProtectedStatusRows(rows, index) {
+  const protectedValues = ['sent', 'send_reserved', 'delivery_unknown', 'manual_review_required', 'failed_before_send'];
+  return rows.filter((row) => {
+    const values = [cell(row, index.status), cell(row, index.sendState), cell(row, index.sentStatus)].map((value) => value.toLowerCase());
+    return values.some((value) => protectedValues.includes(value));
+  }).length;
+}
+
+function countRuntimeHistoryDifferences(identities, currentRowsByIdentity, incomingRowsByIdentity, currentIndex, incomingIndex) {
+  const runtimeColumns = ['sentAt', 'sentBy', 'sentStatus', 'errorMessage', 'replyStatus', 'unsubscribe', 'doNotContact', 'lastCheckedAt', 'notes', 'sendState', 'sendRunId', 'sendReservedAt', 'sendAttemptCount'];
+  let count = 0;
+  identities.forEach((identity) => {
+    const hasLoss = runtimeColumns.some((column) => {
+      const currentValue = valueAt(currentRowsByIdentity[identity], currentIndex[column]);
+      const incomingValue = valueAt(incomingRowsByIdentity[identity], incomingIndex[column]);
+      return currentValue !== '' && currentValue !== incomingValue && incomingValue === '';
+    });
+    if (hasLoss) count += 1;
+  });
+  return count;
+}
+
+function countRowsWithSubstantiveDifferences(columnDiffs) {
+  return Math.max(0, ...columnDiffs.map((column) => column.substantiveDifferenceCount));
+}
+
+function summarizeAllRowsWouldUpdate(columnDiffs, rowCount) {
+  if (rowCount <= 0) return '';
+  const allRowColumns = columnDiffs.filter((column) => column.differingRowCount === rowCount);
+  if (allRowColumns.length === 0) return '';
+  if (allRowColumns.length === 1) return `single_column:${allRowColumns[0].columnName}`;
+  const substantive = allRowColumns.filter((column) => column.substantiveDifferenceCount > 0).length;
+  return substantive > 0 ? 'multiple_columns_with_substantive_differences' : 'multiple_columns_with_normalization_differences';
+}
+
+function normalizeLineEnding(value) {
+  return String(value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function normalizeDateText(value) {
+  const text = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const slash = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (slash) return `${slash[1]}-${slash[2].padStart(2, '0')}-${slash[3].padStart(2, '0')}`;
+  return '';
+}
+
+function normalizeBoolean(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (['true', 'yes', '1', 'y'].includes(text)) return 'true';
+  if (['false', 'no', '0', 'n'].includes(text)) return 'false';
+  return '';
+}
+
+function normalizeNumber(value) {
+  const text = String(value || '').trim();
+  if (!/^-?\d+(\.\d+)?$/.test(text)) return '';
+  return String(Number(text));
+}
+
+function isEmptyLike(value) {
+  return ['', 'null', 'undefined'].includes(String(value || '').trim().toLowerCase());
+}
+
+function valueAt(row, index) {
+  if (!Number.isInteger(index) || index < 0) return '';
+  return String(row[index] ?? '');
+}
+
+function toTsv(headers, rows) {
+  return [headers.join('\t'), ...rows.map((row) => headers.map((_, index) => String(row[index] ?? '').replace(/\r?\n/g, '\\n').replace(/\t/g, ' ')).join('\t'))].join('\n') + '\n';
 }
 
 function parseTsv(filePath) {

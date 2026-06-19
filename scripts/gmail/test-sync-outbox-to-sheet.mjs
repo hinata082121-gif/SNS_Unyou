@@ -70,15 +70,37 @@ try {
   const failedSummary = JSON.parse(connectedFailure.stdout);
   assert.equal(failedSummary.blockedReason, 'connected_dry_run_failed');
   assert.equal(failedSummary.sheetSynced, false);
+
+  const auditDir = path.join(tmpDir, 'audit');
+  const snapshotRun = runSync(['--date', TARGET_DATE, '--tsv', tsvPath, '--read-only-snapshot'], {
+    GMAIL_SHEET_SYNC_ENABLED: 'true',
+    GMAIL_SHEET_SYNC_DRY_RUN: 'true',
+    GMAIL_SHEET_WEBHOOK_URL: 'https://example.invalid/webhook',
+    GMAIL_SHEET_SYNC_TOKEN: 'token',
+    GMAIL_SHEET_AUDIT_OUTPUT_DIR: auditDir,
+    NODE_OPTIONS: `--import=${mockSnapshotFetchModule()}`
+  });
+  assert.equal(snapshotRun.status, 0);
+  const snapshotSummary = JSON.parse(snapshotRun.stdout);
+  assert.equal(snapshotSummary.syncMode, 'read_only_snapshot');
+  assert.equal(snapshotSummary.privateSnapshotCreated, true);
+  assert.equal(snapshotSummary.safeDiffCreated, true);
+  assert.equal(fs.existsSync(path.join(auditDir, 'current-sheet-private.json')), true);
+  assert.equal(fs.existsSync(path.join(auditDir, 'current-sheet-private.tsv')), true);
+  assert.equal(fs.existsSync(path.join(auditDir, 'sheet-vs-incoming-diff-safe.json')), true);
+  assert.equal(snapshotSummary.identitySetMatchCount, 30);
+  assert.equal(snapshotSummary.subjectDifferenceCount, 30);
+  assert.equal(snapshotSummary.safeForRealSheetSync, false);
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
 console.log(JSON.stringify({
-  syncScriptTestScenarioCount: 4,
+  syncScriptTestScenarioCount: 5,
   passed: true,
   localDryRunWebhookCallCount: 0,
   connectedDryRunWebhookCallCount: 1,
+  readOnlySnapshotWebhookCallCount: 1,
   connectedDryRunPayloadModeValid: true,
   connectedDryRunPayloadDryRunValid: true,
   connectedDryRunFallsBackToWrite: false,
@@ -187,5 +209,85 @@ globalThis.fetch = async () => ({
   ok: false,
   text: async () => JSON.stringify({ ok: false, blockedReason: 'connected_dry_run_failed', sheetSynced: false })
 });`;
+  return `data:text/javascript,${encodeURIComponent(source)}`;
+}
+
+function mockSnapshotFetchModule() {
+  const source = `
+const headers = ${JSON.stringify(OUTBOX_HEADERS)};
+const rows = Array.from({ length: 30 }, (_, index) => {
+  const value = index + 1;
+  const row = {
+    prospectId: 'prospect-' + value,
+    name: 'Business ' + value,
+    businessType: 'service',
+    area: 'Tokyo',
+    email: 'recipient' + value + '@example.invalid',
+    contactEmail: 'recipient' + value + '@example.invalid',
+    publicSource: 'public',
+    sourceUrl: 'https://source-' + value + '.example.invalid',
+    issueHypothesis: 'issue',
+    salesAngle: 'angle',
+    subject: 'Previous subject ' + value,
+    body: 'Body ' + value + ' ご返信不要',
+    status: 'ready',
+    sendDate: '${TARGET_DATE}',
+    nextActionDate: '${TARGET_DATE}',
+    dedupeKey: 'dedupe-' + value,
+    sendBatchId: '${SEND_BATCH_ID}',
+    sentAt: '',
+    sentBy: '',
+    sentStatus: '',
+    errorMessage: '',
+    replyStatus: '',
+    unsubscribe: '',
+    doNotContact: '',
+    lastCheckedAt: '',
+    notes: ''
+  };
+  return headers.map((header) => row[header] || '');
+});
+globalThis.fetch = async (_url, options) => {
+  const payload = JSON.parse(String(options && options.body || '{}'));
+  const ok = payload.mode === 'read_only_snapshot' &&
+    payload.operation === 'read_only_snapshot' &&
+    payload.action === 'read_only_snapshot' &&
+    payload.dryRun === true &&
+    !payload.maintenanceLease;
+  return {
+    ok,
+    text: async () => JSON.stringify(ok ? {
+      ok: true,
+      event: 'gmail_sheet_sync_read_only_snapshot',
+      mode: 'read_only_snapshot',
+      status: 'pass',
+      connectedToGoogleSheet: true,
+      targetWorksheetResolved: true,
+      targetWorksheetExists: true,
+      currentHeaderCount: headers.length,
+      currentRowCount: 30,
+      incomingHeaderCount: headers.length,
+      incomingCandidateCount: 30,
+      schemaValid: true,
+      requiredHeadersPresent: true,
+      existingDuplicateCount: 0,
+      incomingDuplicateCount: 0,
+      matchingIdentityCount: 30,
+      wouldInsertCount: 0,
+      wouldUpdateCount: 30,
+      wouldSkipCount: 0,
+      wouldDeleteCount: 0,
+      wouldClearWorksheet: false,
+      wouldWriteCount: 30,
+      existingDataOverwriteRisk: false,
+      unrelatedExistingRowCount: 0,
+      maintenanceLeaseCreated: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      headers,
+      rows
+    } : { ok: false, blockedReason: 'mock_payload_invalid' })
+  };
+};`;
   return `data:text/javascript,${encodeURIComponent(source)}`;
 }

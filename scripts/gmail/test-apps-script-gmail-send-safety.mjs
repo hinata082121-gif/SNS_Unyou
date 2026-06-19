@@ -51,6 +51,8 @@ assertIncludesAll([
   'diagnoseSuppressionLedgerProperties_',
   'GMAIL_SUPPRESSION_LEDGER_REQUIRED_PROPERTIES',
   'handleConnectedSheetSyncDryRun_',
+  'handleSheetSyncReadOnlySnapshot_',
+  'sheetSyncSnapshotSafeLog_',
   'compareSheetSyncRows_',
   'resolveSheetSyncOperationMode_'
 ]);
@@ -92,10 +94,15 @@ assert.equal(/setProperty|setProperties|deleteProperty|deleteAllProperties|MailA
 assert.equal(/setProperty|setProperties|deleteProperty|deleteAllProperties|MailApp\.sendEmail|GmailApp\.createDraft|SpreadsheetApp\.flush|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(diagnosticValidatorBody), false);
 assert.equal(/getProperty/.test(diagnosticValidatorBody), true);
 const connectedDryRunBody = functionBody('handleConnectedSheetSyncDryRun_');
+const readOnlySnapshotBody = functionBody('handleSheetSyncReadOnlySnapshot_');
 const connectedCompareBody = functionBody('compareSheetSyncRows_');
 assert.equal(/clear|clearContents|clearFormat|setValue|setValues|appendRow|insertRow|insertRows|deleteRow|deleteRows|sort|moveRows|protect|insertSheet|deleteSheet|SpreadsheetApp\.flush|setProperty|setProperties|deleteProperty|deleteAllProperties|acquireSheetMaintenanceLease_|releaseSheetMaintenanceLease_|LockService|MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger|writeGmailOutboxRowsToSheet_/.test(connectedDryRunBody), false);
+assert.equal(/clear|clearContents|clearFormat|setValue|setValues|appendRow|insertRow|insertRows|deleteRow|deleteRows|sort|moveRows|protect|insertSheet|deleteSheet|SpreadsheetApp\.flush|setProperty|setProperties|deleteProperty|deleteAllProperties|acquireSheetMaintenanceLease_|releaseSheetMaintenanceLease_|LockService|MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger|writeGmailOutboxRowsToSheet_/.test(readOnlySnapshotBody), false);
 assert.equal(/clear|clearContents|setValue|setValues|appendRow|insertRow|insertRows|deleteRow|deleteRows|SpreadsheetApp\.flush|setProperty|setProperties|deleteProperty|deleteAllProperties|acquireSheetMaintenanceLease_|releaseSheetMaintenanceLease_|LockService|MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger|writeGmailOutboxRowsToSheet_/.test(connectedCompareBody), false);
 assertBodyOrder(functionBody('handleGmailOutboxSheetSync_'), 'handleConnectedSheetSyncDryRun_', 'acquireSheetMaintenanceLease_');
+assertBodyOrder(functionBody('handleGmailOutboxSheetSync_'), 'handleSheetSyncReadOnlySnapshot_', 'acquireSheetMaintenanceLease_');
+assert.equal(/delete safe\.headers/.test(functionBody('sheetSyncSnapshotSafeLog_')), true);
+assert.equal(/delete safe\.rows/.test(functionBody('sheetSyncSnapshotSafeLog_')), true);
 
 const logFunction = functionBody('appendSafeLog_');
 assert.equal(/delete safe\.candidateDigest/.test(logFunction), true);
@@ -103,7 +110,7 @@ assert.equal(/delete safe\.approvedCandidateDigest/.test(logFunction), true);
 assert.equal(/delete safe\.manifest/.test(logFunction), true);
 
 console.log(JSON.stringify({
-  syntheticTestCount: 44,
+  syntheticTestCount: 49,
   passed: true,
   mailSendCallSiteCount: count(/MailApp\.sendEmail\s*\(/g),
   gmailSendExecuted: false,
