@@ -8,6 +8,7 @@ import {
   isValidEmail,
   OUTBOX_HEADERS,
   parseArgs,
+  readJson,
   resolveDateArg,
   safeSummary
 } from './pool-utils.mjs';
@@ -30,6 +31,7 @@ if (args.help || args.h) {
 const sendDate = resolveDateArg(args.date, 'tomorrow');
 const sendBatchId = args['send-batch-id'] || buildBatchId(sendDate);
 const tsvPath = args.tsv || path.join('data', 'gmail', 'outbox', `${sendDate}-gmail-sales-sheets-ready.tsv`);
+const statusPath = args['status-file'] || path.join('data', 'agent-status', 'tasks', `gmail-sales-safe-preparation-${sendDate}.json`);
 const syncEnabled = process.env.GMAIL_SHEET_SYNC_ENABLED === 'true';
 const dryRun = process.env.GMAIL_SHEET_SYNC_DRY_RUN !== 'false';
 const syncMode = resolveSyncMode(args, { syncEnabled, dryRun });
@@ -57,6 +59,8 @@ const summary = {
   syncMode,
   webhookConfigured,
   tokenConfigured,
+  statusFileExists: fs.existsSync(statusPath),
+  statusApprovedForWrite: false,
   sheetSynced: false,
   manualPasteRequired: true,
   validationErrorCount: 0,
@@ -146,6 +150,17 @@ if (syncMode === 'write' && (!syncEnabled || dryRun)) {
   summary.blockedReason = !syncEnabled ? 'sheet_sync_disabled' : 'sheet_sync_write_requires_dry_run_false';
   console.log(safeSummary(summary));
   process.exit(1);
+}
+
+if (syncMode === 'write') {
+  const approval = readTargetApprovalStatus(statusPath);
+  summary.statusFileExists = approval.exists;
+  summary.statusApprovedForWrite = approval.approved;
+  if (!approval.approved) {
+    summary.blockedReason = approval.exists ? 'target_status_not_approved' : 'target_status_missing';
+    console.log(safeSummary(summary));
+    process.exit(1);
+  }
 }
 
 if (!webhookConfigured || !tokenConfigured) {
@@ -246,6 +261,19 @@ function safeSheetSyncResponse(body) {
     if (Object.prototype.hasOwnProperty.call(body || {}, key)) safe[key] = body[key];
     return safe;
   }, {});
+}
+
+function readTargetApprovalStatus(filePath) {
+  const status = readJson(filePath, null);
+  if (!status) return { exists: false, approved: false };
+  const approvalStatus = String(status.approvalStatus || status.metrics?.approvalStatus || '').trim();
+  const humanReviewCompleted = status.humanReviewCompleted === true || status.metrics?.humanReviewCompleted === true;
+  return {
+    exists: true,
+    approved: status.status === 'approved' &&
+      approvalStatus === 'approved' &&
+      humanReviewCompleted === true
+  };
 }
 
 function writeSheetSnapshotAudit(body, incoming, settings) {

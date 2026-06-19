@@ -19,6 +19,8 @@
     "gmail:pool:merge:test": "node scripts/gmail/test-merge-gmail-candidate-pool.mjs",
     "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs",
     "gmail:outbox:prepare-tomorrow": "node scripts/gmail/prepare-tomorrow-outbox.mjs",
+    "gmail:outbox:rollover": "node scripts/gmail/rollover-approved-outbox.mjs",
+    "gmail:outbox:rollover:test": "node scripts/gmail/test-rollover-approved-outbox.mjs",
     "gmail:outbox:sync-to-sheet": "node scripts/gmail/sync-outbox-to-sheet.mjs",
     "gmail:outbox:sync-to-sheet:test": "node scripts/gmail/test-sync-outbox-to-sheet.mjs",
     "gmail:sheet:verify-ready": "node scripts/gmail/verify-sheet-ready-rows.mjs",

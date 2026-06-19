@@ -9,6 +9,8 @@ import {
   hashValue,
   hasOptOutText,
   isValidEmail,
+  normalizeEmailBody,
+  normalizeEmailSubject,
   parseArgs,
   readJson,
   sourceDomain
@@ -181,6 +183,7 @@ function validateApprovalInputs(loaded) {
   const outboxRows = asCandidates(loaded.outbox);
   const preview = readPrivatePreview(loaded.previewPath);
   const outboxHash = candidateContentHash(outboxRows);
+  const identityDigest = outboxIdentityDigest(outboxRows, targetDate, String(loaded.outbox.sendBatchId || `gmail-sales-${targetDate}`));
   const safe = {
     previousStatus: String(loaded.status.status || 'unknown'),
     outboxCandidateCount: outboxRows.length,
@@ -204,7 +207,7 @@ function validateApprovalInputs(loaded) {
       Number(loaded.outbox.humanReviewedCount || 0) === outboxRows.length &&
       Number(loaded.outbox.approvalVersion || 0) === approvalVersion;
     if (sameApproval) {
-      return { safe, blockedReasons: [], alreadyApproved: true, outboxHash };
+      return { safe, blockedReasons: [], alreadyApproved: true, outboxHash, identityDigest };
     }
     blockedReasons.push('approval_conflict');
   }
@@ -224,11 +227,14 @@ function validateApprovalInputs(loaded) {
     safe,
     blockedReasons: unique(blockedReasons),
     alreadyApproved: false,
-    outboxHash
+    outboxHash,
+    identityDigest
   };
 }
 
 function buildApprovedDocuments(loaded, outboxHash, approvedAt) {
+  const rows = asCandidates(loaded.outbox);
+  const identityDigest = outboxIdentityDigest(rows, targetDate, String(loaded.outbox.sendBatchId || `gmail-sales-${targetDate}`));
   const outbox = {
     ...loaded.outbox,
     approvalStatus: 'approved',
@@ -238,7 +244,8 @@ function buildApprovedDocuments(loaded, outboxHash, approvedAt) {
     approvedAt,
     approvedBy: reviewer,
     approvalVersion,
-    approvedOutboxHash: outboxHash
+    approvedOutboxHash: outboxHash,
+    outboxIdentityDigest: identityDigest
   };
   const status = {
     ...loaded.status,
@@ -250,6 +257,7 @@ function buildApprovedDocuments(loaded, outboxHash, approvedAt) {
     approvedAt,
     approvedBy: reviewer,
     approvedOutboxHash: outboxHash,
+    outboxIdentityDigest: identityDigest,
     metrics: {
       ...(loaded.status.metrics || {}),
       approvalStatus: 'approved',
@@ -258,6 +266,7 @@ function buildApprovedDocuments(loaded, outboxHash, approvedAt) {
       approvedAt,
       approvedBy: reviewer,
       approvedOutboxHash: outboxHash,
+      outboxIdentityDigest: identityDigest,
       gmailSendExecutedByThisRun: false,
       googleSheetsUpdatedByThisRun: false,
       appsScriptTriggerChangedByThisRun: false,
@@ -407,6 +416,26 @@ function candidateContentHash(rows) {
     dedupeKey: row.dedupeKey || ''
   }));
   return crypto.createHash('sha256').update(JSON.stringify(projected)).digest('hex');
+}
+
+function outboxIdentityDigest(rows, dateText, batchId) {
+  const candidateDigests = rows.map((row) => {
+    const candidateId = String(row.prospectId || dedupeKey(row) || '').trim().toLowerCase();
+    return crypto.createHash('sha256').update([
+      candidateEmail(row),
+      normalizeEmailSubject(row.subject),
+      normalizeEmailBody(row.body),
+      candidateId,
+      dateText,
+      String(batchId || '').trim()
+    ].join('\n')).digest('hex');
+  }).sort();
+  return crypto.createHash('sha256').update(JSON.stringify({
+    targetDate: dateText,
+    sendBatchId: batchId,
+    candidateCount: rows.length,
+    candidateDigests
+  })).digest('hex');
 }
 
 function safeIdentityKey(email, sourceRow) {

@@ -148,6 +148,13 @@ function validateInputs(loaded) {
   const rows = asCandidates(loaded.outbox);
   const preview = readPrivatePreview(loaded.previewPath);
   const outboxHash = candidateContentHash(rows);
+  const computedOutboxIdentityDigest = outboxIdentityDigest(rows, targetDate, String(loaded.outbox.sendBatchId || `gmail-sales-${targetDate}`));
+  const existingOutboxIdentityDigest = String(
+    loaded.outbox.outboxIdentityDigest ||
+    loaded.status.outboxIdentityDigest ||
+    loaded.status.metrics?.outboxIdentityDigest ||
+    ''
+  );
   const approvedOutboxHash = String(
     loaded.outbox.approvedOutboxHash ||
     loaded.status.approvedOutboxHash ||
@@ -183,6 +190,7 @@ function validateInputs(loaded) {
     humanReviewCompleted,
     approvedOutboxHashPresent: Boolean(approvedOutboxHash),
     outboxHashVerified: Boolean(approvedOutboxHash && approvedOutboxHash === outboxHash),
+    outboxIdentityDigestVerified: !existingOutboxIdentityDigest || existingOutboxIdentityDigest === computedOutboxIdentityDigest,
     suppressionLedgerLoaded: suppression.loaded,
     gmailSentHistoryLoaded: suppression.loaded,
     sheetHistoryLoaded: sheetHistory.loaded,
@@ -212,6 +220,7 @@ function validateInputs(loaded) {
   if (preview.rows.length !== rows.length) blockedReasons.push('preview_count_mismatch');
   if (!safe.approvedOutboxHashPresent) blockedReasons.push('approved_outbox_hash_missing');
   if (!safe.outboxHashVerified) blockedReasons.push('approved_outbox_hash_mismatch');
+  if (!safe.outboxIdentityDigestVerified) blockedReasons.push('outbox_identity_digest_mismatch');
   if (!suppression.loaded) blockedReasons.push('suppression_ledger_missing');
   if (!sheetHistory.loaded) blockedReasons.push('sheet_history_missing');
   if (!localHistory.loaded) blockedReasons.push('local_history_missing');
@@ -238,12 +247,13 @@ function validateInputs(loaded) {
       sendBatchId,
       approvedOutboxHash,
       outboxHash,
+      outboxIdentityDigest: existingOutboxIdentityDigest || computedOutboxIdentityDigest,
       digests
     })
   };
 }
 
-function buildManifest({ loaded, rows, sendBatchId, approvedOutboxHash, outboxHash, digests }) {
+function buildManifest({ loaded, rows, sendBatchId, approvedOutboxHash, outboxHash, outboxIdentityDigest, digests }) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + expiresInMinutes * 60 * 1000);
   return {
@@ -262,6 +272,7 @@ function buildManifest({ loaded, rows, sendBatchId, approvedOutboxHash, outboxHa
     sourceOutboxIdentity: {
       source: 'local_approved_outbox',
       candidateContentHash: outboxHash,
+      outboxIdentityDigest,
       approvalVersion: Number(loaded.outbox.approvalVersion || 0),
       statusDocument: 'approved'
     }
@@ -389,6 +400,16 @@ function candidateContentHash(rows) {
     dedupeKey: row.dedupeKey || ''
   }));
   return crypto.createHash('sha256').update(JSON.stringify(projected)).digest('hex');
+}
+
+function outboxIdentityDigest(rows, dateText, batchId) {
+  const candidateDigests = rows.map((row) => candidateDigest(row, dateText, batchId)).sort();
+  return crypto.createHash('sha256').update(JSON.stringify({
+    targetDate: dateText,
+    sendBatchId: batchId,
+    candidateCount: rows.length,
+    candidateDigests
+  })).digest('hex');
 }
 
 function businessFingerprint(candidate) {

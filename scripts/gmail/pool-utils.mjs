@@ -138,9 +138,11 @@ export function jstDate(daysFromToday = 0) {
 }
 
 export function addDaysToDate(dateText, days) {
-  const date = new Date(`${dateText}T00:00:00+09:00`);
+  const match = String(dateText || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days));
   if (Number.isNaN(date.getTime())) return '';
-  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return date.toISOString().slice(0, 10);
 }
 
 export function resolveDateArg(value, fallbackMode = 'today') {

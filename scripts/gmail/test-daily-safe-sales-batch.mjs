@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const ROOT = process.cwd();
 const TMP = path.join(ROOT, 'tmp', 'gmail-safe-batch-test');
-const DATE = '2026-06-19';
+const DATE = '2099-06-19';
 const at = String.fromCharCode(64);
 
 fs.rmSync(TMP, { recursive: true, force: true });
@@ -167,7 +167,7 @@ assert.equal(invalidTimestampStatus.metrics.invalidCandidateTimestampCount, 1);
 assert.equal(invalidTimestampStatus.metrics.staleSourceCount, 1);
 
 const futureTimestampStatus = runScenario('future-timestamp', {
-  candidates: buildCandidates(1, { lastCheckedAt: '2026-06-20T00:00:00+09:00' })
+  candidates: buildCandidates(1, { lastCheckedAt: '2099-06-20T00:00:00+09:00' })
 });
 assert.equal(futureTimestampStatus.metrics.futureCandidateTimestampCount, 1);
 assert.equal(futureTimestampStatus.metrics.staleSourceCount, 1);
