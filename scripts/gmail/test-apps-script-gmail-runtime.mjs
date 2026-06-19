@@ -33,6 +33,34 @@ const HEADERS = [
   'lastSendErrorCode',
   'lastCheckedAt'
 ];
+const OUTBOX_HEADERS = [
+  'prospectId',
+  'name',
+  'businessType',
+  'area',
+  'email',
+  'contactEmail',
+  'publicSource',
+  'sourceUrl',
+  'issueHypothesis',
+  'salesAngle',
+  'subject',
+  'body',
+  'status',
+  'sendDate',
+  'nextActionDate',
+  'dedupeKey',
+  'sendBatchId',
+  'sentAt',
+  'sentBy',
+  'sentStatus',
+  'errorMessage',
+  'replyStatus',
+  'unsubscribe',
+  'doNotContact',
+  'lastCheckedAt',
+  'notes'
+];
 const MAINTENANCE_HEADERS = [
   'lockName',
   'holderType',
@@ -284,15 +312,124 @@ const scenarios = [
     assert.equal(result.status, 'blocked');
     assert.equal(result.blockedReason, 'count_mismatch');
     assertDiagnosticReadOnly(env);
+  }],
+  ['connected sheet dry-run reads existing sheet and writes nothing', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.connectedToGoogleSheet, true);
+    assert.equal(result.targetWorksheetExists, true);
+    assert.equal(result.incomingHeaderCount, 26);
+    assert.equal(result.incomingCandidateCount, 30);
+    assert.equal(result.wouldInsertCount, 30);
+    assert.equal(result.wouldWriteCount, 30);
+    assert.equal(env.sheetReadCount > 0, true);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run handles empty sheet as all inserts', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    env.workbook.sheets.ready.rows = [];
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.currentHeaderCount, 0);
+    assert.equal(result.currentRowCount, 0);
+    assert.equal(result.wouldInsertCount, 30);
+    assert.equal(result.existingDataOverwriteRisk, false);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run skips identical existing rows', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    env.workbook.sheets.ready.rows = [OUTBOX_HEADERS, ...env.outboxRows.map(outboxRowToCells)];
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.matchingIdentityCount, 30);
+    assert.equal(result.wouldSkipCount, 30);
+    assert.equal(result.wouldInsertCount, 0);
+    assert.equal(result.wouldUpdateCount, 0);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run classifies updates inserts and unrelated rows', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    const existing = [
+      ...env.outboxRows.slice(0, 10),
+      ...env.outboxRows.slice(10, 15).map((row) => Object.assign({}, row, { subject: 'previous safe subject' })),
+      buildOutboxRow(31),
+      buildOutboxRow(32)
+    ];
+    env.workbook.sheets.ready.rows = [OUTBOX_HEADERS, ...existing.map(outboxRowToCells)];
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.wouldSkipCount, 10);
+    assert.equal(result.wouldUpdateCount, 5);
+    assert.equal(result.wouldInsertCount, 15);
+    assert.equal(result.unrelatedExistingRowCount, 2);
+    assert.equal(result.wouldDeleteCount, 2);
+    assert.equal(result.existingDataOverwriteRisk, true);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run blocks incoming duplicate identity', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    env.sheetSyncPayload.rows[1][0] = env.sheetSyncPayload.rows[0][0];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason.includes('duplicate'), true);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run blocks existing duplicate identity', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    const duplicate = Object.assign({}, env.outboxRows[0], { subject: 'previous safe subject' });
+    env.workbook.sheets.ready.rows = [OUTBOX_HEADERS, outboxRowToCells(env.outboxRows[0]), outboxRowToCells(duplicate)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'existing_duplicate_identity');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run blocks unreadable existing headers', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    env.workbook.sheets.ready.rows = [['notIdentity'], ['value']];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'existing_identity_header_missing');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run blocks missing target sheet without creating it', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    delete env.workbook.sheets.ready;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'target_sheet_missing');
+    assert.equal(env.insertSheetCount, 0);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run rejects bad token before sheet read', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    env.sheetSyncPayload.token = 'wrong-token';
+  }, (env, result) => {
+    assert.equal(result.blockedReason, 'token_mismatch');
+    assert.equal(env.sheetReadCount, 0);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['connected sheet dry-run rejects unknown mode before write handler', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    env.sheetSyncPayload.mode = 'unknown';
+    env.sheetSyncPayload.operation = 'unknown';
+    env.sheetSyncPayload.action = 'unknown';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'unknown_sheet_sync_mode');
+    assertSheetSyncReadOnly(env);
   }]
 ];
 
 function createEnvironment() {
   const rows = Array.from({ length: 30 }, (_, index) => buildRow(index + 1));
+  const outboxRows = Array.from({ length: 30 }, (_, index) => buildOutboxRow(index + 1));
   const env = {
     props: {
       SHEET_ID: 'mock-sheet',
       SHEET_NAME: 'sales',
+      GMAIL_SHEET_SYNC_TOKEN: 'token',
+      GMAIL_SHEET_READY_TAB_NAME: 'ready',
       DRY_RUN: 'false',
       LIVE_SEND_ENABLED: 'true',
       AUTO_SEND_ENABLED: 'true',
@@ -310,15 +447,20 @@ function createEnvironment() {
       AUTO_RESET_LIVE_SEND_AFTER_RUN: 'false'
     },
     rows,
+    outboxRows,
+    sheetSyncPayload: buildSheetSyncPayload(outboxRows),
     workbook: {
       sheets: {
         sales: new MockSheet('sales', [HEADERS, ...rows.map(rowToCells)]),
+        ready: new MockSheet('ready', [OUTBOX_HEADERS]),
         _gmail_maintenance: new MockSheet('_gmail_maintenance', [MAINTENANCE_HEADERS])
       },
       getSheetByName(name) {
         return this.sheets[name] || null;
       },
       insertSheet(name) {
+        env.insertSheetCount += 1;
+        env.sheetWriteCount += 1;
         this.sheets[name] = new MockSheet(name, []);
         this.sheets[name].env = env;
         return this.sheets[name];
@@ -340,7 +482,15 @@ function createEnvironment() {
     mailSendThrows: false,
     lockAvailable: true,
     flushCount: 0,
+    sheetReadCount: 0,
     sheetWriteCount: 0,
+    setValueCount: 0,
+    setValuesCount: 0,
+    clearCount: 0,
+    appendRowCount: 0,
+    insertRowsCount: 0,
+    deleteRowsCount: 0,
+    insertSheetCount: 0,
     propertyWriteCount: 0,
     setPropertyCount: 0,
     setPropertiesCount: 0,
@@ -479,6 +629,12 @@ function runEntry(env) {
   if (env.entry === 'scheduled') return env.context.executeDailyGmailSalesSend_({ source: 'scheduled', requireAutoSend: true, dryRun: false });
   if (env.entry === 'dryRun') return env.context.runGmailSalesPreSendDryRun();
   if (env.entry === 'suppressionDiagnostic') return env.context.runGmailSuppressionLedgerReadOnlyDiagnostic();
+  if (env.entry === 'sheetSyncConnectedDryRun') {
+    const output = env.context.handleGmailOutboxSheetSync_({
+      postData: { contents: JSON.stringify(env.sheetSyncPayload) }
+    });
+    return JSON.parse(output.text);
+  }
   return env.context.executeDailyGmailSalesSend_({ source: 'manual', requireAutoSend: false, dryRun: false });
 }
 
@@ -528,6 +684,60 @@ function rowToCells(row) {
   return HEADERS.map((header) => row[header] ?? '');
 }
 
+function buildOutboxRow(index) {
+  return {
+    prospectId: `prospect-${index}`,
+    name: `Business ${index}`,
+    businessType: 'service',
+    area: 'Tokyo',
+    email: `recipient${index}@example.invalid`,
+    contactEmail: `recipient${index}@example.invalid`,
+    publicSource: 'public',
+    sourceUrl: `https://safe-source-${index}.invalid/page`,
+    issueHypothesis: 'issue',
+    salesAngle: 'angle',
+    subject: `Subject ${index}`,
+    body: `Body ${index} ご返信不要`,
+    status: 'ready',
+    sendDate: TARGET_DATE,
+    nextActionDate: TARGET_DATE,
+    dedupeKey: `dedupe-${index}`,
+    sendBatchId: BATCH_ID,
+    sentAt: '',
+    sentBy: '',
+    sentStatus: '',
+    errorMessage: '',
+    replyStatus: '',
+    unsubscribe: '',
+    doNotContact: '',
+    lastCheckedAt: '',
+    notes: ''
+  };
+}
+
+function outboxRowToCells(row) {
+  return OUTBOX_HEADERS.map((header) => row[header] ?? '');
+}
+
+function buildSheetSyncPayload(outboxRows) {
+  return {
+    token: 'token',
+    action: 'connected_dry_run',
+    operation: 'connected_dry_run',
+    mode: 'connected_dry_run',
+    dryRun: true,
+    targetDate: TARGET_DATE,
+    sendDate: TARGET_DATE,
+    sendBatchId: BATCH_ID,
+    headers: OUTBOX_HEADERS.slice(),
+    rows: outboxRows.map(outboxRowToCells),
+    candidateCount: outboxRows.length,
+    schemaVersion: 1,
+    requestId: 'runtime-test-connected-dry-run',
+    readyTabName: 'ready'
+  };
+}
+
 function assertBlockedNoMail(env, result, reason) {
   assert.equal(result.status, 'blocked');
   assert.equal((result.blockedReasons || []).includes(reason), true);
@@ -561,6 +771,25 @@ function assertDiagnosticReadOnly(env) {
   assert.equal(env.mailSendCount, 0);
   assert.equal(env.draftCreateCount, 0);
   assert.equal(env.sheetWriteCount, 0);
+  assert.equal(env.flushCount, 0);
+  assert.equal(env.triggerWriteCount, 0);
+  assert.equal(env.leaseWriteCount, 0);
+}
+
+function assertSheetSyncReadOnly(env) {
+  assert.equal(env.setPropertyCount, 0);
+  assert.equal(env.setPropertiesCount, 0);
+  assert.equal(env.deletePropertyCount, 0);
+  assert.equal(env.propertyWriteCount, 0);
+  assert.equal(env.mailSendCount, 0);
+  assert.equal(env.draftCreateCount, 0);
+  assert.equal(env.sheetWriteCount, 0);
+  assert.equal(env.setValueCount, 0);
+  assert.equal(env.setValuesCount, 0);
+  assert.equal(env.clearCount, 0);
+  assert.equal(env.appendRowCount, 0);
+  assert.equal(env.insertRowsCount, 0);
+  assert.equal(env.deleteRowsCount, 0);
   assert.equal(env.flushCount, 0);
   assert.equal(env.triggerWriteCount, 0);
   assert.equal(env.leaseWriteCount, 0);
@@ -650,7 +879,41 @@ class MockSheet {
   }
 
   clearContents() {
+    if (this.env) {
+      this.env.clearCount += 1;
+      this.env.sheetWriteCount += 1;
+    }
     this.rows = [];
+  }
+
+  clear() {
+    if (this.env) {
+      this.env.clearCount += 1;
+      this.env.sheetWriteCount += 1;
+    }
+    this.rows = [];
+  }
+
+  appendRow(row) {
+    if (this.env) {
+      this.env.appendRowCount += 1;
+      this.env.sheetWriteCount += 1;
+    }
+    this.rows.push((row || []).slice());
+  }
+
+  insertRows() {
+    if (this.env) {
+      this.env.insertRowsCount += 1;
+      this.env.sheetWriteCount += 1;
+    }
+  }
+
+  deleteRows() {
+    if (this.env) {
+      this.env.deleteRowsCount += 1;
+      this.env.sheetWriteCount += 1;
+    }
   }
 }
 
@@ -664,6 +927,7 @@ class MockRange {
   }
 
   getValues() {
+    if (this.sheet.env) this.sheet.env.sheetReadCount += 1;
     return Array.from({ length: this.numRows }, (_, r) => Array.from({ length: this.numColumns }, (_, c) => {
       const row = this.sheet.rows[this.row + r - 1] || [];
       return row[this.column + c - 1] ?? '';
@@ -671,6 +935,7 @@ class MockRange {
   }
 
   setValues(values) {
+    if (this.sheet.env) this.sheet.env.setValuesCount += 1;
     values.forEach((rowValues, r) => {
       const targetRowIndex = this.row + r - 1;
       if (!this.sheet.rows[targetRowIndex]) this.sheet.rows[targetRowIndex] = [];
@@ -682,6 +947,7 @@ class MockRange {
   }
 
   setValue(value) {
+    if (this.sheet.env) this.sheet.env.setValueCount += 1;
     const targetRowIndex = this.row - 1;
     const targetColumnIndex = this.column - 1;
     if (!this.sheet.rows[targetRowIndex]) this.sheet.rows[targetRowIndex] = [];

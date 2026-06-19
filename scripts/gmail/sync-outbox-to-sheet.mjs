@@ -32,6 +32,7 @@ const sendBatchId = args['send-batch-id'] || buildBatchId(sendDate);
 const tsvPath = args.tsv || path.join('data', 'gmail', 'outbox', `${sendDate}-gmail-sales-sheets-ready.tsv`);
 const syncEnabled = process.env.GMAIL_SHEET_SYNC_ENABLED === 'true';
 const dryRun = process.env.GMAIL_SHEET_SYNC_DRY_RUN !== 'false';
+const syncMode = resolveSyncMode(args, { syncEnabled, dryRun });
 const webhookUrl = process.env.GMAIL_SHEET_WEBHOOK_URL || '';
 const syncToken = process.env.GMAIL_SHEET_SYNC_TOKEN || '';
 const targetName = process.env.GMAIL_SHEET_TARGET_NAME || '';
@@ -53,6 +54,7 @@ const summary = {
   rowCount: 0,
   syncEnabled,
   dryRun,
+  syncMode,
   webhookConfigured,
   tokenConfigured,
   sheetSynced: false,
@@ -66,6 +68,29 @@ const summary = {
   statusMismatchCount: 0,
   subjectBodyPresent: false,
   optOutPresent: false,
+  connectedToGoogleSheet: false,
+  targetWorksheetResolved: false,
+  targetWorksheetExists: false,
+  currentHeaderCount: 0,
+  currentRowCount: 0,
+  incomingHeaderCount: 0,
+  incomingCandidateCount: 0,
+  schemaValid: false,
+  requiredHeadersPresent: false,
+  existingDuplicateCount: 0,
+  incomingDuplicateCount: 0,
+  matchingIdentityCount: 0,
+  wouldInsertCount: 0,
+  wouldUpdateCount: 0,
+  wouldSkipCount: 0,
+  wouldDeleteCount: 0,
+  wouldClearWorksheet: false,
+  wouldWriteCount: 0,
+  existingDataOverwriteRisk: false,
+  unrelatedExistingRowCount: 0,
+  maintenanceLeaseCreated: false,
+  googleSheetsUpdated: false,
+  scriptPropertiesUpdated: false,
   blockedReason: ''
 };
 
@@ -85,11 +110,23 @@ if (validation.errors.length > 0) {
   process.exit(1);
 }
 
-if (!syncEnabled || dryRun) {
+if (syncMode === 'local_dry_run') {
   summary.ok = true;
-  summary.blockedReason = syncEnabled ? 'sheet_sync_dry_run' : 'sheet_sync_disabled';
+  summary.blockedReason = syncEnabled ? 'sheet_sync_local_dry_run' : 'sheet_sync_disabled';
   console.log(safeSummary(summary));
   process.exit(0);
+}
+
+if (syncMode === 'connected_dry_run' && !syncEnabled) {
+  summary.blockedReason = 'sheet_sync_disabled';
+  console.log(safeSummary(summary));
+  process.exit(1);
+}
+
+if (syncMode === 'write' && (!syncEnabled || dryRun)) {
+  summary.blockedReason = !syncEnabled ? 'sheet_sync_disabled' : 'sheet_sync_write_requires_dry_run_false';
+  console.log(safeSummary(summary));
+  process.exit(1);
 }
 
 if (!webhookConfigured || !tokenConfigured) {
@@ -105,10 +142,18 @@ try {
     body: JSON.stringify({
       token: syncToken,
       sendDate,
+      targetDate: sendDate,
       sendBatchId,
+      action: syncMode === 'connected_dry_run' ? 'connected_dry_run' : 'write',
+      operation: syncMode === 'connected_dry_run' ? 'connected_dry_run' : 'write',
+      mode: syncMode,
+      dryRun: syncMode === 'connected_dry_run',
+      candidateCount: parsed.rows.length,
+      schemaVersion: 1,
+      requestId: `sheet-sync-${Date.now()}-${process.pid}`,
       targetName,
       readyTabName,
-      maintenanceLease,
+      maintenanceLease: syncMode === 'write' ? maintenanceLease : undefined,
       rowCount: parsed.rows.length,
       headers: parsed.headers,
       rows: parsed.rows
@@ -126,12 +171,54 @@ try {
   summary.sheetSynced = summary.ok && Boolean(body.sheetSynced);
   summary.manualPasteRequired = !summary.sheetSynced;
   summary.blockedReason = summary.ok ? '' : String(body.blockedReason || 'sheet_sync_failed');
+  Object.assign(summary, safeSheetSyncResponse(body));
   console.log(safeSummary(summary));
   process.exit(summary.ok ? 0 : 1);
 } catch {
   summary.blockedReason = 'sheet_sync_request_failed';
   console.log(safeSummary(summary));
   process.exit(1);
+}
+
+function resolveSyncMode(parsedArgs, settings) {
+  const explicitMode = String(parsedArgs.mode || process.env.GMAIL_SHEET_SYNC_MODE || '').trim();
+  if (parsedArgs['connected-dry-run'] === true || explicitMode === 'connected_dry_run') return 'connected_dry_run';
+  if (parsedArgs.write === true || explicitMode === 'write') return 'write';
+  if (parsedArgs['local-dry-run'] === true || explicitMode === 'local_dry_run') return 'local_dry_run';
+  if (!settings.syncEnabled || settings.dryRun) return 'local_dry_run';
+  return 'write';
+}
+
+function safeSheetSyncResponse(body) {
+  const keys = [
+    'connectedToGoogleSheet',
+    'targetWorksheetResolved',
+    'targetWorksheetExists',
+    'currentHeaderCount',
+    'currentRowCount',
+    'incomingHeaderCount',
+    'incomingCandidateCount',
+    'schemaValid',
+    'requiredHeadersPresent',
+    'existingDuplicateCount',
+    'incomingDuplicateCount',
+    'matchingIdentityCount',
+    'wouldInsertCount',
+    'wouldUpdateCount',
+    'wouldSkipCount',
+    'wouldDeleteCount',
+    'wouldClearWorksheet',
+    'wouldWriteCount',
+    'existingDataOverwriteRisk',
+    'unrelatedExistingRowCount',
+    'maintenanceLeaseCreated',
+    'googleSheetsUpdated',
+    'scriptPropertiesUpdated'
+  ];
+  return keys.reduce((safe, key) => {
+    if (Object.prototype.hasOwnProperty.call(body || {}, key)) safe[key] = body[key];
+    return safe;
+  }, {});
 }
 
 function parseTsv(filePath) {

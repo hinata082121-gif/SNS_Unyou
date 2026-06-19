@@ -169,7 +169,20 @@ function handleGmailOutboxSheetSync_(e) {
     return buildSheetSyncResponse_({ ok: false, sheetSynced: false, blockedReason: 'token_mismatch' });
   }
 
+  const modeResolution = resolveSheetSyncOperationMode_(payload);
+  if (!modeResolution.ok) {
+    appendSafeLog_({ event: 'gmail_sheet_sync_rejected', blockedReason: modeResolution.blockedReason });
+    return buildSheetSyncResponse_(buildConnectedSheetSyncDryRunResult_({
+      status: 'blocked',
+      blockedReason: modeResolution.blockedReason
+    }));
+  }
+
   const validation = validateSheetSyncPayload_(payload);
+  if (modeResolution.mode === 'connected_dry_run') {
+    return handleConnectedSheetSyncDryRun_(payload, validation);
+  }
+
   if (!validation.ok) {
     appendSafeLog_(Object.assign({
       event: 'gmail_sheet_sync_rejected',
@@ -239,6 +252,258 @@ function handleGmailOutboxSheetSync_(e) {
     rowCount: validation.rowCount,
     blockedReason: result.blockedReason
   });
+}
+
+function resolveSheetSyncOperationMode_(payload) {
+  const rawModes = [
+    payload && payload.mode,
+    payload && payload.operation,
+    payload && payload.action
+  ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+  const uniqueModes = rawModes.filter((value, index) => rawModes.indexOf(value) === index);
+  const mode = uniqueModes.length === 0 ? 'write' : uniqueModes[0];
+  if (uniqueModes.length > 1) {
+    return { ok: false, mode: '', blockedReason: 'sheet_sync_mode_mismatch' };
+  }
+  if (mode === 'connected_dry_run') {
+    if (payload.dryRun !== true) {
+      return { ok: false, mode: '', blockedReason: 'connected_dry_run_requires_dry_run_true' };
+    }
+    return { ok: true, mode };
+  }
+  if (mode === 'write') {
+    if (payload.dryRun === true) {
+      return { ok: false, mode: '', blockedReason: 'write_mode_rejects_dry_run_true' };
+    }
+    return { ok: true, mode };
+  }
+  return { ok: false, mode: '', blockedReason: 'unknown_sheet_sync_mode' };
+}
+
+function handleConnectedSheetSyncDryRun_(payload, validation) {
+  const result = buildConnectedSheetSyncDryRunResult_({
+    status: 'blocked',
+    sendDate: validation.sendDate,
+    sendBatchId: validation.sendBatchId,
+    incomingHeaderCount: Array.isArray(payload.headers) ? payload.headers.length : 0,
+    incomingCandidateCount: Array.isArray(payload.rows) ? payload.rows.length : 0,
+    schemaValid: validation.ok,
+    requiredHeadersPresent: sheetSyncRequiredHeadersPresent_(payload.headers),
+    incomingDuplicateCount: validation.safeCounts.duplicateInPayloadCount || 0,
+    blockedReason: validation.ok ? '' : validation.blockedReason
+  });
+
+  if (!validation.ok) {
+    appendSafeLog_(result);
+    return buildSheetSyncResponse_(result);
+  }
+
+  const config = getConfig_();
+  if (!config.sheetId) {
+    result.blockedReason = 'missing_sheet_id';
+    appendSafeLog_(result);
+    return buildSheetSyncResponse_(result);
+  }
+
+  const targetSheetName = resolveSheetSyncTargetName_(payload, config);
+  result.targetWorksheetResolved = Boolean(targetSheetName);
+  if (!targetSheetName) {
+    result.blockedReason = 'missing_sheet_name';
+    appendSafeLog_(result);
+    return buildSheetSyncResponse_(result);
+  }
+
+  let spreadsheet;
+  try {
+    spreadsheet = SpreadsheetApp.openById(config.sheetId);
+    result.connectedToGoogleSheet = true;
+  } catch (error) {
+    result.blockedReason = 'spreadsheet_open_failed';
+    appendSafeLog_(result);
+    return buildSheetSyncResponse_(result);
+  }
+
+  const sheet = spreadsheet.getSheetByName(targetSheetName);
+  result.targetWorksheetExists = Boolean(sheet);
+  if (!sheet) {
+    result.blockedReason = 'target_sheet_missing';
+    appendSafeLog_(result);
+    return buildSheetSyncResponse_(result);
+  }
+
+  const lastRow = Math.max(0, Number(sheet.getLastRow() || 0));
+  const lastColumn = Math.max(0, Number(sheet.getLastColumn() || 0));
+  const values = lastRow > 0 && lastColumn > 0
+    ? sheet.getRange(1, 1, lastRow, lastColumn).getValues()
+    : [];
+  const existingHeaders = values[0] ? values[0].map((value) => String(value || '').trim()) : [];
+  const existingRows = values.slice(1);
+  result.currentHeaderCount = existingHeaders.filter(Boolean).length;
+  result.currentRowCount = existingRows.length;
+
+  if (existingRows.length > 0 && !sheetSyncHasIdentityHeaders_(existingHeaders)) {
+    result.blockedReason = 'existing_identity_header_missing';
+    appendSafeLog_(result);
+    return buildSheetSyncResponse_(result);
+  }
+
+  const comparison = compareSheetSyncRows_(payload.headers, payload.rows, existingHeaders, existingRows);
+  Object.assign(result, comparison.safeCounts);
+  if (comparison.blockedReason) {
+    result.blockedReason = comparison.blockedReason;
+    appendSafeLog_(result);
+    return buildSheetSyncResponse_(result);
+  }
+
+  result.status = 'pass';
+  result.ok = true;
+  result.blockedReason = '';
+  appendSafeLog_(result);
+  return buildSheetSyncResponse_(result);
+}
+
+function buildConnectedSheetSyncDryRunResult_(overrides) {
+  return Object.assign({
+    ok: false,
+    event: 'gmail_sheet_sync_connected_dry_run',
+    mode: 'connected_dry_run',
+    status: 'blocked',
+    blockedReason: '',
+    connectedToGoogleSheet: false,
+    targetWorksheetResolved: false,
+    targetWorksheetExists: false,
+    currentHeaderCount: 0,
+    currentRowCount: 0,
+    incomingHeaderCount: 0,
+    incomingCandidateCount: 0,
+    schemaValid: false,
+    requiredHeadersPresent: false,
+    existingDuplicateCount: 0,
+    incomingDuplicateCount: 0,
+    matchingIdentityCount: 0,
+    wouldInsertCount: 0,
+    wouldUpdateCount: 0,
+    wouldSkipCount: 0,
+    wouldDeleteCount: 0,
+    wouldClearWorksheet: false,
+    wouldWriteCount: 0,
+    existingDataOverwriteRisk: false,
+    unrelatedExistingRowCount: 0,
+    maintenanceLeaseCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false
+  }, overrides || {});
+}
+
+function resolveSheetSyncTargetName_(payload, config) {
+  return String(
+    payload.readyTabName ||
+    payload.targetName ||
+    PropertiesService.getScriptProperties().getProperty('GMAIL_SHEET_READY_TAB_NAME') ||
+    PropertiesService.getScriptProperties().getProperty('GMAIL_SHEET_TARGET_NAME') ||
+    config.sheetName ||
+    ''
+  ).trim();
+}
+
+function sheetSyncRequiredHeadersPresent_(headers) {
+  const index = buildHeaderIndex_((headers || []).map((value) => String(value)));
+  return ['email', 'contactEmail', 'subject', 'body', 'status', 'sendDate', 'sendBatchId'].every((key) => index[key] !== undefined);
+}
+
+function sheetSyncHasIdentityHeaders_(headers) {
+  const index = buildHeaderIndex_((headers || []).map((value) => String(value)));
+  return index.prospectId !== undefined || index.dedupeKey !== undefined || index.email !== undefined || index.contactEmail !== undefined;
+}
+
+function compareSheetSyncRows_(incomingHeaders, incomingRows, existingHeaders, existingRows) {
+  const incomingIndex = buildHeaderIndex_(incomingHeaders || []);
+  const existingIndex = buildHeaderIndex_(existingHeaders || []);
+  const incomingMap = {};
+  const existingMap = {};
+  const safeCounts = {
+    existingDuplicateCount: 0,
+    incomingDuplicateCount: 0,
+    matchingIdentityCount: 0,
+    wouldInsertCount: 0,
+    wouldUpdateCount: 0,
+    wouldSkipCount: 0,
+    wouldDeleteCount: 0,
+    wouldClearWorksheet: false,
+    wouldWriteCount: 0,
+    existingDataOverwriteRisk: false,
+    unrelatedExistingRowCount: 0
+  };
+
+  if (!sheetSyncHasIdentityHeaders_(incomingHeaders)) {
+    return { blockedReason: 'incoming_identity_header_missing', safeCounts };
+  }
+
+  for (let index = 0; index < incomingRows.length; index += 1) {
+    const cells = Array.isArray(incomingRows[index]) ? incomingRows[index] : [];
+    const identity = sheetSyncIdentity_(cells, incomingIndex);
+    if (!identity) return { blockedReason: 'incoming_identity_missing', safeCounts };
+    if (incomingMap[identity]) safeCounts.incomingDuplicateCount += 1;
+    incomingMap[identity] = cells;
+  }
+  if (safeCounts.incomingDuplicateCount > 0) {
+    return { blockedReason: 'incoming_duplicate_identity', safeCounts };
+  }
+
+  for (let index = 0; index < existingRows.length; index += 1) {
+    const cells = Array.isArray(existingRows[index]) ? existingRows[index] : [];
+    const identity = sheetSyncIdentity_(cells, existingIndex);
+    if (!identity) continue;
+    if (existingMap[identity]) safeCounts.existingDuplicateCount += 1;
+    existingMap[identity] = cells;
+  }
+  if (safeCounts.existingDuplicateCount > 0) {
+    return { blockedReason: 'existing_duplicate_identity', safeCounts };
+  }
+
+  Object.keys(incomingMap).forEach((identity) => {
+    const incomingCells = incomingMap[identity];
+    const existingCells = existingMap[identity];
+    if (!existingCells) {
+      safeCounts.wouldInsertCount += 1;
+      return;
+    }
+    safeCounts.matchingIdentityCount += 1;
+    if (sheetSyncRowsEquivalent_(incomingHeaders, incomingCells, existingIndex, existingCells)) {
+      safeCounts.wouldSkipCount += 1;
+    } else {
+      safeCounts.wouldUpdateCount += 1;
+    }
+  });
+
+  Object.keys(existingMap).forEach((identity) => {
+    if (!incomingMap[identity]) safeCounts.unrelatedExistingRowCount += 1;
+  });
+  safeCounts.wouldDeleteCount = safeCounts.unrelatedExistingRowCount;
+  safeCounts.existingDataOverwriteRisk = safeCounts.unrelatedExistingRowCount > 0;
+  safeCounts.wouldClearWorksheet = safeCounts.existingDataOverwriteRisk;
+  safeCounts.wouldWriteCount = safeCounts.wouldInsertCount + safeCounts.wouldUpdateCount + safeCounts.wouldDeleteCount;
+  return { blockedReason: '', safeCounts };
+}
+
+function sheetSyncIdentity_(cells, headerIndex) {
+  const prospectId = String(cells[headerIndex.prospectId] || '').trim();
+  if (prospectId) return 'prospect:' + prospectId.toLowerCase();
+  const dedupeKey = String(cells[headerIndex.dedupeKey] || '').trim();
+  if (dedupeKey) return 'dedupe:' + dedupeKey.toLowerCase();
+  const email = normalizeEmail_(cells[headerIndex.email] || cells[headerIndex.contactEmail] || '');
+  if (email) return 'email:' + email;
+  return '';
+}
+
+function sheetSyncRowsEquivalent_(incomingHeaders, incomingCells, existingIndex, existingCells) {
+  for (let index = 0; index < incomingHeaders.length; index += 1) {
+    const header = String(incomingHeaders[index] || '');
+    const existingColumn = existingIndex[header];
+    if (existingColumn === undefined) return false;
+    if (String(incomingCells[index] || '') !== String(existingCells[existingColumn] || '')) return false;
+  }
+  return true;
 }
 
 function validateSheetSyncPayload_(payload) {
