@@ -1218,7 +1218,128 @@ const scenarios = [
     assert.equal(result.approvalPolicyVersionMatch, true);
     assert.equal(result.sendWindowConfigured, true);
     assert.equal(result.sendWindow, '11:45-12:45');
+    assert.equal(result.triggerScheduleConfigured, true);
+    assert.equal(result.expectedTriggerHour, 12);
+    assert.equal(result.expectedTriggerMinute, 15);
+    assert.equal(result.expectedTriggerTimezone, 'Asia/Tokyo');
     assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health passes with one installed normal trigger', (env) => {
+    env.entry = 'dailyHealth';
+    env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.normalTriggerCount, 1);
+    assert.equal(result.triggerScheduleConfigured, true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health blocks narrow trigger schedule', (env) => {
+    env.entry = 'dailyHealth';
+    env.props.GMAIL_SALES_SEND_WINDOW_START = '11:45';
+    env.props.GMAIL_SALES_SEND_WINDOW_END = '12:00';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.triggerScheduleConfigured, false);
+    assert.equal(result.blockedReason.includes('send_window_too_narrow'), true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation installer schedules midpoint trigger in Asia Tokyo', (env) => {
+    env.entry = 'dailyInstall';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.triggerChanged, true);
+    assert.equal(env.triggerWriteCount, 1);
+    assert.equal(env.triggerCreations.length, 1);
+    assert.equal(env.triggerCreations[0].handler, 'runGmailSalesDailyAutomationTrigger');
+    assert.equal(env.triggerCreations[0].hour, 12);
+    assert.equal(env.triggerCreations[0].minute, 15);
+    assert.equal(env.triggerCreations[0].timezone, 'Asia/Tokyo');
+    assert.notEqual(env.triggerCreations[0].hour, 11);
+    assert.notEqual(env.triggerCreations[0].minute, 45);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['daily automation installer treats existing normal trigger as already installed', (env) => {
+    env.entry = 'dailyInstall';
+    env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.alreadyInstalled, true);
+    assert.equal(env.triggerWriteCount, 0);
+    assert.equal(env.triggerCreations.length, 0);
+  }],
+  ['daily automation installer blocks duplicate normal triggers', (env) => {
+    env.entry = 'dailyInstall';
+    env.triggers = [
+      { handler: 'runGmailSalesDailyAutomationTrigger' },
+      { handler: 'runGmailSalesDailyAutomationTrigger' }
+    ];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.duplicateTriggerCount, 1);
+    assert.equal(env.triggerWriteCount, 0);
+    assert.equal(env.triggerCreations.length, 0);
+  }],
+  ['daily automation installer blocks forbidden recovery trigger', (env) => {
+    env.entry = 'dailyInstall';
+    env.triggers = [{ handler: 'runGmailSalesRecoverySendOnce' }];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.forbiddenTriggerCount, 1);
+    assert.equal(env.triggerWriteCount, 0);
+    assert.equal(env.triggerCreations.length, 0);
+  }],
+  ['daily automation installer rejects equal send window endpoints', (env) => {
+    env.entry = 'dailyInstall';
+    env.props.GMAIL_SALES_SEND_WINDOW_START = '00:00';
+    env.props.GMAIL_SALES_SEND_WINDOW_END = '00:00';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'send_window_invalid');
+    assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['daily automation installer rejects inverted send window', (env) => {
+    env.entry = 'dailyInstall';
+    env.props.GMAIL_SALES_SEND_WINDOW_START = '12:45';
+    env.props.GMAIL_SALES_SEND_WINDOW_END = '11:45';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'send_window_invalid');
+    assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['daily automation installer rejects invalid send window format', (env) => {
+    env.entry = 'dailyInstall';
+    env.props.GMAIL_SALES_SEND_WINDOW_END = '12:xx';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'send_window_invalid');
+    assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['daily automation installer rejects missing timezone', (env) => {
+    env.entry = 'dailyInstall';
+    delete env.props.GMAIL_SALES_TIMEZONE;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'timezone_not_configured');
+    assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['daily automation installer rejects non canonical timezone', (env) => {
+    env.entry = 'dailyInstall';
+    env.props.GMAIL_SALES_TIMEZONE = 'UTC';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'timezone_not_configured');
+    assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['daily automation installer rejects narrow send window', (env) => {
+    env.entry = 'dailyInstall';
+    env.props.GMAIL_SALES_SEND_WINDOW_START = '11:45';
+    env.props.GMAIL_SALES_SEND_WINDOW_END = '12:00';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'send_window_too_narrow');
+    assert.equal(env.triggerWriteCount, 0);
   }]
 ];
 
@@ -1309,6 +1430,8 @@ function createEnvironment() {
     setPropertiesCount: 0,
     deletePropertyCount: 0,
     triggerWriteCount: 0,
+    triggerCreations: [],
+    triggers: [],
     draftCreateCount: 0,
     leaseWriteCount: 0,
     openSheetThrows: false,
@@ -1439,19 +1562,37 @@ function buildContext(env) {
       createTextOutput: (text) => ({ setMimeType: () => ({ text }) })
     },
     ScriptApp: {
-      getProjectTriggers: () => [],
+      getProjectTriggers: () => env.triggers.map((trigger) => ({
+        getHandlerFunction: () => trigger.handler
+      })),
       deleteTrigger: () => { env.triggerWriteCount += 1; },
-      newTrigger: () => ({
-        timeBased: () => ({
-          everyDays: () => ({
-            atHour: () => ({
-              nearMinute: () => ({ create: () => { env.triggerWriteCount += 1; } }),
-              create: () => { env.triggerWriteCount += 1; }
-            })
-          }),
-          everyHours: () => ({ create: () => { env.triggerWriteCount += 1; } })
-        })
-      })
+      newTrigger: (handler) => {
+        const spec = { handler, hour: null, minute: null, timezone: null };
+        const builder = {
+          timeBased: () => builder,
+          everyDays: () => builder,
+          everyHours: () => builder,
+          atHour: (hour) => {
+            spec.hour = hour;
+            return builder;
+          },
+          nearMinute: (minute) => {
+            spec.minute = minute;
+            return builder;
+          },
+          inTimezone: (timezone) => {
+            spec.timezone = timezone;
+            return builder;
+          },
+          create: () => {
+            env.triggerWriteCount += 1;
+            env.triggerCreations.push(Object.assign({}, spec));
+            env.triggers.push({ handler });
+            return { getHandlerFunction: () => handler };
+          }
+        };
+        return builder;
+      }
     }
   };
 }
@@ -1470,6 +1611,7 @@ function runEntry(env) {
   if (env.entry === 'suppressionDiagnostic') return env.context.runGmailSuppressionLedgerReadOnlyDiagnostic();
   if (env.entry === 'dailyInitializer') return env.context.initializeGmailSalesDailyAutomationProperties();
   if (env.entry === 'dailyHealth') return env.context.runGmailSalesDailyAutomationHealthCheck();
+  if (env.entry === 'dailyInstall') return env.context.installGmailSalesDailyAutomationTriggers();
   if (env.entry === 'sheetSyncConnectedDryRun' || env.entry === 'sheetSyncReadOnlySnapshot') {
     if (env.entry === 'sheetSyncReadOnlySnapshot') {
       env.sheetSyncPayload.action = 'read_only_snapshot';

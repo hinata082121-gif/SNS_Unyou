@@ -84,6 +84,12 @@ assert.equal(/GmailApp\.createDraft\s*\(/.test(code), false);
 assert.equal(code.includes('handleGmailSalesNormalDailyPrepareWebhook_'), true);
 assert.equal(code.includes('runGmailSalesDailyAutomationTrigger'), true);
 assert.equal(code.includes('runGmailSalesDailyAutomationHealthCheck'), true);
+assert.equal(code.includes('getGmailSalesDailyTriggerSchedule_'), true);
+assert.equal(code.includes('GMAIL_DAILY_TRIGGER_MIN_SAFE_MARGIN_MINUTES'), true);
+assert.equal(code.includes('.atHour(triggerSchedule.hour)'), true);
+assert.equal(code.includes('.nearMinute(triggerSchedule.minute)'), true);
+assert.equal(code.includes(".inTimezone(triggerSchedule.timezone)"), true);
+assert.equal(code.includes("timezoneConfigured: triggerSchedule.timezone === GMAIL_SALES_TIMEZONE_DEFAULT"), true);
 assert.equal(code.includes('GMAIL_DAILY_AUTOMATION_STATE_JSON'), true);
 assert.equal(code.includes('automatic_strict_gate'), true);
 

@@ -55,6 +55,9 @@ const GMAIL_SALES_SEND_WINDOW_START_PROPERTY = 'GMAIL_SALES_SEND_WINDOW_START';
 const GMAIL_SALES_SEND_WINDOW_END_PROPERTY = 'GMAIL_SALES_SEND_WINDOW_END';
 const GMAIL_SALES_SEND_WINDOW_START_DEFAULT = '11:45';
 const GMAIL_SALES_SEND_WINDOW_END_DEFAULT = '12:45';
+const GMAIL_SALES_TIMEZONE_PROPERTY = 'GMAIL_SALES_TIMEZONE';
+const GMAIL_SALES_TIMEZONE_DEFAULT = 'Asia/Tokyo';
+const GMAIL_DAILY_TRIGGER_MIN_SAFE_MARGIN_MINUTES = 15;
 const GMAIL_DAILY_TRIGGER_HANDLERS = [
   'runGmailSalesDailyAutomationTrigger'
 ];
@@ -66,7 +69,7 @@ const GMAIL_DAILY_FORBIDDEN_TRIGGER_HANDLERS = [
   'runGmailSalesRecoveryRepairDerivedCandidateHash'
 ];
 const GMAIL_DAILY_INITIAL_PROPERTIES = {
-  GMAIL_SALES_TIMEZONE: 'Asia/Tokyo',
+  [GMAIL_SALES_TIMEZONE_PROPERTY]: GMAIL_SALES_TIMEZONE_DEFAULT,
   GMAIL_SALES_EXPECTED_DAILY_COUNT: '30',
   GMAIL_SALES_MAX_DAILY_SEND_COUNT: '30',
   [GMAIL_SALES_SEND_WINDOW_START_PROPERTY]: GMAIL_SALES_SEND_WINDOW_START_DEFAULT,
@@ -1855,10 +1858,12 @@ function runGmailSalesDailyAutomationHealthCheck() {
   const state = readGmailDailyAutomationState_();
   const versionStatus = gmailDailyVersionStatus_();
   const sendWindowStatus = getGmailSalesDailySendWindowConfig_(props);
+  const triggerSchedule = getGmailSalesDailyTriggerSchedule_(props);
   const blockedReasons = [];
   if (triggerHealth.status !== 'pass') blockedReasons.push('trigger_health_blocked');
   if (!versionStatus.ok) blockedReasons.push.apply(blockedReasons, versionStatus.blockedReasons);
   if (!sendWindowStatus.configured) blockedReasons.push(sendWindowStatus.blockedReason || 'send_window_not_configured');
+  if (!triggerSchedule.configured) blockedReasons.push(triggerSchedule.blockedReason || 'trigger_schedule_not_configured');
   const result = {
     event: 'gmail_daily_automation_health_check',
     status: blockedReasons.length === 0 ? 'pass' : 'blocked',
@@ -1874,6 +1879,11 @@ function runGmailSalesDailyAutomationHealthCheck() {
     sendWindowEndPresent: sendWindowStatus.endPresent,
     sendWindowFormatValid: sendWindowStatus.formatValid,
     sendWindowRangeValid: sendWindowStatus.rangeValid,
+    triggerScheduleConfigured: triggerSchedule.configured,
+    expectedTriggerHour: triggerSchedule.hour,
+    expectedTriggerMinute: triggerSchedule.minute,
+    expectedTriggerTimezone: triggerSchedule.timezone,
+    triggerScheduleSafeMarginMinutes: triggerSchedule.safeMarginMinutes,
     automationVersionConfigured: versionStatus.automationVersionConfigured,
     automationVersionMatch: versionStatus.automationVersionMatch,
     approvalPolicyVersionConfigured: versionStatus.approvalPolicyVersionConfigured,
@@ -1951,7 +1961,7 @@ function initializeGmailSalesDailyAutomationProperties() {
     liveSendAtRest: readBack.LIVE_SEND_ENABLED === 'false',
     expectedDailyCountConfigured: readBack.GMAIL_SALES_EXPECTED_DAILY_COUNT === '30',
     maxDailySendCountConfigured: readBack.GMAIL_SALES_MAX_DAILY_SEND_COUNT === '30',
-    timezoneConfigured: readBack.GMAIL_SALES_TIMEZONE === 'Asia/Tokyo',
+    timezoneConfigured: readBack[GMAIL_SALES_TIMEZONE_PROPERTY] === GMAIL_SALES_TIMEZONE_DEFAULT,
     sendWindowConfigured: sendWindowStatus.configured,
     sendWindow: sendWindowStatus.summary,
     automationVersionConfigured: readBack.GMAIL_SALES_AUTOMATION_VERSION === GMAIL_DAILY_AUTOMATION_VERSION,
@@ -1974,33 +1984,41 @@ function installGmailSalesDailyAutomationTriggers() {
     appendSafeLog_(Object.assign({ event: 'gmail_daily_trigger_install_blocked' }, health));
     return Object.assign({}, health, { triggerChanged: false });
   }
-  const config = getConfig_();
   const sendWindowStatus = getGmailSalesDailySendWindowConfig_(props);
-  if (!sendWindowStatus.configured) {
+  const triggerSchedule = getGmailSalesDailyTriggerSchedule_(props);
+  if (!sendWindowStatus.configured || !triggerSchedule.configured) {
+    const blockedReason = sendWindowStatus.blockedReason || triggerSchedule.blockedReason || 'trigger_schedule_not_configured';
     appendSafeLog_({
       event: 'gmail_daily_trigger_install_blocked',
-      blockedReason: sendWindowStatus.blockedReason || 'send_window_not_configured',
+      blockedReason,
       triggerChanged: false
     });
     return Object.assign({}, health, {
       status: 'blocked',
-      blockedReason: sendWindowStatus.blockedReason || 'send_window_not_configured',
+      blockedReason,
       triggerChanged: false
     });
   }
   if (health.normalTriggerCount === GMAIL_DAILY_TRIGGER_HANDLERS.length) {
     return Object.assign({}, health, { status: 'pass', alreadyInstalled: true, triggerChanged: false });
   }
-  const dailyWindowConfig = withGmailSalesDailySendWindow_(config, sendWindowStatus);
   GMAIL_DAILY_TRIGGER_HANDLERS.forEach((handler) => {
     if (!hasTrigger_(handler)) {
       ScriptApp.newTrigger(handler)
         .timeBased()
         .everyDays(1)
-        .atHour(dailyWindowConfig.sendHour)
-        .nearMinute(dailyWindowConfig.allowedSendStartMinute)
+        .atHour(triggerSchedule.hour)
+        .nearMinute(triggerSchedule.minute)
+        .inTimezone(triggerSchedule.timezone)
         .create();
-      appendSafeLog_({ event: 'gmail_daily_trigger_created', handler, hour: dailyWindowConfig.sendHour });
+      appendSafeLog_({
+        event: 'gmail_daily_trigger_created',
+        handler,
+        hour: triggerSchedule.hour,
+        minute: triggerSchedule.minute,
+        timezoneConfigured: triggerSchedule.timezone === GMAIL_SALES_TIMEZONE_DEFAULT,
+        triggerChanged: true
+      });
     }
   });
   return Object.assign({}, verifyGmailSalesDailyAutomationTriggers(), { triggerChanged: true });
@@ -5747,6 +5765,68 @@ function getGmailSalesDailySendWindowConfig_(props) {
     startMinutes,
     endMinutes,
     blockedReason
+  };
+}
+
+function getGmailSalesDailyTriggerSchedule_(props) {
+  const sendWindow = getGmailSalesDailySendWindowConfig_(props);
+  const timezone = readScriptPropertyText_(props, GMAIL_SALES_TIMEZONE_PROPERTY);
+  const timezoneConfigured = timezone === GMAIL_SALES_TIMEZONE_DEFAULT;
+  if (!timezoneConfigured) {
+    return {
+      configured: false,
+      hour: null,
+      minute: null,
+      timezone,
+      timezoneConfigured: false,
+      safeMarginMinutes: 0,
+      blockedReason: 'timezone_not_configured'
+    };
+  }
+  if (!sendWindow.configured) {
+    return {
+      configured: false,
+      hour: null,
+      minute: null,
+      timezone,
+      timezoneConfigured: true,
+      safeMarginMinutes: 0,
+      blockedReason: sendWindow.blockedReason || 'send_window_not_configured'
+    };
+  }
+  const windowWidthMinutes = sendWindow.endMinutes - sendWindow.startMinutes;
+  const safeMarginMinutes = Math.floor(windowWidthMinutes / 2);
+  if (windowWidthMinutes <= 0) {
+    return {
+      configured: false,
+      hour: null,
+      minute: null,
+      timezone,
+      timezoneConfigured: true,
+      safeMarginMinutes: 0,
+      blockedReason: 'send_window_invalid'
+    };
+  }
+  if (safeMarginMinutes < GMAIL_DAILY_TRIGGER_MIN_SAFE_MARGIN_MINUTES) {
+    return {
+      configured: false,
+      hour: null,
+      minute: null,
+      timezone,
+      timezoneConfigured: true,
+      safeMarginMinutes,
+      blockedReason: 'send_window_too_narrow'
+    };
+  }
+  const midpointMinutes = sendWindow.startMinutes + safeMarginMinutes;
+  return {
+    configured: true,
+    hour: Math.floor(midpointMinutes / 60),
+    minute: midpointMinutes % 60,
+    timezone,
+    timezoneConfigured: true,
+    safeMarginMinutes,
+    blockedReason: ''
   };
 }
 
