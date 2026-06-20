@@ -1108,6 +1108,19 @@ const scenarios = [
     assert.equal(env.sheetWriteCount, 0);
     assert.equal(env.triggerWriteCount, 0);
   }],
+  ['daily automation initializer output immediately passes health window check', (env) => {
+    env.entry = 'dailyInitializer';
+    env.props.ALLOWED_SEND_START_HOUR = '0';
+    env.props.ALLOWED_SEND_START_MINUTE = '0';
+    env.props.ALLOWED_SEND_END_HOUR = '0';
+    env.props.ALLOWED_SEND_END_MINUTE = '0';
+  }, (env, result) => {
+    assert.equal(result.sendWindowConfigured, true);
+    const health = env.context.runGmailSalesDailyAutomationHealthCheck();
+    assert.equal(health.status, 'pass');
+    assert.equal(health.sendWindowConfigured, true);
+    assert.equal(health.sendWindow, '11:45-12:45');
+  }],
   ['daily automation initializer is idempotent', (env) => {
     env.entry = 'dailyInitializer';
     env.props.AUTOMATION_MASTER_ENABLED = 'false';
@@ -1131,8 +1144,66 @@ const scenarios = [
   }],
   ['daily automation health blocks unconfigured send window', (env) => {
     env.entry = 'dailyHealth';
+    delete env.props.GMAIL_SALES_SEND_WINDOW_START;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.sendWindowConfigured, false);
+    assert.equal(result.sendWindowStartPresent, false);
+    assert.equal(result.blockedReason.includes('send_window_not_configured'), true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health blocks missing send window end', (env) => {
+    env.entry = 'dailyHealth';
+    delete env.props.GMAIL_SALES_SEND_WINDOW_END;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.sendWindowConfigured, false);
+    assert.equal(result.sendWindowEndPresent, false);
+    assert.equal(result.blockedReason.includes('send_window_not_configured'), true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health blocks equal send window endpoints', (env) => {
+    env.entry = 'dailyHealth';
     env.props.GMAIL_SALES_SEND_WINDOW_START = '00:00';
     env.props.GMAIL_SALES_SEND_WINDOW_END = '00:00';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.sendWindowConfigured, false);
+    assert.equal(result.sendWindowFormatValid, true);
+    assert.equal(result.sendWindowRangeValid, false);
+    assert.equal(result.blockedReason.includes('send_window_invalid'), true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health blocks invalid send window format', (env) => {
+    env.entry = 'dailyHealth';
+    env.props.GMAIL_SALES_SEND_WINDOW_START = '11:xx';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.sendWindowConfigured, false);
+    assert.equal(result.sendWindowFormatValid, false);
+    assert.equal(result.blockedReason.includes('send_window_invalid'), true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health ignores legacy allowed send window overrides', (env) => {
+    env.entry = 'dailyHealth';
+    env.props.ALLOWED_SEND_START_HOUR = '0';
+    env.props.ALLOWED_SEND_START_MINUTE = '0';
+    env.props.ALLOWED_SEND_END_HOUR = '0';
+    env.props.ALLOWED_SEND_END_MINUTE = '0';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sendWindowConfigured, true);
+    assert.equal(result.sendWindow, '11:45-12:45');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health blocks legacy-only send window configuration', (env) => {
+    env.entry = 'dailyHealth';
+    delete env.props.GMAIL_SALES_SEND_WINDOW_START;
+    delete env.props.GMAIL_SALES_SEND_WINDOW_END;
+    env.props.ALLOWED_SEND_START_HOUR = '11';
+    env.props.ALLOWED_SEND_START_MINUTE = '45';
+    env.props.ALLOWED_SEND_END_HOUR = '12';
+    env.props.ALLOWED_SEND_END_MINUTE = '45';
   }, (env, result) => {
     assert.equal(result.status, 'blocked');
     assert.equal(result.sendWindowConfigured, false);
@@ -1146,6 +1217,7 @@ const scenarios = [
     assert.equal(result.automationVersionMatch, true);
     assert.equal(result.approvalPolicyVersionMatch, true);
     assert.equal(result.sendWindowConfigured, true);
+    assert.equal(result.sendWindow, '11:45-12:45');
     assertDiagnosticReadOnly(env);
   }]
 ];
