@@ -1089,6 +1089,64 @@ const scenarios = [
     assert.equal(result.status, 'pass');
     assert.equal(result.candidateCount, 30);
     assertDryRunWriteFree(env);
+  }],
+  ['daily automation initializer configures versions without touching secret', (env) => {
+    env.entry = 'dailyInitializer';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    delete env.props.GMAIL_SALES_AUTOMATION_VERSION;
+    delete env.props.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION;
+    env.props.UNRELATED_PROPERTY = 'kept';
+  }, (env, result) => {
+    assert.equal(result.status, 'configured');
+    assert.equal(result.propertyWriteCount, 1);
+    assert.equal(result.automationVersionConfigured, true);
+    assert.equal(result.approvalPolicyVersionConfigured, true);
+    assert.equal(result.sharedSecretPresent, true);
+    assert.equal(env.props.GMAIL_AUTOMATION_SHARED_SECRET, 'test-secret');
+    assert.equal(env.props.UNRELATED_PROPERTY, 'kept');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['daily automation initializer is idempotent', (env) => {
+    env.entry = 'dailyInitializer';
+    env.props.AUTOMATION_MASTER_ENABLED = 'false';
+    env.props.AUTO_SEND_ENABLED = 'false';
+    env.props.LIVE_SEND_ENABLED = 'false';
+    env.props.GMAIL_SALES_SEND_WINDOW_START = '11:45';
+    env.props.GMAIL_SALES_SEND_WINDOW_END = '12:45';
+  }, (_env, result) => {
+    assert.equal(result.status, 'already_configured');
+    assert.equal(result.propertyWriteCount, 0);
+    assert.equal(result.automationVersionConfigured, true);
+    assert.equal(result.approvalPolicyVersionConfigured, true);
+  }],
+  ['daily automation health blocks unset versions', (env) => {
+    env.entry = 'dailyHealth';
+    env.props.GMAIL_SALES_AUTOMATION_VERSION = 'unset';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason.includes('version_not_configured'), true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health blocks unconfigured send window', (env) => {
+    env.entry = 'dailyHealth';
+    env.props.GMAIL_SALES_SEND_WINDOW_START = '00:00';
+    env.props.GMAIL_SALES_SEND_WINDOW_END = '00:00';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.sendWindowConfigured, false);
+    assert.equal(result.blockedReason.includes('send_window_not_configured'), true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['daily automation health passes with configured versions and window', (env) => {
+    env.entry = 'dailyHealth';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.automationVersionMatch, true);
+    assert.equal(result.approvalPolicyVersionMatch, true);
+    assert.equal(result.sendWindowConfigured, true);
+    assertDiagnosticReadOnly(env);
   }]
 ];
 
@@ -1110,6 +1168,13 @@ function createEnvironment() {
       SEND_BATCH_ID: BATCH_ID,
       SEND_DATE_OVERRIDE: 'true',
       SEND_BATCH_ID_OVERRIDE: 'true',
+      GMAIL_SALES_AUTOMATION_VERSION: 'normal-daily-v1',
+      GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: 'automatic-strict-gate-v1',
+      GMAIL_SALES_SEND_WINDOW_START: '11:45',
+      GMAIL_SALES_SEND_WINDOW_END: '12:45',
+      GMAIL_SALES_EXPECTED_DAILY_COUNT: '30',
+      GMAIL_SALES_MAX_DAILY_SEND_COUNT: '30',
+      GMAIL_SALES_TIMEZONE: 'Asia/Tokyo',
       ALLOWED_SEND_START_HOUR: '0',
       ALLOWED_SEND_START_MINUTE: '0',
       ALLOWED_SEND_END_HOUR: '23',
@@ -1233,6 +1298,7 @@ function buildContext(env) {
     PropertiesService: {
       getScriptProperties: () => ({
         getProperty: (key) => env.props[key],
+        getProperties: () => Object.assign({}, env.props),
         setProperty: (key, value) => {
           env.setPropertyCount += 1;
           env.propertyWriteCount += 1;
@@ -1330,6 +1396,8 @@ function runEntry(env) {
   if (env.entry === 'recoverySourceHashReissueScheduled') return env.context.runGmailSalesRecoveryReissueSourceCandidateContentHash({ source: 'scheduled_trigger' });
   if (env.entry === 'recoveryHashRepair') return env.context.runGmailSalesRecoveryRepairDerivedCandidateHash();
   if (env.entry === 'suppressionDiagnostic') return env.context.runGmailSuppressionLedgerReadOnlyDiagnostic();
+  if (env.entry === 'dailyInitializer') return env.context.initializeGmailSalesDailyAutomationProperties();
+  if (env.entry === 'dailyHealth') return env.context.runGmailSalesDailyAutomationHealthCheck();
   if (env.entry === 'sheetSyncConnectedDryRun' || env.entry === 'sheetSyncReadOnlySnapshot') {
     if (env.entry === 'sheetSyncReadOnlySnapshot') {
       env.sheetSyncPayload.action = 'read_only_snapshot';
@@ -1531,6 +1599,8 @@ function buildDailyPreparePayload(env) {
     action: 'prepare_normal_daily',
     mode: 'normal_daily',
     sourceType: 'normal_daily',
+    automationVersion: 'normal-daily-v1',
+    autoApprovalPolicyVersion: 'automatic-strict-gate-v1',
     targetDate: TARGET_DATE,
     sendDate: TARGET_DATE,
     sendBatchId: BATCH_ID,

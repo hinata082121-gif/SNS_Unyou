@@ -50,8 +50,8 @@ jobs:
       GMAIL_SALES_EXPECTED_DAILY_COUNT: ${{ vars.GMAIL_SALES_EXPECTED_DAILY_COUNT || inputs.expected_count || '30' }}
       GMAIL_SALES_MAX_DAILY_SEND_COUNT: ${{ vars.GMAIL_SALES_MAX_DAILY_SEND_COUNT || '30' }}
       GMAIL_SALES_TIMEZONE: ${{ vars.GMAIL_SALES_TIMEZONE || 'Asia/Tokyo' }}
-      GMAIL_SALES_AUTOMATION_VERSION: ${{ vars.GMAIL_SALES_AUTOMATION_VERSION || 'normal-daily-v1' }}
-      GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: ${{ vars.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION || 'automatic-strict-gate-v1' }}
+      GMAIL_SALES_AUTOMATION_VERSION: ${{ vars.GMAIL_SALES_AUTOMATION_VERSION }}
+      GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: ${{ vars.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,6 +71,11 @@ jobs:
           npm run gmail:sales:send-safety:test
           npm run gmail:sales:create-send-manifest:test
           npm run gmail:outbox:sync-to-sheet:test
+
+      - name: Check automation versions
+        run: |
+          test "$GMAIL_SALES_AUTOMATION_VERSION" = "normal-daily-v1"
+          test "$GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION" = "automatic-strict-gate-v1"
 
       - name: Check required secrets for network prepare
         if: ${{ github.event_name == 'schedule' || inputs.allow_network == true }}

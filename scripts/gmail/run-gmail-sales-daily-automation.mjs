@@ -13,6 +13,8 @@ import {
 const AUTOMATION_VERSION = 'normal-daily-v1';
 const AUTO_APPROVAL_POLICY_VERSION = 'automatic-strict-gate-v1';
 const EXPECTED_COUNT = 30;
+const envAutomationVersion = String(process.env.GMAIL_SALES_AUTOMATION_VERSION || '').trim();
+const envApprovalPolicyVersion = String(process.env.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION || '').trim();
 const args = parseArgs(process.argv.slice(2));
 const phase = String(args.phase || 'simulate').trim();
 const targetDate = resolveDateArg(args['target-date'] || args.date, 'today');
@@ -93,6 +95,29 @@ function validateArgs() {
   if (expectedCount !== EXPECTED_COUNT) {
     throw new Error('expected_count_must_be_30');
   }
+  const versionErrors = validateConfiguredVersions();
+  if (versionErrors.length > 0) {
+    throw new Error(versionErrors.join(','));
+  }
+}
+
+function validateConfiguredVersions() {
+  const errors = [];
+  if (!isConfiguredVersion(envAutomationVersion) || !isConfiguredVersion(envApprovalPolicyVersion)) {
+    errors.push('version_not_configured');
+  }
+  if (isConfiguredVersion(envAutomationVersion) && envAutomationVersion !== AUTOMATION_VERSION) {
+    errors.push('automation_version_mismatch');
+  }
+  if (isConfiguredVersion(envApprovalPolicyVersion) && envApprovalPolicyVersion !== AUTO_APPROVAL_POLICY_VERSION) {
+    errors.push('approval_policy_version_mismatch');
+  }
+  return errors;
+}
+
+function isConfiguredVersion(value) {
+  const text = String(value || '').trim();
+  return Boolean(text) && text.toLowerCase() !== 'unset' && !text.startsWith('PASTE_');
 }
 
 function runLocalPreparePipeline() {
@@ -235,6 +260,8 @@ function buildPreparePayload(batch, manifest) {
     action: 'prepare_normal_daily',
     mode: 'normal_daily',
     sourceType: 'normal_daily',
+    automationVersion: AUTOMATION_VERSION,
+    autoApprovalPolicyVersion: AUTO_APPROVAL_POLICY_VERSION,
     targetDate,
     sendDate: targetDate,
     sendBatchId,
