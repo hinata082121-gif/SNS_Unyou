@@ -230,7 +230,11 @@ function handleGmailOutboxSheetSync_(e) {
     return buildSheetSyncResponse_({ ok: false, sheetSynced: false, blockedReason: 'invalid_json' });
   }
 
-  if (String((payload && payload.action) || '').trim().toLowerCase() === 'prepare_normal_daily') {
+  const action = String((payload && payload.action) || '').trim().toLowerCase();
+  if (action === 'read_normal_daily_source') {
+    return handleGmailSalesNormalDailySourceReadWebhook_(payload);
+  }
+  if (action === 'prepare_normal_daily') {
     return handleGmailSalesNormalDailyPrepareWebhook_(payload);
   }
 
@@ -510,6 +514,116 @@ function handleGmailSalesNormalDailyPrepareWebhook_(payload) {
   }
 }
 
+function handleGmailSalesNormalDailySourceReadWebhook_(payload) {
+  const auth = verifyGmailDailyAutomationWebhook_(payload);
+  if (!auth.ok) {
+    appendSafeLog_({
+      event: 'gmail_daily_source_read_rejected',
+      blockedReason: auth.blockedReason,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+    return buildSheetSyncResponse_({
+      ok: false,
+      status: 'blocked',
+      blockedReason: auth.blockedReason,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+  }
+  const validation = validateGmailDailySourceReadPayload_(payload);
+  if (!validation.ok) {
+    appendSafeLog_({
+      event: 'gmail_daily_source_read_rejected',
+      targetDate: validation.targetDate,
+      blockedReason: validation.blockedReason,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+    return buildSheetSyncResponse_({
+      ok: false,
+      status: 'blocked',
+      blockedReason: validation.blockedReason,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return buildSheetSyncResponse_({
+      ok: false,
+      status: 'blocked',
+      blockedReason: 'lock_unavailable',
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+  }
+  try {
+    const config = getConfig_();
+    const rows = loadCandidateRows_(config)
+      .filter((item) => String(item.row.status || '').toLowerCase() === 'ready')
+      .map((item) => normalDailySourceRow_(item.row, validation.targetDate, validation.sendBatchId));
+    if (rows.length < validation.expectedCount) {
+      return buildSheetSyncResponse_({
+        ok: false,
+        status: 'blocked',
+        blockedReason: 'source_count_insufficient',
+        sourceCount: rows.length,
+        googleSheetsUpdated: false,
+        scriptPropertiesUpdated: false,
+        triggerChanged: false
+      });
+    }
+    appendSafeLog_({
+      event: 'gmail_daily_source_read_pass',
+      targetDate: validation.targetDate,
+      sourceCount: rows.length,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+    return buildSheetSyncResponse_({
+      ok: true,
+      status: 'pass',
+      sourceSchemaVersion: 1,
+      sourceCount: rows.length,
+      headers: GMAIL_SHEET_SYNC_OUTBOX_HEADERS,
+      rows,
+      sourceSnapshotIdentity: 'apps_script_normal_daily_source',
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+  } catch (error) {
+    appendSafeLog_({
+      event: 'gmail_daily_source_read_rejected',
+      blockedReason: safeErrorCode_(error),
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+    return buildSheetSyncResponse_({
+      ok: false,
+      status: 'blocked',
+      blockedReason: 'source_input_unavailable',
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function verifyGmailDailyAutomationWebhook_(payload) {
   const props = PropertiesService.getScriptProperties();
   const secret = String(props.getProperty(GMAIL_DAILY_AUTOMATION_SECRET_PROPERTY) || '').trim();
@@ -603,7 +717,61 @@ function validateGmailDailyPreparePayload_(payload) {
   };
 }
 
+function validateGmailDailySourceReadPayload_(payload) {
+  const targetDate = String(payload && (payload.targetDate || payload.sendDate) || '').trim();
+  const sendBatchId = String(payload && payload.sendBatchId || '').trim();
+  const expectedCount = Number(payload && payload.expectedCount || 0);
+  const versionStatus = gmailDailyVersionStatus_();
+  const blocked = [];
+  if (!versionStatus.ok) blocked.push.apply(blocked, versionStatus.blockedReasons);
+  if (String(payload && payload.action || '') !== 'read_normal_daily_source') blocked.push('action_not_read_normal_daily_source');
+  if (String(payload && payload.mode || '') !== 'normal_daily') blocked.push('mode_not_normal_daily');
+  if (String(payload && payload.sourceType || '') !== 'normal_daily') blocked.push('source_type_not_normal_daily');
+  if (String(payload && payload.automationVersion || '') !== GMAIL_DAILY_AUTOMATION_VERSION) blocked.push('payload_automation_version_mismatch');
+  if (String(payload && payload.autoApprovalPolicyVersion || '') !== GMAIL_DAILY_AUTO_APPROVAL_POLICY_VERSION) blocked.push('payload_approval_policy_version_mismatch');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) blocked.push('target_date_invalid');
+  if (sendBatchId !== 'gmail-sales-' + targetDate) blocked.push('send_batch_id_mismatch');
+  if (expectedCount !== gmailDailyExpectedCount_()) blocked.push('expected_count_mismatch');
+  return {
+    ok: blocked.length === 0,
+    blockedReason: blocked.join(','),
+    targetDate,
+    sendBatchId,
+    expectedCount
+  };
+}
+
+function normalDailySourceRow_(row, targetDate, sendBatchId) {
+  const source = {};
+  GMAIL_SHEET_SYNC_OUTBOX_HEADERS.forEach((header) => {
+    source[header] = row[header] || '';
+  });
+  source.email = source.email || row.email || row.contactEmail || '';
+  source.contactEmail = source.contactEmail || source.email;
+  source.name = source.name || row.name || '';
+  source.subject = source.subject || row.subject || '';
+  source.body = source.body || row.body || '';
+  source.status = 'ready';
+  source.sendDate = targetDate;
+  source.nextActionDate = source.nextActionDate || targetDate;
+  source.sendBatchId = sendBatchId;
+  source.dedupeKey = source.dedupeKey || [source.email, source.name].join('|');
+  return source;
+}
+
 function gmailDailyWebhookBodyMaterial_(payload) {
+  if (String(payload && payload.action || '') === 'read_normal_daily_source') {
+    return JSON.stringify({
+      action: payload && payload.action,
+      targetDate: payload && payload.targetDate,
+      sendBatchId: payload && payload.sendBatchId,
+      expectedCount: payload && payload.expectedCount,
+      mode: payload && payload.mode,
+      sourceType: payload && payload.sourceType,
+      automationVersion: payload && payload.automationVersion,
+      autoApprovalPolicyVersion: payload && payload.autoApprovalPolicyVersion
+    });
+  }
   return JSON.stringify({
     action: payload && payload.action,
     targetDate: payload && payload.targetDate,

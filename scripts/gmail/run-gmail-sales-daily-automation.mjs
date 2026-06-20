@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   buildBatchId,
+  OUTBOX_HEADERS,
   parseArgs,
-  readJson,
-  resolveDateArg
+  resolveDateArg,
+  toTsv
 } from './pool-utils.mjs';
 
 const AUTOMATION_VERSION = 'normal-daily-v1';
@@ -21,7 +22,9 @@ const targetDate = resolveDateArg(args['target-date'] || args.date, 'today');
 const expectedCount = Number(args['expected-count'] || process.env.GMAIL_SALES_EXPECTED_DAILY_COUNT || EXPECTED_COUNT);
 const dryRun = args['dry-run'] !== false && String(args['dry-run'] || '').toLowerCase() !== 'false';
 const allowNetwork = args['allow-network'] === true || String(args['allow-network'] || process.env.GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK || '').toLowerCase() === 'true';
-const outputDir = args['output-dir'] || path.join('tmp', 'gmail-daily-automation', targetDate);
+const sourceMode = String(args['source-mode'] || (phase === 'simulate' ? 'synthetic' : 'apps-script')).trim();
+const cleanup = args.cleanup === true || String(args.cleanup || '').toLowerCase() === 'true';
+const outputDir = args['work-dir'] || args['output-dir'] || createDefaultWorkspacePath();
 const sendBatchId = buildBatchId(targetDate);
 
 const summary = {
@@ -38,6 +41,12 @@ const summary = {
   webhookCalled: false,
   appsScriptPrepareAccepted: false,
   networkRequestCount: 0,
+  sourceResolved: false,
+  sourceMode,
+  candidateCount: 0,
+  cleanupPassed: false,
+  failedPhase: '',
+  errorCode: '',
   gmailSendExecuted: false,
   gmailDraftCreated: false,
   googleSheetsUpdatedByNode: false,
@@ -53,9 +62,9 @@ try {
     summary.ok = true;
     print(summary, 0);
   }
-  const prepared = phase === 'simulate'
-    ? buildSyntheticPreparedBatch()
-    : runLocalPreparePipeline();
+  const prepared = await runFullPreparePipeline();
+  summary.sourceResolved = true;
+  summary.candidateCount = prepared.rows.length;
   const validation = validateStrictAutomaticApproval(prepared);
   summary.strictAutoApprovalPassed = validation.ok;
   if (!validation.ok) {
@@ -71,33 +80,38 @@ try {
   summary.webhookPrepared = true;
   if (phase === 'simulate' || dryRun || !allowNetwork) {
     summary.ok = true;
+    cleanupWorkspace();
     print(summary, 0);
   }
   const response = await postPreparePayload(payload);
   summary.webhookCalled = true;
-  summary.networkRequestCount = 1;
+  summary.networkRequestCount += response.mocked ? 0 : 1;
   summary.appsScriptPrepareAccepted = response.ok === true && response.status === 'pass';
   summary.ok = summary.appsScriptPrepareAccepted;
   summary.blockedReason = summary.ok ? '' : String(response.blockedReason || 'apps_script_prepare_rejected');
+  cleanupWorkspace();
   print(summary, summary.ok ? 0 : 1);
 } catch (error) {
-  summary.blockedReason = safeErrorCode(error);
+  summary.errorCode = safeErrorCode(error);
+  summary.blockedReason = summary.errorCode;
+  if (error && error.failedPhase) summary.failedPhase = error.failedPhase;
+  cleanupWorkspace();
   print(summary, 1);
 }
 
 function validateArgs() {
   if (!['prepare', 'simulate', 'health-check'].includes(phase)) {
-    throw new Error('phase_invalid');
+    throw dailyError('phase_invalid', 'argument_validation');
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-    throw new Error('target_date_invalid');
+    throw dailyError('target_date_invalid', 'argument_validation');
   }
   if (expectedCount !== EXPECTED_COUNT) {
-    throw new Error('expected_count_must_be_30');
+    throw dailyError('expected_count_must_be_30', 'argument_validation');
   }
   const versionErrors = validateConfiguredVersions();
   if (versionErrors.length > 0) {
-    throw new Error(versionErrors.join(','));
+    throw dailyError(versionErrors.join(','), 'argument_validation');
   }
 }
 
@@ -120,33 +134,110 @@ function isConfiguredVersion(value) {
   return Boolean(text) && text.toLowerCase() !== 'unset' && !text.startsWith('PASTE_');
 }
 
-function runLocalPreparePipeline() {
-  runNodeScript('scripts/gmail/prepare-daily-safe-sales-batch.mjs', ['--date', targetDate]);
-  const outboxPath = path.join('data', 'gmail', 'outbox', `gmail-sales-${targetDate}.json`);
-  const sheetsTsvPath = path.join('data', 'gmail', 'outbox', `gmail-sales-${targetDate}-sheets-ready.tsv`);
-  const outbox = readJson(outboxPath, null);
-  const tsv = readTsv(sheetsTsvPath);
-  if (!outbox || !Array.isArray(tsv.rows)) throw new Error('prepared_outputs_missing');
-  const rows = asRowsFromTsv(tsv.headers, tsv.rows);
-  return { rows, headers: tsv.headers, rowCells: tsv.rows, outboxPath, sheetsTsvPath };
+async function runFullPreparePipeline() {
+  const source = await resolveDailySource();
+  const prepared = buildPreparedBatchFromSource(source);
+  writeEphemeralArtifacts(prepared);
+  return prepared;
 }
 
-function runNodeScript(script, scriptArgs) {
-  execFileSync(process.execPath, [script, ...scriptArgs], {
-    cwd: process.cwd(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: process.env
+async function resolveDailySource() {
+  if (sourceMode === 'synthetic') {
+    return {
+      sourceResolved: true,
+      sourceMode,
+      headers: OUTBOX_HEADERS,
+      rows: buildSyntheticPreparedBatch().rows,
+      sourceCount: EXPECTED_COUNT,
+      sourceSchemaVersion: 1,
+      sourceSnapshotIdentity: 'synthetic'
+    };
+  }
+  if (sourceMode !== 'apps-script') {
+    throw dailyError('source_mode_unsupported', 'source_resolution');
+  }
+  if (!allowNetwork) {
+    throw dailyError('source_input_unavailable', 'source_resolution');
+  }
+  const response = await postReadSourcePayload();
+  summary.networkRequestCount += response.mocked ? 0 : 1;
+  if (!response.ok || response.status !== 'pass') {
+    throw dailyError(String(response.blockedReason || 'source_input_unavailable'), 'source_resolution');
+  }
+  return {
+    sourceResolved: true,
+    sourceMode,
+    headers: Array.isArray(response.headers) ? response.headers : OUTBOX_HEADERS,
+    rows: Array.isArray(response.rows) ? response.rows : [],
+    sourceCount: Number(response.sourceCount || response.rows?.length || 0),
+    sourceSchemaVersion: Number(response.sourceSchemaVersion || 1),
+    sourceSnapshotIdentity: String(response.sourceSnapshotIdentity || '')
+  };
+}
+
+function buildPreparedBatchFromSource(source) {
+  if (!source || !Array.isArray(source.rows)) {
+    throw dailyError('source_schema_invalid', 'source_validation');
+  }
+  if (source.rows.length < EXPECTED_COUNT) {
+    throw dailyError('source_count_insufficient', 'source_validation');
+  }
+  const rows = source.rows.slice(0, EXPECTED_COUNT).map((row, index) => normalizeSourceRow(row, index));
+  return {
+    headers: OUTBOX_HEADERS,
+    rows,
+    rowCells: rows.map((row) => OUTBOX_HEADERS.map((header) => row[header] ?? '')),
+    sourceMode: source.sourceMode,
+    sourceSchemaVersion: source.sourceSchemaVersion,
+    sourceSnapshotIdentity: source.sourceSnapshotIdentity
+  };
+}
+
+function normalizeSourceRow(row, index) {
+  const normalized = {};
+  OUTBOX_HEADERS.forEach((header) => {
+    normalized[header] = row?.[header] ?? '';
   });
+  normalized.prospectId = String(normalized.prospectId || `normal-daily-${index + 1}`).trim();
+  normalized.email = String(normalized.email || normalized.contactEmail || '').trim().toLowerCase();
+  normalized.contactEmail = String(normalized.contactEmail || normalized.email || '').trim().toLowerCase();
+  normalized.name = String(normalized.name || '').trim();
+  normalized.subject = String(normalized.subject || '').trim();
+  normalized.body = String(normalized.body || '').trim();
+  normalized.status = 'ready';
+  normalized.sendDate = targetDate;
+  normalized.nextActionDate = normalized.nextActionDate || targetDate;
+  normalized.dedupeKey = String(normalized.dedupeKey || `${normalized.email}|${normalized.name}`).trim().toLowerCase();
+  normalized.sendBatchId = sendBatchId;
+  return normalized;
+}
+
+function writeEphemeralArtifacts(prepared) {
+  const artifactDir = path.join(outputDir, 'artifacts');
+  fs.mkdirSync(artifactDir, { recursive: true });
+  const outboxPath = path.join(artifactDir, `gmail-sales-${targetDate}.json`);
+  const sheetsJsonPath = path.join(artifactDir, `gmail-sales-${targetDate}-sheets-ready.json`);
+  const sheetsTsvPath = path.join(artifactDir, `gmail-sales-${targetDate}-sheets-ready.tsv`);
+  fs.writeFileSync(outboxPath, `${JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    sendDate: targetDate,
+    sendBatchId,
+    status: 'automatic_strict_gate_pending',
+    candidates: prepared.rows
+  })}\n`, 'utf8');
+  fs.writeFileSync(sheetsJsonPath, `${JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    sendDate: targetDate,
+    sendBatchId,
+    rows: prepared.rows
+  })}\n`, 'utf8');
+  fs.writeFileSync(sheetsTsvPath, toTsv(prepared.rows), 'utf8');
+  prepared.outboxPath = outboxPath;
+  prepared.sheetsJsonPath = sheetsJsonPath;
+  prepared.sheetsTsvPath = sheetsTsvPath;
 }
 
 function buildSyntheticPreparedBatch() {
-  const headers = [
-    'prospectId', 'name', 'businessType', 'area', 'email', 'contactEmail',
-    'publicSource', 'sourceUrl', 'issueHypothesis', 'salesAngle', 'subject',
-    'body', 'status', 'sendDate', 'nextActionDate', 'dedupeKey', 'sendBatchId',
-    'sentAt', 'sentBy', 'sentStatus', 'errorMessage', 'replyStatus',
-    'unsubscribe', 'doNotContact', 'lastCheckedAt', 'notes'
-  ];
   const rows = Array.from({ length: EXPECTED_COUNT }, (_, index) => ({
     prospectId: `synthetic-prospect-${index + 1}`,
     name: `Synthetic Business ${index + 1}`,
@@ -175,7 +266,7 @@ function buildSyntheticPreparedBatch() {
     lastCheckedAt: '',
     notes: ''
   }));
-  return { headers, rows, rowCells: rows.map((row) => headers.map((header) => row[header] ?? '')) };
+  return { headers: OUTBOX_HEADERS, rows, rowCells: rows.map((row) => OUTBOX_HEADERS.map((header) => row[header] ?? '')) };
 }
 
 function validateStrictAutomaticApproval(batch) {
@@ -296,7 +387,12 @@ function signPayload(payload) {
 
 async function postPreparePayload(payload) {
   const webhookUrl = process.env.GMAIL_APPS_SCRIPT_WEBHOOK_URL || '';
-  if (!webhookUrl) throw new Error('apps_script_webhook_url_missing');
+  if (!webhookUrl) throw dailyError('apps_script_webhook_url_missing', 'webhook_prepare');
+  if (webhookUrl.startsWith('mock://')) {
+    if (webhookUrl === 'mock://reject') return { ok: false, status: 'blocked', blockedReason: 'apps_script_prepare_rejected', mocked: true };
+    if (webhookUrl === 'mock://timeout') throw dailyError('webhook_timeout', 'webhook_prepare');
+    return { ok: true, status: 'pass', mocked: true };
+  }
   const response = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -308,6 +404,57 @@ async function postPreparePayload(payload) {
   } catch {
     return { ok: false, status: 'blocked', blockedReason: 'apps_script_response_invalid_json' };
   }
+}
+
+async function postReadSourcePayload() {
+  const webhookUrl = process.env.GMAIL_APPS_SCRIPT_WEBHOOK_URL || '';
+  if (!webhookUrl) throw dailyError('source_input_unavailable', 'source_resolution');
+  if (webhookUrl.startsWith('mock://')) {
+    if (webhookUrl === 'mock://source-unavailable') return { ok: false, status: 'blocked', blockedReason: 'source_input_unavailable', mocked: true };
+    if (webhookUrl === 'mock://source-29') {
+      const source = buildSyntheticPreparedBatch();
+      return { ok: true, status: 'pass', rows: source.rows.slice(0, 29), headers: source.headers, sourceCount: 29, sourceSchemaVersion: 1, mocked: true };
+    }
+    if (webhookUrl === 'mock://source-duplicate') {
+      const source = buildSyntheticPreparedBatch();
+      source.rows[1].email = source.rows[0].email;
+      source.rows[1].contactEmail = source.rows[0].contactEmail;
+      return { ok: true, status: 'pass', rows: source.rows, headers: source.headers, sourceCount: 30, sourceSchemaVersion: 1, mocked: true };
+    }
+    return { ok: true, status: 'pass', ...buildSyntheticPreparedBatch(), sourceCount: 30, sourceSchemaVersion: 1, sourceSnapshotIdentity: 'mock', mocked: true };
+  }
+  const payload = buildSignedActionPayload('read_normal_daily_source');
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { ok: false, status: 'blocked', blockedReason: 'source_response_invalid_json' };
+  }
+}
+
+function buildSignedActionPayload(action) {
+  const payload = {
+    action,
+    mode: 'normal_daily',
+    sourceType: 'normal_daily',
+    automationVersion: AUTOMATION_VERSION,
+    autoApprovalPolicyVersion: AUTO_APPROVAL_POLICY_VERSION,
+    targetDate,
+    sendDate: targetDate,
+    sendBatchId,
+    expectedCount,
+    requestId: `gmail-daily-${action}-${targetDate}-${Date.now()}-${process.pid}`,
+    timestamp: new Date().toISOString(),
+    nonce: crypto.randomUUID()
+  };
+  payload.bodyDigest = sha256(gmailDailyActionBodyMaterial(payload));
+  payload.signature = signPayload(payload);
+  return payload;
 }
 
 function webhookBodyMaterial(payload) {
@@ -322,6 +469,19 @@ function webhookBodyMaterial(payload) {
   });
 }
 
+function gmailDailyActionBodyMaterial(payload) {
+  return JSON.stringify({
+    action: payload.action,
+    targetDate: payload.targetDate,
+    sendBatchId: payload.sendBatchId,
+    expectedCount: payload.expectedCount,
+    mode: payload.mode,
+    sourceType: payload.sourceType,
+    automationVersion: payload.automationVersion,
+    autoApprovalPolicyVersion: payload.autoApprovalPolicyVersion
+  });
+}
+
 function candidateDigest(row) {
   return sha256([
     targetDate,
@@ -333,26 +493,39 @@ function candidateDigest(row) {
   ].join('\n'));
 }
 
-function readTsv(filePath) {
-  const raw = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '').trimEnd();
-  const lines = raw ? raw.split(/\r?\n/) : [];
-  return {
-    headers: lines[0] ? lines[0].split('\t') : [],
-    rows: lines.slice(1).filter(Boolean).map((line) => line.split('\t'))
-  };
-}
-
-function asRowsFromTsv(headers, rows) {
-  return rows.map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ''])));
-}
-
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
 function safeErrorCode(error) {
   const raw = error && error.message ? error.message : 'daily_automation_failed';
+  if (/ENOENT/.test(raw)) return 'source_input_unavailable';
   return String(raw).replace(/[^a-zA-Z0-9_,:-]/g, '_').slice(0, 120);
+}
+
+function dailyError(code, failedPhase) {
+  const error = new Error(code);
+  error.failedPhase = failedPhase;
+  return error;
+}
+
+function createDefaultWorkspacePath() {
+  const root = process.env.RUNNER_TEMP || os.tmpdir();
+  return path.join(root, 'ichi-gmail-sales', targetDate, `${Date.now()}-${process.pid}`);
+}
+
+function cleanupWorkspace() {
+  if (!cleanup) {
+    summary.cleanupPassed = true;
+    return;
+  }
+  try {
+    fs.rmSync(outputDir, { recursive: true, force: true });
+    summary.cleanupPassed = true;
+  } catch {
+    summary.cleanupPassed = false;
+    if (!summary.errorCode) summary.errorCode = 'workspace_cleanup_failed';
+  }
 }
 
 function print(value, code) {

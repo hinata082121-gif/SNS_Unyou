@@ -95,8 +95,14 @@ jobs:
           PHASE="${{ github.event_name == 'schedule' && 'prepare' || inputs.phase }}"
           DRY_RUN="${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}"
           TARGET_DATE="${{ inputs.target_date }}"
+          WORK_DIR="${RUNNER_TEMP}/ichi-gmail-sales/${TARGET_DATE:-auto}/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          SOURCE_MODE="${{ github.event_name == 'schedule' && 'apps-script' || 'synthetic' }}"
           if [ -n "$TARGET_DATE" ]; then
-            node scripts/gmail/run-gmail-sales-daily-automation.mjs --phase "$PHASE" --target-date "$TARGET_DATE" --expected-count "${GMAIL_SALES_EXPECTED_DAILY_COUNT}" --dry-run "$DRY_RUN" --allow-network "${GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK}"
+            node scripts/gmail/run-gmail-sales-daily-automation.mjs --phase "$PHASE" --target-date "$TARGET_DATE" --expected-count "${GMAIL_SALES_EXPECTED_DAILY_COUNT}" --dry-run "$DRY_RUN" --allow-network "${GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK}" --source-mode "$SOURCE_MODE" --work-dir "$WORK_DIR" --cleanup true
           else
-            node scripts/gmail/run-gmail-sales-daily-automation.mjs --phase "$PHASE" --expected-count "${GMAIL_SALES_EXPECTED_DAILY_COUNT}" --dry-run "$DRY_RUN" --allow-network "${GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK}"
+            node scripts/gmail/run-gmail-sales-daily-automation.mjs --phase "$PHASE" --expected-count "${GMAIL_SALES_EXPECTED_DAILY_COUNT}" --dry-run "$DRY_RUN" --allow-network "${GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK}" --source-mode "$SOURCE_MODE" --work-dir "$WORK_DIR" --cleanup true
           fi
+
+      - name: Cleanup daily prepare workspace
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/ichi-gmail-sales"

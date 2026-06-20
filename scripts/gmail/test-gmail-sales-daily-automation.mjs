@@ -54,6 +54,100 @@ assert.equal(payload.headers.length, 26);
 assert.match(payload.signature, /^[a-f0-9]{64}$/);
 assert.match(payload.bodyDigest, /^[a-f0-9]{64}$/);
 
+const prepareMock = runDailyAutomation([
+  '--phase', 'prepare',
+  '--target-date', '2026-06-21',
+  '--expected-count', '30',
+  '--dry-run', 'false',
+  '--allow-network', 'true',
+  '--source-mode', 'synthetic',
+  '--output-dir', path.join(outputDir, 'prepare-mock')
+], {
+  GMAIL_AUTOMATION_SHARED_SECRET: 'synthetic-secret',
+  GMAIL_APPS_SCRIPT_WEBHOOK_URL: 'mock://pass',
+  GMAIL_SALES_AUTOMATION_VERSION: 'normal-daily-v1',
+  GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: 'automatic-strict-gate-v1'
+});
+assert.equal(prepareMock.ok, true);
+assert.equal(prepareMock.sourceResolved, true);
+assert.equal(prepareMock.candidateCount, 30);
+assert.equal(prepareMock.strictAutoApprovalPassed, true);
+assert.equal(prepareMock.webhookCalled, true);
+assert.equal(prepareMock.appsScriptPrepareAccepted, true);
+assert.equal(prepareMock.networkRequestCount, 0);
+
+const unavailable = runDailyAutomation([
+  '--phase', 'prepare',
+  '--target-date', '2026-06-21',
+  '--expected-count', '30',
+  '--dry-run', 'false',
+  '--allow-network', 'false',
+  '--output-dir', path.join(outputDir, 'source-unavailable')
+], {
+  GMAIL_AUTOMATION_SHARED_SECRET: 'synthetic-secret',
+  GMAIL_SALES_AUTOMATION_VERSION: 'normal-daily-v1',
+  GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: 'automatic-strict-gate-v1'
+}, { expectFailure: true });
+assert.equal(unavailable.ok, false);
+assert.equal(unavailable.blockedReason, 'source_input_unavailable');
+assert.equal(unavailable.webhookCalled, false);
+assert.equal(unavailable.networkRequestCount, 0);
+
+const candidateShort = runDailyAutomation([
+  '--phase', 'prepare',
+  '--target-date', '2026-06-21',
+  '--expected-count', '30',
+  '--dry-run', 'false',
+  '--allow-network', 'true',
+  '--output-dir', path.join(outputDir, 'source-29')
+], {
+  GMAIL_AUTOMATION_SHARED_SECRET: 'synthetic-secret',
+  GMAIL_APPS_SCRIPT_WEBHOOK_URL: 'mock://source-29',
+  GMAIL_SALES_AUTOMATION_VERSION: 'normal-daily-v1',
+  GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: 'automatic-strict-gate-v1'
+}, { expectFailure: true });
+assert.equal(candidateShort.ok, false);
+assert.equal(candidateShort.blockedReason, 'source_count_insufficient');
+assert.equal(candidateShort.webhookCalled, false);
+assert.equal(candidateShort.networkRequestCount, 0);
+
+const duplicate = runDailyAutomation([
+  '--phase', 'prepare',
+  '--target-date', '2026-06-21',
+  '--expected-count', '30',
+  '--dry-run', 'false',
+  '--allow-network', 'true',
+  '--output-dir', path.join(outputDir, 'source-duplicate')
+], {
+  GMAIL_AUTOMATION_SHARED_SECRET: 'synthetic-secret',
+  GMAIL_APPS_SCRIPT_WEBHOOK_URL: 'mock://source-duplicate',
+  GMAIL_SALES_AUTOMATION_VERSION: 'normal-daily-v1',
+  GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: 'automatic-strict-gate-v1'
+}, { expectFailure: true });
+assert.equal(duplicate.ok, false);
+assert.equal(duplicate.blockedReason.includes('duplicate_email'), true);
+assert.equal(duplicate.webhookCalled, false);
+assert.equal(duplicate.networkRequestCount, 0);
+
+const webhookRejected = runDailyAutomation([
+  '--phase', 'prepare',
+  '--target-date', '2026-06-21',
+  '--expected-count', '30',
+  '--dry-run', 'false',
+  '--allow-network', 'true',
+  '--source-mode', 'synthetic',
+  '--output-dir', path.join(outputDir, 'webhook-reject')
+], {
+  GMAIL_AUTOMATION_SHARED_SECRET: 'synthetic-secret',
+  GMAIL_APPS_SCRIPT_WEBHOOK_URL: 'mock://reject',
+  GMAIL_SALES_AUTOMATION_VERSION: 'normal-daily-v1',
+  GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: 'automatic-strict-gate-v1'
+}, { expectFailure: true });
+assert.equal(webhookRejected.ok, false);
+assert.equal(webhookRejected.webhookCalled, true);
+assert.equal(webhookRejected.appsScriptPrepareAccepted, false);
+assert.equal(webhookRejected.networkRequestCount, 0);
+
 let unsetRejected = false;
 try {
   execFileSync(process.execPath, [
@@ -104,7 +198,7 @@ assert.equal(workflow.includes('npm run gmail:sales:send-safety:test'), true);
 assert.equal(workflow.includes('run-gmail-sales-daily-automation.mjs'), true);
 
 console.log(JSON.stringify({
-  dailyAutomationTestScenarioCount: 12,
+  dailyAutomationTestScenarioCount: 18,
   passed: true,
   workflowPresent: true,
   strictAutoApprovalPassed: true,
@@ -114,3 +208,20 @@ console.log(JSON.stringify({
   scriptPropertiesUpdated: false,
   triggerCreated: false
 }, null, 2));
+
+function runDailyAutomation(extraArgs, extraEnv = {}, options = {}) {
+  try {
+    return JSON.parse(execFileSync(process.execPath, [
+      'scripts/gmail/run-gmail-sales-daily-automation.mjs',
+      ...extraArgs
+    ], {
+      cwd: ROOT,
+      env: Object.assign({}, process.env, extraEnv),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe']
+    }));
+  } catch (error) {
+    if (!options.expectFailure) throw error;
+    return JSON.parse(String(error.stdout || '{}'));
+  }
+}

@@ -1081,6 +1081,21 @@ const scenarios = [
     assert.equal(result.second.status, 'blocked');
     assert.equal(result.second.blockedReason, 'webhook_replay_detected');
   }],
+  ['normal daily source read webhook is read-only and returns source rows', (env) => {
+    env.entry = 'dailySourceReadWebhook';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.sheetSyncPayload = buildDailySourceReadPayload(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sourceCount, 30);
+    assert.equal(result.rows.length, 30);
+    assert.equal(result.headers.length, 26);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+  }],
   ['automatic strict manifest is accepted by normal pre-send', (env) => {
     env.manifest = buildAutomaticDailyManifest(env);
     env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
@@ -1644,6 +1659,12 @@ function runEntry(env) {
     }).text);
     return { first, second };
   }
+  if (env.entry === 'dailySourceReadWebhook') {
+    const output = env.context.handleGmailOutboxSheetSync_({
+      postData: { contents: JSON.stringify(env.sheetSyncPayload) }
+    });
+    return JSON.parse(output.text);
+  }
   return env.context.executeDailyGmailSalesSend_({ source: 'manual', requireAutoSend: false, dryRun: false });
 }
 
@@ -1842,6 +1863,35 @@ function buildDailyPreparePayload(env) {
   return payload;
 }
 
+function buildDailySourceReadPayload(env) {
+  const payload = {
+    action: 'read_normal_daily_source',
+    mode: 'normal_daily',
+    sourceType: 'normal_daily',
+    automationVersion: 'normal-daily-v1',
+    autoApprovalPolicyVersion: 'automatic-strict-gate-v1',
+    targetDate: TARGET_DATE,
+    sendDate: TARGET_DATE,
+    sendBatchId: BATCH_ID,
+    expectedCount: 30,
+    requestId: `runtime-daily-source-${crypto.randomBytes(4).toString('hex')}`,
+    timestamp: new Date().toISOString(),
+    nonce: `nonce-${crypto.randomBytes(4).toString('hex')}`
+  };
+  payload.bodyDigest = sha256(webhookBodyMaterial(payload));
+  payload.signature = crypto.createHmac('sha256', env.props.GMAIL_AUTOMATION_SHARED_SECRET)
+    .update([
+      payload.timestamp,
+      payload.nonce,
+      payload.requestId,
+      payload.action,
+      payload.targetDate,
+      payload.bodyDigest
+    ].join('\n'))
+    .digest('hex');
+  return payload;
+}
+
 function buildAutomaticDailyManifest(env) {
   const digests = env.rows.map((row) => env.context.computeCandidateDigest_(row, TARGET_DATE, BATCH_ID));
   const manifest = {
@@ -1876,6 +1926,18 @@ function buildAutomaticDailyManifest(env) {
 }
 
 function webhookBodyMaterial(payload) {
+  if (payload.action === 'read_normal_daily_source') {
+    return JSON.stringify({
+      action: payload.action,
+      targetDate: payload.targetDate,
+      sendBatchId: payload.sendBatchId,
+      expectedCount: payload.expectedCount,
+      mode: payload.mode,
+      sourceType: payload.sourceType,
+      automationVersion: payload.automationVersion,
+      autoApprovalPolicyVersion: payload.autoApprovalPolicyVersion
+    });
+  }
   return JSON.stringify({
     action: payload.action,
     targetDate: payload.targetDate,
