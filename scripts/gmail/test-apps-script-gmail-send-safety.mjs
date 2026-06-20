@@ -27,12 +27,25 @@ assertIncludesAll([
   'loadApprovedSendManifest_',
   'validateApprovedSendManifest_',
   'computeCandidateDigest_',
+  'buildCandidateDigestInput_',
   'runGmailSalesPreSendDryRun',
+  'runGmailSalesRecoveryPreSendDryRun',
+  'runGmailSalesRecoverySendOnce',
+  'runGmailSalesRecoveryDigestDiagnostic',
+  'runGmailSalesRecoveryReissueManifestDigests',
+  'runGmailSalesRecoveryReissueSourceCandidateContentHash',
+  'runGmailSalesRecoveryRepairDerivedCandidateHash',
+  'GMAIL_RECOVERY_DIGEST_RUNTIME_VERSION',
+  'analyzeApprovedGmailSalesRecoveryBatch_',
+  'same_day_manual_recovery_not_approved',
   'manifest_property_missing',
   'manifest_expired',
   'manifest_candidate_digest_mismatch',
   'manifest_candidate_count_mismatch',
   'candidate_digest_mismatch',
+  'derived_candidate_hash_mismatch',
+  'manifest_source_candidate_content_hash_mismatch',
+  'manifest_source_candidate_content_hash_reissue_safe',
   'suppression_ledger_missing',
   'gmail_sent_search_failed',
   'suppression_match',
@@ -54,16 +67,25 @@ assertIncludesAll([
   'handleSheetSyncReadOnlySnapshot_',
   'sheetSyncSnapshotSafeLog_',
   'compareSheetSyncRows_',
-  'resolveSheetSyncOperationMode_'
+  'resolveSheetSyncOperationMode_',
+  'runGmailSalesDailyAutomationTrigger',
+  'runGmailSalesDailyAutomationHealthCheck',
+  'handleGmailSalesNormalDailyPrepareWebhook_',
+  'verifyGmailDailyAutomationWebhook_',
+  'GMAIL_DAILY_AUTOMATION_STATE_JSON',
+  'automatic_strict_gate'
 ]);
 
 const executorBody = functionBody('executeApprovedGmailSalesBatch_');
-assertBodyOrder(executorBody, 'reserveCandidateBeforeSend_', 'MailApp.sendEmail');
-assertBodyOrder(executorBody, 'reservationCheck', 'MailApp.sendEmail');
+assert.equal(executorBody.includes('sendApprovedGmailSalesRow_'), true);
+const sharedSendBody = functionBody('sendApprovedGmailSalesRow_');
+assertBodyOrder(sharedSendBody, 'reserveCandidateBeforeSend_', 'MailApp.sendEmail');
+assertBodyOrder(sharedSendBody, 'reservationCheck', 'MailApp.sendEmail');
 const reserveBody = functionBody('reserveCandidateBeforeSend_');
 assert.equal(reserveBody.includes('sendState: GMAIL_SEND_STATE.reserved'), true);
 assert.equal(reserveBody.includes('SpreadsheetApp.flush();'), true);
-assertOrder('sendState: GMAIL_SEND_STATE.sent', 'markBatchSent_');
+assertBodyOrder(executorBody, 'sendApprovedGmailSalesRow_', 'markBatchSent_');
+assertBodyOrder(sharedSendBody, 'sendState: GMAIL_SEND_STATE.sent', 'return { ok: true');
 
 assert.equal(/state === GMAIL_SEND_STATE\.reserved/.test(code), true);
 assert.equal(/state === GMAIL_SEND_STATE\.deliveryUnknown/.test(code), true);
@@ -83,6 +105,18 @@ assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(dryRunExecutorBody)
 assert.equal(/setValue|setValues|setProperty|setProperties|deleteProperty|newTrigger|deleteTrigger|SpreadsheetApp\.flush|acquireSheetMaintenanceLease_/.test(dryRunExecutorBody), false);
 assert.equal(/if \(settings\.dryRun === true\) \{\s*return executeApprovedGmailSalesPreSendDryRun_/.test(executorBody), true);
 assert.equal(/if \(configForReset && settings\.dryRun !== true\)/.test(executorBody), true);
+const recoveryDryRunFunction = functionBody('runGmailSalesRecoveryPreSendDryRun');
+assert.equal(recoveryDryRunFunction.includes('executeApprovedGmailSalesRecoveryPreSendDryRun_'), true);
+assert.equal(recoveryDryRunFunction.includes('executeApprovedGmailSalesBatch_'), false);
+const recoveryDryRunExecutorBody = functionBody('executeApprovedGmailSalesRecoveryPreSendDryRun_');
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(recoveryDryRunExecutorBody), false);
+assert.equal(/setValue|setValues|setProperty|setProperties|deleteProperty|newTrigger|deleteTrigger|SpreadsheetApp\.flush|acquireSheetMaintenanceLease_|resetLiveSendAfterRun_/.test(recoveryDryRunExecutorBody), false);
+const recoveryAnalysisBody = functionBody('analyzeApprovedGmailSalesRecoveryBatch_');
+assert.equal(recoveryAnalysisBody.includes('loadCandidateRows_(config)'), true);
+assert.equal(recoveryAnalysisBody.includes('buildRecoverySendConfig_'), true);
+assert.equal(recoveryAnalysisBody.includes('validateRecoveryOutboxRows_'), true);
+assert.equal(recoveryAnalysisBody.includes('acquireSheetMaintenanceLease_'), false);
+assert.equal(recoveryAnalysisBody.includes('resetLiveSendAfterRun_'), false);
 
 const analyzeBody = functionBody('analyzeApprovedGmailSalesBatch_');
 assert.equal(/findPossibleGmailSentMatch_/.test(analyzeBody) || /validateSingleCandidatePreSend_/.test(analyzeBody), true);
@@ -93,12 +127,34 @@ const diagnosticValidatorBody = functionBody('diagnoseSuppressionLedgerPropertie
 assert.equal(/setProperty|setProperties|deleteProperty|deleteAllProperties|MailApp\.sendEmail|GmailApp\.createDraft|SpreadsheetApp\.flush|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(diagnosticBody), false);
 assert.equal(/setProperty|setProperties|deleteProperty|deleteAllProperties|MailApp\.sendEmail|GmailApp\.createDraft|SpreadsheetApp\.flush|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(diagnosticValidatorBody), false);
 assert.equal(/getProperty/.test(diagnosticValidatorBody), true);
+const recoveryDigestDiagnosticBody = functionBody('runGmailSalesRecoveryDigestDiagnostic');
+assert.equal(/setProperty|setProperties|deleteProperty|deleteAllProperties|MailApp\.sendEmail|GmailApp\.createDraft|SpreadsheetApp\.flush|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(recoveryDigestDiagnosticBody), false);
+assert.equal(/diagnoseGmailSalesRecoveryDigestRuntime_/.test(recoveryDigestDiagnosticBody), true);
+const recoveryDigestReissueBody = functionBody('runGmailSalesRecoveryReissueManifestDigests');
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|SpreadsheetApp\.flush|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(recoveryDigestReissueBody), false);
+assert.equal(/setProperty\('APPROVED_SEND_MANIFEST_JSON'/.test(recoveryDigestReissueBody), true);
+const recoverySourceHashReissueBody = functionBody('runGmailSalesRecoveryReissueSourceCandidateContentHash');
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|SpreadsheetApp\.flush|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(recoverySourceHashReissueBody), false);
+assert.equal(/setProperty\('APPROVED_SEND_MANIFEST_JSON'/.test(recoverySourceHashReissueBody), true);
+assert.equal(/setProperty\('(?!APPROVED_SEND_MANIFEST_JSON)/.test(recoverySourceHashReissueBody), false);
+assert.equal(/sourceOutboxIdentity\.candidateContentHash = runtimeContentHash/.test(recoverySourceHashReissueBody), true);
+assert.equal(/candidateDigests =/.test(recoverySourceHashReissueBody), false);
+assert.equal(/manual_execution_required/.test(recoverySourceHashReissueBody), true);
+const recoveryHashRepairBody = functionBody('runGmailSalesRecoveryRepairDerivedCandidateHash');
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|setProperty|setProperties|deleteProperty|deleteAllProperties|newTrigger|deleteTrigger|executeApprovedGmailSalesBatch_|resetLiveSendAfterRun_/.test(recoveryHashRepairBody), false);
+assert.equal(/getRange\(2, matchingColumns\[0\]\)\.setValue/.test(recoveryHashRepairBody), true);
+assert.equal(/updatedCellCount = 1/.test(recoveryHashRepairBody), true);
+assert.equal(/APPROVED_SEND_MANIFEST_JSON/.test(recoveryHashRepairBody), false);
 const connectedDryRunBody = functionBody('handleConnectedSheetSyncDryRun_');
 const readOnlySnapshotBody = functionBody('handleSheetSyncReadOnlySnapshot_');
 const connectedCompareBody = functionBody('compareSheetSyncRows_');
+const dailyPrepareWebhookBody = functionBody('handleGmailSalesNormalDailyPrepareWebhook_');
+const dailyHealthCheckBody = functionBody('runGmailSalesDailyAutomationHealthCheck');
 assert.equal(/clear|clearContents|clearFormat|setValue|setValues|appendRow|insertRow|insertRows|deleteRow|deleteRows|sort|moveRows|protect|insertSheet|deleteSheet|SpreadsheetApp\.flush|setProperty|setProperties|deleteProperty|deleteAllProperties|acquireSheetMaintenanceLease_|releaseSheetMaintenanceLease_|LockService|MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger|writeGmailOutboxRowsToSheet_/.test(connectedDryRunBody), false);
 assert.equal(/clear|clearContents|clearFormat|setValue|setValues|appendRow|insertRow|insertRows|deleteRow|deleteRows|sort|moveRows|protect|insertSheet|deleteSheet|SpreadsheetApp\.flush|setProperty|setProperties|deleteProperty|deleteAllProperties|acquireSheetMaintenanceLease_|releaseSheetMaintenanceLease_|LockService|MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger|writeGmailOutboxRowsToSheet_/.test(readOnlySnapshotBody), false);
 assert.equal(/clear|clearContents|setValue|setValues|appendRow|insertRow|insertRows|deleteRow|deleteRows|SpreadsheetApp\.flush|setProperty|setProperties|deleteProperty|deleteAllProperties|acquireSheetMaintenanceLease_|releaseSheetMaintenanceLease_|LockService|MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger|writeGmailOutboxRowsToSheet_/.test(connectedCompareBody), false);
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|executeApprovedGmailSalesBatch_|runScheduledDailySend|runDailyGmailSalesSend|dailySalesEmailJob|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(dailyPrepareWebhookBody), false);
+assert.equal(/setProperty|setProperties|deleteProperty|deleteAllProperties|clear|clearContents|setValue|setValues|appendRow|insertRows|deleteRows|MailApp\.sendEmail|GmailApp\.createDraft|executeApprovedGmailSalesBatch_|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(dailyHealthCheckBody), false);
 assertBodyOrder(functionBody('handleGmailOutboxSheetSync_'), 'handleConnectedSheetSyncDryRun_', 'acquireSheetMaintenanceLease_');
 assertBodyOrder(functionBody('handleGmailOutboxSheetSync_'), 'handleSheetSyncReadOnlySnapshot_', 'acquireSheetMaintenanceLease_');
 assert.equal(/delete safe\.headers/.test(functionBody('sheetSyncSnapshotSafeLog_')), true);
@@ -110,7 +166,7 @@ assert.equal(/delete safe\.approvedCandidateDigest/.test(logFunction), true);
 assert.equal(/delete safe\.manifest/.test(logFunction), true);
 
 console.log(JSON.stringify({
-  syntheticTestCount: 49,
+  syntheticTestCount: 61,
   passed: true,
   mailSendCallSiteCount: count(/MailApp\.sendEmail\s*\(/g),
   gmailSendExecuted: false,
@@ -145,14 +201,6 @@ function functionBody(functionName) {
     }
   }
   throw new Error(`${functionName} body not found`);
-}
-
-function assertOrder(first, second) {
-  const firstIndex = code.indexOf(first);
-  const secondIndex = code.indexOf(second);
-  assert.notEqual(firstIndex, -1, `${first} missing`);
-  assert.notEqual(secondIndex, -1, `${second} missing`);
-  assert.equal(firstIndex < secondIndex, true, `${first} should appear before ${second}`);
 }
 
 function assertBodyOrder(body, first, second) {

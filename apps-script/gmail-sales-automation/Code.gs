@@ -41,6 +41,26 @@ const GMAIL_SEND_SAFE_MAX_SEND_COUNT = 30;
 const GMAIL_SEND_MAX_ATTEMPTS = 1;
 const GMAIL_SUPPRESSION_LEDGER_SCHEMA_VERSION = 1;
 const GMAIL_SUPPRESSION_LEDGER_CHUNK_SIZE = 7000;
+const GMAIL_RECOVERY_DIGEST_RUNTIME_VERSION = 'recovery-digest-diagnostic-v4';
+const GMAIL_RECOVERY_CANDIDATE_DIGEST_CANONICALIZATION = 'apps-script-v2';
+const GMAIL_DAILY_AUTOMATION_VERSION = 'normal-daily-v1';
+const GMAIL_DAILY_AUTO_APPROVAL_POLICY_VERSION = 'automatic-strict-gate-v1';
+const GMAIL_DAILY_AUTOMATION_STATE_PROPERTY = 'GMAIL_DAILY_AUTOMATION_STATE_JSON';
+const GMAIL_DAILY_AUTOMATION_SECRET_PROPERTY = 'GMAIL_AUTOMATION_SHARED_SECRET';
+const GMAIL_DAILY_AUTOMATION_NONCE_PREFIX = 'gmail_daily_nonce_';
+const GMAIL_DAILY_AUTOMATION_REQUEST_PREFIX = 'gmail_daily_request_';
+const GMAIL_DAILY_AUTOMATION_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
+const GMAIL_DAILY_EXPECTED_COUNT = 30;
+const GMAIL_DAILY_TRIGGER_HANDLERS = [
+  'runGmailSalesDailyAutomationTrigger'
+];
+const GMAIL_DAILY_FORBIDDEN_TRIGGER_HANDLERS = [
+  'runGmailSalesRecoverySendOnce',
+  'runGmailSalesRecoveryPreSendDryRun',
+  'runGmailSalesRecoveryReissueManifestDigests',
+  'runGmailSalesRecoveryReissueSourceCandidateContentHash',
+  'runGmailSalesRecoveryRepairDerivedCandidateHash'
+];
 const GMAIL_SALES_SHEET_MAINTENANCE_LOCK = 'GMAIL_SALES_SHEET_MAINTENANCE';
 const GMAIL_SALES_SHEET_MAINTENANCE_SHEET = '_gmail_maintenance';
 const GMAIL_SALES_SHEET_MAINTENANCE_LEASE_MS = 10 * 60 * 1000;
@@ -81,6 +101,34 @@ const GMAIL_SEND_STATE_COLUMNS = [
   'approvedCandidateDigest',
   'deliveryUncertainAt',
   'lastSendErrorCode'
+];
+const GMAIL_SHEET_SYNC_OUTBOX_HEADERS = [
+  'prospectId',
+  'name',
+  'businessType',
+  'area',
+  'email',
+  'contactEmail',
+  'publicSource',
+  'sourceUrl',
+  'issueHypothesis',
+  'salesAngle',
+  'subject',
+  'body',
+  'status',
+  'sendDate',
+  'nextActionDate',
+  'dedupeKey',
+  'sendBatchId',
+  'sentAt',
+  'sentBy',
+  'sentStatus',
+  'errorMessage',
+  'replyStatus',
+  'unsubscribe',
+  'doNotContact',
+  'lastCheckedAt',
+  'notes'
 ];
 
 function setupGmailSalesAutomation() {
@@ -163,6 +211,10 @@ function handleGmailOutboxSheetSync_(e) {
     return buildSheetSyncResponse_({ ok: false, sheetSynced: false, blockedReason: 'invalid_json' });
   }
 
+  if (String((payload && payload.action) || '').trim().toLowerCase() === 'prepare_normal_daily') {
+    return handleGmailSalesNormalDailyPrepareWebhook_(payload);
+  }
+
   const providedToken = String((payload && payload.token) || '').trim();
   if (!expectedToken || providedToken !== expectedToken) {
     appendSafeLog_({ event: 'gmail_sheet_sync_rejected', blockedReason: 'token_mismatch' });
@@ -184,6 +236,9 @@ function handleGmailOutboxSheetSync_(e) {
   }
   if (modeResolution.mode === 'read_only_snapshot') {
     return handleSheetSyncReadOnlySnapshot_(payload, validation);
+  }
+  if (modeResolution.mode === 'sync_recovery_single') {
+    return handleRecoverySingleSheetSync_(payload);
   }
 
   if (!validation.ok) {
@@ -280,6 +335,9 @@ function resolveSheetSyncOperationMode_(payload) {
     }
     return { ok: true, mode };
   }
+  if (mode === 'sync_recovery_single') {
+    return { ok: true, mode };
+  }
   if (mode === 'write') {
     if (payload.dryRun === true) {
       return { ok: false, mode: '', blockedReason: 'write_mode_rejects_dry_run_true' };
@@ -287,6 +345,358 @@ function resolveSheetSyncOperationMode_(payload) {
     return { ok: true, mode };
   }
   return { ok: false, mode: '', blockedReason: 'unknown_sheet_sync_mode' };
+}
+
+function handleGmailSalesNormalDailyPrepareWebhook_(payload) {
+  const auth = verifyGmailDailyAutomationWebhook_(payload);
+  if (!auth.ok) {
+    appendSafeLog_({
+      event: 'gmail_daily_prepare_rejected',
+      blockedReason: auth.blockedReason,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false
+    });
+    return buildSheetSyncResponse_({
+      ok: false,
+      status: 'blocked',
+      blockedReason: auth.blockedReason,
+      sheetSynced: false,
+      stateUpdated: false
+    });
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return buildSheetSyncResponse_({
+      ok: false,
+      status: 'blocked',
+      blockedReason: 'lock_unavailable',
+      sheetSynced: false,
+      stateUpdated: false
+    });
+  }
+  let lease = null;
+  try {
+    const validation = validateGmailDailyPreparePayload_(payload);
+    if (!validation.ok) {
+      appendSafeLog_({
+        event: 'gmail_daily_prepare_rejected',
+        targetDate: validation.targetDate,
+        blockedReason: validation.blockedReason,
+        gmailSendExecuted: false,
+        googleSheetsUpdated: false,
+        scriptPropertiesUpdated: false
+      });
+      return buildSheetSyncResponse_({
+        ok: false,
+        status: 'blocked',
+        blockedReason: validation.blockedReason,
+        sheetSynced: false,
+        stateUpdated: false
+      });
+    }
+    const config = getConfig_();
+    lease = acquireSheetMaintenanceLease_(config, {
+      holderType: 'github_actions_prepare',
+      holderId: String(payload.requestId || Utilities.getUuid()).trim(),
+      dryRun: false
+    });
+    if (!lease.ok) {
+      return buildSheetSyncResponse_({
+        ok: false,
+        status: 'blocked',
+        blockedReason: lease.blockedReason,
+        sheetSynced: false,
+        stateUpdated: false
+      });
+    }
+    const sheetResult = writeGmailOutboxRowsToSheet_(payload, config);
+    if (!sheetResult.sheetSynced) {
+      return buildSheetSyncResponse_({
+        ok: false,
+        status: 'blocked',
+        blockedReason: sheetResult.blockedReason || 'sheet_sync_failed',
+        sheetSynced: false,
+        stateUpdated: false
+      });
+    }
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty('APPROVED_SEND_MANIFEST_JSON', JSON.stringify(payload.manifest));
+    const state = writeGmailDailyAutomationState_({
+      targetDate: validation.targetDate,
+      mode: 'normal_daily',
+      sendBatchId: validation.sendBatchId,
+      manifestDigest: String(payload.manifest.manifestDigest || payload.manifest.approvedOutboxHash || '').trim(),
+      candidateContentHash: String(payload.manifest.sourceOutboxIdentity && payload.manifest.sourceOutboxIdentity.candidateContentHash || '').trim(),
+      expectedCandidateCount: validation.expectedCandidateCount,
+      actualCandidateCount: validation.candidateCount,
+      state: 'sheet_synced',
+      stateVersion: 1,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      preSendPassedAt: '',
+      sendStartedAt: '',
+      sentAt: '',
+      sendAttemptCount: 0,
+      actualSendCount: 0,
+      failedSendCount: 0,
+      resultUnknown: false,
+      blockedReasons: [],
+      errorCode: '',
+      automationVersion: GMAIL_DAILY_AUTOMATION_VERSION,
+      triggerRunId: ''
+    });
+    appendSafeLog_({
+      event: 'gmail_daily_prepare_completed',
+      targetDate: validation.targetDate,
+      sendBatchId: validation.sendBatchId,
+      candidateCount: validation.candidateCount,
+      state: state.state,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: true,
+      scriptPropertiesUpdated: true
+    });
+    return buildSheetSyncResponse_({
+      ok: true,
+      status: 'pass',
+      event: 'gmail_daily_prepare_completed',
+      targetDate: validation.targetDate,
+      sendBatchId: validation.sendBatchId,
+      candidateCount: validation.candidateCount,
+      sheetSynced: true,
+      stateUpdated: true,
+      currentState: state.state,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: true,
+      scriptPropertiesUpdated: true
+    });
+  } catch (error) {
+    appendSafeLog_({
+      event: 'gmail_daily_prepare_failed',
+      blockedReason: safeErrorCode_(error),
+      gmailSendExecuted: false
+    });
+    return buildSheetSyncResponse_({
+      ok: false,
+      status: 'blocked',
+      blockedReason: safeErrorCode_(error),
+      sheetSynced: false,
+      stateUpdated: false
+    });
+  } finally {
+    if (lease) {
+      releaseSheetMaintenanceLease_(getConfig_(), lease);
+    }
+    lock.releaseLock();
+  }
+}
+
+function verifyGmailDailyAutomationWebhook_(payload) {
+  const props = PropertiesService.getScriptProperties();
+  const secret = String(props.getProperty(GMAIL_DAILY_AUTOMATION_SECRET_PROPERTY) || '').trim();
+  if (!secret) return { ok: false, blockedReason: 'automation_secret_missing' };
+  const timestamp = String(payload && payload.timestamp || '').trim();
+  const nonce = String(payload && payload.nonce || '').trim();
+  const requestId = String(payload && payload.requestId || '').trim();
+  const action = String(payload && payload.action || '').trim();
+  const targetDate = String(payload && payload.targetDate || payload && payload.sendDate || '').trim();
+  const bodyDigest = String(payload && payload.bodyDigest || '').trim();
+  const signature = String(payload && payload.signature || '').trim().toLowerCase();
+  if (!timestamp || !nonce || !requestId || !action || !targetDate || !bodyDigest || !signature) {
+    return { ok: false, blockedReason: 'webhook_auth_fields_missing' };
+  }
+  const timestampMs = Date.parse(timestamp);
+  if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > GMAIL_DAILY_AUTOMATION_MAX_CLOCK_SKEW_MS) {
+    return { ok: false, blockedReason: 'webhook_timestamp_stale' };
+  }
+  if (!/^[a-f0-9]{64}$/.test(bodyDigest) || !/^[a-f0-9]{64}$/.test(signature)) {
+    return { ok: false, blockedReason: 'webhook_signature_format_invalid' };
+  }
+  const computedBodyDigest = sha256Hex_(gmailDailyWebhookBodyMaterial_(payload));
+  if (!constantTimeEqual_(bodyDigest, computedBodyDigest)) {
+    return { ok: false, blockedReason: 'webhook_body_digest_mismatch' };
+  }
+  const signed = [timestamp, nonce, requestId, action, targetDate, bodyDigest].join('\n');
+  const expectedSignature = hmacSha256Hex_(secret, signed);
+  if (!constantTimeEqual_(signature, expectedSignature)) {
+    return { ok: false, blockedReason: 'webhook_signature_mismatch' };
+  }
+  const cache = CacheService.getScriptCache();
+  const nonceKey = GMAIL_DAILY_AUTOMATION_NONCE_PREFIX + hashValue_(nonce);
+  const requestKey = GMAIL_DAILY_AUTOMATION_REQUEST_PREFIX + hashValue_(requestId);
+  if (cache.get(nonceKey) || cache.get(requestKey)) {
+    return { ok: false, blockedReason: 'webhook_replay_detected' };
+  }
+  cache.put(nonceKey, '1', 10 * 60);
+  cache.put(requestKey, '1', 10 * 60);
+  return { ok: true, blockedReason: '' };
+}
+
+function validateGmailDailyPreparePayload_(payload) {
+  const manifest = payload && payload.manifest;
+  const headers = Array.isArray(payload && payload.headers) ? payload.headers : [];
+  const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+  const targetDate = String(payload && (payload.targetDate || payload.sendDate) || '').trim();
+  const sendBatchId = String(payload && payload.sendBatchId || manifest && manifest.batchId || '').trim();
+  const expectedCandidateCount = gmailDailyExpectedCount_();
+  const blocked = [];
+  if (String(payload && payload.action || '') !== 'prepare_normal_daily') blocked.push('action_not_prepare_normal_daily');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) blocked.push('target_date_invalid');
+  if (!manifest || typeof manifest !== 'object') blocked.push('manifest_missing');
+  if (String(manifest && (manifest.mode || manifest.sourceType) || '') !== 'normal_daily') blocked.push('manifest_mode_not_normal_daily');
+  if (manifest && manifest.recoverySingle === true) blocked.push('recovery_manifest_rejected');
+  if (String(manifest && manifest.targetDate || '') !== targetDate) blocked.push('manifest_target_date_mismatch');
+  if (String(manifest && manifest.batchId || '') !== sendBatchId) blocked.push('manifest_batch_id_mismatch');
+  if (Number(manifest && manifest.candidateCount || 0) !== expectedCandidateCount) blocked.push('manifest_candidate_count_mismatch');
+  if (rows.length !== expectedCandidateCount) blocked.push('row_count_not_30');
+  if (Number(payload && payload.candidateCount || rows.length) !== expectedCandidateCount) blocked.push('payload_candidate_count_mismatch');
+  if (manifest && manifest.approvalStatus !== 'approved') blocked.push('manifest_approval_status_not_approved');
+  if (manifest && manifest.approvalType !== 'automatic_strict_gate') blocked.push('manifest_approval_type_invalid');
+  if (manifest && manifest.targetAutoApproved !== true) blocked.push('manifest_target_auto_approved_missing');
+  if (manifest && manifest.humanReviewCompleted !== false) blocked.push('manifest_human_review_must_be_false');
+  if (Number(manifest && manifest.humanReviewedCount || 0) !== 0) blocked.push('manifest_human_review_count_must_be_zero');
+  if (String(manifest && manifest.autoApprovalPolicyVersion || '') !== GMAIL_DAILY_AUTO_APPROVAL_POLICY_VERSION) blocked.push('auto_approval_policy_mismatch');
+  if (!Array.isArray(manifest && manifest.candidateDigests) || manifest.candidateDigests.length !== expectedCandidateCount) blocked.push('manifest_candidate_digests_invalid');
+  if (!headers.length) blocked.push('headers_missing');
+  if (blocked.length === 0) {
+    const rowPayload = {
+      headers,
+      rows,
+      sendDate: targetDate,
+      sendBatchId,
+      candidateCount: rows.length
+    };
+    const sheetValidation = validateSheetSyncPayload_(rowPayload);
+    if (!sheetValidation.ok) blocked.push(sheetValidation.blockedReason || 'sheet_payload_invalid');
+  }
+  return {
+    ok: blocked.length === 0,
+    blockedReason: blocked.join(','),
+    targetDate,
+    sendBatchId,
+    candidateCount: rows.length,
+    expectedCandidateCount
+  };
+}
+
+function gmailDailyWebhookBodyMaterial_(payload) {
+  return JSON.stringify({
+    action: payload && payload.action,
+    targetDate: payload && payload.targetDate,
+    sendBatchId: payload && payload.sendBatchId,
+    candidateCount: payload && payload.candidateCount,
+    manifest: payload && payload.manifest,
+    headers: payload && payload.headers,
+    rows: payload && payload.rows
+  });
+}
+
+function handleRecoverySingleSheetSync_(payload) {
+  const validation = validateRecoverySingleSheetSyncPayload_(payload);
+  const result = buildRecoverySingleSheetSyncResult_({
+    status: validation.ok ? 'blocked' : 'blocked',
+    targetDate: validation.targetDate,
+    candidateCount: validation.candidateCount,
+    blockedReason: validation.blockedReason,
+    errorCode: validation.blockedReason,
+    validationPassed: false,
+    dryRun: payload && payload.dryRun === true
+  });
+  if (!validation.ok) {
+    appendSafeLog_({
+      event: 'gmail_sheet_sync_recovery_single_rejected',
+      targetDate: validation.targetDate,
+      candidateCount: validation.candidateCount,
+      blockedReason: validation.blockedReason
+    });
+    return buildSheetSyncResponse_(result);
+  }
+
+  const config = getConfig_();
+  const tabName = resolveRecoverySingleSheetName_(payload, config);
+  if (!config.sheetId) {
+    result.blockedReason = 'missing_sheet_id';
+    result.errorCode = 'missing_sheet_id';
+    return buildSheetSyncResponse_(result);
+  }
+  if (!tabName) {
+    result.blockedReason = 'recovery_tab_name_missing';
+    result.errorCode = 'recovery_tab_name_missing';
+    return buildSheetSyncResponse_(result);
+  }
+
+  let spreadsheet;
+  try {
+    spreadsheet = SpreadsheetApp.openById(config.sheetId);
+  } catch (error) {
+    result.blockedReason = 'sheet_open_failed';
+    result.errorCode = 'sheet_open_failed';
+    return buildSheetSyncResponse_(result);
+  }
+  const sheet = spreadsheet.getSheetByName(tabName);
+  if (!sheet) {
+    result.blockedReason = 'recovery_target_sheet_missing';
+    result.errorCode = 'recovery_target_sheet_missing';
+    return buildSheetSyncResponse_(result);
+  }
+
+  const sheetState = inspectRecoverySingleTargetSheet_(sheet, validation.headers, validation.row);
+  Object.assign(result, {
+    validationPassed: sheetState.ok,
+    intendedWriteCount: sheetState.intendedWriteCount,
+    alreadyApplied: sheetState.alreadyApplied,
+    conflict: sheetState.conflict,
+    blockedReason: sheetState.blockedReason,
+    errorCode: sheetState.blockedReason
+  });
+  if (!sheetState.ok) {
+    appendSafeLog_({
+      event: 'gmail_sheet_sync_recovery_single_rejected',
+      targetDate: validation.targetDate,
+      candidateCount: validation.candidateCount,
+      blockedReason: sheetState.blockedReason
+    });
+    return buildSheetSyncResponse_(result);
+  }
+
+  if (payload.dryRun === true || sheetState.intendedWriteCount === 0) {
+    Object.assign(result, {
+      ok: true,
+      status: 'pass',
+      validationPassed: true,
+      actualWriteCount: 0,
+      sheetUpdated: false,
+      blockedReason: '',
+      errorCode: ''
+    });
+    appendSafeLog_({
+      event: 'gmail_sheet_sync_recovery_single_validated',
+      targetDate: validation.targetDate,
+      candidateCount: validation.candidateCount,
+      intendedWriteCount: sheetState.intendedWriteCount,
+      dryRun: payload.dryRun === true
+    });
+    return buildSheetSyncResponse_(result);
+  }
+
+  sheet.getRange(sheetState.nextRowIndex, 1, 1, validation.headers.length).setValues([validation.row]);
+  SpreadsheetApp.flush();
+  Object.assign(result, {
+    ok: true,
+    status: 'pass',
+    validationPassed: true,
+    actualWriteCount: 1,
+    sheetUpdated: true,
+    blockedReason: '',
+    errorCode: ''
+  });
+  appendSafeLog_({
+    event: 'gmail_sheet_sync_recovery_single_written',
+    targetDate: validation.targetDate,
+    candidateCount: validation.candidateCount,
+    actualWriteCount: 1
+  });
+  return buildSheetSyncResponse_(result);
 }
 
 function handleConnectedSheetSyncDryRun_(payload, validation) {
@@ -608,6 +1018,190 @@ function sheetSyncRowsEquivalent_(incomingHeaders, incomingCells, existingIndex,
     if (String(incomingCells[index] || '') !== String(existingCells[existingColumn] || '')) return false;
   }
   return true;
+}
+
+function validateRecoverySingleSheetSyncPayload_(payload) {
+  const headers = Array.isArray(payload && payload.headers) ? payload.headers.map((value) => String(value)) : [];
+  const rows = Array.isArray(payload && payload.rows) ? payload.rows : [];
+  const row = Array.isArray(rows[0]) ? rows[0].map((value) => String(value === undefined ? '' : value)) : [];
+  const targetDate = normalizeDateText_((payload && payload.targetDate) || (payload && payload.sendDate) || '');
+  const sourceType = String((payload && payload.sourceType) || '').trim();
+  const sendBatchId = String((payload && payload.sendBatchId) || '').trim();
+  const counters = (payload && payload.safetyCounters) || {};
+  const errors = [];
+
+  if (sourceType !== 'recovery_single') errors.push('source_type_not_recovery_single');
+  if (!targetDate) errors.push('target_date_missing');
+  if (targetDate !== '2026-06-20') errors.push('target_date_not_allowed_for_recovery_single');
+  if (rows.length !== 1) errors.push('row_count_not_1');
+  if (Number(payload && payload.candidateCount) !== 1) errors.push('candidate_count_not_1');
+  if (Number((payload && payload.sheetRowCount) || (payload && payload.rowCount) || rows.length) !== 1) errors.push('sheet_row_count_not_1');
+  if (String((payload && payload.approvalStatus) || '') !== 'approved') errors.push('approval_status_not_approved');
+  if (!payload || payload.humanReviewCompleted !== true) errors.push('human_review_not_completed');
+  if (Number(payload && payload.humanReviewedCount) !== 1) errors.push('human_review_count_not_1');
+  if (!payload || payload.targetAutoApproved !== false) errors.push('target_auto_approved_not_false');
+  if (!payload || payload.manifestCreated !== false) errors.push('manifest_already_created');
+  if (!headersStrictlyMatch_(headers, GMAIL_SHEET_SYNC_OUTBOX_HEADERS)) errors.push('header_mismatch');
+  if (hasDuplicateValues_(headers)) errors.push('duplicate_header');
+  if (sendBatchId.indexOf('recovery') === -1) errors.push('send_batch_not_recovery');
+  if (row.length !== headers.length) errors.push('row_width_mismatch');
+
+  [
+    'requiredFieldMissingCount',
+    'personalizationInvalidCount',
+    'recipientDuplicateCount',
+    'domainDuplicateCount',
+    'businessDuplicateCount',
+    'suppressionMatchCount',
+    'gmailSentMatchCount',
+    'sheetHistoryMatchCount',
+    'localHistoryMatchCount',
+    'existingOutboxMatchCount',
+    'june19SourceMatchCount',
+    'june20ExistingTargetMatchCount'
+  ].forEach((key) => {
+    if (Number(counters[key] || 0) !== 0) errors.push(key + '_nonzero');
+  });
+
+  const rowObject = rowFromCells_(headers, row);
+  if (!recoverySingleIdentity_(rowObject)) errors.push('identity_missing');
+  if (normalizeDateText_(rowObject.sendDate) !== targetDate) errors.push('row_target_date_mismatch');
+  if (String(rowObject.sendBatchId || '').trim() !== sendBatchId) errors.push('row_batch_mismatch');
+  if (String(rowObject.status || '').trim().toLowerCase() !== 'ready') errors.push('row_status_not_ready');
+  if (!normalizeEmail_(rowObject.email || rowObject.contactEmail) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail_(rowObject.email || rowObject.contactEmail))) {
+    errors.push('invalid_email');
+  }
+  if (!normalizeEmailSubject_(rowObject.subject) || !normalizeEmailBody_(rowObject.body)) errors.push('missing_subject_or_body');
+  if (normalizeEmailBody_(rowObject.body).indexOf('不要') === -1) errors.push('missing_opt_out_text');
+
+  return {
+    ok: errors.length === 0,
+    targetDate,
+    candidateCount: rows.length,
+    headers,
+    row,
+    rowObject,
+    sendBatchId,
+    blockedReason: errors[0] || '',
+    errors
+  };
+}
+
+function buildRecoverySingleSheetSyncResult_(overrides) {
+  return Object.assign({
+    ok: false,
+    action: 'sync_recovery_single',
+    mode: 'sync_recovery_single',
+    targetDate: '',
+    validationPassed: false,
+    candidateCount: 0,
+    intendedWriteCount: 0,
+    actualWriteCount: 0,
+    alreadyApplied: false,
+    conflict: false,
+    dryRun: true,
+    sheetUpdated: false,
+    errorCode: '',
+    status: 'blocked',
+    blockedReason: ''
+  }, overrides || {});
+}
+
+function resolveRecoverySingleSheetName_(payload, config) {
+  return String(
+    (payload && payload.recoveryTabName) ||
+    PropertiesService.getScriptProperties().getProperty('GMAIL_SHEET_RECOVERY_TAB_NAME') ||
+    config.recoverySheetName ||
+    ''
+  ).trim();
+}
+
+function inspectRecoverySingleTargetSheet_(sheet, expectedHeaders, incomingRow) {
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  if (lastRow < 1 || lastColumn < 1) return { ok: false, blockedReason: 'recovery_header_missing', intendedWriteCount: 0 };
+  if (lastColumn !== expectedHeaders.length) return { ok: false, blockedReason: 'recovery_header_column_mismatch', intendedWriteCount: 0 };
+  const existingHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map((value) => String(value || ''));
+  if (!headersStrictlyMatch_(existingHeaders, expectedHeaders)) return { ok: false, blockedReason: 'recovery_header_mismatch', intendedWriteCount: 0 };
+  if (hasDuplicateValues_(existingHeaders)) return { ok: false, blockedReason: 'recovery_duplicate_header', intendedWriteCount: 0 };
+
+  const incomingIdentity = recoverySingleIdentity_(rowFromCells_(expectedHeaders, incomingRow));
+  if (!incomingIdentity) return { ok: false, blockedReason: 'identity_missing', intendedWriteCount: 0 };
+
+  const existingRows = lastRow > 1
+    ? sheet.getRange(2, 1, lastRow - 1, lastColumn).getValues()
+    : [];
+  const matchingRows = existingRows.filter((cells) => {
+    const row = rowFromCells_(existingHeaders, cells);
+    return recoverySingleIdentity_(row) === incomingIdentity;
+  });
+  if (matchingRows.length > 1) return { ok: false, blockedReason: 'duplicate_conflict', conflict: true, intendedWriteCount: 0 };
+  if (matchingRows.length === 1) {
+    const same = recoverySingleRowsEquivalent_(expectedHeaders, matchingRows[0], incomingRow);
+    if (same) {
+      return { ok: true, blockedReason: '', alreadyApplied: true, conflict: false, intendedWriteCount: 0, nextRowIndex: lastRow + 1 };
+    }
+    return { ok: false, blockedReason: 'identity_conflict', conflict: true, intendedWriteCount: 0 };
+  }
+
+  return { ok: true, blockedReason: '', alreadyApplied: false, conflict: false, intendedWriteCount: 1, nextRowIndex: lastRow + 1 };
+}
+
+function recoverySingleRowsEquivalent_(headers, existingRow, incomingRow) {
+  return headers.every((header, index) => {
+    return canonicalRecoverySingleCell_(header, existingRow[index]) === canonicalRecoverySingleCell_(header, incomingRow[index]);
+  });
+}
+
+function canonicalRecoverySingleCell_(header, value) {
+  const key = String(header || '');
+  if (key === 'email' || key === 'contactEmail') return normalizeEmail_(value);
+  if (key === 'subject') return normalizeEmailSubject_(value);
+  if (key === 'body') return normalizeEmailBody_(value);
+  if (key === 'sendDate' || key === 'nextActionDate') return normalizeDateText_(value);
+  if (key === 'doNotContact') return normalizeBooleanLikeSheetCell_(value);
+  return normalizeSheetComparableText_(value);
+}
+
+function normalizeSheetComparableText_(value) {
+  if (value === null || value === undefined) return '';
+  if (Object.prototype.toString.call(value) === '[object Date]') return normalizeDateText_(value);
+  return String(value).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function normalizeBooleanLikeSheetCell_(value) {
+  if (value === true) return 'true';
+  if (value === false || value === null || value === undefined) return '';
+  const text = String(value).trim().toLowerCase();
+  if (!text || text === 'false' || text === '0' || text === 'no') return '';
+  if (text === 'true' || text === '1' || text === 'yes') return 'true';
+  return text;
+}
+
+function recoverySingleIdentity_(row) {
+  const prospectId = String(row.prospectId || '').trim().toLowerCase();
+  const dedupeKey = String(row.dedupeKey || '').trim().toLowerCase();
+  const email = normalizeEmail_(row.email || row.contactEmail);
+  if (prospectId) return 'prospect:' + prospectId;
+  if (dedupeKey) return 'dedupe:' + dedupeKey;
+  return email ? 'email:' + email : '';
+}
+
+function headersStrictlyMatch_(actual, expected) {
+  return Array.isArray(actual) &&
+    actual.length === expected.length &&
+    expected.every((header, index) => actual[index] === header);
+}
+
+function hasDuplicateValues_(values) {
+  const seen = {};
+  return values.some((value) => {
+    const key = String(value || '').trim();
+    if (!key) return false;
+    if (seen[key]) return true;
+    seen[key] = true;
+    return false;
+  });
 }
 
 function validateSheetSyncPayload_(payload) {
@@ -1136,6 +1730,196 @@ function runScheduledDailySend() {
   executeApprovedGmailSalesBatch_({ source: 'scheduled', requireAutoSend: true, dryRun: false });
 }
 
+function runGmailSalesDailyAutomationTrigger() {
+  let configForReset = null;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const config = getConfig_();
+    configForReset = config;
+    const state = readGmailDailyAutomationState_();
+    const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+    const blockedReasons = [];
+    if (props.getProperty('AUTOMATION_MASTER_ENABLED') !== 'true') blockedReasons.push('automation_master_disabled');
+    if (!config.autoSendEnabled) blockedReasons.push('auto_send_disabled');
+    if (config.liveSendEnabled) blockedReasons.push('live_send_not_at_rest');
+    if (triggerHealth.status !== 'pass') blockedReasons.push('daily_trigger_health_blocked');
+    if (state.state !== 'sheet_synced') blockedReasons.push('daily_state_not_sheet_synced');
+    if (state.mode !== 'normal_daily') blockedReasons.push('daily_state_mode_invalid');
+    if (state.targetDate !== config.currentJstDate) blockedReasons.push('daily_state_target_date_mismatch');
+    if (!insideAllowedSendWindow_(config)) blockedReasons.push('outside_send_window');
+    if (blockedReasons.length > 0) {
+      const blocked = writeGmailDailyAutomationState_(Object.assign({}, state, {
+        state: 'blocked',
+        blockedReasons: uniqueArray_((state.blockedReasons || []).concat(blockedReasons)),
+        updatedAt: new Date().toISOString()
+      }));
+      appendSafeLog_({
+        event: 'gmail_daily_automation_blocked',
+        targetDate: state.targetDate || config.currentJstDate,
+        state: blocked.state,
+        blockedReason: blockedReasons.join(','),
+        gmailSendExecuted: false,
+        googleSheetsUpdated: false,
+        triggerChanged: false
+      });
+      return buildPreSendDryRunResult_({
+        mode: 'normal_daily_automation',
+        status: 'blocked',
+        blockedReasons
+      });
+    }
+    const preSend = executeApprovedGmailSalesPreSendDryRun_({ source: 'normal_daily_automation_trigger' });
+    if (preSend.status !== 'pass') {
+      writeGmailDailyAutomationState_(Object.assign({}, state, {
+        state: 'blocked',
+        blockedReasons: preSend.blockedReasons || ['pre_send_blocked'],
+        updatedAt: new Date().toISOString()
+      }));
+      return preSend;
+    }
+    writeGmailDailyAutomationState_(Object.assign({}, state, {
+      state: 'pre_send_passed',
+      preSendPassedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    props.setProperty('LIVE_SEND_ENABLED', 'true');
+    const sendResult = executeApprovedGmailSalesBatch_({
+      source: 'normal_daily_automation_trigger',
+      requireAutoSend: true,
+      dryRun: false
+    });
+    writeGmailDailyAutomationState_(Object.assign({}, state, {
+      state: sendResult.status === 'pass' ? 'sent' : 'failed',
+      sentAt: sendResult.status === 'pass' ? new Date().toISOString() : '',
+      actualSendCount: Number(sendResult.sentCount || 0),
+      failedSendCount: Number(sendResult.failedCount || 0),
+      blockedReasons: sendResult.blockedReasons || [],
+      updatedAt: new Date().toISOString()
+    }));
+    return sendResult;
+  } catch (error) {
+    const state = readGmailDailyAutomationState_();
+    writeGmailDailyAutomationState_(Object.assign({}, state, {
+      state: 'result_unknown',
+      errorCode: safeErrorCode_(error),
+      updatedAt: new Date().toISOString()
+    }));
+    appendSafeLog_({
+      event: 'gmail_daily_automation_result_unknown',
+      blockedReason: safeErrorCode_(error),
+      gmailSendExecuted: false
+    });
+    return buildPreSendDryRunResult_({
+      mode: 'normal_daily_automation',
+      status: 'blocked',
+      blockedReasons: ['result_unknown']
+    });
+  } finally {
+    if (configForReset) {
+      resetLiveSendAfterRun_(configForReset);
+    }
+  }
+}
+
+function runGmailSalesDailyAutomationHealthCheck() {
+  const props = PropertiesService.getScriptProperties();
+  const config = getConfig_();
+  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const state = readGmailDailyAutomationState_();
+  const result = {
+    event: 'gmail_daily_automation_health_check',
+    status: triggerHealth.status,
+    runtimeVersion: GMAIL_DAILY_AUTOMATION_VERSION,
+    automationMasterEnabled: props.getProperty('AUTOMATION_MASTER_ENABLED') === 'true',
+    autoSendEnabled: config.autoSendEnabled,
+    liveSendAtRest: config.liveSendEnabled === false,
+    expectedDailyCount: gmailDailyExpectedCount_(),
+    maxDailySendCount: config.dailySendLimit,
+    sendWindow: safeSendWindowSummary_(config),
+    triggerStatus: triggerHealth.status,
+    normalTriggerCount: triggerHealth.normalTriggerCount,
+    duplicateTriggerCount: triggerHealth.duplicateTriggerCount,
+    forbiddenTriggerCount: triggerHealth.forbiddenTriggerCount,
+    currentState: state.state || 'not_started',
+    currentTargetDate: state.targetDate || '',
+    recoverySeparated: true,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false
+  };
+  appendSafeLog_(result);
+  return result;
+}
+
+function installGmailSalesDailyAutomationTriggers() {
+  const health = verifyGmailSalesDailyAutomationTriggers();
+  if (health.forbiddenTriggerCount > 0 || health.duplicateTriggerCount > 0) {
+    appendSafeLog_(Object.assign({ event: 'gmail_daily_trigger_install_blocked' }, health));
+    return Object.assign({}, health, { triggerChanged: false });
+  }
+  if (health.normalTriggerCount === GMAIL_DAILY_TRIGGER_HANDLERS.length) {
+    return Object.assign({}, health, { status: 'pass', alreadyInstalled: true, triggerChanged: false });
+  }
+  const config = getConfig_();
+  GMAIL_DAILY_TRIGGER_HANDLERS.forEach((handler) => {
+    if (!hasTrigger_(handler)) {
+      ScriptApp.newTrigger(handler)
+        .timeBased()
+        .everyDays(1)
+        .atHour(config.sendHour)
+        .nearMinute(config.allowedSendStartMinute)
+        .create();
+      appendSafeLog_({ event: 'gmail_daily_trigger_created', handler, hour: config.sendHour });
+    }
+  });
+  return Object.assign({}, verifyGmailSalesDailyAutomationTriggers(), { triggerChanged: true });
+}
+
+function removeGmailSalesDailyAutomationTriggers() {
+  let removedCount = 0;
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    if (GMAIL_DAILY_TRIGGER_HANDLERS.indexOf(trigger.getHandlerFunction()) !== -1) {
+      ScriptApp.deleteTrigger(trigger);
+      removedCount += 1;
+    }
+  });
+  appendSafeLog_({ event: 'gmail_daily_trigger_removed', removedCount });
+  return { status: 'pass', removedCount, triggerChanged: removedCount > 0 };
+}
+
+function repairGmailSalesDailyAutomationTriggers() {
+  const health = verifyGmailSalesDailyAutomationTriggers();
+  if (health.duplicateTriggerCount > 0 || health.forbiddenTriggerCount > 0) {
+    return Object.assign({}, health, {
+      status: 'blocked',
+      blockedReason: 'manual_trigger_cleanup_required',
+      triggerChanged: false
+    });
+  }
+  return installGmailSalesDailyAutomationTriggers();
+}
+
+function verifyGmailSalesDailyAutomationTriggers() {
+  const counts = {};
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    const handler = trigger.getHandlerFunction();
+    counts[handler] = Number(counts[handler] || 0) + 1;
+  });
+  const normalTriggerCount = GMAIL_DAILY_TRIGGER_HANDLERS.reduce((sum, handler) => sum + Number(counts[handler] || 0), 0);
+  const duplicateTriggerCount = GMAIL_DAILY_TRIGGER_HANDLERS.reduce((sum, handler) => sum + Math.max(0, Number(counts[handler] || 0) - 1), 0);
+  const forbiddenTriggerCount = GMAIL_DAILY_FORBIDDEN_TRIGGER_HANDLERS.reduce((sum, handler) => sum + Number(counts[handler] || 0), 0);
+  return {
+    event: 'gmail_daily_trigger_verified',
+    status: duplicateTriggerCount === 0 && forbiddenTriggerCount === 0 ? 'pass' : 'blocked',
+    expectedHandlerCount: GMAIL_DAILY_TRIGGER_HANDLERS.length,
+    normalTriggerCount,
+    duplicateTriggerCount,
+    forbiddenTriggerCount,
+    triggerChanged: false
+  };
+}
+
 function runPostSendCheck() {
   const config = getConfig_();
   const batchId = buildSendBatchId_(config.sendDate);
@@ -1198,6 +1982,324 @@ function runGmailSalesPreSendDryRun() {
   return executeApprovedGmailSalesPreSendDryRun_({ source: 'dry_run' });
 }
 
+function runGmailSalesRecoveryPreSendDryRun() {
+  return executeApprovedGmailSalesRecoveryPreSendDryRun_({ source: 'manual_recovery_dry_run' });
+}
+
+function runGmailSalesRecoverySendOnce() {
+  return executeApprovedGmailSalesRecoverySendOnce_({ source: 'manual_recovery_send_once' });
+}
+
+function runGmailSalesRecoveryDigestDiagnostic() {
+  const result = diagnoseGmailSalesRecoveryDigestRuntime_({ includeInternal: false });
+  appendSafeLog_(result);
+  return result;
+}
+
+function runGmailSalesRecoveryReissueManifestDigests() {
+  const diagnostic = diagnoseGmailSalesRecoveryDigestRuntime_({ includeInternal: true });
+  const result = Object.assign({}, diagnostic, {
+    event: 'approved_gmail_sales_recovery_digest_reissue',
+    mode: 'runtime_digest_reissue',
+    propertyUpdated: false,
+    alreadyReissued: false,
+    candidateDigestChanged: false,
+    manifestDigestChanged: false,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  });
+  if (diagnostic.recommendedNextAction !== 'runtime_digest_reissue_safe') {
+    result.status = 'blocked';
+    result.blockedReason = diagnostic.recommendedNextAction || 'diagnostic_not_reissue_safe';
+    appendSafeLog_(result);
+    return result;
+  }
+  const props = PropertiesService.getScriptProperties();
+  const manifest = diagnostic.manifestForInternalUse;
+  const digest = diagnostic.runtimeCandidateDigestForInternalUse;
+  delete result.manifestForInternalUse;
+  delete result.runtimeCandidateDigestForInternalUse;
+  if (!manifest) {
+    result.status = 'blocked';
+    result.blockedReason = 'manifest_not_loaded';
+    appendSafeLog_(result);
+    return result;
+  }
+  if (!digest) {
+    result.status = 'blocked';
+    result.blockedReason = 'runtime_digest_missing';
+    appendSafeLog_(result);
+    return result;
+  }
+  const previousDigest = Array.isArray(manifest.candidateDigests) ? String(manifest.candidateDigests[0] || '') : '';
+  if (previousDigest === digest && manifest.runtimeDigestReissued === true) {
+    result.status = 'pass';
+    result.alreadyReissued = true;
+    appendSafeLog_(result);
+    return result;
+  }
+  manifest.candidateDigests = [digest];
+  manifest.candidateDigestCanonicalization = GMAIL_RECOVERY_CANDIDATE_DIGEST_CANONICALIZATION;
+  manifest.runtimeDigestReissued = true;
+  manifest.runtimeDigestReissuedAt = new Date().toISOString();
+  manifest.runtimeDigestVersion = GMAIL_RECOVERY_DIGEST_RUNTIME_VERSION;
+  props.setProperty('APPROVED_SEND_MANIFEST_JSON', JSON.stringify(manifest));
+  result.status = 'pass';
+  result.propertyUpdated = true;
+  result.candidateDigestChanged = previousDigest !== digest;
+  result.manifestDigestChanged = true;
+  appendSafeLog_(result);
+  return result;
+}
+
+function runGmailSalesRecoveryReissueSourceCandidateContentHash(options) {
+  const settings = options || {};
+  const diagnostic = diagnoseGmailSalesRecoveryDigestRuntime_({ includeInternal: true });
+  const result = Object.assign({}, diagnostic, {
+    event: 'approved_gmail_sales_recovery_source_candidate_content_hash_reissue',
+    mode: 'source_candidate_content_hash_reissue',
+    reissueFunctionName: 'runGmailSalesRecoveryReissueSourceCandidateContentHash',
+    propertyWriteCount: 0,
+    propertyUpdated: false,
+    alreadyApplied: false,
+    sourceCandidateContentHashChanged: false,
+    manifestDigestChanged: false,
+    candidateDigestVerified: false,
+    readBackValidationPassed: false,
+    postReissueSubstantiveMismatchCount: 0,
+    postReissueDerivedMismatchCount: 0,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  });
+  const manifest = diagnostic.manifestForInternalUse;
+  const runtimeContentHash = diagnostic.runtimeCandidateContentHashForInternalUse;
+  const runtimeDigest = diagnostic.runtimeCandidateDigestForInternalUse;
+  delete result.manifestForInternalUse;
+  delete result.runtimeCandidateDigestForInternalUse;
+  delete result.runtimeCandidateContentHashForInternalUse;
+
+  if (settings.source && String(settings.source).indexOf('scheduled') !== -1) {
+    result.status = 'blocked';
+    result.blockedReason = 'manual_execution_required';
+    appendSafeLog_(result);
+    return result;
+  }
+  if (diagnostic.manifestSourceCandidateContentHashMatch &&
+    diagnostic.substantiveFieldMismatchCount === 0 &&
+    diagnostic.derivedIntegrityFieldMismatchCount === 0 &&
+    diagnostic.candidateDigestMatchAfterCanonicalization) {
+    result.status = 'already_applied';
+    result.alreadyApplied = true;
+    appendSafeLog_(result);
+    return result;
+  }
+  if (diagnostic.recommendedNextAction !== 'manifest_source_candidate_content_hash_reissue_safe') {
+    result.status = 'blocked';
+    result.blockedReason = diagnostic.recommendedNextAction || 'diagnostic_not_source_hash_reissue_safe';
+    appendSafeLog_(result);
+    return result;
+  }
+  if (!manifest || !runtimeContentHash || !runtimeDigest) {
+    result.status = 'blocked';
+    result.blockedReason = 'reissue_input_missing';
+    appendSafeLog_(result);
+    return result;
+  }
+  const storedDigest = String((manifest.candidateDigests || [])[0] || '').trim();
+  if (runtimeDigest !== storedDigest) {
+    result.status = 'blocked';
+    result.blockedReason = 'candidate_digest_mismatch';
+    appendSafeLog_(result);
+    return result;
+  }
+  if (!manifest.sourceOutboxIdentity || typeof manifest.sourceOutboxIdentity !== 'object') {
+    result.status = 'blocked';
+    result.blockedReason = 'source_outbox_identity_missing';
+    appendSafeLog_(result);
+    return result;
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const previousSourceHash = String(manifest.sourceOutboxIdentity.candidateContentHash || '').trim();
+  manifest.sourceOutboxIdentity.candidateContentHash = runtimeContentHash;
+  manifest.runtimeSourceCandidateHashReissued = true;
+  manifest.runtimeSourceCandidateHashReissuedAt = new Date().toISOString();
+  manifest.runtimeSourceCandidateHashVersion = GMAIL_RECOVERY_DIGEST_RUNTIME_VERSION;
+  props.setProperty('APPROVED_SEND_MANIFEST_JSON', JSON.stringify(manifest));
+  result.propertyWriteCount = 1;
+  result.propertyUpdated = true;
+  result.sourceCandidateContentHashChanged = previousSourceHash !== runtimeContentHash;
+  result.manifestDigestChanged = true;
+  result.candidateDigestVerified = true;
+
+  try {
+    const readBackManifest = JSON.parse(props.getProperty('APPROVED_SEND_MANIFEST_JSON') || '');
+    const readBackSourceHash = String(readBackManifest.sourceOutboxIdentity && readBackManifest.sourceOutboxIdentity.candidateContentHash || '').trim();
+    const readBackDigest = String((readBackManifest.candidateDigests || [])[0] || '').trim();
+    result.readBackValidationPassed = readBackSourceHash === runtimeContentHash &&
+      readBackDigest === storedDigest &&
+      readBackManifest.runtimeSourceCandidateHashReissued === true;
+    if (!result.readBackValidationPassed) {
+      result.status = 'blocked';
+      result.blockedReason = 'source_hash_reissue_read_back_failed';
+      appendSafeLog_(result);
+      return result;
+    }
+    const postDiagnostic = diagnoseGmailSalesRecoveryDigestRuntime_({ includeInternal: false });
+    result.postReissueSubstantiveMismatchCount = postDiagnostic.substantiveFieldMismatchCount;
+    result.postReissueDerivedMismatchCount = postDiagnostic.derivedIntegrityFieldMismatchCount;
+    if (postDiagnostic.substantiveFieldMismatchCount !== 0 || postDiagnostic.derivedIntegrityFieldMismatchCount !== 0) {
+      result.status = 'blocked';
+      result.blockedReason = 'post_reissue_integrity_mismatch';
+      appendSafeLog_(result);
+      return result;
+    }
+  } catch (error) {
+    result.status = 'blocked';
+    result.blockedReason = 'source_hash_reissue_read_back_failed';
+    appendSafeLog_(result);
+    return result;
+  }
+
+  result.status = 'pass';
+  result.blockedReason = '';
+  result.derivedIntegrityFieldMismatchCount = 0;
+  result.derivedIntegrityDifferingFieldNames = [];
+  result.manifestSourceCandidateContentHashMatch = true;
+  appendSafeLog_(result);
+  return result;
+}
+
+function runGmailSalesRecoveryRepairDerivedCandidateHash() {
+  const diagnostic = diagnoseGmailSalesRecoveryDigestRuntime_({ includeInternal: true });
+  const result = Object.assign({}, diagnostic, {
+    event: 'approved_gmail_sales_recovery_derived_candidate_hash_repair',
+    mode: 'derived_candidate_hash_repair',
+    repairFunctionName: 'runGmailSalesRecoveryRepairDerivedCandidateHash',
+    repairReadWriteScope: 'recovery_sheet_candidateContentHash_single_cell',
+    sheetWriteCount: 0,
+    updatedCellCount: 0,
+    otherSheetCellChangeCount: 0,
+    propertyUpdated: false,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false,
+    readBackValidationPassed: false
+  });
+  delete result.manifestForInternalUse;
+  delete result.runtimeCandidateDigestForInternalUse;
+  delete result.runtimeCandidateContentHashForInternalUse;
+
+  if (!diagnostic.sheetCandidateContentHashPresent) {
+    result.status = 'not_applicable';
+    result.blockedReason = 'sheet_candidate_content_hash_column_absent';
+    appendSafeLog_(result);
+    return result;
+  }
+  if (diagnostic.sheetCandidateContentHashPresent && diagnostic.derivedIntegrityFieldMismatchCount === 0) {
+    result.status = 'already_applied';
+    result.blockedReason = '';
+    appendSafeLog_(result);
+    return result;
+  }
+  if (diagnostic.recommendedNextAction !== 'sheet_derived_candidate_hash_repair_safe') {
+    result.status = 'blocked';
+    result.blockedReason = diagnostic.recommendedNextAction || 'diagnostic_not_repair_safe';
+    appendSafeLog_(result);
+    return result;
+  }
+  if (!diagnostic.runtimeCandidateContentHashForInternalUse) {
+    result.status = 'blocked';
+    result.blockedReason = 'runtime_candidate_content_hash_missing';
+    appendSafeLog_(result);
+    return result;
+  }
+
+  try {
+    const baseConfig = getConfig_();
+    const manifest = diagnostic.manifestForInternalUse;
+    const config = buildRecoverySendConfig_(baseConfig, manifest);
+    if (!baseConfig.recoverySheetName || config.sheetName !== baseConfig.recoverySheetName || config.sheetName === baseConfig.sheetName) {
+      result.status = 'blocked';
+      result.blockedReason = 'recovery_sheet_not_dedicated';
+      appendSafeLog_(result);
+      return result;
+    }
+    const sheet = SpreadsheetApp.openById(config.sheetId).getSheetByName(config.sheetName);
+    if (!sheet || sheet.getLastRow() !== 2) {
+      result.status = 'blocked';
+      result.blockedReason = 'recovery_sheet_row_count_not_1';
+      appendSafeLog_(result);
+      return result;
+    }
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map((value) => String(value || ''));
+    const matchingColumns = [];
+    headers.forEach((header, index) => {
+      if (header === 'candidateContentHash') matchingColumns.push(index + 1);
+    });
+    if (matchingColumns.length !== 1) {
+      result.status = 'blocked';
+      result.blockedReason = matchingColumns.length === 0 ? 'candidate_content_hash_column_missing' : 'candidate_content_hash_duplicate_column';
+      appendSafeLog_(result);
+      return result;
+    }
+
+    const beforeRows = loadCandidateRows_(config);
+    if (beforeRows.length !== 1) {
+      result.status = 'blocked';
+      result.blockedReason = 'recovery_sheet_row_count_not_1';
+      appendSafeLog_(result);
+      return result;
+    }
+    const beforeDigest = computeCandidateDigest_(beforeRows[0].row, config.sendDate, config.sendBatchId);
+    if (beforeDigest !== String((manifest.candidateDigests || [])[0] || '').trim()) {
+      result.status = 'blocked';
+      result.blockedReason = 'candidate_digest_mismatch';
+      appendSafeLog_(result);
+      return result;
+    }
+
+    sheet.getRange(2, matchingColumns[0]).setValue(diagnostic.runtimeCandidateContentHashForInternalUse);
+    result.sheetWriteCount = 1;
+    result.updatedCellCount = 1;
+
+    const readBackValue = String(sheet.getRange(2, matchingColumns[0]).getValues()[0][0] || '').trim();
+    result.readBackValidationPassed = readBackValue === diagnostic.runtimeCandidateContentHashForInternalUse;
+    const afterRows = loadCandidateRows_(config);
+    const afterDigest = afterRows.length === 1
+      ? computeCandidateDigest_(afterRows[0].row, config.sendDate, config.sendBatchId)
+      : '';
+    const afterDerived = afterRows.length === 1
+      ? analyzeRecoveryDerivedCandidateHash_(afterRows[0].row, manifest)
+      : { derivedIntegrityFieldMismatchCount: 1 };
+    if (!result.readBackValidationPassed || afterRows.length !== 1 || afterDigest !== beforeDigest || afterDerived.derivedIntegrityFieldMismatchCount !== 0) {
+      result.status = 'blocked';
+      result.blockedReason = 'repair_read_back_validation_failed';
+      appendSafeLog_(result);
+      return result;
+    }
+
+    result.status = 'repaired';
+    result.blockedReason = '';
+    result.derivedIntegrityFieldMismatchCount = 0;
+    result.derivedIntegrityDifferingFieldNames = [];
+    result.manifestVsSheetFieldComparisonPassed = true;
+    result.substantiveFieldMismatchCount = 0;
+    result.sheetCandidateDigestMatch = true;
+    result.candidateDigestMatchAfterCanonicalization = true;
+    result.googleSheetsUpdated = true;
+    appendSafeLog_(result);
+    return result;
+  } catch (error) {
+    result.status = 'blocked';
+    result.blockedReason = safeErrorCode_(error);
+    appendSafeLog_(result);
+    return result;
+  }
+}
+
 function executeApprovedGmailSalesPreSendDryRun_(options) {
   const settings = options || {};
   try {
@@ -1233,6 +2335,54 @@ function executeApprovedGmailSalesPreSendDryRun_(options) {
       mode: 'dry_run',
       status: 'blocked',
       blockedReasons: ['dry_run_analysis_failed']
+    });
+  }
+}
+
+function executeApprovedGmailSalesRecoveryPreSendDryRun_(options) {
+  const settings = options || {};
+  try {
+    const analysis = analyzeApprovedGmailSalesRecoveryBatch_({ dryRun: true });
+    const shaSelfTest = runRecoveryShaRuntimeSelfTest_();
+    appendSafeLog_({
+      event: 'approved_gmail_sales_recovery_pre_send_dry_run',
+      source: settings.source || 'manual_recovery_dry_run',
+      runtimeVersion: GMAIL_RECOVERY_DIGEST_RUNTIME_VERSION,
+      candidateDigestCanonicalization: GMAIL_RECOVERY_CANDIDATE_DIGEST_CANONICALIZATION,
+      shaRuntimeSelfTestPassed: shaSelfTest.shaRuntimeSelfTestPassed,
+      manifestInternalDigestMatch: analysis.candidateDigestMismatchCount === 0,
+      sheetCandidateDigestMatch: analysis.candidateDigestMismatchCount === 0,
+      substantiveFieldMismatchCount: analysis.substantiveFieldMismatchCount || 0,
+      derivedIntegrityFieldMismatchCount: analysis.derivedIntegrityFieldMismatchCount || 0,
+      derivedIntegrityDifferingFieldNames: analysis.derivedIntegrityDifferingFieldNames || [],
+      candidateDigestInputFieldCount: 6,
+      status: analysis.status,
+      blockedReason: analysis.blockedReasons.join(',') || '',
+      targetDate: analysis.targetDate,
+      sourceType: analysis.sourceType,
+      candidateCount: analysis.candidateCount,
+      eligibleCount: analysis.eligibleRows.length,
+      wouldAttemptCount: analysis.wouldAttemptCount,
+      maxSendCount: analysis.maxSendCount,
+      sameDayManualRecoveryApproved: analysis.sameDayManualRecoveryApproved,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false
+    });
+    return toPreSendPublicResult_(analysis, 'recovery_dry_run');
+  } catch (error) {
+    appendSafeLog_({
+      event: 'approved_gmail_sales_recovery_pre_send_dry_run',
+      status: 'blocked',
+      blockedReason: 'recovery_dry_run_analysis_failed',
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false
+    });
+    return buildPreSendDryRunResult_({
+      mode: 'recovery_dry_run',
+      status: 'blocked',
+      blockedReasons: ['recovery_dry_run_analysis_failed']
     });
   }
 }
@@ -1341,83 +2491,11 @@ function executeApprovedGmailSalesBatch_(options) {
     let failed = 0;
 
     for (let i = 0; i < rows.length; i += 1) {
-      const item = rows[i];
-      const row = item.row;
-      const rowIndex = item.rowIndex;
-      const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
-      const digest = computeCandidateDigest_(row, analysis.config.sendDate, analysis.batchId);
-      let mailAttempted = false;
-
-      try {
-        const preSend = validateSingleCandidatePreSend_(row, analysis);
-        if (!preSend.ok) {
-          updateSheetAfterSend_(analysis.config, rowIndex, {
-            sendState: GMAIL_SEND_STATE.manualReviewRequired,
-            sentStatus: GMAIL_SEND_STATE.manualReviewRequired,
-            lastSendErrorCode: preSend.blockedReason,
-            approvedBatchId: analysis.batchId,
-            approvedCandidateDigest: digest,
-            lastCheckedAt: new Date().toISOString()
-          });
-          failed += 1;
-          break;
-        }
-        assertSafeToSend_(row);
-        const message = buildInitialSalesEmail_(row);
-        assertMessageSafe_(message);
-        assertRecipientPersonalizationSafe_(row, message);
-        reserveCandidateBeforeSend_(analysis.config, rowIndex, row, {
-          runId,
-          batchId: analysis.batchId,
-          digest,
-          attemptCount: Number(row.sendAttemptCount || 0) + 1
-        });
-        const reserved = reloadCandidateRow_(analysis.config, rowIndex);
-        const reservationCheck = verifyReservationPersisted_(reserved.row, { runId, digest });
-        if (!reservationCheck.ok) {
-          failed += 1;
-          break;
-        }
-        mailAttempted = true;
-        MailApp.sendEmail({
-          to: email,
-          subject: message.subject,
-          body: message.body,
-          name: analysis.config.fromName
-        });
-        updateSheetAfterSend_(analysis.config, rowIndex, {
-          sendState: GMAIL_SEND_STATE.sent,
-          status: 'sent',
-          sentStatus: '送信済',
-          sentAt: new Date().toISOString(),
-          sentBy: 'Apps Script',
-          lastSendErrorCode: '',
-          lastCheckedAt: new Date().toISOString()
-        });
-        appendSafeLog_({
-          event: 'approved_gmail_sales_send_executed',
-          rowIndex,
-          recipientHash: hashValue_(email),
-          subjectHash: hashValue_(message.subject)
-        });
+      const sendResult = sendApprovedGmailSalesRow_(analysis, rows[i], runId, 'approved_gmail_sales_send_executed');
+      if (sendResult.ok) {
         processed += 1;
-      } catch (error) {
+      } else {
         failed += 1;
-        updateSheetAfterSend_(analysis.config, rowIndex, {
-          sendState: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
-          status: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
-          sentStatus: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
-          deliveryUncertainAt: mailAttempted ? new Date().toISOString() : '',
-          lastSendErrorCode: safeErrorCode_(error),
-          lastCheckedAt: new Date().toISOString()
-        });
-        appendSafeLog_({
-          event: 'approved_gmail_sales_send_stopped',
-          rowIndex,
-          errorName: error.name || 'Error',
-          reason: safeErrorCode_(error),
-          deliveryUnknown: mailAttempted
-        });
         break;
       }
     }
@@ -1455,6 +2533,178 @@ function executeApprovedGmailSalesBatch_(options) {
       resetLiveSendAfterRun_(configForReset);
     }
     lock.releaseLock();
+  }
+}
+
+function executeApprovedGmailSalesRecoverySendOnce_(options) {
+  const settings = options || {};
+  if (settings.source && String(settings.source).indexOf('scheduled') !== -1) {
+    return buildPreSendDryRunResult_({
+      mode: 'recovery_send',
+      status: 'blocked',
+      blockedReasons: ['recovery_manual_execution_required']
+    });
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    resetLiveSendAfterRun_(getConfig_(), { dryRun: false });
+    appendSafeLog_({ event: 'approved_gmail_sales_recovery_send_blocked', blockedReason: 'lock_unavailable' });
+    return buildPreSendDryRunResult_({
+      mode: 'recovery_send',
+      status: 'blocked',
+      blockedReasons: ['lock_unavailable']
+    });
+  }
+
+  let configForReset = null;
+  try {
+    const preliminaryConfig = getConfig_();
+    configForReset = preliminaryConfig;
+    if (!preliminaryConfig.liveSendEnabled) {
+      appendSafeLog_({ event: 'approved_gmail_sales_recovery_send_blocked', blockedReason: 'live_send_disabled' });
+      return buildPreSendDryRunResult_({
+        mode: 'recovery_send',
+        status: 'blocked',
+        blockedReasons: ['live_send_disabled']
+      });
+    }
+    if (preliminaryConfig.autoSendEnabled) {
+      appendSafeLog_({ event: 'approved_gmail_sales_recovery_send_blocked', blockedReason: 'auto_send_must_be_disabled' });
+      return buildPreSendDryRunResult_({
+        mode: 'recovery_send',
+        status: 'blocked',
+        blockedReasons: ['auto_send_must_be_disabled']
+      });
+    }
+
+    const analysis = analyzeApprovedGmailSalesRecoveryBatch_({ dryRun: false });
+    configForReset = analysis.config;
+    if (analysis.status !== 'pass') {
+      appendSafeLog_({
+        event: 'approved_gmail_sales_recovery_send_blocked',
+        source: settings.source || 'manual_recovery_send_once',
+        status: analysis.status,
+        blockedReason: analysis.blockedReasons.join(',') || '',
+        targetDate: analysis.targetDate,
+        candidateCount: analysis.candidateCount,
+        eligibleCount: analysis.eligibleRows.length,
+        wouldAttemptCount: analysis.wouldAttemptCount,
+        maxSendCount: analysis.maxSendCount,
+        gmailSendExecuted: false,
+        googleSheetsUpdated: false,
+        scriptPropertiesUpdated: false
+      });
+      return toPreSendPublicResult_(analysis, 'recovery_send');
+    }
+
+    const row = analysis.eligibleRows[0];
+    const runId = buildSendRunId_(analysis.config.sendDate);
+    const sendResult = sendApprovedGmailSalesRow_(analysis, row, runId, 'approved_gmail_sales_recovery_send_executed');
+    if (sendResult.ok) {
+      markBatchSent_(analysis.batchId);
+    }
+    appendSafeLog_({
+      event: 'approved_gmail_sales_recovery_send_finished',
+      source: settings.source || 'manual_recovery_send_once',
+      sendBatchId: analysis.batchId,
+      processed: sendResult.ok ? 1 : 0,
+      failed: sendResult.ok ? 0 : 1,
+      maxSendCount: analysis.maxSendCount
+    });
+    return {
+      mode: 'recovery_send',
+      status: sendResult.ok ? 'pass' : 'blocked',
+      blockedReasons: sendResult.ok ? [] : ['recovery_send_stopped_for_manual_review'],
+      targetDate: analysis.targetDate,
+      sentCount: sendResult.ok ? 1 : 0,
+      failedCount: sendResult.ok ? 0 : 1,
+      gmailSendExecuted: sendResult.ok,
+      googleSheetsUpdated: true,
+      scriptPropertiesUpdated: sendResult.ok
+    };
+  } finally {
+    if (configForReset) {
+      resetLiveSendAfterRun_(configForReset);
+    }
+    lock.releaseLock();
+  }
+}
+
+function sendApprovedGmailSalesRow_(analysis, item, runId, successEvent) {
+  const row = item.row;
+  const rowIndex = item.rowIndex;
+  const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
+  const digest = computeCandidateDigest_(row, analysis.config.sendDate, analysis.batchId);
+  let mailAttempted = false;
+
+  try {
+    const preSend = validateSingleCandidatePreSend_(row, analysis);
+    if (!preSend.ok) {
+      updateSheetAfterSend_(analysis.config, rowIndex, {
+        sendState: GMAIL_SEND_STATE.manualReviewRequired,
+        sentStatus: GMAIL_SEND_STATE.manualReviewRequired,
+        lastSendErrorCode: preSend.blockedReason,
+        approvedBatchId: analysis.batchId,
+        approvedCandidateDigest: digest,
+        lastCheckedAt: new Date().toISOString()
+      });
+      return { ok: false, deliveryUnknown: false, blockedReason: preSend.blockedReason };
+    }
+    assertSafeToSend_(row);
+    const message = buildInitialSalesEmail_(row);
+    assertMessageSafe_(message);
+    assertRecipientPersonalizationSafe_(row, message);
+    reserveCandidateBeforeSend_(analysis.config, rowIndex, row, {
+      runId,
+      batchId: analysis.batchId,
+      digest,
+      attemptCount: Number(row.sendAttemptCount || 0) + 1
+    });
+    const reserved = reloadCandidateRow_(analysis.config, rowIndex);
+    const reservationCheck = verifyReservationPersisted_(reserved.row, { runId, digest });
+    if (!reservationCheck.ok) {
+      return { ok: false, deliveryUnknown: false, blockedReason: reservationCheck.blockedReason };
+    }
+    mailAttempted = true;
+    MailApp.sendEmail({
+      to: email,
+      subject: message.subject,
+      body: message.body,
+      name: analysis.config.fromName
+    });
+    updateSheetAfterSend_(analysis.config, rowIndex, {
+      sendState: GMAIL_SEND_STATE.sent,
+      status: 'sent',
+      sentStatus: '送信済',
+      sentAt: new Date().toISOString(),
+      sentBy: 'Apps Script',
+      lastSendErrorCode: '',
+      lastCheckedAt: new Date().toISOString()
+    });
+    appendSafeLog_({
+      event: successEvent || 'approved_gmail_sales_send_executed',
+      rowIndex,
+      recipientHash: hashValue_(email),
+      subjectHash: hashValue_(message.subject)
+    });
+    return { ok: true, deliveryUnknown: false, blockedReason: '' };
+  } catch (error) {
+    updateSheetAfterSend_(analysis.config, rowIndex, {
+      sendState: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
+      status: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
+      sentStatus: mailAttempted ? GMAIL_SEND_STATE.deliveryUnknown : GMAIL_SEND_STATE.failedBeforeSend,
+      deliveryUncertainAt: mailAttempted ? new Date().toISOString() : '',
+      lastSendErrorCode: safeErrorCode_(error),
+      lastCheckedAt: new Date().toISOString()
+    });
+    appendSafeLog_({
+      event: 'approved_gmail_sales_send_stopped',
+      rowIndex,
+      errorName: error.name || 'Error',
+      reason: safeErrorCode_(error),
+      deliveryUnknown: mailAttempted
+    });
+    return { ok: false, deliveryUnknown: mailAttempted, blockedReason: safeErrorCode_(error) };
   }
 }
 
@@ -1584,6 +2834,534 @@ function analyzeApprovedGmailSalesBatch_(settings) {
   };
 }
 
+function analyzeApprovedGmailSalesRecoveryBatch_(settings) {
+  const blockedReasons = [];
+  const production = validateProductionConfig_();
+  const baseConfig = production.config;
+  const dryRun = settings.dryRun === true;
+  let manifest = null;
+  let config = baseConfig;
+  let batchId = '';
+  let rows = [];
+  let validation = { readyRows: [], errors: [], skipped: [] };
+  let manifestCheck = buildManifestValidationResult_(null, ['manifest_not_loaded'], [], baseConfig, '');
+  let suppression = { loaded: false, entries: [] };
+  let recoveryManifestCheck = { ok: false, blockedReasons: ['manifest_not_loaded'] };
+
+  blockedReasons.push.apply(blockedReasons, production.errors.filter((reason) => reason !== 'daily_limit_must_be_30'));
+  if (!baseConfig.recoverySheetName) blockedReasons.push('recovery_sheet_name_missing');
+
+  try {
+    manifest = loadApprovedSendManifest_(baseConfig);
+    batchId = String(manifest.batchId || '').trim();
+    config = buildRecoverySendConfig_(baseConfig, manifest);
+    recoveryManifestCheck = validateRecoveryApprovedSendManifest_(manifest, config, batchId);
+  } catch (error) {
+    blockedReasons.push('manifest_load_failed');
+  }
+
+  if (manifest) {
+    try {
+      rows = loadCandidateRows_(config);
+      validation = validateRecoveryOutboxRows_(rows, config, batchId);
+    } catch (error) {
+      blockedReasons.push('recovery_sheet_load_failed');
+    }
+  }
+
+  try {
+    manifestCheck = validateApprovedSendManifest_(manifest, config, batchId, validation.readyRows);
+  } catch (error) {
+    manifestCheck = buildManifestValidationResult_(manifest, ['manifest_validation_failed'], validation.readyRows, config, batchId);
+  }
+
+  try {
+    suppression = loadSuppressionLedgerFromProperties_();
+  } catch (error) {
+    suppression = { loaded: false, entries: [] };
+  }
+
+  if (validation.errors.length > 0) blockedReasons.push('recovery_outbox_validation_errors');
+  if (!recoveryManifestCheck.ok) blockedReasons.push.apply(blockedReasons, recoveryManifestCheck.blockedReasons);
+  if (!manifestCheck.ok) blockedReasons.push.apply(blockedReasons, manifestCheck.blockedReasons);
+  if (!suppression.loaded) blockedReasons.push('suppression_ledger_missing');
+  if (config.requireUniqueBatch && batchId && !verifyBatchNotSent_(batchId)) blockedReasons.push('batch_already_sent');
+  if (!dryRun && !config.liveSendEnabled) blockedReasons.push('live_send_disabled');
+  if (!dryRun && config.autoSendEnabled) blockedReasons.push('auto_send_must_be_disabled');
+  if (!dryRun && config.currentJstDate !== config.sendDate) blockedReasons.push('same_day_recovery_date_mismatch');
+  if (!dryRun) {
+    const windowCheck = validateRecoverySameDayWindow_(manifest, config);
+    if (!windowCheck.ok) blockedReasons.push(windowCheck.blockedReason);
+  }
+
+  const sheetState = countSendStates_(validation.readyRows);
+  const eligibleRows = [];
+  let suppressionMatchCount = 0;
+  let gmailSentMatchCount = 0;
+  let sheetHistoryMatchCount = 0;
+  let candidateDigestMismatchCount = manifestCheck.candidateDigestMismatchCount;
+  let derivedIntegrityFieldMismatchCount = 0;
+  let derivedIntegrityDifferingFieldNames = [];
+  let manualReviewRequiredCount = sheetState.manualReviewRequiredCount;
+  let attemptLimitExceededCount = 0;
+  let candidateStateNotReadyCount = sheetState.sendReservedCount + sheetState.sentStateCount + sheetState.deliveryUnknownCount + sheetState.manualReviewRequiredCount;
+
+  if (blockedReasons.length === 0 || dryRun) {
+    validation.readyRows.forEach((item) => {
+      const check = validateSingleCandidatePreSend_(item.row, {
+        config,
+        batchId,
+        manifest,
+        manifestDigestSet: manifestCheck.manifestDigestSet,
+        suppression
+      });
+      if (check.suppressionMatched) suppressionMatchCount += 1;
+      if (check.gmailSentMatched) gmailSentMatchCount += 1;
+      if (check.sheetHistoryMatched) sheetHistoryMatchCount += 1;
+      if (check.digestMismatched) candidateDigestMismatchCount += 1;
+      if (check.derivedCandidateHashMismatched) {
+        derivedIntegrityFieldMismatchCount += 1;
+        derivedIntegrityDifferingFieldNames = uniqueArray_(derivedIntegrityDifferingFieldNames.concat(check.derivedIntegrityDifferingFieldNames || []));
+      }
+      if (check.attemptLimitExceeded) attemptLimitExceededCount += 1;
+      if (check.blockedReason === 'candidate_state_not_ready') candidateStateNotReadyCount += 1;
+      if (check.manualReviewRequired) manualReviewRequiredCount += 1;
+      if (check.ok && blockedReasons.length === 0) eligibleRows.push(item);
+    });
+  }
+
+  if (suppressionMatchCount > 0) blockedReasons.push('suppression_match');
+  if (gmailSentMatchCount > 0) blockedReasons.push('gmail_sent_history_match');
+  if (sheetHistoryMatchCount > 0) blockedReasons.push('sheet_history_match');
+  if (candidateDigestMismatchCount > 0) blockedReasons.push('candidate_digest_mismatch');
+  if (derivedIntegrityDifferingFieldNames.indexOf('sourceOutboxIdentity.candidateContentHash') !== -1) {
+    blockedReasons.push('manifest_source_candidate_content_hash_mismatch');
+  } else if (derivedIntegrityFieldMismatchCount > 0) {
+    blockedReasons.push('derived_candidate_hash_mismatch');
+  }
+  if (attemptLimitExceededCount > 0) blockedReasons.push('send_attempt_limit_exceeded');
+  if (candidateStateNotReadyCount > 0) blockedReasons.push('candidate_state_not_ready');
+
+  const maxSendCount = Math.min(manifestCheck.maxSendCount || 1, config.runtimeMaxSendCount || 1, 1);
+  const wouldAttemptCount = blockedReasons.length === 0 ? Math.min(eligibleRows.length, maxSendCount) : 0;
+  if (blockedReasons.length === 0 && wouldAttemptCount !== 1) blockedReasons.push('recovery_would_send_count_not_1');
+
+  return {
+    mode: dryRun ? 'recovery_dry_run' : 'recovery_send',
+    sourceType: 'recovery_single',
+    status: blockedReasons.length === 0 ? 'pass' : 'blocked',
+    blockedReasons: uniqueArray_(blockedReasons),
+    config,
+    targetDate: config.sendDate,
+    batchId,
+    manifestLoaded: Boolean(manifest),
+    manifestValid: manifestCheck.ok && recoveryManifestCheck.ok,
+    manifestExpired: manifestCheck.manifestExpired,
+    approvalVerified: manifestCheck.approvalVerified,
+    sameDayManualRecoveryApproved: Boolean(manifest && manifest.sameDayManualRecoveryApproved === true),
+    candidateCount: validation.readyRows.length,
+    candidateDigestMatchCount: manifestCheck.candidateDigestMatchCount,
+    candidateDigestMismatchCount,
+    substantiveFieldMismatchCount: 0,
+    derivedIntegrityFieldMismatchCount,
+    derivedIntegrityDifferingFieldNames,
+    attemptLimitExceededCount,
+    candidateStateNotReadyCount,
+    suppressionMatchCount,
+    gmailSentMatchCount,
+    sheetHistoryMatchCount,
+    sendReservedCount: sheetState.sendReservedCount,
+    sentStateCount: sheetState.sentStateCount,
+    deliveryUnknownCount: sheetState.deliveryUnknownCount,
+    manualReviewRequiredCount,
+    eligibleRows,
+    eligibleCount: eligibleRows.length,
+    wouldAttemptCount,
+    maxSendCount,
+    manifest,
+    manifestDigestSet: manifestCheck.manifestDigestSet,
+    suppression
+  };
+}
+
+function diagnoseGmailSalesRecoveryDigestRuntime_(options) {
+  const settings = options || {};
+  const result = {
+    event: 'approved_gmail_sales_recovery_digest_diagnostic',
+    mode: 'read_only_digest_diagnostic',
+    status: 'blocked',
+    runtimeVersion: GMAIL_RECOVERY_DIGEST_RUNTIME_VERSION,
+    expectedRuntimeVersionMatch: GMAIL_RECOVERY_DIGEST_RUNTIME_VERSION === 'recovery-digest-diagnostic-v4',
+    recoveryPreSendFunctionPresent: typeof runGmailSalesRecoveryPreSendDryRun === 'function',
+    recoverySendOnceFunctionPresent: typeof runGmailSalesRecoverySendOnce === 'function',
+    buildCandidateDigestInputPresent: typeof buildCandidateDigestInput_ === 'function',
+    candidateDigestCanonicalizationMarker: GMAIL_RECOVERY_CANDIDATE_DIGEST_CANONICALIZATION,
+    canonicalizationMarkerPresent: false,
+    canonicalizationMarkerExpected: false,
+    localV3MarkerExpected: true,
+    legacyDigestFunctionReachable: false,
+    duplicateDigestFunctionDefinitionCount: 1,
+    propertyPresent: false,
+    propertyJsonParsePassed: false,
+    targetDate: '',
+    sourceType: '',
+    candidateCount: 0,
+    manifestCandidateCount: 0,
+    candidateDigestCount: 0,
+    sameDayManualRecoveryApproved: false,
+    expiresAtValidationPassed: false,
+    sha256AsciiSelfTestPassed: false,
+    sha256JapaneseSelfTestPassed: false,
+    sha256UnicodeSelfTestPassed: false,
+    signedByteHexConversionPassed: false,
+    shaRuntimeSelfTestPassed: false,
+    nodeAppsScriptDigestCompatibilityPassed: false,
+    storedCandidateDigestPresent: false,
+    manifestCandidateDigestRecalculationPassed: false,
+    manifestCandidateDigestMatch: false,
+    manifestDigestRecalculationPassed: false,
+    manifestDigestMatch: false,
+    candidateDigestInputFieldCount: 0,
+    candidateCanonicalCharLength: 0,
+    candidateCanonicalUtf8ByteLength: 0,
+    sheetPresent: false,
+    headerValidationPassed: false,
+    sheetDataRowCount: 0,
+    manifestVsSheetFieldComparisonPassed: false,
+    substantiveFieldMismatchCount: 0,
+    differingFieldNames: [],
+    derivedIntegrityFieldMismatchCount: 0,
+    derivedIntegrityDifferingFieldNames: [],
+    sheetCandidateContentHashPresent: false,
+    sheetCandidateContentHashMatch: false,
+    manifestSourceCandidateContentHashMatch: false,
+    typeMismatchFieldNames: [],
+    dateNormalizationFieldNames: [],
+    booleanNormalizationFieldNames: [],
+    newlineNormalizationFieldNames: [],
+    emptyNormalizationFieldNames: [],
+    unicodeNormalizationFieldNames: [],
+    whitespaceDifferenceFieldNames: [],
+    sheetCandidateDigestMatch: false,
+    candidateDigestMatchAfterCanonicalization: false,
+    activeCanonicalizationMatchesStoredDigest: false,
+    stableJsonCanonicalizationMatchesStoredDigest: false,
+    legacyCanonicalizationMatchesStoredDigest: false,
+    normalizedRecoveryCanonicalizationMatchesStoredDigest: false,
+    rawManifestCandidateMatchesStoredDigest: false,
+    shaHexSignedByteFixedMatchesStoredDigest: false,
+    shaHexLegacyByteConversionMatchesStoredDigest: false,
+    recommendedNextAction: 'diagnosis_inconclusive',
+    blockedReason: '',
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false
+  };
+
+  const shaSelfTest = runRecoveryShaRuntimeSelfTest_();
+  Object.assign(result, shaSelfTest);
+
+  let manifest = null;
+  let config = null;
+  let rowItem = null;
+  let runtimeDigest = '';
+  try {
+    const baseConfig = getConfig_();
+    result.propertyPresent = Boolean(baseConfig.approvedSendManifestJson);
+    manifest = loadApprovedSendManifest_(baseConfig);
+    result.propertyJsonParsePassed = true;
+    result.targetDate = String(manifest.targetDate || '');
+    result.sourceType = String(manifest.sourceType || (manifest.recoverySingle ? 'recovery_single' : ''));
+    result.candidateCount = Number(manifest.candidateCount || 0);
+    result.manifestCandidateCount = Number(manifest.candidateCount || 0);
+    result.candidateDigestCount = Array.isArray(manifest.candidateDigests) ? manifest.candidateDigests.length : 0;
+    result.sameDayManualRecoveryApproved = manifest.sameDayManualRecoveryApproved === true;
+    result.expiresAtValidationPassed = !isManifestExpired_(manifest);
+    result.canonicalizationMarkerPresent = Boolean(manifest.candidateDigestCanonicalization);
+    result.canonicalizationMarkerExpected = manifest.candidateDigestCanonicalization === GMAIL_RECOVERY_CANDIDATE_DIGEST_CANONICALIZATION;
+    result.storedCandidateDigestPresent = result.candidateDigestCount === 1 && Boolean(String(manifest.candidateDigests[0] || '').trim());
+    config = buildRecoverySendConfig_(baseConfig, manifest);
+    const rows = loadCandidateRows_(config);
+    result.sheetPresent = Boolean(config.sheetId && config.sheetName);
+    result.sheetDataRowCount = rows.length;
+    result.headerValidationPassed = rows.length === 1;
+    rowItem = rows[0] || null;
+  } catch (error) {
+    result.blockedReason = 'manifest_or_sheet_load_failed';
+  }
+
+  if (manifest && rowItem) {
+    const batchId = String(manifest.batchId || '').trim();
+    const derivedIntegrity = analyzeRecoveryDerivedCandidateHash_(rowItem.row, manifest);
+    const digestInput = buildCandidateDigestInput_(rowItem.row, manifest.effectiveSendDate || manifest.targetDate, batchId);
+    runtimeDigest = sha256Hex_(digestInput.join('\n'));
+    const storedDigest = String((manifest.candidateDigests || [])[0] || '').trim();
+    result.candidateDigestInputFieldCount = digestInput.length;
+    const canonicalText = digestInput.join('\n');
+    result.candidateCanonicalCharLength = canonicalText.length;
+    result.candidateCanonicalUtf8ByteLength = utf8ByteLength_(canonicalText);
+    result.manifestCandidateDigestRecalculationPassed = Boolean(runtimeDigest);
+    result.manifestCandidateDigestMatch = runtimeDigest === storedDigest;
+    result.sheetCandidateDigestMatch = runtimeDigest === storedDigest;
+    result.candidateDigestMatchAfterCanonicalization = runtimeDigest === storedDigest;
+    result.activeCanonicalizationMatchesStoredDigest = runtimeDigest === storedDigest;
+    result.normalizedRecoveryCanonicalizationMatchesStoredDigest = runtimeDigest === storedDigest;
+    result.shaHexSignedByteFixedMatchesStoredDigest = runtimeDigest === storedDigest;
+    result.stableJsonCanonicalizationMatchesStoredDigest = sha256Hex_(JSON.stringify(digestInput)) === storedDigest;
+    result.legacyCanonicalizationMatchesStoredDigest = legacyCandidateDigestForDiagnostic_(rowItem.row, manifest.effectiveSendDate || manifest.targetDate, batchId) === storedDigest;
+    result.shaHexLegacyByteConversionMatchesStoredDigest = legacySha256HexForDiagnostic_(canonicalText) === storedDigest;
+    result.rawManifestCandidateMatchesStoredDigest = false;
+    result.manifestVsSheetFieldComparisonPassed = derivedIntegrity.substantiveFieldMismatchCount === 0 &&
+      derivedIntegrity.derivedIntegrityFieldMismatchCount === 0;
+    result.substantiveFieldMismatchCount = derivedIntegrity.substantiveFieldMismatchCount;
+    result.differingFieldNames = derivedIntegrity.substantiveDifferingFieldNames;
+    result.derivedIntegrityFieldMismatchCount = derivedIntegrity.derivedIntegrityFieldMismatchCount;
+    result.derivedIntegrityDifferingFieldNames = derivedIntegrity.derivedIntegrityDifferingFieldNames;
+    if (derivedIntegrity.derivedIntegrityDifferingFieldNames.indexOf('sourceOutboxIdentity.candidateContentHash') !== -1 &&
+      runtimeDigest !== storedDigest) {
+      result.substantiveFieldMismatchCount += 1;
+      result.differingFieldNames = uniqueArray_(result.differingFieldNames.concat(['candidateDigestInput']));
+    }
+    result.sheetCandidateContentHashPresent = derivedIntegrity.sheetCandidateContentHashPresent;
+    result.sheetCandidateContentHashMatch = derivedIntegrity.sheetCandidateContentHashMatch;
+    result.manifestSourceCandidateContentHashMatch = derivedIntegrity.manifestSourceCandidateContentHashMatch;
+    result.manifestDigestRecalculationPassed = true;
+    result.manifestDigestMatch = result.candidateDigestCount === 1;
+    if (settings.includeInternal === true) {
+      result.runtimeCandidateContentHashForInternalUse = derivedIntegrity.runtimeCandidateContentHash;
+    }
+  }
+
+  if (!result.expectedRuntimeVersionMatch) result.recommendedNextAction = 'runtime_code_not_updated';
+  else if (!result.propertyPresent || !result.propertyJsonParsePassed) result.recommendedNextAction = 'manifest_property_not_v3';
+  else if (!result.canonicalizationMarkerExpected) result.recommendedNextAction = 'manifest_property_not_v3';
+  else if (!result.shaRuntimeSelfTestPassed) result.recommendedNextAction = 'sha_runtime_implementation_mismatch';
+  else if (!result.expiresAtValidationPassed) result.recommendedNextAction = 'manifest_expired';
+  else if (result.sheetDataRowCount !== 1) result.recommendedNextAction = 'sheet_substantive_content_mismatch';
+  else if (result.substantiveFieldMismatchCount > 0) result.recommendedNextAction = 'sheet_substantive_content_mismatch';
+  else if (result.derivedIntegrityFieldMismatchCount === 1 &&
+    result.derivedIntegrityDifferingFieldNames.length === 1 &&
+    result.derivedIntegrityDifferingFieldNames[0] === 'sourceOutboxIdentity.candidateContentHash' &&
+    result.candidateDigestMatchAfterCanonicalization &&
+    result.manifestCandidateDigestMatch &&
+    result.manifestDigestMatch) result.recommendedNextAction = 'manifest_source_candidate_content_hash_reissue_safe';
+  else if (result.derivedIntegrityFieldMismatchCount === 1 &&
+    result.derivedIntegrityDifferingFieldNames.length === 1 &&
+    result.derivedIntegrityDifferingFieldNames[0] === 'candidateContentHash' &&
+    result.candidateDigestMatchAfterCanonicalization &&
+    result.manifestCandidateDigestMatch &&
+    result.manifestDigestMatch) result.recommendedNextAction = 'sheet_derived_candidate_hash_repair_safe';
+  else if (result.candidateDigestMatchAfterCanonicalization) result.recommendedNextAction = 'diagnosis_inconclusive';
+  else if (result.storedCandidateDigestPresent && result.substantiveFieldMismatchCount === 0) result.recommendedNextAction = 'runtime_digest_reissue_safe';
+
+  result.status = result.recommendedNextAction === 'runtime_digest_reissue_safe' ||
+    result.recommendedNextAction === 'sheet_derived_candidate_hash_repair_safe' ||
+    result.recommendedNextAction === 'manifest_source_candidate_content_hash_reissue_safe' ||
+    result.candidateDigestMatchAfterCanonicalization
+    ? 'pass'
+    : 'blocked';
+
+  if (settings.includeInternal === true) {
+    result.manifestForInternalUse = manifest;
+    result.runtimeCandidateDigestForInternalUse = runtimeDigest;
+  }
+  return result;
+}
+
+function runRecoveryShaRuntimeSelfTest_() {
+  const vectors = [
+    { name: 'empty', value: '', digest: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' },
+    { name: 'ascii', value: 'abc', digest: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' },
+    { name: 'ascii_newline', value: 'hello\nworld', digest: '26c60a61d01db5836ca70fefd44a6a016620413c8ef5f259a6c5612d4f79d3b8' },
+    { name: 'japanese', value: '日本語', digest: '77710aedc74ecfa33685e33a6c7df5cc83004da1bdcef7fb280f5c2b2e97e0a5' },
+    { name: 'unicode', value: 'hello😀', digest: '43e085c2a106c941e8b30167304570382e9c168aee0d68eb8832b13baf3393a0' },
+    { name: 'crlf', value: 'a\r\nb', digest: '18745f36a05e29072709042d6062ce54f1b08ff36c27ba80c39f81fb010c8ce2' },
+    { name: 'lf', value: 'a\nb', digest: '7e18f737311b2dc3b2f269dd78396b0351f14fb66efa879f768cb23181883c78' },
+    { name: 'nfc', value: 'é', digest: '4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c' },
+    { name: 'nfd', value: 'é', digest: 'bf12767b0f2a56b2190075bae8169f656e3ce8d6357d4aff184bc6c7ea48f9f6' }
+  ];
+  const results = {};
+  let allPassed = true;
+  vectors.forEach((vector) => {
+    const ok = sha256Hex_(vector.value) === vector.digest;
+    allPassed = allPassed && ok;
+    results[vector.name] = ok;
+  });
+  const signedByteCheck = sha256Hex_('abc').length === 64 && /^[a-f0-9]{64}$/.test(sha256Hex_('abc'));
+  return {
+    sha256AsciiSelfTestPassed: results.ascii === true && results.ascii_newline === true,
+    sha256JapaneseSelfTestPassed: results.japanese === true,
+    sha256UnicodeSelfTestPassed: results.unicode === true && results.nfc === true && results.nfd === true,
+    signedByteHexConversionPassed: signedByteCheck,
+    shaRuntimeSelfTestPassed: allPassed && signedByteCheck,
+    nodeAppsScriptDigestCompatibilityPassed: allPassed && signedByteCheck
+  };
+}
+
+function legacyCandidateDigestForDiagnostic_(row, targetDate, batchId) {
+  return sha256Hex_([
+    normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']),
+    String(row.subject || row['件名'] || '').trim(),
+    String(row.body || row['本文'] || '').trim(),
+    String(row.prospectId || row.dedupeKey || '').trim().toLowerCase(),
+    normalizeDateText_(targetDate),
+    String(batchId || '').trim()
+  ].join('\n'));
+}
+
+function analyzeRecoveryDerivedCandidateHash_(row, manifest) {
+  const runtimeCandidateContentHash = computeRecoveryCandidateContentHashForRuntime_(row);
+  const manifestCandidateContentHash = String(manifest && manifest.sourceOutboxIdentity && manifest.sourceOutboxIdentity.candidateContentHash || '').trim();
+  const hasSheetCandidateContentHash = Object.prototype.hasOwnProperty.call(row || {}, 'candidateContentHash');
+  const sheetCandidateContentHash = String(hasSheetCandidateContentHash ? row.candidateContentHash || '' : '').trim();
+  const manifestSourceMatch = Boolean(manifestCandidateContentHash && manifestCandidateContentHash === runtimeCandidateContentHash);
+  const sheetHashMatch = hasSheetCandidateContentHash && sheetCandidateContentHash === runtimeCandidateContentHash;
+  const derivedFields = [];
+  const substantiveFields = [];
+
+  if (!manifestSourceMatch) {
+    derivedFields.push('sourceOutboxIdentity.candidateContentHash');
+  }
+  if (hasSheetCandidateContentHash && !sheetHashMatch) {
+    derivedFields.push('candidateContentHash');
+  }
+
+  return {
+    runtimeCandidateContentHash,
+    manifestSourceCandidateContentHashMatch: manifestSourceMatch,
+    sheetCandidateContentHashPresent: hasSheetCandidateContentHash,
+    sheetCandidateContentHashMatch: hasSheetCandidateContentHash ? sheetHashMatch : true,
+    substantiveFieldMismatchCount: substantiveFields.length,
+    substantiveDifferingFieldNames: substantiveFields,
+    derivedIntegrityFieldMismatchCount: derivedFields.length,
+    derivedIntegrityDifferingFieldNames: derivedFields
+  };
+}
+
+function computeRecoveryCandidateContentHashForRuntime_(row) {
+  const projected = [{
+    email: row.email || '',
+    name: row.name || '',
+    subject: row.subject || '',
+    body: row.body || '',
+    sourceUrl: row.sourceUrl || '',
+    prospectId: row.prospectId || '',
+    dedupeKey: row.dedupeKey || ''
+  }];
+  return sha256Hex_(JSON.stringify(projected));
+}
+
+function legacySha256HexForDiagnostic_(value) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ''), Utilities.Charset && Utilities.Charset.UTF_8);
+  return digest.map((byte) => ('0' + byte.toString(16)).slice(-2)).join('');
+}
+
+function utf8ByteLength_(value) {
+  try {
+    return Utilities.newBlob(String(value || '')).getBytes().length;
+  } catch (error) {
+    return unescape(encodeURIComponent(String(value || ''))).length;
+  }
+}
+
+function buildRecoverySendConfig_(baseConfig, manifest) {
+  const targetDate = normalizeDateText_(manifest.effectiveSendDate || manifest.targetDate || baseConfig.sendDate);
+  return Object.assign({}, baseConfig, {
+    sheetName: baseConfig.recoverySheetName,
+    sendDate: targetDate,
+    sendBatchId: String(manifest.batchId || '').trim(),
+    dailySendLimit: 1,
+    requireExactReadyCount: false,
+    runtimeMaxSendCount: Math.min(baseConfig.runtimeMaxSendCount || 1, 1)
+  });
+}
+
+function validateRecoveryApprovedSendManifest_(manifest, config, batchId) {
+  const blockedReasons = [];
+  const sourceIdentity = manifest && manifest.sourceOutboxIdentity || {};
+  if (!manifest) blockedReasons.push('manifest_missing');
+  if (String(sourceIdentity.source || '') !== 'local_recovery_approved_outbox') blockedReasons.push('manifest_source_not_recovery_single');
+  if (Number(manifest && manifest.candidateCount || 0) !== 1) blockedReasons.push('manifest_candidate_count_not_1');
+  if (Number(manifest && manifest.humanReviewedCount || 0) !== 1) blockedReasons.push('manifest_human_review_count_not_1');
+  if (manifest && manifest.targetAutoApproved !== false) blockedReasons.push('manifest_target_auto_approved_not_false');
+  if (manifest && manifest.sheetAlreadyAppliedConfirmed !== true) blockedReasons.push('manifest_sheet_not_confirmed');
+  if (manifest && manifest.sameDayManualRecoveryApproved !== true) blockedReasons.push('same_day_manual_recovery_not_approved');
+  if (String(manifest && manifest.sameDayManualRecoveryReasonCode || '') !== 'user_required_same_day_sales_recovery') blockedReasons.push('same_day_manual_recovery_reason_missing');
+  if (normalizeDateText_(manifest && manifest.effectiveSendDate) !== config.sendDate) blockedReasons.push('effective_send_date_mismatch');
+  if (String(batchId || '').indexOf('recovery') === -1) blockedReasons.push('manifest_batch_not_recovery');
+  return { ok: blockedReasons.length === 0, blockedReasons };
+}
+
+function validateRecoveryOutboxRows_(items, config, batchId) {
+  const readyRows = [];
+  const skipped = [];
+  const errors = [];
+  const allRows = items || [];
+  if (allRows.length !== 1) {
+    errors.push({ rowIndex: 0, reason: 'recovery_sheet_row_count_not_1' });
+  }
+
+  allRows.forEach((item) => {
+    const row = item.row;
+    const rowIndex = item.rowIndex;
+    const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
+    const rowStatus = String(row.status || '').toLowerCase();
+    const rowSendDate = normalizeDateText_(row.sendDate || row['送信日']);
+    const rowBatchId = String(row.sendBatchId || '').trim();
+    const subject = normalizeEmailSubject_(row.subject || row['件名']);
+    const body = normalizeEmailBody_(row.body || row['本文']);
+
+    if (rowStatus !== 'ready') {
+      skipped.push({ rowIndex, reason: 'not_ready_status' });
+      return;
+    }
+    if (rowSendDate !== config.sendDate) {
+      errors.push({ rowIndex, reason: 'send_date_mismatch' });
+      return;
+    }
+    if (!rowBatchId || rowBatchId !== batchId) {
+      errors.push({ rowIndex, reason: 'send_batch_id_mismatch' });
+      return;
+    }
+    if (!subject || !body) {
+      errors.push({ rowIndex, reason: 'missing_subject_or_body' });
+      return;
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.push({ rowIndex, reason: 'invalid_email' });
+      return;
+    }
+    if (shouldSkipRecipient_(row)) {
+      skipped.push({ rowIndex, reason: 'status_excluded' });
+      return;
+    }
+    try {
+      assertMessageSafe_(buildInitialSalesEmail_(row));
+    } catch (error) {
+      errors.push({ rowIndex, reason: error.message });
+      return;
+    }
+    readyRows.push(item);
+  });
+
+  if (readyRows.length !== 1) {
+    errors.push({ rowIndex: 0, reason: 'recovery_ready_count_not_1' });
+  }
+  return { readyRows, skipped, errors };
+}
+
+function validateRecoverySameDayWindow_(manifest, config) {
+  const expiresAt = new Date(String((manifest && manifest.expiresAt) || ''));
+  if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+    return { ok: false, blockedReason: 'manifest_expired' };
+  }
+  if (config.currentJstDate !== config.sendDate) {
+    return { ok: false, blockedReason: 'same_day_recovery_date_mismatch' };
+  }
+  return { ok: true, blockedReason: '' };
+}
+
 function toPreSendPublicResult_(analysis, mode) {
   return {
     mode,
@@ -1598,6 +3376,9 @@ function toPreSendPublicResult_(analysis, mode) {
     candidateCount: analysis.candidateCount,
     candidateDigestMatchCount: analysis.candidateDigestMatchCount,
     candidateDigestMismatchCount: analysis.candidateDigestMismatchCount,
+    substantiveFieldMismatchCount: analysis.substantiveFieldMismatchCount || 0,
+    derivedIntegrityFieldMismatchCount: analysis.derivedIntegrityFieldMismatchCount || 0,
+    derivedIntegrityDifferingFieldNames: analysis.derivedIntegrityDifferingFieldNames || [],
     attemptLimitExceededCount: analysis.attemptLimitExceededCount,
     candidateStateNotReadyCount: analysis.candidateStateNotReadyCount,
     suppressionMatchCount: analysis.suppressionMatchCount,
@@ -1631,6 +3412,9 @@ function buildPreSendDryRunResult_(overrides) {
     candidateCount: 0,
     candidateDigestMatchCount: 0,
     candidateDigestMismatchCount: 0,
+    substantiveFieldMismatchCount: 0,
+    derivedIntegrityFieldMismatchCount: 0,
+    derivedIntegrityDifferingFieldNames: [],
     attemptLimitExceededCount: 0,
     candidateStateNotReadyCount: 0,
     suppressionMatchCount: 0,
@@ -1672,12 +3456,28 @@ function validateApprovedSendManifest_(manifest, config, batchId, readyRows) {
   if (Number(manifest.candidateCount || 0) !== readyRows.length) blockedReasons.push('manifest_candidate_count_mismatch');
   if (!String(manifest.approvedOutboxHash || '').trim()) blockedReasons.push('manifest_approved_outbox_hash_missing');
   if (manifest.approvalStatus !== 'approved') blockedReasons.push('manifest_approval_status_not_approved');
-  if (manifest.humanReviewCompleted !== true) blockedReasons.push('manifest_human_review_not_completed');
+  if (!isManifestApprovalAccepted_(manifest)) blockedReasons.push('manifest_approval_not_accepted');
   if (!Array.isArray(manifest.candidateDigests)) blockedReasons.push('manifest_candidate_digests_missing');
   if (isManifestExpired_(manifest)) blockedReasons.push('manifest_expired');
   const maxSendCount = normalizeManifestMaxSendCount_(manifest.maxSendCount);
   if (!maxSendCount) blockedReasons.push('manifest_max_send_count_invalid');
   return buildManifestValidationResult_(manifest, blockedReasons, readyRows, config, batchId, maxSendCount);
+}
+
+function isManifestApprovalAccepted_(manifest) {
+  if (!manifest || manifest.approvalStatus !== 'approved') {
+    return false;
+  }
+  if (manifest.humanReviewCompleted === true) {
+    return true;
+  }
+  return String(manifest.approvalType || '') === 'automatic_strict_gate' &&
+    String(manifest.mode || manifest.sourceType || '') === 'normal_daily' &&
+    manifest.targetAutoApproved === true &&
+    manifest.humanReviewCompleted === false &&
+    Number(manifest.humanReviewedCount || 0) === 0 &&
+    String(manifest.autoApprovalPolicyVersion || '') === GMAIL_DAILY_AUTO_APPROVAL_POLICY_VERSION &&
+    manifest.recoverySingle !== true;
 }
 
 function buildManifestValidationResult_(manifest, blockedReasons, readyRows, config, batchId, maxSendCount) {
@@ -1707,7 +3507,7 @@ function buildManifestValidationResult_(manifest, blockedReasons, readyRows, con
     ok: reasons.length === 0,
     blockedReasons: uniqueArray_(reasons),
     manifestExpired: Boolean(manifest && isManifestExpired_(manifest)),
-    approvalVerified: Boolean(manifest && manifest.approvalStatus === 'approved' && manifest.humanReviewCompleted === true),
+    approvalVerified: Boolean(isManifestApprovalAccepted_(manifest)),
     candidateDigestMatchCount: matchCount,
     candidateDigestMismatchCount: mismatchCount,
     manifestDigestSet,
@@ -1749,6 +3549,8 @@ function validateSingleCandidatePreSend_(row, context) {
     gmailSentMatched: false,
     sheetHistoryMatched: false,
     digestMismatched: false,
+    derivedCandidateHashMismatched: false,
+    derivedIntegrityDifferingFieldNames: [],
     attemptLimitExceeded: false,
     manualReviewRequired: false
   };
@@ -1757,6 +3559,21 @@ function validateSingleCandidatePreSend_(row, context) {
   }
   if (isManifestExpired_(context.manifest)) {
     return blockedPreSendResult_(result, 'manifest_expired');
+  }
+  if (context.manifest && String(context.manifest.sourceType || '') === 'recovery_single') {
+    const derived = analyzeRecoveryDerivedCandidateHash_(row, context.manifest);
+    if (derived.substantiveFieldMismatchCount > 0) {
+      return blockedPreSendResult_(result, 'candidate_digest_mismatch', { digestMismatched: true });
+    }
+    if (derived.derivedIntegrityFieldMismatchCount > 0) {
+      const blockedReason = derived.derivedIntegrityDifferingFieldNames.indexOf('sourceOutboxIdentity.candidateContentHash') !== -1
+        ? 'manifest_source_candidate_content_hash_mismatch'
+        : 'derived_candidate_hash_mismatch';
+      return blockedPreSendResult_(result, blockedReason, {
+        derivedCandidateHashMismatched: true,
+        derivedIntegrityDifferingFieldNames: derived.derivedIntegrityDifferingFieldNames
+      });
+    }
   }
   if (state !== GMAIL_SEND_STATE.ready) {
     return blockedPreSendResult_(result, 'candidate_state_not_ready', { sheetHistoryMatched: state === GMAIL_SEND_STATE.sent });
@@ -1920,21 +3737,26 @@ function ensureSendStateColumns_(config) {
 }
 
 function computeCandidateDigest_(row, targetDate, batchId) {
+  return sha256Hex_(buildCandidateDigestInput_(row, targetDate, batchId).join('\n'));
+}
+
+function buildCandidateDigestInput_(row, targetDate, batchId) {
   const candidateId = String(row.prospectId || row.dedupeKey || '').trim().toLowerCase();
-  return sha256Hex_([
+  return [
     normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']),
     normalizeEmailSubject_(row.subject || row['件名']),
     normalizeEmailBody_(row.body || row['本文']),
     candidateId,
     normalizeDateText_(targetDate),
     String(batchId || '').trim()
-  ].join('\n'));
+  ];
 }
 
 function sha256Hex_(value) {
-  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ''));
+  const charset = Utilities.Charset && Utilities.Charset.UTF_8;
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ''), charset);
   return digest.map((byte) => {
-    const normalized = byte < 0 ? byte + 256 : byte;
+    const normalized = byte & 0xff;
     return ('0' + normalized.toString(16)).slice(-2);
   }).join('');
 }
@@ -2396,6 +4218,9 @@ function appendSafeLog_(event) {
   delete safe.approvedCandidateDigest;
   delete safe.approvedSendManifestJson;
   delete safe.manifest;
+  delete safe.manifestForInternalUse;
+  delete safe.runtimeCandidateDigestForInternalUse;
+  delete safe.runtimeCandidateContentHashForInternalUse;
   delete safe.query;
   Logger.log(JSON.stringify(safe));
 }
@@ -2474,6 +4299,7 @@ function getConfig_() {
   return {
     sheetId: props.getProperty('SHEET_ID'),
     sheetName: props.getProperty('SHEET_NAME') || 'sales',
+    recoverySheetName: props.getProperty('GMAIL_SHEET_RECOVERY_TAB_NAME') || '',
     dryRun: props.getProperty('DRY_RUN') !== 'false',
     liveSendEnabled: props.getProperty('LIVE_SEND_ENABLED') === 'true',
     autoSendEnabled: props.getProperty('AUTO_SEND_ENABLED') === 'true',
@@ -3631,11 +5457,99 @@ function includesAny_(text, keywords) {
 }
 
 function hashValue_(value) {
-  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ''));
+  const charset = Utilities.Charset && Utilities.Charset.UTF_8;
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ''), charset);
   return digest.map((byte) => {
-    const normalized = byte < 0 ? byte + 256 : byte;
+    const normalized = byte & 0xff;
     return ('0' + normalized.toString(16)).slice(-2);
   }).join('').slice(0, 12);
+}
+
+function sha256Hex_(value) {
+  const charset = Utilities.Charset && Utilities.Charset.UTF_8;
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value || ''), charset);
+  return bytesToHex_(digest);
+}
+
+function hmacSha256Hex_(secret, value) {
+  if (!Utilities.computeHmacSha256Signature) {
+    throw new Error('hmac_unavailable');
+  }
+  return bytesToHex_(Utilities.computeHmacSha256Signature(String(value || ''), String(secret || '')));
+}
+
+function bytesToHex_(bytes) {
+  return bytes.map((byte) => {
+    const normalized = byte & 0xff;
+    return ('0' + normalized.toString(16)).slice(-2);
+  }).join('');
+}
+
+function constantTimeEqual_(left, right) {
+  const a = String(left || '').toLowerCase();
+  const b = String(right || '').toLowerCase();
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+function readGmailDailyAutomationState_() {
+  const raw = String(PropertiesService.getScriptProperties().getProperty(GMAIL_DAILY_AUTOMATION_STATE_PROPERTY) || '').trim();
+  if (!raw) {
+    return {
+      mode: 'normal_daily',
+      state: 'not_started',
+      blockedReasons: []
+    };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : { mode: 'normal_daily', state: 'not_started', blockedReasons: [] };
+  } catch (error) {
+    return {
+      mode: 'normal_daily',
+      state: 'blocked',
+      blockedReasons: ['daily_state_invalid_json']
+    };
+  }
+}
+
+function writeGmailDailyAutomationState_(state) {
+  const normalized = Object.assign({
+    mode: 'normal_daily',
+    stateVersion: 1,
+    updatedAt: new Date().toISOString(),
+    blockedReasons: []
+  }, state || {});
+  PropertiesService.getScriptProperties().setProperty(GMAIL_DAILY_AUTOMATION_STATE_PROPERTY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function gmailDailyExpectedCount_() {
+  const raw = Number(PropertiesService.getScriptProperties().getProperty('GMAIL_SALES_EXPECTED_DAILY_COUNT') || GMAIL_DAILY_EXPECTED_COUNT);
+  if (!Number.isFinite(raw)) return GMAIL_DAILY_EXPECTED_COUNT;
+  return Math.min(Math.max(Math.floor(raw), 1), GMAIL_DAILY_EXPECTED_COUNT);
+}
+
+function safeSendWindowSummary_(config) {
+  return [
+    ('0' + config.allowedSendStartHour).slice(-2) + ':' + ('0' + config.allowedSendStartMinute).slice(-2),
+    ('0' + config.allowedSendEndHour).slice(-2) + ':' + ('0' + config.allowedSendEndMinute).slice(-2)
+  ].join('-');
+}
+
+function insideAllowedSendWindow_(config) {
+  const now = new Date();
+  const timezone = Session.getScriptTimeZone() || 'Asia/Tokyo';
+  const hour = Number(Utilities.formatDate(now, timezone, 'H'));
+  const minute = Number(Utilities.formatDate(now, timezone, 'm'));
+  const current = hour * 60 + minute;
+  const start = config.allowedSendStartHour * 60 + config.allowedSendStartMinute;
+  const end = config.allowedSendEndHour * 60 + config.allowedSendEndMinute;
+  return current >= start && current <= end;
 }
 
 function buildSendBatchId_(dateText) {

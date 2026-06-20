@@ -179,6 +179,413 @@ const scenarios = [
     assert.equal(result.status, 'blocked');
     assertDryRunWriteFree(env);
   }],
+  ['recovery dry-run success is write-free and uses dedicated recovery row', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.entry = 'recoveryDryRun';
+    env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.mode, 'recovery_dry_run');
+    assert.equal(result.candidateCount, 1);
+    assert.equal(result.eligibleCount, 1);
+    assert.equal(result.wouldAttemptCount, 1);
+    assert.equal(result.maxSendCount, 1);
+    assertDryRunWriteFree(env);
+  }],
+  ['recovery dry-run rejects manifest without same-day manual approval', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.entry = 'recoveryDryRun';
+    delete env.manifest.sameDayManualRecoveryApproved;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReasons || []).includes('same_day_manual_recovery_not_approved'), true);
+    assertDryRunWriteFree(env);
+  }],
+  ['recovery dry-run rejects normal approved manifest', (env) => {
+    installRecoveryReadyRow(env);
+    env.entry = 'recoveryDryRun';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReasons || []).includes('manifest_source_not_recovery_single'), true);
+    assertDryRunWriteFree(env);
+  }],
+  ['recovery send-once sends exactly one recovery row and does not touch normal sales rows', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.entry = 'recoverySend';
+    env.props.LIVE_SEND_ENABLED = 'true';
+    env.props.AUTO_SEND_ENABLED = 'false';
+    env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sentCount, 1);
+    assert.equal(env.mailSendCount, 1);
+    assert.equal(getRecoveryCell(env, 2, 'sendState'), 'SENT');
+    assert.equal(readCell(env, 2, 'sendState'), '');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(resetLogCount(env), 1);
+  }],
+  ['recovery send-once blocks when live send disabled', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.entry = 'recoverySend';
+    env.props.LIVE_SEND_ENABLED = 'false';
+    env.props.AUTO_SEND_ENABLED = 'false';
+  }, (env, result) => {
+    assertBlockedNoMail(env, result, 'live_send_disabled');
+    assert.equal(getRecoveryCell(env, 2, 'sendState'), undefined);
+  }],
+  ['recovery send-once blocks when auto send enabled', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.entry = 'recoverySend';
+    env.props.LIVE_SEND_ENABLED = 'true';
+    env.props.AUTO_SEND_ENABLED = 'true';
+  }, (env, result) => {
+    assertBlockedNoMail(env, result, 'auto_send_must_be_disabled');
+    assert.equal(getRecoveryCell(env, 2, 'sendState'), undefined);
+  }],
+  ['candidate digest is stable across Node and Apps Script canonicalization fixtures', (env) => {
+    env.entry = 'digestFixtureOnly';
+  }, (env) => {
+    const batchId = 'gmail-sales-2026-06-20-noon-recovery';
+    const base = buildRecoveryOutboxRow();
+    const fixtures = [
+      ['plain', base],
+      ['escaped newline', Object.assign({}, base, { body: String(base.body).replace(/\n/g, '\\n') })],
+      ['crlf newline', Object.assign({}, base, { body: String(base.body).replace(/\n/g, '\r\n') })],
+      ['date object fields outside digest', Object.assign({}, base, { sendDate: new Date(Date.UTC(2026, 5, 20)), nextActionDate: new Date(Date.UTC(2026, 5, 20)) })],
+      ['boolean false outside digest', Object.assign({}, base, { doNotContact: false })],
+      ['null empty outside digest', Object.assign({}, base, { notes: null, sentAt: undefined })],
+      ['trailing subject whitespace', Object.assign({}, base, { subject: `${base.subject}  ` })],
+      ['japanese body', Object.assign({}, base, { body: `${base.name} 様\\n日本語本文の確認です。\\n今後のご案内が不要な場合はご返信不要です。` })],
+      ['digest fields excluded', Object.assign({}, base, { candidateDigest: 'synthetic', approvedCandidateDigest: 'synthetic' })]
+    ];
+    fixtures.forEach(([name, row]) => {
+      const appsDigest = env.context.computeCandidateDigest_(row, '2026-06-20', batchId);
+      const nodeDigest = nodeEquivalentCandidateDigest(row, '2026-06-20', batchId);
+      assert.equal(appsDigest, nodeDigest, name);
+    });
+    const beforeMetadata = env.context.computeCandidateDigest_(base, '2026-06-20', batchId);
+    const afterMetadata = env.context.computeCandidateDigest_(Object.assign({}, base, {
+      sameDayManualRecoveryApproved: true,
+      sameDayManualRecoveryApprovedAt: '2026-06-20T10:00:00.000Z',
+      expiresAt: '2026-06-20T14:59:59.000Z'
+    }), '2026-06-20', batchId);
+    assert.equal(afterMetadata, beforeMetadata);
+    const changedBody = env.context.computeCandidateDigest_(Object.assign({}, base, {
+      body: `${base.body}\nsubstantive synthetic change`
+    }), '2026-06-20', batchId);
+    assert.notEqual(changedBody, beforeMetadata);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['recovery digest diagnostic valid manifest is read-only', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.entry = 'recoveryDigestDiagnostic';
+  }, (env, result) => {
+    assert.equal(result.runtimeVersion, 'recovery-digest-diagnostic-v4');
+    assert.equal(result.shaRuntimeSelfTestPassed, true);
+    assert.equal(result.nodeAppsScriptDigestCompatibilityPassed, true);
+    assert.equal(result.candidateDigestMatchAfterCanonicalization, true);
+    assert.equal(result.recommendedNextAction, 'diagnosis_inconclusive');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['recovery digest diagnostic detects runtime reissue safe mismatch', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.candidateDigests[0] = 'digest_mismatch';
+    env.entry = 'recoveryDigestDiagnostic';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.shaRuntimeSelfTestPassed, true);
+    assert.equal(result.candidateDigestMatchAfterCanonicalization, false);
+    assert.equal(result.manifestVsSheetFieldComparisonPassed, true);
+    assert.equal(result.recommendedNextAction, 'runtime_digest_reissue_safe');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['recovery digest reissue updates only manifest property once when safe', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.candidateDigests[0] = 'digest_mismatch';
+    env.entry = 'recoveryDigestReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.propertyUpdated, true);
+    assert.equal(result.candidateDigestChanged, true);
+    assert.equal(env.setPropertyCount, 1);
+    assert.equal(env.setPropertiesCount, 0);
+    assert.equal(env.deletePropertyCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+    const updated = JSON.parse(env.props.APPROVED_SEND_MANIFEST_JSON);
+    assert.equal(updated.runtimeDigestReissued, true);
+    assert.equal(updated.runtimeDigestVersion, 'recovery-digest-diagnostic-v4');
+  }],
+  ['recovery digest reissue rejects substantive sheet mismatch', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.candidateDigests[0] = 'digest_mismatch';
+    setRecoveryCell(env, 2, 'body', `${getRecoveryCell(env, 2, 'body')}\nsubstantive synthetic change`);
+    env.entry = 'recoveryDigestReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'sheet_substantive_content_mismatch');
+    assert.equal(result.propertyUpdated, false);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+  }],
+  ['recovery digest diagnostic classifies only candidateContentHash as repair safe', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    addRecoveryCandidateContentHashColumn(env, 'stale_derived_hash');
+    env.entry = 'recoveryDigestDiagnostic';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.substantiveFieldMismatchCount, 0);
+    assert.equal(result.derivedIntegrityFieldMismatchCount, 1);
+    assert.deepEqual(Array.from(result.derivedIntegrityDifferingFieldNames), ['candidateContentHash']);
+    assert.equal(result.recommendedNextAction, 'sheet_derived_candidate_hash_repair_safe');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['recovery digest diagnostic classifies manifest source hash mismatch as manifest reissue safe', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    env.entry = 'recoveryDigestDiagnostic';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.substantiveFieldMismatchCount, 0);
+    assert.equal(result.derivedIntegrityFieldMismatchCount, 1);
+    assert.deepEqual(Array.from(result.derivedIntegrityDifferingFieldNames), ['sourceOutboxIdentity.candidateContentHash']);
+    assert.equal(result.sheetCandidateContentHashPresent, false);
+    assert.equal(result.manifestSourceCandidateContentHashMatch, false);
+    assert.equal(result.recommendedNextAction, 'manifest_source_candidate_content_hash_reissue_safe');
+    assertDiagnosticReadOnly(env);
+  }],
+  ['recovery pre-send blocks manifest source hash mismatch without sending', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    env.entry = 'recoveryDryRun';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReasons.includes('manifest_source_candidate_content_hash_mismatch'), true);
+    assert.equal(result.candidateDigestMismatchCount, 0);
+    assert.equal(result.derivedIntegrityFieldMismatchCount, 1);
+    assert.equal(result.eligibleCount, 0);
+    assert.equal(result.wouldAttemptCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['recovery source hash reissue updates only approved manifest property once', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    const originalDigest = env.manifest.candidateDigests[0];
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    env.originalRecoveryDigest = originalDigest;
+    env.entry = 'recoverySourceHashReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.propertyUpdated, true);
+    assert.equal(result.propertyWriteCount, 1);
+    assert.equal(result.sourceCandidateContentHashChanged, true);
+    assert.equal(result.manifestDigestChanged, true);
+    assert.equal(result.candidateDigestVerified, true);
+    assert.equal(result.readBackValidationPassed, true);
+    assert.equal(result.postReissueSubstantiveMismatchCount, 0);
+    assert.equal(result.postReissueDerivedMismatchCount, 0);
+    assert.equal(env.setPropertyCount, 1);
+    assert.equal(env.setPropertiesCount, 0);
+    assert.equal(env.deletePropertyCount, 0);
+    assert.equal(env.propertyWriteCount, 1);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+    const updated = JSON.parse(env.props.APPROVED_SEND_MANIFEST_JSON);
+    assert.equal(updated.candidateDigests[0], env.originalRecoveryDigest);
+    assert.equal(updated.runtimeSourceCandidateHashReissued, true);
+    assert.equal(updated.runtimeSourceCandidateHashVersion, 'recovery-digest-diagnostic-v4');
+    const diagnostic = env.context.runGmailSalesRecoveryDigestDiagnostic();
+    assert.equal(diagnostic.substantiveFieldMismatchCount, 0);
+    assert.equal(diagnostic.derivedIntegrityFieldMismatchCount, 0);
+    assert.equal(diagnostic.manifestSourceCandidateContentHashMatch, true);
+    const preSend = env.context.runGmailSalesRecoveryPreSendDryRun();
+    assert.equal(preSend.status, 'pass');
+    assert.equal(preSend.eligibleCount, 1);
+    assert.equal(preSend.wouldAttemptCount, 1);
+  }],
+  ['recovery source hash reissue is idempotent when already applied', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.entry = 'recoverySourceHashReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'already_applied');
+    assert.equal(result.propertyUpdated, false);
+    assert.equal(result.propertyWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery source hash reissue rejects substantive mismatch', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    setRecoveryCell(env, 2, 'body', `${getRecoveryCell(env, 2, 'body')}\nsubstantive synthetic change`);
+    env.entry = 'recoverySourceHashReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'sheet_substantive_content_mismatch');
+    assert.equal(result.propertyUpdated, false);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery source hash reissue rejects multiple derived mismatches', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    addRecoveryCandidateContentHashColumn(env, 'stale_sheet_hash');
+    env.entry = 'recoverySourceHashReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.propertyUpdated, false);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery source hash reissue rejects candidate digest mismatch', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    env.manifest.candidateDigests[0] = 'digest_mismatch';
+    env.entry = 'recoverySourceHashReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.propertyUpdated, false);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery source hash reissue rejects expired manifest', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    env.manifest.expiresAt = '2020-01-01T00:00:00.000Z';
+    env.entry = 'recoverySourceHashReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.propertyUpdated, false);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery source hash reissue rejects read-back mismatch without retry', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    env.corruptApprovedManifestOnSet = true;
+    env.entry = 'recoverySourceHashReissue';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'source_hash_reissue_read_back_failed');
+    assert.equal(result.propertyUpdated, true);
+    assert.equal(result.propertyWriteCount, 1);
+    assert.equal(env.setPropertyCount, 1);
+    assert.equal(env.propertyWriteCount, 1);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery source hash reissue rejects scheduled trigger style invocation', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    env.entry = 'recoverySourceHashReissueScheduled';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'manual_execution_required');
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery repair is not applicable when sheet hash column is absent', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    env.manifest.sourceOutboxIdentity.candidateContentHash = 'stale_manifest_source_hash';
+    env.entry = 'recoveryHashRepair';
+  }, (env, result) => {
+    assert.equal(result.status, 'not_applicable');
+    assert.equal(result.blockedReason, 'sheet_candidate_content_hash_column_absent');
+    assert.equal(result.sheetWriteCount, 0);
+    assert.equal(result.updatedCellCount, 0);
+    assert.equal(env.setValueCount, 0);
+    assert.equal(env.setValuesCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery derived candidate hash repair updates one cell only', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    addRecoveryCandidateContentHashColumn(env, 'stale_derived_hash');
+    env.entry = 'recoveryHashRepair';
+  }, (env, result) => {
+    assert.equal(result.status, 'repaired');
+    assert.equal(result.sheetWriteCount, 1);
+    assert.equal(result.updatedCellCount, 1);
+    assert.equal(result.otherSheetCellChangeCount, 0);
+    assert.equal(result.readBackValidationPassed, true);
+    assert.equal(env.setValueCount, 1);
+    assert.equal(env.setValuesCount, 0);
+    assert.equal(env.sheetWriteCount, 1);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+    const row = env.context.loadCandidateRows_(Object.assign({}, env.context.getConfig_(), {
+      sheetName: 'recovery',
+      sendDate: '2026-06-20'
+    }))[0].row;
+    assert.equal(getRecoveryCell(env, 2, 'candidateContentHash'), env.context.computeRecoveryCandidateContentHashForRuntime_(row));
+    const diagnostic = env.context.runGmailSalesRecoveryDigestDiagnostic();
+    assert.equal(diagnostic.derivedIntegrityFieldMismatchCount, 0);
+    assert.equal(diagnostic.recommendedNextAction, 'diagnosis_inconclusive');
+    const preSend = env.context.runGmailSalesRecoveryPreSendDryRun();
+    assert.equal(preSend.status, 'pass');
+    assert.equal(preSend.eligibleCount, 1);
+    assert.equal(preSend.wouldAttemptCount, 1);
+  }],
+  ['recovery derived candidate hash repair is idempotent when already applied', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    const row = env.context.loadCandidateRows_(Object.assign({}, env.context.getConfig_(), {
+      sheetName: 'recovery',
+      sendDate: '2026-06-20'
+    }))[0].row;
+    addRecoveryCandidateContentHashColumn(env, env.context.computeRecoveryCandidateContentHashForRuntime_(row));
+    env.entry = 'recoveryHashRepair';
+  }, (env, result) => {
+    assert.equal(result.status, 'already_applied');
+    assert.equal(result.sheetWriteCount, 0);
+    assert.equal(result.updatedCellCount, 0);
+    assert.equal(env.setValueCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery derived candidate hash repair rejects substantive body mismatch', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    addRecoveryCandidateContentHashColumn(env, 'stale_derived_hash');
+    setRecoveryCell(env, 2, 'body', `${getRecoveryCell(env, 2, 'body')}\nsubstantive synthetic change`);
+    env.entry = 'recoveryHashRepair';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'sheet_substantive_content_mismatch');
+    assert.equal(result.sheetWriteCount, 0);
+    assert.equal(env.setValueCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['recovery pre-send blocks until derived candidate hash is repaired', (env) => {
+    installRecoveryReadyRowAndManifest(env);
+    addRecoveryCandidateContentHashColumn(env, 'stale_derived_hash');
+    env.entry = 'recoveryDryRun';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReasons.includes('derived_candidate_hash_mismatch'), true);
+    assert.equal(result.candidateDigestMismatchCount, 0);
+    assert.equal(result.derivedIntegrityFieldMismatchCount, 1);
+    assert.equal(result.eligibleCount, 0);
+    assert.equal(result.wouldAttemptCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
   ['manual then manual rerun sends only once', (env) => { env.afterRun = () => env.context.executeDailyGmailSalesSend_({ source: 'manual', requireAutoSend: false, dryRun: false }); }, (env) => {
     assert.equal(env.mailSendCount, 1);
   }],
@@ -439,18 +846,263 @@ const scenarios = [
     assert.equal(result.status, 'blocked');
     assert.equal(result.blockedReason, 'read_only_snapshot_requires_dry_run_true');
     assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single validate-only plans one isolated write and writes nothing', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.action, 'sync_recovery_single');
+    assert.equal(result.validationPassed, true);
+    assert.equal(result.candidateCount, 1);
+    assert.equal(result.intendedWriteCount, 1);
+    assert.equal(result.actualWriteCount, 0);
+    assert.equal(result.sheetUpdated, false);
+    assert.equal(env.sheetReadCount > 0, true);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single validate-only is idempotent for identical existing row', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.workbook.sheets.recovery.rows = [OUTBOX_HEADERS, outboxRowToCells(env.recoveryOutboxRows[0])];
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.alreadyApplied, true);
+    assert.equal(result.intendedWriteCount, 0);
+    assert.equal(result.actualWriteCount, 0);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single validate-only rejects identity conflict', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    const changed = Object.assign({}, env.recoveryOutboxRows[0], { subject: 'different synthetic subject' });
+    env.workbook.sheets.recovery.rows = [OUTBOX_HEADERS, outboxRowToCells(changed)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.conflict, true);
+    assert.equal(result.blockedReason, 'identity_conflict');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single validate-only rejects recipient conflict for same identity', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    const changed = Object.assign({}, env.recoveryOutboxRows[0], { email: 'changed-recipient@example.invalid' });
+    env.workbook.sheets.recovery.rows = [OUTBOX_HEADERS, outboxRowToCells(changed)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.conflict, true);
+    assert.equal(result.blockedReason, 'identity_conflict');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single validate-only rejects body conflict for same identity', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    const changed = Object.assign({}, env.recoveryOutboxRows[0], { body: `${env.recoveryOutboxRows[0].body}\nsubstantive synthetic change` });
+    env.workbook.sheets.recovery.rows = [OUTBOX_HEADERS, outboxRowToCells(changed)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.conflict, true);
+    assert.equal(result.blockedReason, 'identity_conflict');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single validate-only rejects business conflict for same identity', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    const changed = Object.assign({}, env.recoveryOutboxRows[0], { name: 'Different Synthetic Business' });
+    env.workbook.sheets.recovery.rows = [OUTBOX_HEADERS, outboxRowToCells(changed)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.conflict, true);
+    assert.equal(result.blockedReason, 'identity_conflict');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single validate-only rejects personalization conflict for same identity', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    const changed = Object.assign({}, env.recoveryOutboxRows[0], { salesAngle: 'different synthetic personalization angle' });
+    env.workbook.sheets.recovery.rows = [OUTBOX_HEADERS, outboxRowToCells(changed)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.conflict, true);
+    assert.equal(result.blockedReason, 'identity_conflict');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single synthetic write writes exactly one row and never clears', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.sheetSyncRecoveryPayload.dryRun = false;
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.actualWriteCount, 1);
+    assert.equal(result.sheetUpdated, true);
+    assert.equal(env.setValuesCount, 1);
+    assert.equal(env.clearCount, 0);
+    assert.equal(env.appendRowCount, 0);
+    assert.equal(env.deleteRowsCount, 0);
+    assert.equal(env.workbook.sheets.recovery.rows.length, 2);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+  }],
+  ['recovery single write then validate-only is already applied after Sheet type normalization', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.sheetSyncRecoveryPayload.dryRun = false;
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.actualWriteCount, 1);
+    assert.equal(result.sheetUpdated, true);
+    const rowIndex = 2;
+    setRecoveryCell(env, rowIndex, 'sendDate', new Date(Date.UTC(2026, 5, 20)));
+    setRecoveryCell(env, rowIndex, 'nextActionDate', new Date(Date.UTC(2026, 5, 20)));
+    setRecoveryCell(env, rowIndex, 'doNotContact', false);
+    setRecoveryCell(env, rowIndex, 'notes', null);
+    setRecoveryCell(env, rowIndex, 'body', String(getRecoveryCell(env, rowIndex, 'body')).replace(/\n/g, '\r\n'));
+    env.sheetSyncRecoveryPayload.dryRun = true;
+    const validateOnly = runEntry(env);
+    assert.equal(validateOnly.status, 'pass');
+    assert.equal(validateOnly.alreadyApplied, true);
+    assert.equal(validateOnly.conflict, false);
+    assert.equal(validateOnly.actualWriteCount, 0);
+    assert.equal(env.setValuesCount, 1);
+    assert.equal(env.clearCount, 0);
+    assert.equal(env.appendRowCount, 0);
+    assert.equal(env.deleteRowsCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+  }],
+  ['recovery single rejects normal thirty-row payload', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.sheetSyncRecoveryPayload = Object.assign({}, buildSheetSyncPayload(env.outboxRows), {
+      action: 'sync_recovery_single',
+      operation: 'sync_recovery_single',
+      mode: 'sync_recovery_single',
+      sourceType: 'recovery_single',
+      approvalStatus: 'approved',
+      humanReviewCompleted: true,
+      humanReviewedCount: 1,
+      targetAutoApproved: false,
+      manifestCreated: false,
+      safetyCounters: buildZeroRecoverySafetyCounters(),
+      targetDate: '2026-06-20',
+      sendDate: '2026-06-20',
+      sendBatchId: 'gmail-sales-2026-06-20-noon-recovery',
+      sheetRowCount: 30,
+      recoveryTabName: 'recovery'
+    });
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'row_count_not_1');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single rejects unapproved payload', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.sheetSyncRecoveryPayload.approvalStatus = 'needs_review';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'approval_status_not_approved');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single rejects targetAutoApproved true', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.sheetSyncRecoveryPayload.targetAutoApproved = true;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'target_auto_approved_not_false');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single rejects nonzero safety counter', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.sheetSyncRecoveryPayload.safetyCounters.suppressionMatchCount = 1;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'suppressionMatchCount_nonzero');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single rejects missing dedicated tab without creating it', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    delete env.workbook.sheets.recovery;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'recovery_target_sheet_missing');
+    assert.equal(env.insertSheetCount, 0);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single rejects duplicate header', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.workbook.sheets.recovery.rows[0][1] = env.workbook.sheets.recovery.rows[0][0];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'recovery_header_mismatch');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single rejects duplicate existing identity', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.workbook.sheets.recovery.rows = [
+      OUTBOX_HEADERS,
+      outboxRowToCells(env.recoveryOutboxRows[0]),
+      outboxRowToCells(env.recoveryOutboxRows[0])
+    ];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'duplicate_conflict');
+    assertSheetSyncReadOnly(env);
+  }],
+  ['recovery single rejects bad token before sheet read', (env) => {
+    env.entry = 'sheetSyncRecoverySingle';
+    env.sheetSyncRecoveryPayload.token = 'wrong-token';
+  }, (env, result) => {
+    assert.equal(result.blockedReason, 'token_mismatch');
+    assert.equal(env.sheetReadCount, 0);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['normal thirty action rejects recovery payload', (env) => {
+    env.entry = 'sheetSyncConnectedDryRun';
+    env.sheetSyncPayload = Object.assign({}, env.sheetSyncRecoveryPayload, {
+      action: 'connected_dry_run',
+      operation: 'connected_dry_run',
+      mode: 'connected_dry_run'
+    });
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason.includes('row_count_not_30'), true);
+    assertSheetSyncReadOnly(env);
+  }],
+  ['normal daily prepare webhook syncs sheet and writes manifest/state only', (env) => {
+    env.entry = 'dailyPrepareWebhook';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.sheetSyncPayload = buildDailyPreparePayload(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sheetSynced, true);
+    assert.equal(result.stateUpdated, true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+    assert.equal(env.props.APPROVED_SEND_MANIFEST_JSON.includes('automatic_strict_gate'), true);
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
+  }],
+  ['normal daily prepare webhook rejects replay before second write', (env) => {
+    env.entry = 'dailyPrepareWebhookReplay';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.sheetSyncPayload = buildDailyPreparePayload(env);
+  }, (env, result) => {
+    assert.equal(result.first.status, 'pass');
+    assert.equal(result.second.status, 'blocked');
+    assert.equal(result.second.blockedReason, 'webhook_replay_detected');
+  }],
+  ['automatic strict manifest is accepted by normal pre-send', (env) => {
+    env.manifest = buildAutomaticDailyManifest(env);
+    env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
+    env.entry = 'dryRun';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.candidateCount, 30);
+    assertDryRunWriteFree(env);
   }]
 ];
 
 function createEnvironment() {
   const rows = Array.from({ length: 30 }, (_, index) => buildRow(index + 1));
   const outboxRows = Array.from({ length: 30 }, (_, index) => buildOutboxRow(index + 1));
+  const recoveryOutboxRows = [buildRecoveryOutboxRow()];
   const env = {
     props: {
       SHEET_ID: 'mock-sheet',
       SHEET_NAME: 'sales',
       GMAIL_SHEET_SYNC_TOKEN: 'token',
       GMAIL_SHEET_READY_TAB_NAME: 'ready',
+      GMAIL_SHEET_RECOVERY_TAB_NAME: 'recovery',
       DRY_RUN: 'false',
       LIVE_SEND_ENABLED: 'true',
       AUTO_SEND_ENABLED: 'true',
@@ -469,11 +1121,14 @@ function createEnvironment() {
     },
     rows,
     outboxRows,
+    recoveryOutboxRows,
     sheetSyncPayload: buildSheetSyncPayload(outboxRows),
+    sheetSyncRecoveryPayload: buildRecoverySheetSyncPayload(recoveryOutboxRows),
     workbook: {
       sheets: {
         sales: new MockSheet('sales', [HEADERS, ...rows.map(rowToCells)]),
         ready: new MockSheet('ready', [OUTBOX_HEADERS]),
+        recovery: new MockSheet('recovery', [OUTBOX_HEADERS]),
         _gmail_maintenance: new MockSheet('_gmail_maintenance', [MAINTENANCE_HEADERS])
       },
       getSheetByName(name) {
@@ -521,6 +1176,8 @@ function createEnvironment() {
     leaseWriteCount: 0,
     openSheetThrows: false,
     failSentUpdate: false,
+    corruptApprovedManifestOnSet: false,
+    cache: {},
     logs: []
   };
   env.context = buildContext(env);
@@ -560,7 +1217,10 @@ function buildContext(env) {
     Error,
     Utilities: {
       DigestAlgorithm: { SHA_256: 'SHA_256' },
+      Charset: { UTF_8: 'UTF_8' },
       computeDigest: (_algorithm, value) => Array.from(crypto.createHash('sha256').update(String(value)).digest()).map((byte) => byte > 127 ? byte - 256 : byte),
+      computeHmacSha256Signature: (value, secret) => Array.from(crypto.createHmac('sha256', String(secret)).update(String(value)).digest()).map((byte) => byte > 127 ? byte - 256 : byte),
+      newBlob: (value) => ({ getBytes: () => Array.from(Buffer.from(String(value), 'utf8')).map((byte) => byte > 127 ? byte - 256 : byte) }),
       getUuid: () => `uuid-${crypto.randomBytes(4).toString('hex')}`,
       formatDate: (date, _timezone, pattern) => formatDate(date, pattern)
     },
@@ -576,7 +1236,13 @@ function buildContext(env) {
         setProperty: (key, value) => {
           env.setPropertyCount += 1;
           env.propertyWriteCount += 1;
-          env.props[key] = String(value);
+          if (key === 'APPROVED_SEND_MANIFEST_JSON' && env.corruptApprovedManifestOnSet) {
+            const parsed = JSON.parse(String(value));
+            parsed.sourceOutboxIdentity.candidateContentHash = 'read_back_mismatch';
+            env.props[key] = JSON.stringify(parsed);
+          } else {
+            env.props[key] = String(value);
+          }
         },
         setProperties: (values) => {
           env.setPropertiesCount += 1;
@@ -590,6 +1256,12 @@ function buildContext(env) {
           env.propertyWriteCount += 1;
           delete env.props[key];
         }
+      })
+    },
+    CacheService: {
+      getScriptCache: () => ({
+        get: (key) => env.cache[key] || null,
+        put: (key, value) => { env.cache[key] = String(value); }
       })
     },
     LockService: {
@@ -649,6 +1321,14 @@ function buildContext(env) {
 function runEntry(env) {
   if (env.entry === 'scheduled') return env.context.executeDailyGmailSalesSend_({ source: 'scheduled', requireAutoSend: true, dryRun: false });
   if (env.entry === 'dryRun') return env.context.runGmailSalesPreSendDryRun();
+  if (env.entry === 'recoveryDryRun') return env.context.runGmailSalesRecoveryPreSendDryRun();
+  if (env.entry === 'recoverySend') return env.context.runGmailSalesRecoverySendOnce();
+  if (env.entry === 'digestFixtureOnly') return { status: 'pass' };
+  if (env.entry === 'recoveryDigestDiagnostic') return env.context.runGmailSalesRecoveryDigestDiagnostic();
+  if (env.entry === 'recoveryDigestReissue') return env.context.runGmailSalesRecoveryReissueManifestDigests();
+  if (env.entry === 'recoverySourceHashReissue') return env.context.runGmailSalesRecoveryReissueSourceCandidateContentHash();
+  if (env.entry === 'recoverySourceHashReissueScheduled') return env.context.runGmailSalesRecoveryReissueSourceCandidateContentHash({ source: 'scheduled_trigger' });
+  if (env.entry === 'recoveryHashRepair') return env.context.runGmailSalesRecoveryRepairDerivedCandidateHash();
   if (env.entry === 'suppressionDiagnostic') return env.context.runGmailSuppressionLedgerReadOnlyDiagnostic();
   if (env.entry === 'sheetSyncConnectedDryRun' || env.entry === 'sheetSyncReadOnlySnapshot') {
     if (env.entry === 'sheetSyncReadOnlySnapshot') {
@@ -660,6 +1340,27 @@ function runEntry(env) {
       postData: { contents: JSON.stringify(env.sheetSyncPayload) }
     });
     return JSON.parse(output.text);
+  }
+  if (env.entry === 'sheetSyncRecoverySingle') {
+    const output = env.context.handleGmailOutboxSheetSync_({
+      postData: { contents: JSON.stringify(env.sheetSyncRecoveryPayload) }
+    });
+    return JSON.parse(output.text);
+  }
+  if (env.entry === 'dailyPrepareWebhook') {
+    const output = env.context.handleGmailOutboxSheetSync_({
+      postData: { contents: JSON.stringify(env.sheetSyncPayload) }
+    });
+    return JSON.parse(output.text);
+  }
+  if (env.entry === 'dailyPrepareWebhookReplay') {
+    const first = JSON.parse(env.context.handleGmailOutboxSheetSync_({
+      postData: { contents: JSON.stringify(env.sheetSyncPayload) }
+    }).text);
+    const second = JSON.parse(env.context.handleGmailOutboxSheetSync_({
+      postData: { contents: JSON.stringify(env.sheetSyncPayload) }
+    }).text);
+    return { first, second };
   }
   return env.context.executeDailyGmailSalesSend_({ source: 'manual', requireAutoSend: false, dryRun: false });
 }
@@ -741,8 +1442,39 @@ function buildOutboxRow(index) {
   };
 }
 
+function buildRecoveryOutboxRow() {
+  return Object.assign({}, buildOutboxRow(1), {
+    sendDate: '2026-06-20',
+    nextActionDate: '2026-06-20',
+    sendBatchId: 'gmail-sales-2026-06-20-noon-recovery',
+    subject: 'Recovery note 1',
+    body: 'Business 1 様\n安全なご案内です。\n今後のご案内が不要な場合はご返信不要です。'
+  });
+}
+
 function outboxRowToCells(row) {
   return OUTBOX_HEADERS.map((header) => row[header] ?? '');
+}
+
+function getRecoveryCell(env, rowIndex, header) {
+  const sheet = env.workbook.sheets.recovery;
+  const columnIndex = sheet.rows[0].indexOf(header);
+  return sheet.rows[rowIndex - 1][columnIndex];
+}
+
+function setRecoveryCell(env, rowIndex, header, value) {
+  const sheet = env.workbook.sheets.recovery;
+  const columnIndex = sheet.rows[0].indexOf(header);
+  sheet.rows[rowIndex - 1][columnIndex] = value;
+}
+
+function addRecoveryCandidateContentHashColumn(env, value) {
+  const sheet = env.workbook.sheets.recovery;
+  if (!sheet.rows[0].includes('candidateContentHash')) {
+    sheet.rows[0].push('candidateContentHash');
+    sheet.rows.slice(1).forEach((row) => row.push(''));
+  }
+  setRecoveryCell(env, 2, 'candidateContentHash', value);
 }
 
 function buildSheetSyncPayload(outboxRows) {
@@ -761,6 +1493,175 @@ function buildSheetSyncPayload(outboxRows) {
     schemaVersion: 1,
     requestId: 'runtime-test-connected-dry-run',
     readyTabName: 'ready'
+  };
+}
+
+function buildRecoverySheetSyncPayload(outboxRows) {
+  const row = outboxRows[0];
+  return {
+    token: 'token',
+    action: 'sync_recovery_single',
+    operation: 'sync_recovery_single',
+    mode: 'sync_recovery_single',
+    sourceType: 'recovery_single',
+    dryRun: true,
+    targetDate: '2026-06-20',
+    sendDate: '2026-06-20',
+    sendBatchId: row.sendBatchId,
+    headers: OUTBOX_HEADERS.slice(),
+    rows: outboxRows.map(outboxRowToCells),
+    candidateCount: 1,
+    sheetRowCount: 1,
+    rowCount: 1,
+    schemaVersion: 1,
+    approvalStatus: 'approved',
+    humanReviewCompleted: true,
+    humanReviewedCount: 1,
+    targetAutoApproved: false,
+    manifestCreated: false,
+    safetyCounters: buildZeroRecoverySafetyCounters(),
+    requestId: 'runtime-test-recovery-single',
+    recoveryTabName: 'recovery'
+  };
+}
+
+function buildDailyPreparePayload(env) {
+  const manifest = buildAutomaticDailyManifest(env);
+  const payload = {
+    action: 'prepare_normal_daily',
+    mode: 'normal_daily',
+    sourceType: 'normal_daily',
+    targetDate: TARGET_DATE,
+    sendDate: TARGET_DATE,
+    sendBatchId: BATCH_ID,
+    candidateCount: env.outboxRows.length,
+    schemaVersion: 1,
+    requestId: `runtime-daily-prepare-${crypto.randomBytes(4).toString('hex')}`,
+    timestamp: new Date().toISOString(),
+    nonce: `nonce-${crypto.randomBytes(4).toString('hex')}`,
+    manifest,
+    headers: OUTBOX_HEADERS.slice(),
+    rows: env.outboxRows.map(outboxRowToCells),
+    dryRun: false
+  };
+  payload.bodyDigest = sha256(webhookBodyMaterial(payload));
+  payload.signature = crypto.createHmac('sha256', env.props.GMAIL_AUTOMATION_SHARED_SECRET)
+    .update([
+      payload.timestamp,
+      payload.nonce,
+      payload.requestId,
+      payload.action,
+      payload.targetDate,
+      payload.bodyDigest
+    ].join('\n'))
+    .digest('hex');
+  return payload;
+}
+
+function buildAutomaticDailyManifest(env) {
+  const digests = env.rows.map((row) => env.context.computeCandidateDigest_(row, TARGET_DATE, BATCH_ID));
+  const manifest = {
+    schemaVersion: 1,
+    mode: 'normal_daily',
+    sourceType: 'normal_daily',
+    targetDate: TARGET_DATE,
+    batchId: BATCH_ID,
+    candidateCount: 30,
+    expectedCandidateCount: 30,
+    approvedOutboxHash: 'automatic_approved_outbox_hash_present',
+    approvalStatus: 'approved',
+    approvalType: 'automatic_strict_gate',
+    targetAutoApproved: true,
+    humanReviewCompleted: false,
+    humanReviewedCount: 0,
+    autoApprovalPolicyVersion: 'automatic-strict-gate-v1',
+    automationVersion: 'normal-daily-v1',
+    autoApprovalPassedAt: '2099-01-01T00:00:00.000Z',
+    maxSendCount: 1,
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    candidateDigests: digests,
+    sourceOutboxIdentity: {
+      source: 'github_actions_normal_daily_prepare',
+      candidateContentHash: 'automatic_candidate_content_hash_present',
+      outboxIdentityDigest: 'automatic_outbox_identity_digest_present',
+      statusDocument: 'automatic_strict_gate'
+    }
+  };
+  manifest.manifestDigest = sha256(JSON.stringify(manifest));
+  return manifest;
+}
+
+function webhookBodyMaterial(payload) {
+  return JSON.stringify({
+    action: payload.action,
+    targetDate: payload.targetDate,
+    sendBatchId: payload.sendBatchId,
+    candidateCount: payload.candidateCount,
+    manifest: payload.manifest,
+    headers: payload.headers,
+    rows: payload.rows
+  });
+}
+
+function installRecoveryReadyRow(env) {
+  env.workbook.sheets.recovery.rows = [
+    OUTBOX_HEADERS.slice(),
+    outboxRowToCells(env.recoveryOutboxRows[0])
+  ];
+}
+
+function installRecoveryReadyRowAndManifest(env) {
+  installRecoveryReadyRow(env);
+  const row = env.context.loadCandidateRows_(Object.assign({}, env.context.getConfig_(), {
+    sheetName: 'recovery',
+    sendDate: '2026-06-20'
+  }))[0].row;
+  const batchId = 'gmail-sales-2026-06-20-noon-recovery';
+  env.manifest = {
+    schemaVersion: 1,
+    targetDate: '2026-06-20',
+    effectiveSendDate: '2026-06-20',
+    batchId,
+    candidateCount: 1,
+    approvedOutboxHash: 'approved_recovery_outbox_hash_present',
+    approvalStatus: 'approved',
+    humanReviewCompleted: true,
+    humanReviewedCount: 1,
+    targetAutoApproved: false,
+    sheetAlreadyAppliedConfirmed: true,
+    sameDayManualRecoveryApproved: true,
+    sameDayManualRecoveryApprovedAt: '2026-06-20T03:00:00.000Z',
+    sameDayManualRecoveryReasonCode: 'user_required_same_day_sales_recovery',
+    originalScheduledAt: '2026-06-20T12:00:00+09:00',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    maxSendCount: 1,
+    sourceType: 'recovery_single',
+    recoverySingle: true,
+    candidateDigestCanonicalization: 'apps-script-v2',
+    candidateDigests: [env.context.computeCandidateDigest_(row, '2026-06-20', batchId)],
+    sourceOutboxIdentity: {
+      source: 'local_recovery_approved_outbox',
+      candidateContentHash: env.context.computeRecoveryCandidateContentHashForRuntime_(row),
+      outboxIdentityDigest: 'present',
+      statusDocument: 'approved'
+    }
+  };
+}
+
+function buildZeroRecoverySafetyCounters() {
+  return {
+    requiredFieldMissingCount: 0,
+    personalizationInvalidCount: 0,
+    recipientDuplicateCount: 0,
+    domainDuplicateCount: 0,
+    businessDuplicateCount: 0,
+    suppressionMatchCount: 0,
+    gmailSentMatchCount: 0,
+    sheetHistoryMatchCount: 0,
+    localHistoryMatchCount: 0,
+    existingOutboxMatchCount: 0,
+    june19SourceMatchCount: 0,
+    june20ExistingTargetMatchCount: 0
   };
 }
 
@@ -867,6 +1768,38 @@ function hashValue(value) {
 
 function sha256(value) {
   return hashValue(value);
+}
+
+function nodeEquivalentCandidateDigest(row, targetDate, batchId) {
+  const candidateId = String(row.prospectId || row.dedupeKey || '').trim().toLowerCase();
+  return sha256([
+    String(row.email || row.contactEmail || row['宛先メール'] || row['メール'] || '').trim().toLowerCase(),
+    normalizeSubjectLikeAppsScript(row.subject || row['件名']),
+    normalizeBodyLikeAppsScript(row.body || row['本文']),
+    candidateId,
+    targetDate,
+    String(batchId || '').trim()
+  ].join('\n'));
+}
+
+function normalizeBodyLikeAppsScript(value) {
+  return String(value || '')
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function normalizeSubjectLikeAppsScript(value) {
+  return String(value || '')
+    .replace(/\\r\\n/g, ' ')
+    .replace(/\\n/g, ' ')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 function normalizeText(value) {

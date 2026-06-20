@@ -1,0 +1,97 @@
+name: Gmail sales daily prepare
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Target date in YYYY-MM-DD. Empty means JST today."
+        required: false
+        type: string
+      dry_run:
+        description: "Run without calling Apps Script."
+        required: true
+        default: true
+        type: boolean
+      phase:
+        description: "prepare, simulate, or health-check"
+        required: true
+        default: simulate
+        type: choice
+        options:
+          - prepare
+          - simulate
+          - health-check
+      allow_network:
+        description: "Allow the prepare webhook call. Keep false for manual dry-runs."
+        required: true
+        default: false
+        type: boolean
+      expected_count:
+        description: "Expected normal daily candidate count."
+        required: true
+        default: "30"
+        type: string
+
+concurrency:
+  group: gmail-sales-daily-${{ github.event_name }}-${{ inputs.target_date || github.run_id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GMAIL_SALES_EXPECTED_DAILY_COUNT: ${{ vars.GMAIL_SALES_EXPECTED_DAILY_COUNT || inputs.expected_count || '30' }}
+      GMAIL_SALES_MAX_DAILY_SEND_COUNT: ${{ vars.GMAIL_SALES_MAX_DAILY_SEND_COUNT || '30' }}
+      GMAIL_SALES_TIMEZONE: ${{ vars.GMAIL_SALES_TIMEZONE || 'Asia/Tokyo' }}
+      GMAIL_SALES_AUTOMATION_VERSION: ${{ vars.GMAIL_SALES_AUTOMATION_VERSION || 'normal-daily-v1' }}
+      GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: ${{ vars.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION || 'automatic-strict-gate-v1' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Safety tests
+        run: |
+          npm run lint
+          npm run gmail:sales:send-safety:test
+          npm run gmail:sales:create-send-manifest:test
+          npm run gmail:outbox:sync-to-sheet:test
+
+      - name: Check required secrets for network prepare
+        if: ${{ github.event_name == 'schedule' || inputs.allow_network == true }}
+        env:
+          GMAIL_APPS_SCRIPT_WEBHOOK_URL: ${{ secrets.GMAIL_APPS_SCRIPT_WEBHOOK_URL }}
+          GMAIL_AUTOMATION_SHARED_SECRET: ${{ secrets.GMAIL_AUTOMATION_SHARED_SECRET }}
+        run: |
+          test -n "$GMAIL_APPS_SCRIPT_WEBHOOK_URL"
+          test -n "$GMAIL_AUTOMATION_SHARED_SECRET"
+
+      - name: Daily prepare
+        env:
+          GMAIL_APPS_SCRIPT_WEBHOOK_URL: ${{ secrets.GMAIL_APPS_SCRIPT_WEBHOOK_URL }}
+          GMAIL_AUTOMATION_SHARED_SECRET: ${{ secrets.GMAIL_AUTOMATION_SHARED_SECRET }}
+          GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK: ${{ github.event_name == 'schedule' && 'true' || inputs.allow_network }}
+        run: |
+          PHASE="${{ github.event_name == 'schedule' && 'prepare' || inputs.phase }}"
+          DRY_RUN="${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}"
+          TARGET_DATE="${{ inputs.target_date }}"
+          if [ -n "$TARGET_DATE" ]; then
+            node scripts/gmail/run-gmail-sales-daily-automation.mjs --phase "$PHASE" --target-date "$TARGET_DATE" --expected-count "${GMAIL_SALES_EXPECTED_DAILY_COUNT}" --dry-run "$DRY_RUN" --allow-network "${GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK}"
+          else
+            node scripts/gmail/run-gmail-sales-daily-automation.mjs --phase "$PHASE" --expected-count "${GMAIL_SALES_EXPECTED_DAILY_COUNT}" --dry-run "$DRY_RUN" --allow-network "${GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK}"
+          fi
