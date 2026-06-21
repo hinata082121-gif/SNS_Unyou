@@ -1355,6 +1355,55 @@ const scenarios = [
     assert.equal(result.status, 'blocked');
     assert.equal(result.blockedReason, 'send_window_too_narrow');
     assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['daily automation activation enables master and auto send once when prepared', (env) => {
+    env.entry = 'dailyActivate';
+    installDailyActivationReadyState(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'activated');
+    assert.equal(result.propertyWriteCount, 1);
+    assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'true');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'true');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['daily automation activation is idempotent when already active', (env) => {
+    env.entry = 'dailyActivate';
+    installDailyActivationReadyState(env);
+    env.props.AUTOMATION_MASTER_ENABLED = 'true';
+    env.props.AUTO_SEND_ENABLED = 'true';
+    env.props.LIVE_SEND_ENABLED = 'false';
+  }, (env, result) => {
+    assert.equal(result.status, 'already_active');
+    assert.equal(result.propertyWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['daily automation activation blocks without prepared state', (env) => {
+    env.entry = 'dailyActivate';
+    env.props.AUTOMATION_MASTER_ENABLED = 'false';
+    env.props.AUTO_SEND_ENABLED = 'false';
+    env.props.LIVE_SEND_ENABLED = 'false';
+    env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.propertyWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['daily automation deactivation disables send flags without deleting state', (env) => {
+    env.entry = 'dailyDeactivate';
+    installDailyActivationReadyState(env);
+    env.props.AUTOMATION_MASTER_ENABLED = 'true';
+    env.props.AUTO_SEND_ENABLED = 'true';
+    env.props.LIVE_SEND_ENABLED = 'false';
+  }, (env, result) => {
+    assert.equal(result.status, 'deactivated');
+    assert.equal(result.propertyWriteCount, 1);
+    assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'false');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
   }]
 ];
 
@@ -1478,9 +1527,10 @@ function createEnvironment() {
 }
 
 function buildContext(env) {
+  const ContextDate = buildDynamicDate(env);
   return {
     console,
-    Date,
+    Date: ContextDate,
     JSON,
     Math,
     Number,
@@ -1612,6 +1662,35 @@ function buildContext(env) {
   };
 }
 
+function buildDynamicDate(env) {
+  return class DynamicDate extends Date {
+    constructor(...args) {
+      super(...(args.length === 0 && env.nowIso ? [Date.parse(env.nowIso)] : args));
+    }
+
+    static now() {
+      return env.nowIso ? Date.parse(env.nowIso) : Date.now();
+    }
+
+    static parse(value) {
+      return Date.parse(value);
+    }
+
+    static UTC(...args) {
+      return Date.UTC(...args);
+    }
+  };
+}
+
+function safeResultForAssertionMessage(result) {
+  return {
+    status: result && result.status,
+    blockedReason: result && result.blockedReason,
+    blockedReasons: result && result.blockedReasons,
+    errorCode: result && result.errorCode
+  };
+}
+
 function runEntry(env) {
   if (env.entry === 'scheduled') return env.context.executeDailyGmailSalesSend_({ source: 'scheduled', requireAutoSend: true, dryRun: false });
   if (env.entry === 'dryRun') return env.context.runGmailSalesPreSendDryRun();
@@ -1627,6 +1706,8 @@ function runEntry(env) {
   if (env.entry === 'dailyInitializer') return env.context.initializeGmailSalesDailyAutomationProperties();
   if (env.entry === 'dailyHealth') return env.context.runGmailSalesDailyAutomationHealthCheck();
   if (env.entry === 'dailyInstall') return env.context.installGmailSalesDailyAutomationTriggers();
+  if (env.entry === 'dailyActivate') return env.context.activateGmailSalesDailyAutomationOnce();
+  if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
   if (env.entry === 'sheetSyncConnectedDryRun' || env.entry === 'sheetSyncReadOnlySnapshot') {
     if (env.entry === 'sheetSyncReadOnlySnapshot') {
       env.sheetSyncPayload.action = 'read_only_snapshot';
@@ -1874,6 +1955,7 @@ function buildDailySourceReadPayload(env) {
     sendDate: TARGET_DATE,
     sendBatchId: BATCH_ID,
     expectedCount: 30,
+    requestedSourceCount: 90,
     requestId: `runtime-daily-source-${crypto.randomBytes(4).toString('hex')}`,
     timestamp: new Date().toISOString(),
     nonce: `nonce-${crypto.randomBytes(4).toString('hex')}`
@@ -1890,6 +1972,32 @@ function buildDailySourceReadPayload(env) {
     ].join('\n'))
     .digest('hex');
   return payload;
+}
+
+function installDailyActivationReadyState(env) {
+  const config = env.context.getConfig_();
+  const manifest = buildAutomaticDailyManifest(env);
+  manifest.targetDate = config.currentJstDate;
+  manifest.batchId = `gmail-sales-${config.currentJstDate}`;
+  manifest.humanReviewCompleted = false;
+  manifest.humanReviewedCount = 0;
+  manifest.targetAutoApproved = true;
+  env.manifest = manifest;
+  env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(manifest);
+  env.props.AUTOMATION_MASTER_ENABLED = 'false';
+  env.props.AUTO_SEND_ENABLED = 'false';
+  env.props.LIVE_SEND_ENABLED = 'false';
+  env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+    targetDate: config.currentJstDate,
+    mode: 'normal_daily',
+    sendBatchId: `gmail-sales-${config.currentJstDate}`,
+    expectedCandidateCount: 30,
+    actualCandidateCount: 30,
+    state: 'sheet_synced',
+    automationVersion: 'normal-daily-v1'
+  });
 }
 
 function buildAutomaticDailyManifest(env) {
@@ -1932,6 +2040,7 @@ function webhookBodyMaterial(payload) {
       targetDate: payload.targetDate,
       sendBatchId: payload.sendBatchId,
       expectedCount: payload.expectedCount,
+      requestedSourceCount: payload.requestedSourceCount,
       mode: payload.mode,
       sourceType: payload.sourceType,
       automationVersion: payload.automationVersion,
@@ -1957,6 +2066,7 @@ function installRecoveryReadyRow(env) {
 }
 
 function installRecoveryReadyRowAndManifest(env) {
+  env.nowIso = '2026-06-20T03:00:00.000Z';
   installRecoveryReadyRow(env);
   const row = env.context.loadCandidateRows_(Object.assign({}, env.context.getConfig_(), {
     sheetName: 'recovery',
@@ -2283,7 +2393,7 @@ for (const [name, mutate, verify] of scenarios) {
   try {
     verify(env, result);
   } catch (error) {
-    error.message = `${name}: ${error.message}`;
+    error.message = `${name}: ${error.message}; result=${JSON.stringify(safeResultForAssertionMessage(result))}`;
     throw error;
   }
 }

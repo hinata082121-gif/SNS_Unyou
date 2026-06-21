@@ -11,7 +11,7 @@ fs.rmSync(outputDir, { recursive: true, force: true });
 const simulate = JSON.parse(execFileSync(process.execPath, [
   'scripts/gmail/run-gmail-sales-daily-automation.mjs',
   '--phase', 'simulate',
-  '--target-date', '2026-06-21',
+  '--target-date', '2026-06-22',
   '--expected-count', '30',
   '--dry-run', 'true',
   '--output-dir', outputDir
@@ -28,6 +28,9 @@ const simulate = JSON.parse(execFileSync(process.execPath, [
 assert.equal(simulate.ok, true);
 assert.equal(simulate.mode, 'normal_daily');
 assert.equal(simulate.expectedCount, 30);
+assert.equal(simulate.requestedSourceCount, 90);
+assert.equal(simulate.sourceCount, 90);
+assert.equal(simulate.eligibleCandidateCount >= 30, true);
 assert.equal(simulate.strictAutoApprovalPassed, true);
 assert.equal(simulate.manifestCreated, true);
 assert.equal(simulate.payloadCreated, true);
@@ -56,7 +59,7 @@ assert.match(payload.bodyDigest, /^[a-f0-9]{64}$/);
 
 const prepareMock = runDailyAutomation([
   '--phase', 'prepare',
-  '--target-date', '2026-06-21',
+  '--target-date', '2026-06-22',
   '--expected-count', '30',
   '--dry-run', 'false',
   '--allow-network', 'true',
@@ -70,6 +73,8 @@ const prepareMock = runDailyAutomation([
 });
 assert.equal(prepareMock.ok, true);
 assert.equal(prepareMock.sourceResolved, true);
+assert.equal(prepareMock.sourceCount, 90);
+assert.equal(prepareMock.eligibleCandidateCount >= 30, true);
 assert.equal(prepareMock.candidateCount, 30);
 assert.equal(prepareMock.strictAutoApprovalPassed, true);
 assert.equal(prepareMock.webhookCalled, true);
@@ -78,7 +83,7 @@ assert.equal(prepareMock.networkRequestCount, 0);
 
 const unavailable = runDailyAutomation([
   '--phase', 'prepare',
-  '--target-date', '2026-06-21',
+  '--target-date', '2026-06-22',
   '--expected-count', '30',
   '--dry-run', 'false',
   '--allow-network', 'false',
@@ -95,7 +100,7 @@ assert.equal(unavailable.networkRequestCount, 0);
 
 const candidateShort = runDailyAutomation([
   '--phase', 'prepare',
-  '--target-date', '2026-06-21',
+  '--target-date', '2026-06-22',
   '--expected-count', '30',
   '--dry-run', 'false',
   '--allow-network', 'true',
@@ -111,9 +116,29 @@ assert.equal(candidateShort.blockedReason, 'source_count_insufficient');
 assert.equal(candidateShort.webhookCalled, false);
 assert.equal(candidateShort.networkRequestCount, 0);
 
+const eligibleShort = runDailyAutomation([
+  '--phase', 'prepare',
+  '--target-date', '2026-06-22',
+  '--expected-count', '30',
+  '--dry-run', 'false',
+  '--allow-network', 'true',
+  '--output-dir', path.join(outputDir, 'eligible-29')
+], {
+  GMAIL_AUTOMATION_SHARED_SECRET: 'synthetic-secret',
+  GMAIL_APPS_SCRIPT_WEBHOOK_URL: 'mock://eligible-29',
+  GMAIL_SALES_AUTOMATION_VERSION: 'normal-daily-v1',
+  GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: 'automatic-strict-gate-v1'
+}, { expectFailure: true });
+assert.equal(eligibleShort.ok, false);
+assert.equal(eligibleShort.blockedReason, 'eligible_candidate_count_insufficient');
+assert.equal(eligibleShort.sourceCount, 90);
+assert.equal(eligibleShort.eligibleCandidateCount, 29);
+assert.equal(eligibleShort.webhookCalled, false);
+assert.equal(eligibleShort.networkRequestCount, 0);
+
 const duplicate = runDailyAutomation([
   '--phase', 'prepare',
-  '--target-date', '2026-06-21',
+  '--target-date', '2026-06-22',
   '--expected-count', '30',
   '--dry-run', 'false',
   '--allow-network', 'true',
@@ -125,13 +150,14 @@ const duplicate = runDailyAutomation([
   GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: 'automatic-strict-gate-v1'
 }, { expectFailure: true });
 assert.equal(duplicate.ok, false);
-assert.equal(duplicate.blockedReason.includes('duplicate_email'), true);
+assert.equal(duplicate.blockedReason, 'eligible_candidate_count_insufficient');
+assert.equal(duplicate.eligibleCandidateCount, 29);
 assert.equal(duplicate.webhookCalled, false);
 assert.equal(duplicate.networkRequestCount, 0);
 
 const webhookRejected = runDailyAutomation([
   '--phase', 'prepare',
-  '--target-date', '2026-06-21',
+  '--target-date', '2026-06-22',
   '--expected-count', '30',
   '--dry-run', 'false',
   '--allow-network', 'true',
@@ -153,7 +179,7 @@ try {
   execFileSync(process.execPath, [
     'scripts/gmail/run-gmail-sales-daily-automation.mjs',
     '--phase', 'simulate',
-    '--target-date', '2026-06-21',
+    '--target-date', '2026-06-22',
     '--expected-count', '30',
     '--dry-run', 'true',
     '--output-dir', path.join(outputDir, 'unset')
@@ -198,7 +224,7 @@ assert.equal(workflow.includes('npm run gmail:sales:send-safety:test'), true);
 assert.equal(workflow.includes('run-gmail-sales-daily-automation.mjs'), true);
 
 console.log(JSON.stringify({
-  dailyAutomationTestScenarioCount: 18,
+  dailyAutomationTestScenarioCount: 19,
   passed: true,
   workflowPresent: true,
   strictAutoApprovalPassed: true,

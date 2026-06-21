@@ -2,7 +2,7 @@ name: Gmail sales daily prepare
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 22 * * *"
   workflow_dispatch:
     inputs:
       target_date:
@@ -35,7 +35,7 @@ on:
         type: string
 
 concurrency:
-  group: gmail-sales-daily-${{ github.event_name }}-${{ inputs.target_date || github.run_id }}
+  group: gmail-sales-daily-${{ inputs.target_date || github.ref_name }}
   cancel-in-progress: false
 
 permissions:

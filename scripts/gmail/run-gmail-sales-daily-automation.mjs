@@ -14,12 +14,14 @@ import {
 const AUTOMATION_VERSION = 'normal-daily-v1';
 const AUTO_APPROVAL_POLICY_VERSION = 'automatic-strict-gate-v1';
 const EXPECTED_COUNT = 30;
+const DEFAULT_REQUESTED_SOURCE_COUNT = Math.max(EXPECTED_COUNT * 3, 90);
 const envAutomationVersion = String(process.env.GMAIL_SALES_AUTOMATION_VERSION || '').trim();
 const envApprovalPolicyVersion = String(process.env.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION || '').trim();
 const args = parseArgs(process.argv.slice(2));
 const phase = String(args.phase || 'simulate').trim();
 const targetDate = resolveDateArg(args['target-date'] || args.date, 'today');
 const expectedCount = Number(args['expected-count'] || process.env.GMAIL_SALES_EXPECTED_DAILY_COUNT || EXPECTED_COUNT);
+const requestedSourceCount = Number(args['requested-source-count'] || process.env.GMAIL_SALES_REQUESTED_SOURCE_COUNT || DEFAULT_REQUESTED_SOURCE_COUNT);
 const dryRun = args['dry-run'] !== false && String(args['dry-run'] || '').toLowerCase() !== 'false';
 const allowNetwork = args['allow-network'] === true || String(args['allow-network'] || process.env.GMAIL_DAILY_AUTOMATION_ALLOW_NETWORK || '').toLowerCase() === 'true';
 const sourceMode = String(args['source-mode'] || (phase === 'simulate' ? 'synthetic' : 'apps-script')).trim();
@@ -33,6 +35,7 @@ const summary = {
   targetDate,
   mode: 'normal_daily',
   expectedCount,
+  requestedSourceCount,
   sendBatchId,
   strictAutoApprovalPassed: false,
   manifestCreated: false,
@@ -44,6 +47,8 @@ const summary = {
   sourceResolved: false,
   sourceMode,
   candidateCount: 0,
+  sourceCount: 0,
+  eligibleCandidateCount: 0,
   cleanupPassed: false,
   failedPhase: '',
   errorCode: '',
@@ -109,6 +114,9 @@ function validateArgs() {
   if (expectedCount !== EXPECTED_COUNT) {
     throw dailyError('expected_count_must_be_30', 'argument_validation');
   }
+  if (!Number.isFinite(requestedSourceCount) || requestedSourceCount < expectedCount) {
+    throw dailyError('requested_source_count_invalid', 'argument_validation');
+  }
   const versionErrors = validateConfiguredVersions();
   if (versionErrors.length > 0) {
     throw dailyError(versionErrors.join(','), 'argument_validation');
@@ -147,8 +155,8 @@ async function resolveDailySource() {
       sourceResolved: true,
       sourceMode,
       headers: OUTBOX_HEADERS,
-      rows: buildSyntheticPreparedBatch().rows,
-      sourceCount: EXPECTED_COUNT,
+      rows: buildSyntheticPreparedBatch(requestedSourceCount).rows,
+      sourceCount: requestedSourceCount,
       sourceSchemaVersion: 1,
       sourceSnapshotIdentity: 'synthetic'
     };
@@ -179,10 +187,17 @@ function buildPreparedBatchFromSource(source) {
   if (!source || !Array.isArray(source.rows)) {
     throw dailyError('source_schema_invalid', 'source_validation');
   }
+  summary.sourceCount = Number(source.sourceCount || source.rows.length || 0);
   if (source.rows.length < EXPECTED_COUNT) {
     throw dailyError('source_count_insufficient', 'source_validation');
   }
-  const rows = source.rows.slice(0, EXPECTED_COUNT).map((row, index) => normalizeSourceRow(row, index));
+  const candidates = source.rows.map((row, index) => normalizeSourceRow(row, index));
+  const eligibility = selectEligibleRows(candidates);
+  summary.eligibleCandidateCount = eligibility.eligibleRows.length;
+  if (eligibility.eligibleRows.length < EXPECTED_COUNT) {
+    throw dailyError('eligible_candidate_count_insufficient', 'candidate_selection');
+  }
+  const rows = eligibility.eligibleRows.slice(0, EXPECTED_COUNT);
   return {
     headers: OUTBOX_HEADERS,
     rows,
@@ -191,6 +206,46 @@ function buildPreparedBatchFromSource(source) {
     sourceSchemaVersion: source.sourceSchemaVersion,
     sourceSnapshotIdentity: source.sourceSnapshotIdentity
   };
+}
+
+function selectEligibleRows(rows) {
+  const seen = {
+    email: new Set(),
+    dedupeKey: new Set(),
+    domain: new Set(),
+    business: new Set()
+  };
+  const eligibleRows = [];
+  const sorted = rows.slice().sort((a, b) => deterministicRank(a).localeCompare(deterministicRank(b)));
+  for (const row of sorted) {
+    const email = String(row.email || row.contactEmail || '').trim().toLowerCase();
+    const dedupeKey = String(row.dedupeKey || '').trim().toLowerCase();
+    const domain = email.split('@')[1] || '';
+    const business = String(row.name || '').trim().toLowerCase();
+    const body = String(row.body || '').trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
+    if (!String(row.subject || '').trim() || !body || !body.includes('不要')) continue;
+    if (String(row.doNotContact || '').toLowerCase() === 'true') continue;
+    if (String(row.status || '').toLowerCase() !== 'ready') continue;
+    if (String(row.sendDate || '') !== targetDate) continue;
+    if (String(row.sendBatchId || '') !== sendBatchId) continue;
+    if (seen.email.has(email) || seen.dedupeKey.has(dedupeKey) || seen.domain.has(domain) || seen.business.has(business)) continue;
+    seen.email.add(email);
+    if (dedupeKey) seen.dedupeKey.add(dedupeKey);
+    if (domain) seen.domain.add(domain);
+    if (business) seen.business.add(business);
+    eligibleRows.push(row);
+  }
+  return { eligibleRows };
+}
+
+function deterministicRank(row) {
+  return [
+    String(row.lastCheckedAt || ''),
+    String(row.prospectId || ''),
+    String(row.dedupeKey || ''),
+    String(row.email || row.contactEmail || '')
+  ].join('|');
 }
 
 function normalizeSourceRow(row, index) {
@@ -237,8 +292,8 @@ function writeEphemeralArtifacts(prepared) {
   prepared.sheetsTsvPath = sheetsTsvPath;
 }
 
-function buildSyntheticPreparedBatch() {
-  const rows = Array.from({ length: EXPECTED_COUNT }, (_, index) => ({
+function buildSyntheticPreparedBatch(count = EXPECTED_COUNT) {
+  const rows = Array.from({ length: count }, (_, index) => ({
     prospectId: `synthetic-prospect-${index + 1}`,
     name: `Synthetic Business ${index + 1}`,
     businessType: 'service',
@@ -263,7 +318,7 @@ function buildSyntheticPreparedBatch() {
     replyStatus: '',
     unsubscribe: '',
     doNotContact: '',
-    lastCheckedAt: '',
+    lastCheckedAt: `2099-01-${String((index % 28) + 1).padStart(2, '0')}T00:00:00.000Z`,
     notes: ''
   }));
   return { headers: OUTBOX_HEADERS, rows, rowCells: rows.map((row) => OUTBOX_HEADERS.map((header) => row[header] ?? '')) };
@@ -337,6 +392,9 @@ function buildAutomaticManifest(batch) {
     candidateDigests,
     sourceOutboxIdentity: {
       source: 'github_actions_normal_daily_prepare',
+      sourceMode: batch.sourceMode || '',
+      sourceSchemaVersion: batch.sourceSchemaVersion || 1,
+      sourceSnapshotIdentity: batch.sourceSnapshotIdentity || '',
       candidateContentHash,
       outboxIdentityDigest: sha256(candidateDigests.slice().sort().join('\n')),
       statusDocument: 'automatic_strict_gate'
@@ -412,16 +470,21 @@ async function postReadSourcePayload() {
   if (webhookUrl.startsWith('mock://')) {
     if (webhookUrl === 'mock://source-unavailable') return { ok: false, status: 'blocked', blockedReason: 'source_input_unavailable', mocked: true };
     if (webhookUrl === 'mock://source-29') {
-      const source = buildSyntheticPreparedBatch();
+      const source = buildSyntheticPreparedBatch(29);
       return { ok: true, status: 'pass', rows: source.rows.slice(0, 29), headers: source.headers, sourceCount: 29, sourceSchemaVersion: 1, mocked: true };
     }
+    if (webhookUrl === 'mock://eligible-29') {
+      const source = buildSyntheticPreparedBatch(90);
+      source.rows.slice(29).forEach((row) => { row.doNotContact = 'true'; });
+      return { ok: true, status: 'pass', rows: source.rows, headers: source.headers, sourceCount: 90, sourceSchemaVersion: 1, mocked: true };
+    }
     if (webhookUrl === 'mock://source-duplicate') {
-      const source = buildSyntheticPreparedBatch();
+      const source = buildSyntheticPreparedBatch(90);
       source.rows[1].email = source.rows[0].email;
       source.rows[1].contactEmail = source.rows[0].contactEmail;
-      return { ok: true, status: 'pass', rows: source.rows, headers: source.headers, sourceCount: 30, sourceSchemaVersion: 1, mocked: true };
+      return { ok: true, status: 'pass', rows: source.rows.slice(0, 30), headers: source.headers, sourceCount: 30, sourceSchemaVersion: 1, mocked: true };
     }
-    return { ok: true, status: 'pass', ...buildSyntheticPreparedBatch(), sourceCount: 30, sourceSchemaVersion: 1, sourceSnapshotIdentity: 'mock', mocked: true };
+    return { ok: true, status: 'pass', ...buildSyntheticPreparedBatch(requestedSourceCount), sourceCount: requestedSourceCount, sourceSchemaVersion: 1, sourceSnapshotIdentity: 'mock', mocked: true };
   }
   const payload = buildSignedActionPayload('read_normal_daily_source');
   const response = await fetch(webhookUrl, {
@@ -448,6 +511,7 @@ function buildSignedActionPayload(action) {
     sendDate: targetDate,
     sendBatchId,
     expectedCount,
+    requestedSourceCount,
     requestId: `gmail-daily-${action}-${targetDate}-${Date.now()}-${process.pid}`,
     timestamp: new Date().toISOString(),
     nonce: crypto.randomUUID()
@@ -475,6 +539,7 @@ function gmailDailyActionBodyMaterial(payload) {
     targetDate: payload.targetDate,
     sendBatchId: payload.sendBatchId,
     expectedCount: payload.expectedCount,
+    requestedSourceCount: payload.requestedSourceCount,
     mode: payload.mode,
     sourceType: payload.sourceType,
     automationVersion: payload.automationVersion,
