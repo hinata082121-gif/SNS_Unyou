@@ -15,6 +15,8 @@ const AUTOMATION_VERSION = 'normal-daily-v1';
 const AUTO_APPROVAL_POLICY_VERSION = 'automatic-strict-gate-v1';
 const EXPECTED_COUNT = 30;
 const DEFAULT_REQUESTED_SOURCE_COUNT = Math.max(EXPECTED_COUNT * 3, 90);
+const SOURCE_PAGE_SIZE = 100;
+const MAX_SOURCE_PAGE_REQUESTS = 5;
 const envAutomationVersion = String(process.env.GMAIL_SALES_AUTOMATION_VERSION || '').trim();
 const envApprovalPolicyVersion = String(process.env.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION || '').trim();
 const args = parseArgs(process.argv.slice(2));
@@ -44,11 +46,19 @@ const summary = {
   webhookCalled: false,
   appsScriptPrepareAccepted: false,
   networkRequestCount: 0,
+  sourceRequestSucceeded: false,
   sourceResolved: false,
+  sourceCountSufficient: false,
+  eligibleCountSufficient: false,
   sourceMode,
   candidateCount: 0,
   sourceCount: 0,
+  availableSourceCount: 0,
+  returnedSourceCount: 0,
   eligibleCandidateCount: 0,
+  selectedCandidateCount: 0,
+  excludedCount: 0,
+  exclusionReasonCounts: {},
   cleanupPassed: false,
   failedPhase: '',
   errorCode: '',
@@ -157,6 +167,8 @@ async function resolveDailySource() {
       headers: OUTBOX_HEADERS,
       rows: buildSyntheticPreparedBatch(requestedSourceCount).rows,
       sourceCount: requestedSourceCount,
+      availableSourceCount: requestedSourceCount,
+      returnedSourceCount: requestedSourceCount,
       sourceSchemaVersion: 1,
       sourceSnapshotIdentity: 'synthetic'
     };
@@ -168,7 +180,8 @@ async function resolveDailySource() {
     throw dailyError('source_input_unavailable', 'source_resolution');
   }
   const response = await postReadSourcePayload();
-  summary.networkRequestCount += response.mocked ? 0 : 1;
+  summary.networkRequestCount += Number(response.networkRequestCount || (response.mocked ? 0 : 1));
+  summary.sourceRequestSucceeded = response.ok === true && response.status === 'pass';
   if (!response.ok || response.status !== 'pass') {
     throw dailyError(String(response.blockedReason || 'source_input_unavailable'), 'source_resolution');
   }
@@ -178,6 +191,8 @@ async function resolveDailySource() {
     headers: Array.isArray(response.headers) ? response.headers : OUTBOX_HEADERS,
     rows: Array.isArray(response.rows) ? response.rows : [],
     sourceCount: Number(response.sourceCount || response.rows?.length || 0),
+    availableSourceCount: Number(response.availableSourceCount || response.sourceCount || response.rows?.length || 0),
+    returnedSourceCount: Number(response.returnedSourceCount || response.rows?.length || 0),
     sourceSchemaVersion: Number(response.sourceSchemaVersion || 1),
     sourceSnapshotIdentity: String(response.sourceSnapshotIdentity || '')
   };
@@ -188,16 +203,24 @@ function buildPreparedBatchFromSource(source) {
     throw dailyError('source_schema_invalid', 'source_validation');
   }
   summary.sourceCount = Number(source.sourceCount || source.rows.length || 0);
-  if (source.rows.length < EXPECTED_COUNT) {
-    throw dailyError('source_count_insufficient', 'source_validation');
+  summary.availableSourceCount = Number(source.availableSourceCount || source.sourceCount || source.rows.length || 0);
+  summary.returnedSourceCount = Number(source.returnedSourceCount || source.rows.length || 0);
+  summary.sourceResolved = true;
+  summary.sourceCountSufficient = source.rows.length >= EXPECTED_COUNT;
+  if (!summary.sourceCountSufficient) {
+    throw dailyError('source_available_count_insufficient', 'source_validation');
   }
   const candidates = source.rows.map((row, index) => normalizeSourceRow(row, index));
   const eligibility = selectEligibleRows(candidates);
   summary.eligibleCandidateCount = eligibility.eligibleRows.length;
+  summary.excludedCount = eligibility.excludedCount;
+  summary.exclusionReasonCounts = eligibility.exclusionReasonCounts;
+  summary.eligibleCountSufficient = eligibility.eligibleRows.length >= EXPECTED_COUNT;
   if (eligibility.eligibleRows.length < EXPECTED_COUNT) {
     throw dailyError('eligible_candidate_count_insufficient', 'candidate_selection');
   }
   const rows = eligibility.eligibleRows.slice(0, EXPECTED_COUNT);
+  summary.selectedCandidateCount = rows.length;
   return {
     headers: OUTBOX_HEADERS,
     rows,
@@ -216,27 +239,36 @@ function selectEligibleRows(rows) {
     business: new Set()
   };
   const eligibleRows = [];
+  const exclusionReasonCounts = {};
   const sorted = rows.slice().sort((a, b) => deterministicRank(a).localeCompare(deterministicRank(b)));
+  const exclude = (reason) => {
+    exclusionReasonCounts[reason] = Number(exclusionReasonCounts[reason] || 0) + 1;
+  };
   for (const row of sorted) {
     const email = String(row.email || row.contactEmail || '').trim().toLowerCase();
     const dedupeKey = String(row.dedupeKey || '').trim().toLowerCase();
     const domain = email.split('@')[1] || '';
     const business = String(row.name || '').trim().toLowerCase();
     const body = String(row.body || '').trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
-    if (!String(row.subject || '').trim() || !body || !body.includes('不要')) continue;
-    if (String(row.doNotContact || '').toLowerCase() === 'true') continue;
-    if (String(row.status || '').toLowerCase() !== 'ready') continue;
-    if (String(row.sendDate || '') !== targetDate) continue;
-    if (String(row.sendBatchId || '') !== sendBatchId) continue;
-    if (seen.email.has(email) || seen.dedupeKey.has(dedupeKey) || seen.domain.has(domain) || seen.business.has(business)) continue;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { exclude('invalid_email'); continue; }
+    if (!String(row.subject || '').trim()) { exclude('empty_subject'); continue; }
+    if (!body) { exclude('empty_body'); continue; }
+    if (!body.includes('不要')) { exclude('missing_unsubscribe'); continue; }
+    if (String(row.doNotContact || '').toLowerCase() === 'true') { exclude('do_not_contact'); continue; }
+    if (String(row.status || '').toLowerCase() !== 'ready') { exclude('status_not_ready'); continue; }
+    if (String(row.sendDate || '') !== targetDate) { exclude('target_date_mismatch'); continue; }
+    if (String(row.sendBatchId || '') !== sendBatchId) { exclude('send_batch_id_mismatch'); continue; }
+    if (seen.email.has(email)) { exclude('duplicate_email'); continue; }
+    if (seen.dedupeKey.has(dedupeKey)) { exclude('duplicate_dedupe_key'); continue; }
+    if (seen.domain.has(domain)) { exclude('duplicate_domain'); continue; }
+    if (seen.business.has(business)) { exclude('duplicate_business'); continue; }
     seen.email.add(email);
     if (dedupeKey) seen.dedupeKey.add(dedupeKey);
     if (domain) seen.domain.add(domain);
     if (business) seen.business.add(business);
     eligibleRows.push(row);
   }
-  return { eligibleRows };
+  return { eligibleRows, excludedCount: rows.length - eligibleRows.length, exclusionReasonCounts };
 }
 
 function deterministicRank(row) {
@@ -465,28 +497,89 @@ async function postPreparePayload(payload) {
 }
 
 async function postReadSourcePayload() {
+  const aggregate = {
+    ok: false,
+    status: 'blocked',
+    rows: [],
+    headers: OUTBOX_HEADERS,
+    sourceCount: 0,
+    returnedSourceCount: 0,
+    availableSourceCount: 0,
+    sourceSchemaVersion: 1,
+    sourceSnapshotIdentity: '',
+    networkRequestCount: 0,
+    mocked: false
+  };
+  const seen = new Set();
+  let cursor = '';
+  for (let pageIndex = 0; pageIndex < MAX_SOURCE_PAGE_REQUESTS && aggregate.rows.length < requestedSourceCount; pageIndex += 1) {
+    const page = await fetchReadSourcePage(cursor);
+    aggregate.mocked = aggregate.mocked || page.mocked === true;
+    aggregate.networkRequestCount += Number(page.networkRequestCount || (page.mocked ? 0 : 1));
+    if (!page.ok || page.status !== 'pass') return page;
+    aggregate.ok = true;
+    aggregate.status = 'pass';
+    aggregate.headers = Array.isArray(page.headers) ? page.headers : aggregate.headers;
+    aggregate.sourceSchemaVersion = Number(page.sourceSchemaVersion || aggregate.sourceSchemaVersion);
+    aggregate.sourceSnapshotIdentity = String(page.sourceSnapshotIdentity || aggregate.sourceSnapshotIdentity || '');
+    aggregate.availableSourceCount = Math.max(aggregate.availableSourceCount, Number(page.availableSourceCount || page.sourceCount || 0));
+    const pageRows = Array.isArray(page.rows) ? page.rows : [];
+    pageRows.forEach((row) => {
+      const key = [
+        String(row.prospectId || '').trim().toLowerCase(),
+        String(row.dedupeKey || '').trim().toLowerCase(),
+        String(row.email || row.contactEmail || '').trim().toLowerCase()
+      ].filter(Boolean).join('|');
+      if (!key || seen.has(key) || aggregate.rows.length >= requestedSourceCount) return;
+      seen.add(key);
+      aggregate.rows.push(row);
+    });
+    aggregate.returnedSourceCount = aggregate.rows.length;
+    aggregate.sourceCount = aggregate.rows.length;
+    if (!page.hasMore || !page.nextCursor) break;
+    if (String(page.nextCursor) === cursor) throw dailyError('source_cursor_loop_detected', 'source_resolution');
+    cursor = String(page.nextCursor);
+  }
+  return aggregate;
+}
+
+async function fetchReadSourcePage(cursor = '') {
   const webhookUrl = process.env.GMAIL_APPS_SCRIPT_WEBHOOK_URL || '';
   if (!webhookUrl) throw dailyError('source_input_unavailable', 'source_resolution');
   if (webhookUrl.startsWith('mock://')) {
+    if (webhookUrl === 'mock://source-paged') {
+      const source = buildSyntheticPreparedBatch(150);
+      return mockPage(source.rows, cursor);
+    }
+    if (webhookUrl === 'mock://eligible-45') {
+      const source = buildSyntheticPreparedBatch(90);
+      source.rows.slice(45).forEach((row) => { row.doNotContact = 'true'; });
+      return mockPage(source.rows, cursor);
+    }
+    if (webhookUrl === 'mock://source-30-eligible-23') {
+      const source = buildSyntheticPreparedBatch(30);
+      source.rows.slice(23).forEach((row) => { row.doNotContact = 'true'; });
+      return mockPage(source.rows, cursor);
+    }
     if (webhookUrl === 'mock://source-unavailable') return { ok: false, status: 'blocked', blockedReason: 'source_input_unavailable', mocked: true };
     if (webhookUrl === 'mock://source-29') {
       const source = buildSyntheticPreparedBatch(29);
-      return { ok: true, status: 'pass', rows: source.rows.slice(0, 29), headers: source.headers, sourceCount: 29, sourceSchemaVersion: 1, mocked: true };
+      return mockPage(source.rows, cursor);
     }
     if (webhookUrl === 'mock://eligible-29') {
       const source = buildSyntheticPreparedBatch(90);
       source.rows.slice(29).forEach((row) => { row.doNotContact = 'true'; });
-      return { ok: true, status: 'pass', rows: source.rows, headers: source.headers, sourceCount: 90, sourceSchemaVersion: 1, mocked: true };
+      return mockPage(source.rows, cursor);
     }
     if (webhookUrl === 'mock://source-duplicate') {
       const source = buildSyntheticPreparedBatch(90);
       source.rows[1].email = source.rows[0].email;
       source.rows[1].contactEmail = source.rows[0].contactEmail;
-      return { ok: true, status: 'pass', rows: source.rows.slice(0, 30), headers: source.headers, sourceCount: 30, sourceSchemaVersion: 1, mocked: true };
+      return mockPage(source.rows.slice(0, 30), cursor);
     }
-    return { ok: true, status: 'pass', ...buildSyntheticPreparedBatch(requestedSourceCount), sourceCount: requestedSourceCount, sourceSchemaVersion: 1, sourceSnapshotIdentity: 'mock', mocked: true };
+    return mockPage(buildSyntheticPreparedBatch(requestedSourceCount).rows, cursor);
   }
-  const payload = buildSignedActionPayload('read_normal_daily_source');
+  const payload = buildSignedActionPayload('read_normal_daily_source', cursor);
   const response = await fetch(webhookUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -500,7 +593,27 @@ async function postReadSourcePayload() {
   }
 }
 
-function buildSignedActionPayload(action) {
+function mockPage(rows, cursor = '') {
+  const offset = cursor ? Number(cursor) : 0;
+  const pageRows = rows.slice(offset, offset + SOURCE_PAGE_SIZE);
+  const nextOffset = offset + pageRows.length;
+  return {
+    ok: true,
+    status: 'pass',
+    rows: pageRows,
+    headers: OUTBOX_HEADERS,
+    sourceCount: pageRows.length,
+    returnedSourceCount: pageRows.length,
+    availableSourceCount: rows.length,
+    hasMore: nextOffset < rows.length,
+    nextCursor: nextOffset < rows.length ? String(nextOffset) : '',
+    sourceSchemaVersion: 1,
+    sourceSnapshotIdentity: 'mock',
+    mocked: true
+  };
+}
+
+function buildSignedActionPayload(action, cursor = '') {
   const payload = {
     action,
     mode: 'normal_daily',
@@ -512,6 +625,8 @@ function buildSignedActionPayload(action) {
     sendBatchId,
     expectedCount,
     requestedSourceCount,
+    pageSize: SOURCE_PAGE_SIZE,
+    cursor,
     requestId: `gmail-daily-${action}-${targetDate}-${Date.now()}-${process.pid}`,
     timestamp: new Date().toISOString(),
     nonce: crypto.randomUUID()
@@ -540,6 +655,8 @@ function gmailDailyActionBodyMaterial(payload) {
     sendBatchId: payload.sendBatchId,
     expectedCount: payload.expectedCount,
     requestedSourceCount: payload.requestedSourceCount,
+    pageSize: payload.pageSize,
+    cursor: payload.cursor,
     mode: payload.mode,
     sourceType: payload.sourceType,
     automationVersion: payload.automationVersion,

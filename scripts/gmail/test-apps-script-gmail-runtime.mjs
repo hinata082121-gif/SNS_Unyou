@@ -1081,15 +1081,56 @@ const scenarios = [
     assert.equal(result.second.status, 'blocked');
     assert.equal(result.second.blockedReason, 'webhook_replay_detected');
   }],
+  ['normal daily prepare recovers blocked empty-target state before any send', (env) => {
+    env.entry = 'dailyPrepareWebhook';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+      mode: 'normal_daily',
+      state: 'blocked',
+      targetDate: '',
+      sendAttemptCount: 0,
+      actualSendCount: 0,
+      resultUnknown: false,
+      blockedReasons: ['eligible_candidate_count_insufficient']
+    });
+    env.sheetSyncPayload = buildDailyPreparePayload(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    const state = JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON);
+    assert.equal(state.state, 'sheet_synced');
+    assert.equal(state.recoveredFromState, 'blocked');
+    assert.equal(state.recoveryReason, 'prepare_completed_before_any_send');
+  }],
+  ['normal daily prepare rejects blocked state with previous send attempt', (env) => {
+    env.entry = 'dailyPrepareWebhook';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+      mode: 'normal_daily',
+      state: 'blocked',
+      targetDate: '',
+      sendAttemptCount: 1,
+      actualSendCount: 0,
+      resultUnknown: false
+    });
+    env.sheetSyncPayload = buildDailyPreparePayload(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'blocked_state_send_attempt_exists');
+    assert.equal(env.sheetWriteCount, 0);
+  }],
   ['normal daily source read webhook is read-only and returns source rows', (env) => {
     env.entry = 'dailySourceReadWebhook';
     env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.props.GMAIL_DAILY_SOURCE_TAB_NAME = 'daily-source';
     env.sheetSyncPayload = buildDailySourceReadPayload(env);
   }, (env, result) => {
     assert.equal(result.status, 'pass');
-    assert.equal(result.sourceCount, 30);
-    assert.equal(result.rows.length, 30);
+    assert.equal(result.requestedSourceCount, 90);
+    assert.equal(result.availableSourceCount, 90);
+    assert.equal(result.sourceCount, 90);
+    assert.equal(result.rows.length, 90);
     assert.equal(result.headers.length, 26);
+    assert.equal(result.recoveryEntryCount, 0);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.draftCreateCount, 0);
     assert.equal(env.sheetWriteCount, 0);
@@ -1404,6 +1445,56 @@ const scenarios = [
     assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
     assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
     assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
+  }],
+  ['daily catch-up sends thirty once and enables future automation after success', (env) => {
+    env.entry = 'dailyCatchUp';
+    installDailyCatchUpReadyState(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sentCount, 30);
+    assert.equal(env.mailSendCount, 30);
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sent');
+    assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'true');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'true');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+  }],
+  ['daily catch-up rerun after sent sends zero', (env) => {
+    env.entry = 'dailyCatchUp';
+    installDailyCatchUpReadyState(env);
+    env.afterRun = () => {
+      env.secondResult = env.context.activateAndRunGmailSalesDailyCatchUpOnce();
+    };
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sentCount, 30);
+    assert.equal(env.secondResult.status, 'blocked');
+    assert.equal((env.secondResult.blockedReason || '').includes('already_sent'), true);
+    assert.equal(env.mailSendCount, 30);
+  }],
+  ['daily catch-up blocks after same-day window without sending', (env) => {
+    env.entry = 'dailyCatchUp';
+    installDailyCatchUpReadyState(env);
+    env.nowIso = '2026-06-22T20:01:00.000Z';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReason || '').includes('catch_up_window_closed'), true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'false');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+  }],
+  ['daily catch-up partial failure stops and keeps automation disabled', (env) => {
+    env.entry = 'dailyCatchUp';
+    installDailyCatchUpReadyState(env);
+    env.mailSendThrows = true;
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.sentCount, 0);
+    assert.equal(result.failedCount, 1);
+    assert.equal(env.mailSendCount, 1);
+    assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'false');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
   }]
 ];
 
@@ -1449,12 +1540,16 @@ function createEnvironment() {
     workbook: {
       sheets: {
         sales: new MockSheet('sales', [HEADERS, ...rows.map(rowToCells)]),
+        'daily-source': new MockSheet('daily-source', [OUTBOX_HEADERS, ...Array.from({ length: 90 }, (_, index) => outboxRowToCells(buildOutboxRow(index + 1)))]),
         ready: new MockSheet('ready', [OUTBOX_HEADERS]),
         recovery: new MockSheet('recovery', [OUTBOX_HEADERS]),
         _gmail_maintenance: new MockSheet('_gmail_maintenance', [MAINTENANCE_HEADERS])
       },
       getSheetByName(name) {
         return this.sheets[name] || null;
+      },
+      getSheets() {
+        return Object.keys(this.sheets).map((name) => this.sheets[name]);
       },
       insertSheet(name) {
         env.insertSheetCount += 1;
@@ -1708,6 +1803,7 @@ function runEntry(env) {
   if (env.entry === 'dailyInstall') return env.context.installGmailSalesDailyAutomationTriggers();
   if (env.entry === 'dailyActivate') return env.context.activateGmailSalesDailyAutomationOnce();
   if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
+  if (env.entry === 'dailyCatchUp') return env.context.activateAndRunGmailSalesDailyCatchUpOnce();
   if (env.entry === 'sheetSyncConnectedDryRun' || env.entry === 'sheetSyncReadOnlySnapshot') {
     if (env.entry === 'sheetSyncReadOnlySnapshot') {
       env.sheetSyncPayload.action = 'read_only_snapshot';
@@ -1956,6 +2052,8 @@ function buildDailySourceReadPayload(env) {
     sendBatchId: BATCH_ID,
     expectedCount: 30,
     requestedSourceCount: 90,
+    pageSize: 100,
+    cursor: '',
     requestId: `runtime-daily-source-${crypto.randomBytes(4).toString('hex')}`,
     timestamp: new Date().toISOString(),
     nonce: `nonce-${crypto.randomBytes(4).toString('hex')}`
@@ -1975,6 +2073,7 @@ function buildDailySourceReadPayload(env) {
 }
 
 function installDailyActivationReadyState(env) {
+  env.nowIso = '2026-06-22T03:00:00.000Z';
   const config = env.context.getConfig_();
   const manifest = buildAutomaticDailyManifest(env);
   manifest.targetDate = config.currentJstDate;
@@ -1996,6 +2095,48 @@ function installDailyActivationReadyState(env) {
     expectedCandidateCount: 30,
     actualCandidateCount: 30,
     state: 'sheet_synced',
+    automationVersion: 'normal-daily-v1'
+  });
+}
+
+function installDailyCatchUpReadyState(env) {
+  const targetDate = '2026-06-22';
+  const batchId = `gmail-sales-${targetDate}`;
+  env.nowIso = '2026-06-22T03:00:00.000Z';
+  env.props.SEND_DATE = targetDate;
+  env.props.SEND_BATCH_ID = batchId;
+  env.props.SEND_DATE_OVERRIDE = 'true';
+  env.props.SEND_BATCH_ID_OVERRIDE = 'true';
+  env.props.GMAIL_SEND_MAX_SEND_COUNT = '30';
+  env.props.DAILY_SEND_LIMIT = '30';
+  env.props.AUTOMATION_MASTER_ENABLED = 'false';
+  env.props.AUTO_SEND_ENABLED = 'false';
+  env.props.LIVE_SEND_ENABLED = 'false';
+  env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.rows = Array.from({ length: 30 }, (_, index) => Object.assign({}, buildRow(index + 1), {
+    sendDate: targetDate,
+    sendBatchId: batchId
+  }));
+  env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  const candidateDigests = env.rows.map((row) => env.context.computeCandidateDigest_(row, targetDate, batchId));
+  env.manifest = Object.assign({}, buildAutomaticDailyManifest(env), {
+    targetDate,
+    batchId,
+    maxSendCount: 30,
+    candidateDigests
+  });
+  env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
+  env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+    targetDate,
+    mode: 'normal_daily',
+    sendBatchId: batchId,
+    expectedCandidateCount: 30,
+    actualCandidateCount: 30,
+    state: 'sheet_synced',
+    sendAttemptCount: 0,
+    actualSendCount: 0,
+    resultUnknown: false,
     automationVersion: 'normal-daily-v1'
   });
 }
@@ -2041,6 +2182,8 @@ function webhookBodyMaterial(payload) {
       sendBatchId: payload.sendBatchId,
       expectedCount: payload.expectedCount,
       requestedSourceCount: payload.requestedSourceCount,
+      pageSize: payload.pageSize,
+      cursor: payload.cursor,
       mode: payload.mode,
       sourceType: payload.sourceType,
       automationVersion: payload.automationVersion,
@@ -2283,6 +2426,10 @@ class MockSheet {
 
   getLastColumn() {
     return this.rows.reduce((max, row) => Math.max(max, row.length), 0);
+  }
+
+  getName() {
+    return this.name;
   }
 
   getDataRange() {
