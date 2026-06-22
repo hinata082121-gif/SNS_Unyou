@@ -34,90 +34,233 @@ const mockDelayMs = Number(args['mock-delay-ms'] || 0);
 const dryRun = Boolean(args['dry-run']);
 const write = Boolean(args.write);
 const mock = Boolean(args.mock);
+const summaryFile = args['summary-file'] || '';
 const outputFile = args.output || `tmp/gmail-candidate-refresh/${targetDate}-verified-candidates.json`;
 const poolFile = args.pool || DEFAULT_POOL_FILE;
 const suppressionLedgerFile = args['suppression-ledger'] || 'tmp/gmail-incident/suppression-ledger-safe.json';
 const sheetHistoryFile = args['sheet-history'] || 'tmp/gmail-incident/google-sheet-send-history-safe.json';
 const localHistoryDir = args['history-dir'] || 'data/gmail/outbox';
-
-if (provider !== 'google_places') {
-  console.log(safeSummary(blockedSummary('candidate_discovery_provider_unconfigured')));
-  process.exit(1);
-}
-if (dryRun === write) {
-  console.error('Specify exactly one of --dry-run or --write.');
-  process.exit(1);
-}
-
 const apiKey = String(process.env.GOOGLE_PLACES_API_KEY || '').trim();
-const existingPool = asCandidates(readJson(poolFile, { candidates: [] }));
-const suppression = loadSuppressionLedger(suppressionLedgerFile);
-const sheetHistory = loadHistoryHashes(sheetHistoryFile);
-const localHistory = loadLocalHistoryHashes(localHistoryDir);
-const placesSummary = await discoverPlacesWithGooglePlaces({
-  apiKey,
-  dateText: targetDate,
-  maxProviderRequests,
-  mock
-});
+let placesSummary = { providerRequestCount: 0 };
 
-if (placesSummary.errorCode) {
-  console.log(safeSummary(Object.assign(baseSummary(), placesSummary, {
-    status: 'blocked',
-    blockedReason: placesSummary.errorCode
-  })));
-  process.exit(1);
+await main();
+
+async function main() {
+  let finalSummary = null;
+  let summaryWriteFailed = false;
+  try {
+    finalSummary = await runDiscovery();
+  } catch (error) {
+    finalSummary = buildSafeFailureSummary(error);
+  }
+
+  if (summaryFile) {
+    try {
+      writeSummaryAtomically(summaryFile, finalSummary);
+    } catch {
+      summaryWriteFailed = true;
+      finalSummary = Object.assign(sanitizeSummary(finalSummary), {
+        status: 'failed',
+        errorCode: 'discovery_summary_write_failed',
+        blockedReason: 'discovery_summary_write_failed',
+        outputCreated: false
+      });
+    }
+  }
+
+  printSafeFinalSummary(finalSummary);
+  process.exitCode = finalSummary.status === 'pass' && !summaryWriteFailed ? 0 : 1;
 }
 
-const verification = await verifyPlaces(placesSummary.places);
-const strictEligible = verification.eligible
-  .slice()
-  .sort((left, right) => String(left.prospectId || '').localeCompare(String(right.prospectId || '')))
-  .slice(0, targetCount);
-const blockedReason = verification.deadlineExceeded
-  ? 'website_verification_deadline_exceeded'
-  : strictEligible.length >= requiredCount ? '' : 'strict_eligible_count_below_required';
-const summary = Object.assign(baseSummary(), {
-  apiKeyConfigured: placesSummary.apiKeyConfigured,
-  queryCount: placesSummary.queryCount,
-  providerRequestCount: placesSummary.providerRequestCount,
-  rawPlaceCount: placesSummary.rawPlaceCount,
-  uniquePlaceCount: placesSummary.uniquePlaceCount,
-  closedExcludedCount: placesSummary.closedExcludedCount,
-  websiteMissingCount: placesSummary.websiteMissingCount,
-  websitesChecked: verification.websitesChecked,
-  websiteRequestCount: verification.websiteRequestCount,
-  maxObservedWebsiteConcurrency: verification.maxObservedWebsiteConcurrency,
-  maxObservedSameDomainConcurrency: verification.maxObservedSameDomainConcurrency,
-  publicEmailFound: verification.publicEmailFound,
-  salesProhibitedExcludedCount: verification.salesProhibitedExcludedCount,
-  mxMissingCount: verification.mxMissingCount,
-  suppressionExcludedCount: verification.suppressionExcludedCount,
-  historyExcludedCount: verification.historyExcludedCount,
-  duplicateExcludedCount: verification.duplicateExcludedCount + placesSummary.duplicatePlaceExcludedCount,
-  unavailableCount: verification.unavailableCount,
-  emailMismatchCount: verification.emailMismatchCount,
-  workerExceptionCount: verification.workerExceptionCount,
-  strictEligibleCandidateCount: strictEligible.length,
-  sourceSyncCandidateCount: strictEligible.length,
-  status: blockedReason ? 'blocked' : 'pass',
-  blockedReason,
-  deadlineExceeded: verification.deadlineExceeded,
-  outputCreated: false
-});
+async function runDiscovery() {
+  if (provider !== 'google_places') return blockedSummary('candidate_discovery_provider_unconfigured');
+  if (dryRun === write) return blockedSummary('candidate_discovery_mode_invalid');
 
-if (write && strictEligible.length >= requiredCount) {
-  writeJson(outputFile, {
-    generatedAt: new Date().toISOString(),
-    targetDate,
-    provider,
-    candidates: strictEligible
+  const existingPool = asCandidates(readJson(poolFile, { candidates: [] }));
+  const suppression = loadSuppressionLedger(suppressionLedgerFile);
+  const sheetHistory = loadHistoryHashes(sheetHistoryFile);
+  const localHistory = loadLocalHistoryHashes(localHistoryDir);
+  placesSummary = await loadPlacesSummary();
+
+  if (placesSummary.errorCode) {
+    return Object.assign(baseSummary(), placesSummary, {
+      status: 'blocked',
+      blockedReason: normalizeReasonCode(placesSummary.errorCode),
+      errorCode: normalizeReasonCode(placesSummary.errorCode)
+    });
+  }
+
+  const verification = await verifyPlaces(placesSummary.places, { existingPool, suppression, sheetHistory, localHistory });
+  const strictEligible = verification.eligible
+    .slice()
+    .sort((left, right) => String(left.prospectId || '').localeCompare(String(right.prospectId || '')))
+    .slice(0, targetCount);
+  const blockedReason = verification.deadlineExceeded
+    ? 'website_verification_deadline_exceeded'
+    : strictEligible.length >= requiredCount ? '' : 'strict_eligible_count_below_required';
+  const summary = Object.assign(baseSummary(), {
+    apiKeyConfigured: placesSummary.apiKeyConfigured,
+    providerInvocationCount: 1,
+    queryCount: placesSummary.queryCount,
+    providerRequestCount: placesSummary.providerRequestCount,
+    rawPlaceCount: placesSummary.rawPlaceCount,
+    uniquePlaceCount: placesSummary.uniquePlaceCount,
+    closedExcludedCount: placesSummary.closedExcludedCount,
+    websiteMissingCount: placesSummary.websiteMissingCount,
+    websitesChecked: verification.websitesChecked,
+    websiteRequestCount: verification.websiteRequestCount,
+    maxObservedWebsiteConcurrency: verification.maxObservedWebsiteConcurrency,
+    maxObservedSameDomainConcurrency: verification.maxObservedSameDomainConcurrency,
+    publicEmailFound: verification.publicEmailFound,
+    salesProhibitedExcludedCount: verification.salesProhibitedExcludedCount,
+    mxMissingCount: verification.mxMissingCount,
+    suppressionExcludedCount: verification.suppressionExcludedCount,
+    historyExcludedCount: verification.historyExcludedCount,
+    duplicateExcludedCount: verification.duplicateExcludedCount + placesSummary.duplicatePlaceExcludedCount,
+    unavailableCount: verification.unavailableCount,
+    emailMismatchCount: verification.emailMismatchCount,
+    workerExceptionCount: verification.workerExceptionCount,
+    strictEligibleCandidateCount: strictEligible.length,
+    sourceSyncCandidateCount: strictEligible.length,
+    status: blockedReason ? 'blocked' : 'pass',
+    blockedReason,
+    errorCode: blockedReason,
+    deadlineExceeded: verification.deadlineExceeded,
+    outputCreated: false
   });
-  summary.outputCreated = true;
+
+  if (write && strictEligible.length >= requiredCount && summary.status === 'pass') {
+    writeJson(outputFile, {
+      generatedAt: new Date().toISOString(),
+      targetDate,
+      provider,
+      candidates: strictEligible
+    });
+    summary.outputCreated = true;
+  }
+  return summary;
 }
 
-console.log(safeSummary(summary));
-if (summary.status !== 'pass') process.exit(1);
+async function loadPlacesSummary() {
+  if (args['mock-provider-error']) {
+    throw new Error(String(args['mock-provider-error']));
+  }
+  return await discoverPlacesWithGooglePlaces({
+    apiKey,
+    dateText: targetDate,
+    maxProviderRequests,
+    mock
+  });
+}
+
+function buildSafeFailureSummary(error) {
+  const errorCode = normalizeReasonCode(error && error.message);
+  return Object.assign(baseSummary(), {
+    status: errorCode === 'strict_eligible_count_below_required' ? 'blocked' : 'failed',
+    blockedReason: errorCode,
+    errorCode,
+    providerInvocationCount: provider === 'google_places' ? 1 : 0,
+    providerRequestCount: Number(placesSummary.providerRequestCount || 0),
+    queryCount: Number(placesSummary.queryCount || 0),
+    rawPlaceCount: Number(placesSummary.rawPlaceCount || 0),
+    uniquePlaceCount: Number(placesSummary.uniquePlaceCount || 0),
+    closedExcludedCount: Number(placesSummary.closedExcludedCount || 0),
+    websiteMissingCount: Number(placesSummary.websiteMissingCount || 0),
+    outputCreated: false
+  });
+}
+
+function normalizeReasonCode(value) {
+  const text = String(value || '').trim();
+  const known = new Set([
+    'candidate_discovery_provider_unconfigured',
+    'candidate_discovery_mode_invalid',
+    'strict_eligible_count_below_required',
+    'website_verification_deadline_exceeded',
+    'website_request_timeout',
+    'website_request_budget_exhausted',
+    'google_places_http_401',
+    'google_places_http_403',
+    'google_places_rate_limited',
+    'discovery_summary_write_failed',
+    'candidate_discovery_failed'
+  ]);
+  if (known.has(text)) return text;
+  if (text === 'AbortError' || text.includes('AbortError')) return 'website_request_timeout';
+  if (/google_places_http_401/.test(text)) return 'google_places_http_401';
+  if (/google_places_http_403/.test(text)) return 'google_places_http_403';
+  if (/google_places_rate_limited/.test(text)) return 'google_places_rate_limited';
+  return 'candidate_discovery_failed';
+}
+
+function writeSummaryAtomically(filePath, summary) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tempFile = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tempFile, `${JSON.stringify(sanitizeSummary(summary), null, 2)}\n`, 'utf8');
+  fs.renameSync(tempFile, filePath);
+}
+
+function printSafeFinalSummary(summary) {
+  const safe = sanitizeSummary(summary);
+  console.log(summaryFile ? JSON.stringify(safe) : safeSummary(safe));
+}
+
+function sanitizeSummary(summary) {
+  const value = summary || {};
+  const safe = {};
+  const stringFields = ['status', 'blockedReason', 'errorCode', 'provider', 'targetDate', 'mode'];
+  const numberFields = [
+    'providerInvocationCount',
+    'providerRequestCount',
+    'queryCount',
+    'rawPlaceCount',
+    'uniquePlaceCount',
+    'closedExcludedCount',
+    'websiteMissingCount',
+    'websitesChecked',
+    'websiteRequestCount',
+    'publicEmailFound',
+    'salesProhibitedExcludedCount',
+    'mxMissingCount',
+    'suppressionExcludedCount',
+    'historyExcludedCount',
+    'duplicateExcludedCount',
+    'unavailableCount',
+    'emailMismatchCount',
+    'strictEligibleCandidateCount',
+    'sourceSyncCandidateCount',
+    'requiredCount',
+    'targetCount',
+    'maxProviderRequests',
+    'maxWebsiteRequests',
+    'websiteConcurrency',
+    'maxVerificationDurationMs',
+    'requestTimeoutMs',
+    'maxObservedWebsiteConcurrency',
+    'maxObservedSameDomainConcurrency',
+    'workerExceptionCount'
+  ];
+  const booleanFields = [
+    'apiKeyConfigured',
+    'outputCreated',
+    'deadlineExceeded',
+    'gmailSendExecuted',
+    'googleSheetsUpdated',
+    'triggerChanged',
+    'candidateDataLogged'
+  ];
+  for (const field of stringFields) {
+    if (field === 'blockedReason' || field === 'errorCode') safe[field] = value[field] ? normalizeReasonCode(value[field]) : '';
+    else safe[field] = String(value[field] || '');
+  }
+  if (!safe.status) safe.status = 'failed';
+  if (!['pass', 'blocked', 'failed'].includes(safe.status)) safe.status = 'failed';
+  if (!safe.provider) safe.provider = 'google_places';
+  if (!safe.targetDate) safe.targetDate = targetDate;
+  for (const field of numberFields) safe[field] = Number(value[field] || 0);
+  for (const field of booleanFields) safe[field] = Boolean(value[field]);
+  return safe;
+}
 
 function printHelp() {
   console.log('Usage: node scripts/gmail/discover-fresh-gmail-prospects.mjs --provider google_places --date YYYY-MM-DD --dry-run|--write');
@@ -171,10 +314,11 @@ function baseSummary() {
 }
 
 function blockedSummary(reason) {
-  return Object.assign(baseSummary(), { status: 'blocked', blockedReason: reason });
+  const safeReason = normalizeReasonCode(reason);
+  return Object.assign(baseSummary(), { status: 'blocked', blockedReason: safeReason, errorCode: safeReason });
 }
 
-async function verifyPlaces(places) {
+async function verifyPlaces(places, context) {
   const orderedPlaces = places
     .slice()
     .sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
@@ -195,7 +339,7 @@ async function verifyPlaces(places) {
     maxObservedSameDomainConcurrency: 0,
     eligible: []
   };
-  const seen = buildSeenSets();
+  const seen = buildSeenSets(context.existingPool);
   const started = new Set();
   const activeDomains = new Map();
   const deadlineAt = Date.now() + maxVerificationDurationMs;
@@ -283,7 +427,7 @@ async function verifyPlaces(places) {
       return;
     }
     const candidate = buildCandidate(place, website.email);
-    const exclusion = exclusionReason(candidate, seen);
+    const exclusion = exclusionReason(candidate, seen, context);
     if (exclusion === 'suppression') summary.suppressionExcludedCount += 1;
     if (exclusion === 'history') summary.historyExcludedCount += 1;
     if (exclusion === 'duplicate') summary.duplicateExcludedCount += 1;
@@ -297,7 +441,8 @@ async function verifyPlaces(places) {
     if (completedSinceProgress < 20 && now - lastProgressAt < 60000) return;
     completedSinceProgress = 0;
     lastProgressAt = now;
-    process.stderr.write(JSON.stringify({
+    const stream = summaryFile ? process.stdout : process.stderr;
+    stream.write(JSON.stringify({
       event: 'gmail_prospect_verification_progress',
       elapsedSeconds: Math.round((now - (deadlineAt - maxVerificationDurationMs)) / 1000),
       websitesChecked: summary.websitesChecked,
@@ -410,18 +555,18 @@ function buildCandidate(place, email) {
   };
 }
 
-function buildSeenSets() {
+function buildSeenSets(existingPool) {
   const seen = { email: new Set(), domain: new Set(), business: new Set(), place: new Set() };
   for (const candidate of existingPool) markSeen(candidate, seen);
   return seen;
 }
 
-function exclusionReason(candidate, seen) {
+function exclusionReason(candidate, seen, context) {
   const email = candidateEmail(candidate);
   const domain = sourceDomain(candidate);
   const business = hashValue(`${domain}|${candidateName(candidate)}`);
-  if (suppression.recipientHashes.has(hashValue(email)) || suppression.domainHashes.has(hashValue(domain)) || suppression.businessFingerprints.has(business)) return 'suppression';
-  if (isInHistory({ email, domain, business }, sheetHistory) || isInHistory({ email, domain, business }, localHistory)) return 'history';
+  if (context.suppression.recipientHashes.has(hashValue(email)) || context.suppression.domainHashes.has(hashValue(domain)) || context.suppression.businessFingerprints.has(business)) return 'suppression';
+  if (isInHistory({ email, domain, business }, context.sheetHistory) || isInHistory({ email, domain, business }, context.localHistory)) return 'history';
   if (seen.email.has(email) || seen.domain.has(domain) || seen.business.has(candidateName(candidate)) || seen.place.has(candidate.placeId)) return 'duplicate';
   return '';
 }

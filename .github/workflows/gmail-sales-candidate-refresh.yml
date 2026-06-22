@@ -71,6 +71,19 @@ jobs:
           SUMMARY="${RUNNER_TEMP}/gmail-candidate-refresh/${TARGET_DATE}-discovery-summary.json"
           mkdir -p "$(dirname "$OUTPUT")"
           trap 'rm -rf "${RUNNER_TEMP}/gmail-candidate-refresh"' EXIT
-          npm run gmail:prospects:discover -- --provider google_places --date "$TARGET_DATE" --required-count 45 --target-count 90 --max-provider-requests 30 --max-website-requests 320 --website-concurrency 4 --max-verification-duration-ms 1500000 --write --output "$OUTPUT" > "$SUMMARY"
-          node -e "const fs=require('fs'); const summary=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); if (summary.status !== 'pass') process.exit(1); if (Number(summary.strictEligibleCandidateCount || 0) < 45) process.exit(1); if (Number(summary.providerRequestCount || 0) > 30) process.exit(1); if (Number(summary.websiteRequestCount || 0) > 320) process.exit(1); if (summary.outputCreated !== true) process.exit(1); if (!fs.existsSync(process.argv[2])) process.exit(1); console.log(JSON.stringify({status: summary.status, providerRequestCount: summary.providerRequestCount, websiteRequestCount: summary.websiteRequestCount, strictEligibleCandidateCount: summary.strictEligibleCandidateCount, sourceSyncCandidateCount: summary.sourceSyncCandidateCount}))" "$SUMMARY" "$OUTPUT"
+          set +e
+          npm run --silent gmail:prospects:discover -- --provider google_places --date "$TARGET_DATE" --required-count 45 --target-count 90 --max-provider-requests 30 --max-website-requests 320 --website-concurrency 4 --max-verification-duration-ms 1500000 --write --output "$OUTPUT" --summary-file "$SUMMARY"
+          DISCOVERY_EXIT=$?
+          set -e
+          if [ ! -f "$SUMMARY" ]; then
+            echo '{"status":"failed","blockedReason":"discovery_summary_missing","sourceSyncExecuted":false}'
+            exit 1
+          fi
+          set +e
+          node scripts/gmail/validate-candidate-discovery-summary.mjs --summary "$SUMMARY" --output "$OUTPUT" --min-strict-eligible 45 --max-provider-requests 30 --max-website-requests 320
+          VALIDATION_EXIT=$?
+          set -e
+          if [ "$DISCOVERY_EXIT" -ne 0 ] || [ "$VALIDATION_EXIT" -ne 0 ]; then
+            exit 1
+          fi
           npm run gmail:source:sync -- --date "$TARGET_DATE" --input "$OUTPUT" --write
