@@ -122,7 +122,7 @@ const scenarios = [
     assertBlockedNoMail(env, result, 'gmail_sent_history_match');
   }],
   ['ready row reserves then sends then marks SENT', () => {}, (env, result) => {
-    assert.equal(result.status, 'pass');
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
     assert.equal(env.mailSendCount, 1);
     assert.equal(readCell(env, 2, 'sendState'), 'SENT');
     assert.equal(readCell(env, 2, 'sendAttemptCount'), 1);
@@ -158,7 +158,7 @@ const scenarios = [
     assert.equal(result.attemptLimitExceededCount, 1);
   }],
   ['dry-run success does not write any external state', (env) => { env.entry = 'dryRun'; env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true'; }, (env, result) => {
-    assert.equal(result.status, 'pass');
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
     assert.equal(result.wouldAttemptCount, 1);
     assertDryRunWriteFree(env);
   }],
@@ -1142,16 +1142,41 @@ const scenarios = [
     env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
     env.sheetSyncPayload = buildDailySourceSyncPayload(env, 45);
   }, (env, result) => {
-    assert.equal(result.status, 'pass');
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
     assert.equal(result.sourceRowsWritten, 45);
     assert.equal(result.sourceRowsReadBack, 45);
     assert.equal(result.sourceDigestMatch, true);
     assert.equal(result.propertyConfigured, true);
+    assert.equal(result.sourceTabCommitted, true);
+    assert.equal(result.requestCommitted, true);
     assert.equal(env.props.GMAIL_DAILY_SOURCE_TAB_NAME, 'Gmail営業候補プール');
+    assert.equal(env.setValuesCount, 1);
+    assert.equal(env.flushCount, 1);
+    assert.equal(env.workbook.sheets._gmail_normal_daily_source_staging, undefined);
+    assert.equal(env.workbook.sheets._gmail_normal_daily_source_backup, undefined);
+    assert.equal(env.workbook.sheets['Gmail営業候補プール'].rows.length, 46);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.draftCreateCount, 0);
     assert.equal(env.triggerWriteCount, 0);
     assert.equal(env.workbook.sheets.sales.rows.length, 31);
+  }],
+  ['normal daily source sync replaces existing partial source only after staging validation', (env) => {
+    env.entry = 'dailySourceSyncWebhook';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [OUTBOX_HEADERS, ...Array.from({ length: 10 }, (_, index) => outboxRowToCells(buildOutboxRow(index + 1)))]);
+    env.workbook.sheets['Gmail営業候補プール'].env = env;
+    env.sheetSyncPayload = buildDailySourceSyncPayload(env, 52);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.sourceRowsWritten, 52);
+    assert.equal(result.sourceRowsReadBack, 52);
+    assert.equal(result.sourceTabCommitted, true);
+    assert.equal(env.workbook.sheets['Gmail営業候補プール'].rows.length, 53);
+    assert.equal(env.workbook.sheets._gmail_normal_daily_source_backup, undefined);
+    assert.equal(env.workbook.sheets._gmail_normal_daily_source_staging, undefined);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
   }],
   ['normal daily source sync rejects source rows below minimum without writes', (env) => {
     env.entry = 'dailySourceSyncWebhook';
@@ -1618,6 +1643,10 @@ function createEnvironment() {
         this.sheets[name] = new MockSheet(name, []);
         this.sheets[name].env = env;
         return this.sheets[name];
+      },
+      deleteSheet(sheet) {
+        env.sheetWriteCount += 1;
+        delete this.sheets[sheet.getName()];
       }
     },
     suppression: {
@@ -2590,6 +2619,19 @@ class MockSheet {
 
   getName() {
     return this.name;
+  }
+
+  setName(name) {
+    if (this.env) {
+      this.env.sheetWriteCount += 1;
+      const sheets = this.env.workbook.sheets;
+      delete sheets[this.name];
+      this.name = name;
+      sheets[name] = this;
+    } else {
+      this.name = name;
+    }
+    return this;
   }
 
   getDataRange() {

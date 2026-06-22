@@ -49,6 +49,7 @@ const GMAIL_DAILY_AUTOMATION_STATE_PROPERTY = 'GMAIL_DAILY_AUTOMATION_STATE_JSON
 const GMAIL_DAILY_AUTOMATION_SECRET_PROPERTY = 'GMAIL_AUTOMATION_SHARED_SECRET';
 const GMAIL_DAILY_AUTOMATION_NONCE_PREFIX = 'gmail_daily_nonce_';
 const GMAIL_DAILY_AUTOMATION_REQUEST_PREFIX = 'gmail_daily_request_';
+const GMAIL_DAILY_SOURCE_SYNC_STATE_PREFIX = 'gmail_daily_source_sync_state_';
 const GMAIL_DAILY_AUTOMATION_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const GMAIL_DAILY_EXPECTED_COUNT = 30;
 const GMAIL_DAILY_DEFAULT_REQUESTED_SOURCE_COUNT = 90;
@@ -57,8 +58,12 @@ const GMAIL_DAILY_SOURCE_PAGE_SIZE = 100;
 const GMAIL_DAILY_CATCH_UP_TARGET_DATE = '2026-06-22';
 const GMAIL_DAILY_CATCH_UP_END_HHMM = '20:00';
 const GMAIL_DAILY_SOURCE_TAB_NAME_DEFAULT = 'Gmail営業候補プール';
+const GMAIL_DAILY_SOURCE_STAGING_TAB_NAME = '_gmail_normal_daily_source_staging';
+const GMAIL_DAILY_SOURCE_BACKUP_TAB_NAME = '_gmail_normal_daily_source_backup';
 const GMAIL_DAILY_SOURCE_MIN_SYNC_COUNT = 30;
 const GMAIL_DAILY_SOURCE_RECOMMENDED_SYNC_COUNT = 45;
+const GMAIL_DAILY_SOURCE_SYNC_SOFT_DEADLINE_MS = 180000;
+const GMAIL_DAILY_SOURCE_SYNC_COMMIT_START_DEADLINE_MS = 150000;
 const GMAIL_SALES_SEND_WINDOW_START_PROPERTY = 'GMAIL_SALES_SEND_WINDOW_START';
 const GMAIL_SALES_SEND_WINDOW_END_PROPERTY = 'GMAIL_SALES_SEND_WINDOW_END';
 const GMAIL_SALES_SEND_WINDOW_START_DEFAULT = '11:45';
@@ -247,6 +252,9 @@ function handleGmailOutboxSheetSync_(e) {
   }
   if (action === 'sync_normal_daily_source') {
     return handleGmailSalesNormalDailySourceSyncWebhook_(payload);
+  }
+  if (action === 'get_normal_daily_source_sync_status') {
+    return handleGmailSalesNormalDailySourceSyncStatusWebhook_(payload);
   }
 
   const providedToken = String((payload && payload.token) || '').trim();
@@ -730,6 +738,53 @@ function handleGmailSalesNormalDailySourceSyncWebhook_(payload) {
   return buildSheetSyncResponse_(result);
 }
 
+function handleGmailSalesNormalDailySourceSyncStatusWebhook_(payload) {
+  const auth = verifyGmailDailyAutomationWebhook_(payload);
+  if (!auth.ok) {
+    return buildSheetSyncResponse_({
+      ok: false,
+      status: 'blocked',
+      action: 'get_normal_daily_source_sync_status',
+      blockedReason: auth.blockedReason,
+      gmailSendExecuted: false,
+      sendTargetSheetUpdated: false,
+      triggerChanged: false
+    });
+  }
+  const targetDate = String(payload && payload.targetDate || '').trim();
+  const expectedCandidateCount = Number(payload && payload.expectedCandidateCount || payload && payload.candidateCount || 0);
+  const sourceTabName = String(payload && payload.sourceTabName || GMAIL_DAILY_SOURCE_TAB_NAME_DEFAULT).trim();
+  const sourceDigest = String(payload && payload.sourceDigest || '').trim();
+  const validation = {
+    targetDate,
+    rowCount: expectedCandidateCount,
+    sourceTabName
+  };
+  const state = readNormalDailySourceSyncState_(payload);
+  const status = inspectNormalDailySourceSyncStatus_(payload, validation, sourceDigest);
+  const response = {
+    ok: status.requestCommitted === true,
+    status: status.requestCommitted === true ? 'pass' : 'blocked',
+    action: 'get_normal_daily_source_sync_status',
+    blockedReason: status.requestCommitted === true ? '' : (state.safeReasonCode || status.blockedReason || 'source_sync_commit_status_unknown'),
+    targetDate,
+    expectedCandidateCount,
+    sourceTabExists: status.sourceTabExists,
+    sourceDataRowCount: status.sourceRowsReadBack,
+    sourceHeaderColumnCount: status.sourceHeaderColumnCount,
+    sourceDigestMatch: status.sourceDigestMatch,
+    propertyConfigured: status.propertyConfigured,
+    sourceTabCommitted: status.sourceTabCommitted,
+    requestCommitted: status.requestCommitted,
+    stagingTabExists: status.stagingTabExists,
+    backupTabExists: status.backupTabExists,
+    gmailSendExecuted: false,
+    sendTargetSheetUpdated: false,
+    triggerChanged: false
+  };
+  return buildSheetSyncResponse_(response);
+}
+
 function verifyGmailDailyAutomationWebhook_(payload) {
   const props = PropertiesService.getScriptProperties();
   const secret = String(props.getProperty(GMAIL_DAILY_AUTOMATION_SECRET_PROPERTY) || '').trim();
@@ -762,12 +817,10 @@ function verifyGmailDailyAutomationWebhook_(payload) {
   }
   const cache = CacheService.getScriptCache();
   const nonceKey = GMAIL_DAILY_AUTOMATION_NONCE_PREFIX + hashValue_(nonce);
-  const requestKey = GMAIL_DAILY_AUTOMATION_REQUEST_PREFIX + hashValue_(requestId);
-  if (cache.get(nonceKey) || cache.get(requestKey)) {
+  if (cache.get(nonceKey)) {
     return { ok: false, blockedReason: 'webhook_replay_detected' };
   }
   cache.put(nonceKey, '1', 10 * 60);
-  cache.put(requestKey, '1', 10 * 60);
   return { ok: true, blockedReason: '' };
 }
 
@@ -947,41 +1000,279 @@ function validateGmailDailySourceSyncPayload_(payload) {
 }
 
 function writeNormalDailySourceRows_(payload, validation) {
+  const startedAtMs = Date.now();
   const config = getConfig_();
   if (!config.sheetId) {
     return buildNormalDailySourceSyncResult_({ status: 'blocked', blockedReason: 'missing_sheet_id' });
   }
+  const requestState = readNormalDailySourceSyncState_(payload);
+  const sourceDigest = normalDailySourceDigest_([validation.headers].concat(validation.rows));
+  if (requestState.status === 'committed') {
+    if (requestState.bodyDigest && requestState.bodyDigest !== String(payload.bodyDigest || '')) {
+      return buildNormalDailySourceSyncResult_({ status: 'blocked', blockedReason: 'source_sync_request_digest_conflict', requestCommitted: false });
+    }
+    const committedStatus = inspectNormalDailySourceSyncStatus_(payload, validation, sourceDigest);
+    if (committedStatus.requestCommitted) return buildNormalDailySourceSyncResult_(committedStatus);
+  }
+  if (requestState.bodyDigest && requestState.bodyDigest !== String(payload.bodyDigest || '')) {
+    return buildNormalDailySourceSyncResult_({ status: 'blocked', blockedReason: 'source_sync_request_digest_conflict', requestCommitted: false });
+  }
   const spreadsheet = SpreadsheetApp.openById(config.sheetId);
-  const existedBefore = Boolean(spreadsheet.getSheetByName(validation.sourceTabName));
-  const sheet = spreadsheet.getSheetByName(validation.sourceTabName) || spreadsheet.insertSheet(validation.sourceTabName);
   const values = [validation.headers].concat(validation.rows);
-  sheet.clearContents();
-  sheet.getRange(1, 1, values.length, validation.headers.length).setValues(values);
-  const readBack = sheet.getRange(1, 1, values.length, validation.headers.length).getValues();
-  const sourceDigestMatch = sha256Hex_(JSON.stringify(readBack)) === sha256Hex_(JSON.stringify(values));
+  writeNormalDailySourceSyncState_(payload, {
+    status: 'in_progress',
+    targetDate: validation.targetDate,
+    candidateCount: validation.rowCount,
+    bodyDigest: String(payload.bodyDigest || ''),
+    sourceDigest,
+    startedAt: new Date().toISOString(),
+    safeReasonCode: ''
+  });
+  if (Date.now() - startedAtMs > GMAIL_DAILY_SOURCE_SYNC_COMMIT_START_DEADLINE_MS) {
+    return blockNormalDailySourceSync_(payload, validation, 'source_sync_soft_deadline_exceeded');
+  }
+  const staging = spreadsheet.getSheetByName(GMAIL_DAILY_SOURCE_STAGING_TAB_NAME) || spreadsheet.insertSheet(GMAIL_DAILY_SOURCE_STAGING_TAB_NAME);
+  staging.clearContents();
+  staging.getRange(1, 1, values.length, validation.headers.length).setValues(values);
+  SpreadsheetApp.flush();
+  const readBack = staging.getRange(1, 1, values.length, validation.headers.length).getValues();
+  const sourceDigestMatch = normalDailySourceDigest_(readBack) === sourceDigest;
   if (!sourceDigestMatch) {
+    writeNormalDailySourceSyncState_(payload, {
+      status: 'failed',
+      targetDate: validation.targetDate,
+      candidateCount: validation.rowCount,
+      bodyDigest: String(payload.bodyDigest || ''),
+      sourceDigest,
+      completedAt: new Date().toISOString(),
+      safeReasonCode: 'source_readback_digest_mismatch'
+    });
     return buildNormalDailySourceSyncResult_({
       status: 'blocked',
       blockedReason: 'source_readback_digest_mismatch',
-      sourceTabCreated: !existedBefore,
       sourceRowsRequested: validation.rowCount,
       sourceRowsWritten: validation.rowCount,
       sourceRowsReadBack: Math.max(0, readBack.length - 1),
       sourceDigestMatch
     });
   }
-  PropertiesService.getScriptProperties().setProperty('GMAIL_DAILY_SOURCE_TAB_NAME', validation.sourceTabName);
-  return buildNormalDailySourceSyncResult_({
-    ok: true,
-    status: 'pass',
-    sourceTabCreated: !existedBefore,
-    sourceRowsRequested: validation.rowCount,
-    sourceRowsWritten: validation.rowCount,
-    sourceRowsReadBack: Math.max(0, readBack.length - 1),
-    sourceDigestMatch: true,
-    propertyConfigured: true,
-    propertyWriteCount: 1
+  if (Date.now() - startedAtMs > GMAIL_DAILY_SOURCE_SYNC_COMMIT_START_DEADLINE_MS) {
+    return blockNormalDailySourceSync_(payload, validation, 'source_sync_soft_deadline_exceeded');
+  }
+  return commitNormalDailySourceStaging_(spreadsheet, payload, validation, sourceDigest, startedAtMs);
+}
+
+function commitNormalDailySourceStaging_(spreadsheet, payload, validation, sourceDigest, startedAtMs) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    return blockNormalDailySourceSync_(payload, validation, 'source_sync_commit_lock_unavailable');
+  }
+  let sourceSheet = null;
+  try {
+    if (Date.now() - startedAtMs > GMAIL_DAILY_SOURCE_SYNC_COMMIT_START_DEADLINE_MS) {
+      return blockNormalDailySourceSync_(payload, validation, 'source_sync_soft_deadline_exceeded');
+    }
+    const staging = spreadsheet.getSheetByName(GMAIL_DAILY_SOURCE_STAGING_TAB_NAME);
+    if (!staging) return blockNormalDailySourceSync_(payload, validation, 'source_sync_staging_missing');
+    deleteSheetIfExists_(spreadsheet, GMAIL_DAILY_SOURCE_BACKUP_TAB_NAME);
+    sourceSheet = spreadsheet.getSheetByName(validation.sourceTabName);
+    if (sourceSheet) {
+      sourceSheet.setName(GMAIL_DAILY_SOURCE_BACKUP_TAB_NAME);
+    }
+    staging.setName(validation.sourceTabName);
+    const props = PropertiesService.getScriptProperties();
+    props.setProperties({
+      GMAIL_DAILY_SOURCE_TAB_NAME: validation.sourceTabName,
+      [normalDailySourceSyncStateKey_(payload)]: JSON.stringify({
+        status: 'committed',
+        targetDate: validation.targetDate,
+        candidateCount: validation.rowCount,
+        bodyDigest: String(payload.bodyDigest || ''),
+        sourceDigest,
+        completedAt: new Date().toISOString(),
+        safeReasonCode: ''
+      })
+    });
+    const committedStatus = inspectNormalDailySourceSyncStatus_(payload, validation, sourceDigest);
+    if (!committedStatus.requestCommitted) {
+      rollbackNormalDailySource_(spreadsheet, validation.sourceTabName);
+      return blockNormalDailySourceSync_(payload, validation, committedStatus.blockedReason || 'source_commit_verification_failed');
+    }
+    deleteSheetIfExists_(spreadsheet, GMAIL_DAILY_SOURCE_BACKUP_TAB_NAME);
+    return buildNormalDailySourceSyncResult_(Object.assign(committedStatus, {
+      ok: true,
+      status: 'pass',
+      sourceTabCommitted: true,
+      propertyWriteCount: 1,
+      flushCount: 1,
+      lockTimeoutMs: 5000
+    }));
+  } catch (error) {
+    rollbackNormalDailySource_(spreadsheet, validation.sourceTabName);
+    return blockNormalDailySourceSync_(payload, validation, 'source_sync_commit_failed');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function rollbackNormalDailySource_(spreadsheet, sourceTabName) {
+  const source = spreadsheet.getSheetByName(sourceTabName);
+  const backup = spreadsheet.getSheetByName(GMAIL_DAILY_SOURCE_BACKUP_TAB_NAME);
+  if (source && backup) spreadsheet.deleteSheet(source);
+  if (backup) backup.setName(sourceTabName);
+}
+
+function blockNormalDailySourceSync_(payload, validation, reason) {
+  writeNormalDailySourceSyncState_(payload, {
+    status: 'failed',
+    targetDate: validation.targetDate,
+    candidateCount: validation.rowCount,
+    bodyDigest: String(payload.bodyDigest || ''),
+    completedAt: new Date().toISOString(),
+    safeReasonCode: reason
   });
+  return buildNormalDailySourceSyncResult_({
+    status: 'blocked',
+    blockedReason: reason,
+    sourceRowsRequested: validation.rowCount,
+    sourceTabCommitted: false,
+    propertyConfigured: false
+  });
+}
+
+function inspectNormalDailySourceSyncStatus_(payload, validation, expectedDigest) {
+  const config = getConfig_();
+  const spreadsheet = config.sheetId ? SpreadsheetApp.openById(config.sheetId) : null;
+  const source = spreadsheet ? spreadsheet.getSheetByName(validation.sourceTabName) : null;
+  const staging = spreadsheet ? spreadsheet.getSheetByName(GMAIL_DAILY_SOURCE_STAGING_TAB_NAME) : null;
+  const backup = spreadsheet ? spreadsheet.getSheetByName(GMAIL_DAILY_SOURCE_BACKUP_TAB_NAME) : null;
+  const values = source ? source.getRange(1, 1, Math.max(1, source.getLastRow()), Math.max(1, source.getLastColumn())).getValues() : [];
+  const sourceRows = Math.max(0, values.length - 1);
+  const sourceDigestMatch = Boolean(source && sourceRows === validation.rowCount && normalDailySourceDigest_(values) === expectedDigest);
+  const propName = String(PropertiesService.getScriptProperties().getProperty('GMAIL_DAILY_SOURCE_TAB_NAME') || '').trim();
+  const propertyConfigured = propName === validation.sourceTabName;
+  return {
+    ok: sourceDigestMatch && propertyConfigured,
+    status: sourceDigestMatch && propertyConfigured ? 'pass' : 'blocked',
+    blockedReason: sourceDigestMatch && propertyConfigured ? '' : 'source_commit_verification_failed',
+    sourceRowsRequested: validation.rowCount,
+    sourceRowsWritten: sourceRows,
+    sourceRowsReadBack: sourceRows,
+    sourceDigestMatch,
+    propertyConfigured,
+    requestCommitted: sourceDigestMatch && propertyConfigured,
+    sourceTabCommitted: sourceDigestMatch && propertyConfigured,
+    sourceTabExists: Boolean(source),
+    stagingTabExists: Boolean(staging),
+    backupTabExists: Boolean(backup),
+    sourceHeaderColumnCount: values.length ? values[0].length : 0,
+    gmailSendExecuted: false,
+    sendTargetSheetUpdated: false,
+    triggerChanged: false
+  };
+}
+
+function normalDailySourceDigest_(values) {
+  return sha256Hex_(JSON.stringify(values || []));
+}
+
+function normalDailySourceSyncStateKey_(payload) {
+  return GMAIL_DAILY_SOURCE_SYNC_STATE_PREFIX + hashValue_(String(payload && payload.requestId || ''));
+}
+
+function readNormalDailySourceSyncState_(payload) {
+  const raw = String(PropertiesService.getScriptProperties().getProperty(normalDailySourceSyncStateKey_(payload)) || '').trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function writeNormalDailySourceSyncState_(payload, state) {
+  PropertiesService.getScriptProperties().setProperty(normalDailySourceSyncStateKey_(payload), JSON.stringify(state || {}));
+}
+
+function deleteSheetIfExists_(spreadsheet, name) {
+  const sheet = spreadsheet.getSheetByName(name);
+  if (sheet) spreadsheet.deleteSheet(sheet);
+}
+
+function inspectGmailNormalDailySourceStateSafe() {
+  const config = getConfig_();
+  const props = PropertiesService.getScriptProperties();
+  let spreadsheet = null;
+  let source = null;
+  let staging = null;
+  let backup = null;
+  if (config.sheetId) {
+    spreadsheet = SpreadsheetApp.openById(config.sheetId);
+    source = spreadsheet.getSheetByName(GMAIL_DAILY_SOURCE_TAB_NAME_DEFAULT);
+    staging = spreadsheet.getSheetByName(GMAIL_DAILY_SOURCE_STAGING_TAB_NAME);
+    backup = spreadsheet.getSheetByName(GMAIL_DAILY_SOURCE_BACKUP_TAB_NAME);
+  }
+  const sourceRowCount = source ? Math.max(0, Number(source.getLastRow ? source.getLastRow() : 0) - 1) : 0;
+  const stagingRowCount = staging ? Math.max(0, Number(staging.getLastRow ? staging.getLastRow() : 0) - 1) : 0;
+  const backupRowCount = backup ? Math.max(0, Number(backup.getLastRow ? backup.getLastRow() : 0) - 1) : 0;
+  const triggers = ScriptApp.getProjectTriggers ? ScriptApp.getProjectTriggers() : [];
+  const normalTriggerCount = triggers.filter((trigger) => String(trigger.getHandlerFunction && trigger.getHandlerFunction() || '') === 'runGmailSalesDailyAutomationTrigger').length;
+  const duplicateTriggerCount = Math.max(0, normalTriggerCount - 1);
+  const forbiddenTriggerCount = triggers.filter((trigger) => GMAIL_DAILY_FORBIDDEN_TRIGGER_HANDLERS.indexOf(String(trigger.getHandlerFunction && trigger.getHandlerFunction() || '')) !== -1).length;
+  const result = {
+    event: 'gmail_normal_daily_source_state_inspection',
+    sourceTabName: GMAIL_DAILY_SOURCE_TAB_NAME_DEFAULT,
+    sourceTabExists: Boolean(source),
+    sourceDataRowCount: sourceRowCount,
+    sourceHeaderColumnCount: source ? Number(source.getLastColumn ? source.getLastColumn() : 0) : 0,
+    recommendedRowCountMet: sourceRowCount >= GMAIL_DAILY_SOURCE_RECOMMENDED_SYNC_COUNT,
+    propertyPresent: Boolean(String(props.getProperty('GMAIL_DAILY_SOURCE_TAB_NAME') || '').trim()),
+    propertyMatchesSourceTab: String(props.getProperty('GMAIL_DAILY_SOURCE_TAB_NAME') || '').trim() === GMAIL_DAILY_SOURCE_TAB_NAME_DEFAULT,
+    stagingTabExists: Boolean(staging),
+    stagingDataRowCount: stagingRowCount,
+    backupTabExists: Boolean(backup),
+    backupDataRowCount: backupRowCount,
+    automationMasterEnabled: String(props.getProperty('AUTOMATION_MASTER_ENABLED') || '').toLowerCase() === 'true',
+    autoSendEnabled: String(props.getProperty('AUTO_SEND_ENABLED') || '').toLowerCase() === 'true',
+    liveSendAtRest: String(props.getProperty('LIVE_SEND_ENABLED') || '').toLowerCase() !== 'true',
+    normalTriggerCount,
+    duplicateTriggerCount,
+    forbiddenTriggerCount,
+    gmailSendExecuted: false,
+    sheetUpdated: false,
+    propertyChanged: false,
+    triggerChanged: false
+  };
+  console.log(JSON.stringify(result));
+  return result;
+}
+
+function inspectGmailNormalDailySourceSyncRequestSafe() {
+  const props = PropertiesService.getScriptProperties();
+  const keys = Object.keys(props.getProperties ? props.getProperties() : {}).filter((key) => key.indexOf(GMAIL_DAILY_SOURCE_SYNC_STATE_PREFIX) === 0).sort();
+  let state = {};
+  if (keys.length) {
+    try {
+      state = JSON.parse(String(props.getProperty(keys[keys.length - 1]) || '{}'));
+    } catch (error) {
+      state = { status: 'failed', safeReasonCode: 'sync_state_invalid_json' };
+    }
+  }
+  const result = {
+    event: 'gmail_normal_daily_source_sync_request_inspection',
+    status: String(state.status || ''),
+    blockedReason: String(state.safeReasonCode || ''),
+    targetDate: String(state.targetDate || ''),
+    expectedCandidateCount: Number(state.candidateCount || 0),
+    requestCommitted: String(state.status || '') === 'committed',
+    gmailSendExecuted: false,
+    sheetUpdated: false,
+    propertyChanged: false,
+    triggerChanged: false
+  };
+  console.log(JSON.stringify(result));
+  return result;
 }
 
 function buildNormalDailySourceSyncResult_(overrides) {
@@ -1199,6 +1490,21 @@ function gmailDailyWebhookBodyMaterial_(payload) {
       mode: payload && payload.mode,
       sourceType: payload && payload.sourceType,
       dryRun: payload && payload.dryRun,
+      automationVersion: payload && payload.automationVersion,
+      autoApprovalPolicyVersion: payload && payload.autoApprovalPolicyVersion
+    });
+  }
+  if (String(payload && payload.action || '') === 'get_normal_daily_source_sync_status') {
+    return JSON.stringify({
+      action: payload && payload.action,
+      targetDate: payload && payload.targetDate,
+      requestId: payload && payload.requestId,
+      sourceBodyDigest: payload && payload.sourceBodyDigest,
+      sourceDigest: payload && payload.sourceDigest,
+      expectedCandidateCount: payload && payload.expectedCandidateCount,
+      sourceTabName: payload && payload.sourceTabName,
+      mode: payload && payload.mode,
+      sourceType: payload && payload.sourceType,
       automationVersion: payload && payload.automationVersion,
       autoApprovalPolicyVersion: payload && payload.autoApprovalPolicyVersion
     });

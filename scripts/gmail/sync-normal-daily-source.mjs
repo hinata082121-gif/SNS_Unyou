@@ -30,6 +30,7 @@ const inputFile = args.input || args.pool || DEFAULT_POOL_FILE;
 const dryRun = Boolean(args['dry-run']);
 const write = Boolean(args.write);
 const minRows = Number(args['min-rows'] || 30);
+const postTimeoutMs = Number(args['post-timeout-ms'] || 45000);
 
 if (dryRun === write) {
   console.error('Specify exactly one of --dry-run or --write.');
@@ -50,6 +51,10 @@ const summary = {
   sourceDigestMatch: false,
   propertyConfigured: false,
   propertyWriteCount: 0,
+  requestCommitted: false,
+  retryCount: 0,
+  statusCheckCount: 0,
+  webhookCallCount: 0,
   sourceTabCreated: false,
   gmailSendExecuted: false,
   sendTargetSheetUpdated: false,
@@ -80,34 +85,65 @@ if (!webhookUrl || !secret) {
 
 const payload = buildPayload(rows, secret);
 summary.webhookCalled = true;
+summary.webhookCallCount = 1;
 let responseBody;
 if (webhookUrl.startsWith('mock://')) {
-  responseBody = mockWebhookResponse(rows, webhookUrl);
+  try {
+    responseBody = mockWebhookResponse(rows, webhookUrl, payload);
+  } catch {
+    summary.blockedReason = 'source_sync_response_timeout';
+    const status = await checkSourceSyncStatus({ webhookUrl, secret, payload, rows, timeoutMs: postTimeoutMs });
+    summary.statusCheckCount += 1;
+    responseBody = status.requestCommitted ? status : { status: 'blocked', blockedReason: 'source_sync_commit_status_unknown', requestCommitted: false };
+  }
 } else {
-  const response = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  responseBody = await response.json();
+  const postResult = await postJsonWithTimeout(webhookUrl, payload, postTimeoutMs);
+  if (postResult.ok) {
+    responseBody = postResult.body;
+  } else {
+    summary.blockedReason = postResult.blockedReason;
+    const status = await checkSourceSyncStatus({ webhookUrl, secret, payload, rows, timeoutMs: postTimeoutMs });
+    summary.statusCheckCount += 1;
+    if (status.requestCommitted) responseBody = status;
+    else {
+      summary.retryCount = 1;
+      summary.webhookCallCount += 1;
+      const retry = await postJsonWithTimeout(webhookUrl, payload, postTimeoutMs);
+      if (retry.ok) responseBody = retry.body;
+      else {
+        const retryStatus = await checkSourceSyncStatus({ webhookUrl, secret, payload, rows, timeoutMs: postTimeoutMs });
+        summary.statusCheckCount += 1;
+        responseBody = retryStatus.requestCommitted ? retryStatus : {
+          status: 'blocked',
+          blockedReason: 'source_sync_commit_status_unknown',
+          requestCommitted: false,
+          sourceRowsWritten: 0,
+          sourceRowsReadBack: 0,
+          sourceDigestMatch: false,
+          propertyConfigured: false
+        };
+      }
+    }
+  }
 }
 
 Object.assign(summary, {
   status: responseBody.status || (responseBody.ok ? 'pass' : 'blocked'),
   blockedReason: responseBody.blockedReason || '',
   sourceTabCreated: Boolean(responseBody.sourceTabCreated),
-  sourceRowsWritten: Number(responseBody.sourceRowsWritten || 0),
-  sourceRowsReadBack: Number(responseBody.sourceRowsReadBack || 0),
+  sourceRowsWritten: Number(responseBody.sourceRowsWritten || responseBody.sourceDataRowCount || 0),
+  sourceRowsReadBack: Number(responseBody.sourceRowsReadBack || responseBody.sourceDataRowCount || 0),
   sourceDigestMatch: responseBody.sourceDigestMatch === true,
   propertyConfigured: responseBody.propertyConfigured === true,
   propertyWriteCount: Number(responseBody.propertyWriteCount || 0),
+  requestCommitted: responseBody.requestCommitted === true || responseBody.sourceTabCommitted === true,
   gmailSendExecuted: false,
   sendTargetSheetUpdated: false,
   triggerChanged: false
 });
 
 console.log(safeSummary(summary));
-if (summary.status !== 'pass' || summary.sourceRowsWritten !== rows.length || !summary.sourceDigestMatch || !summary.propertyConfigured) {
+if (summary.status !== 'pass' || !summary.requestCommitted || summary.sourceRowsWritten !== rows.length || !summary.sourceDigestMatch || !summary.propertyConfigured) {
   process.exit(1);
 }
 
@@ -190,6 +226,7 @@ function toOutboxRow(candidate, dateText) {
 }
 
 function buildPayload(rows, secret) {
+  const requestId = `gmail-source-sync-${targetDate}-${sha256(JSON.stringify({ targetDate, rows })).slice(0, 16)}`;
   const payload = {
     action: 'sync_normal_daily_source',
     mode: 'normal_daily',
@@ -206,13 +243,69 @@ function buildPayload(rows, secret) {
     sourceVerificationStatus: 'verified_only',
     headers: OUTBOX_HEADERS,
     rows,
-    requestId: `gmail-source-sync-${targetDate}-${Date.now()}-${process.pid}`,
+    requestId,
     timestamp: new Date().toISOString(),
     nonce: crypto.randomUUID()
   };
   payload.bodyDigest = sha256(bodyMaterial(payload));
   payload.signature = signPayload(payload, secret);
   return payload;
+}
+
+async function postJsonWithTimeout(url, payload, timeoutMs) {
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    return { ok: true, body: await response.json() };
+  } catch (error) {
+    const message = String(error && (error.code || error.name || error.message) || '');
+    return { ok: false, blockedReason: message.includes('UND_ERR_HEADERS_TIMEOUT') || message.includes('Timeout') || message.includes('Abort') ? 'source_sync_response_timeout' : 'source_sync_network_error' };
+  }
+}
+
+async function checkSourceSyncStatus({ webhookUrl, secret, payload, rows, timeoutMs }) {
+  const statusPayload = buildStatusPayload({ payload, rows, secret });
+  if (webhookUrl.startsWith('mock://')) return mockStatusResponse(rows, webhookUrl, statusPayload);
+  const response = await postJsonWithTimeout(webhookUrl, statusPayload, timeoutMs);
+  if (response.ok) return response.body;
+  return { status: 'blocked', blockedReason: response.blockedReason, requestCommitted: false };
+}
+
+function buildStatusPayload({ payload, rows, secret }) {
+  const statusPayload = {
+    action: 'get_normal_daily_source_sync_status',
+    mode: payload.mode,
+    sourceType: payload.sourceType,
+    automationVersion: payload.automationVersion,
+    autoApprovalPolicyVersion: payload.autoApprovalPolicyVersion,
+    targetDate: payload.targetDate,
+    sourceTabName: payload.sourceTabName,
+    expectedCandidateCount: rows.length,
+    requestId: payload.requestId,
+    sourceBodyDigest: payload.bodyDigest,
+    sourceDigest: sha256(JSON.stringify([OUTBOX_HEADERS, ...rows])),
+    timestamp: new Date().toISOString(),
+    nonce: crypto.randomUUID()
+  };
+  statusPayload.bodyDigest = sha256(JSON.stringify({
+    action: statusPayload.action,
+    targetDate: statusPayload.targetDate,
+    requestId: statusPayload.requestId,
+    sourceBodyDigest: statusPayload.sourceBodyDigest,
+    sourceDigest: statusPayload.sourceDigest,
+    expectedCandidateCount: statusPayload.expectedCandidateCount,
+    sourceTabName: statusPayload.sourceTabName,
+    mode: statusPayload.mode,
+    sourceType: statusPayload.sourceType,
+    automationVersion: statusPayload.automationVersion,
+    autoApprovalPolicyVersion: statusPayload.autoApprovalPolicyVersion
+  }));
+  statusPayload.signature = signPayload(statusPayload, secret);
+  return statusPayload;
 }
 
 function bodyMaterial(payload) {
@@ -246,6 +339,7 @@ function signPayload(payload, secret) {
 
 function mockWebhookResponse(rows, url) {
   if (url === 'mock://reject') return { ok: false, status: 'blocked', blockedReason: 'mock_reject' };
+  if (url === 'mock://timeout-then-committed') throw Object.assign(new Error('headers timeout'), { code: 'UND_ERR_HEADERS_TIMEOUT' });
   return {
     ok: true,
     status: 'pass',
@@ -254,8 +348,24 @@ function mockWebhookResponse(rows, url) {
     sourceRowsReadBack: rows.length,
     sourceDigestMatch: true,
     propertyConfigured: true,
-    propertyWriteCount: 1
+    propertyWriteCount: 1,
+    requestCommitted: true
   };
+}
+
+function mockStatusResponse(rows, url) {
+  if (url === 'mock://timeout-then-committed') {
+    return {
+      ok: true,
+      status: 'pass',
+      sourceRowsWritten: rows.length,
+      sourceRowsReadBack: rows.length,
+      sourceDigestMatch: true,
+      propertyConfigured: true,
+      requestCommitted: true
+    };
+  }
+  return { status: 'blocked', blockedReason: 'source_sync_commit_status_unknown', requestCommitted: false };
 }
 
 function sha256(value) {

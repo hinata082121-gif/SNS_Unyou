@@ -30,9 +30,26 @@ assert.equal(write.sourceRowsWritten, 60);
 assert.equal(write.sourceRowsReadBack, 60);
 assert.equal(write.sourceDigestMatch, true);
 assert.equal(write.propertyConfigured, true);
+assert.equal(write.requestCommitted, true);
+assert.equal(write.webhookCallCount, 1);
+assert.equal(write.statusCheckCount, 0);
 assert.equal(write.gmailSendExecuted, false);
 assert.equal(write.sendTargetSheetUpdated, false);
 assert.equal(write.triggerChanged, false);
+
+const timeoutRecovered = runSync(['--date', DATE, '--input', poolFile, '--write', '--post-timeout-ms', '10'], {
+  GMAIL_APPS_SCRIPT_WEBHOOK_URL: 'mock://timeout-then-committed',
+  GMAIL_AUTOMATION_SHARED_SECRET: 'synthetic-secret'
+});
+assert.equal(timeoutRecovered.status, 'pass');
+assert.equal(timeoutRecovered.blockedReason, '');
+assert.equal(timeoutRecovered.requestCommitted, true);
+assert.equal(timeoutRecovered.sourceRowsWritten, 60);
+assert.equal(timeoutRecovered.sourceDigestMatch, true);
+assert.equal(timeoutRecovered.propertyConfigured, true);
+assert.equal(timeoutRecovered.statusCheckCount, 1);
+assert.equal(timeoutRecovered.retryCount, 0);
+assert.equal(timeoutRecovered.webhookCallCount, 1);
 
 const shortPoolFile = path.join(TMP, 'short-pool.json');
 writeJson(shortPoolFile, { candidates: buildCandidates(29) });
@@ -65,7 +82,7 @@ assert.equal(raw.includes('Subject '), false);
 assert.equal(raw.includes('Body '), false);
 
 console.log(JSON.stringify({
-  sourceSyncTestCount: 18,
+  sourceSyncTestCount: 28,
   passed: true,
   gmailSendExecuted: false,
   sendTargetSheetUpdated: false,
