@@ -26,7 +26,7 @@ const targetDate = requireDate(args.date);
 const requiredCount = Number(args['required-count'] || 45);
 const targetCount = Number(args['target-count'] || 90);
 const maxProviderRequests = Number(args['max-provider-requests'] || 30);
-const maxWebsiteRequests = Number(args['max-website-requests'] || 320);
+const maxWebsiteRequests = Number(args['max-website-requests'] || 1200);
 const websiteConcurrency = Number(args['website-concurrency'] || 4);
 const maxVerificationDurationMs = Number(args['max-verification-duration-ms'] || 1500000);
 const requestTimeoutMs = Number(args['request-timeout-ms'] || 8000);
@@ -109,6 +109,10 @@ async function runDiscovery() {
     websiteMissingCount: placesSummary.websiteMissingCount,
     websitesChecked: verification.websitesChecked,
     websiteRequestCount: verification.websiteRequestCount,
+    contactLinksDiscoveredCount: verification.contactLinksDiscoveredCount,
+    homepageEmailFoundCount: verification.homepageEmailFoundCount,
+    contactPageEmailFoundCount: verification.contactPageEmailFoundCount,
+    fixedFallbackRequestCount: verification.fixedFallbackRequestCount,
     maxObservedWebsiteConcurrency: verification.maxObservedWebsiteConcurrency,
     maxObservedSameDomainConcurrency: verification.maxObservedSameDomainConcurrency,
     publicEmailFound: verification.publicEmailFound,
@@ -219,6 +223,10 @@ function sanitizeSummary(summary) {
     'websiteMissingCount',
     'websitesChecked',
     'websiteRequestCount',
+    'contactLinksDiscoveredCount',
+    'homepageEmailFoundCount',
+    'contactPageEmailFoundCount',
+    'fixedFallbackRequestCount',
     'publicEmailFound',
     'salesProhibitedExcludedCount',
     'mxMissingCount',
@@ -289,6 +297,10 @@ function baseSummary() {
     websiteMissingCount: 0,
     websitesChecked: 0,
     websiteRequestCount: 0,
+    contactLinksDiscoveredCount: 0,
+    homepageEmailFoundCount: 0,
+    contactPageEmailFoundCount: 0,
+    fixedFallbackRequestCount: 0,
     publicEmailFound: 0,
     salesProhibitedExcludedCount: 0,
     mxMissingCount: 0,
@@ -325,6 +337,10 @@ async function verifyPlaces(places, context) {
   const summary = {
     websitesChecked: 0,
     websiteRequestCount: 0,
+    contactLinksDiscoveredCount: 0,
+    homepageEmailFoundCount: 0,
+    contactPageEmailFoundCount: 0,
+    fixedFallbackRequestCount: 0,
     publicEmailFound: 0,
     salesProhibitedExcludedCount: 0,
     mxMissingCount: 0,
@@ -407,6 +423,10 @@ async function verifyPlaces(places, context) {
     });
     summary.websitesChecked += 1;
     if (website.deadlineExceeded) summary.deadlineExceeded = true;
+    summary.contactLinksDiscoveredCount += Number(website.contactLinksDiscoveredCount || 0);
+    summary.homepageEmailFoundCount += Number(website.homepageEmailFoundCount || 0);
+    summary.contactPageEmailFoundCount += Number(website.contactPageEmailFoundCount || 0);
+    summary.fixedFallbackRequestCount += Number(website.fixedFallbackRequestCount || 0);
     if (!website.ok) {
       if (website.reasonCode === 'sales_prohibited') summary.salesProhibitedExcludedCount += 1;
       else summary.unavailableCount += 1;
@@ -450,6 +470,10 @@ async function verifyPlaces(places, context) {
       publicEmailFound: summary.publicEmailFound,
       strictEligibleCandidateCount: summary.eligible.length,
       unavailableCount: summary.unavailableCount,
+      contactLinksDiscoveredCount: summary.contactLinksDiscoveredCount,
+      homepageEmailFoundCount: summary.homepageEmailFoundCount,
+      contactPageEmailFoundCount: summary.contactPageEmailFoundCount,
+      fixedFallbackRequestCount: summary.fixedFallbackRequestCount,
       activeWorkers: currentActiveWorkers,
       queuedRemaining: Math.max(0, orderedPlaces.length - started.size),
       providerRequestCount: placesSummary.providerRequestCount
@@ -467,8 +491,13 @@ async function inspectWebsite(place, controls = {}) {
     }
     return mockInspectWebsite(place);
   }
-  const urls = candidateWebsiteUrls(place.websiteUri);
-  for (const url of urls.slice(0, 4)) {
+  const homepageUrl = normalizeWebsiteUrl(place.websiteUri);
+  const pendingUrls = [homepageUrl];
+  const seenUrls = new Set(pendingUrls);
+  let contactLinksDiscoveredCount = 0;
+  let fixedFallbackRequestCount = 0;
+  for (let pageIndex = 0; pageIndex < 4 && pendingUrls.length > 0; pageIndex += 1) {
+    const url = pendingUrls.shift();
     if (!controls.takeRequest || !controls.takeRequest()) {
       return { ok: false, reasonCode: 'website_request_budget_exhausted', deadlineExceeded: Date.now() >= Number(controls.deadlineAt || 0) };
     }
@@ -478,12 +507,38 @@ async function inspectWebsite(place, controls = {}) {
       const text = (await response.text()).slice(0, 250000);
       if (salesProhibited(text)) return { ok: false, reasonCode: 'sales_prohibited' };
       const email = extractPublicEmail(text);
-      if (email) return { ok: true, email, pageContainedEmail: true };
+      if (email) {
+        return {
+          ok: true,
+          email,
+          pageContainedEmail: true,
+          contactLinksDiscoveredCount,
+          homepageEmailFoundCount: pageIndex === 0 ? 1 : 0,
+          contactPageEmailFoundCount: pageIndex === 0 ? 0 : 1,
+          fixedFallbackRequestCount
+        };
+      }
+      if (pageIndex === 0) {
+        const discovered = discoverContactUrls({ html: text, pageUrl: url, homepageUrl });
+        contactLinksDiscoveredCount = discovered.length;
+        for (const discoveredUrl of discovered) {
+          if (seenUrls.has(discoveredUrl)) continue;
+          seenUrls.add(discoveredUrl);
+          pendingUrls.push(discoveredUrl);
+        }
+        for (const fallbackUrl of candidateWebsiteUrls(homepageUrl)) {
+          if (seenUrls.has(fallbackUrl)) continue;
+          seenUrls.add(fallbackUrl);
+          pendingUrls.push(fallbackUrl);
+        }
+      } else if (!isDiscoveredContactUrl(url, homepageUrl)) {
+        fixedFallbackRequestCount += 1;
+      }
     } catch {
       // Try the next public page candidate.
     }
   }
-  return { ok: false, reasonCode: 'email_missing' };
+  return { ok: false, reasonCode: 'email_missing', contactLinksDiscoveredCount, fixedFallbackRequestCount };
 }
 
 async function mockInspectWebsite(place) {
@@ -501,7 +556,70 @@ async function mockInspectWebsite(place) {
 function candidateWebsiteUrls(value) {
   const url = new URL(value);
   const base = `${url.protocol}//${url.hostname}`;
-  return [value, `${base}/contact`, `${base}/company`, `${base}/about`, `${base}/access`];
+  return [`${base}/contact`, `${base}/company`, `${base}/about`, `${base}/access`].map(normalizeWebsiteUrl);
+}
+
+function normalizeWebsiteUrl(value) {
+  const url = new URL(value);
+  url.hash = '';
+  if ((url.protocol === 'http:' || url.protocol === 'https:') && url.pathname === '') url.pathname = '/';
+  return url.toString();
+}
+
+function discoverContactUrls({ html, pageUrl, homepageUrl }) {
+  const links = [];
+  const linkPattern = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+  let match = null;
+  while ((match = linkPattern.exec(String(html || ''))) !== null) {
+    const href = String(match[1] || match[2] || match[3] || '').trim();
+    const normalized = normalizeCandidateLink({ href, pageUrl, homepageUrl });
+    if (!normalized) continue;
+    if (!contactLinkScore(normalized, href)) continue;
+    links.push(normalized);
+  }
+  return [...new Set(links)]
+    .sort((left, right) => contactLinkScore(right, right) - contactLinkScore(left, left) || left.localeCompare(right));
+}
+
+function normalizeCandidateLink({ href, pageUrl, homepageUrl }) {
+  if (!href || href.startsWith('#')) return '';
+  const lower = href.trim().toLowerCase();
+  if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('tel:')) return '';
+  if (lower.startsWith('mailto:')) return '';
+  let url;
+  try {
+    url = new URL(href, pageUrl);
+  } catch {
+    return '';
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+  const homepage = new URL(homepageUrl);
+  if (stripWww(url.hostname) !== stripWww(homepage.hostname)) return '';
+  url.hash = '';
+  return url.toString();
+}
+
+function contactLinkScore(urlText, labelText) {
+  const text = safeDecodeURIComponent(String(`${urlText} ${labelText || ''}`).toLowerCase());
+  const high = ['contact', 'inquiry', 'inquire', 'mail', 'お問い合わせ', '問合せ'];
+  const medium = ['company', 'corporate', 'about', 'profile', '会社概要'];
+  const low = ['shop', 'store', 'access', 'info', '店舗情報'];
+  if (high.some((word) => text.includes(word))) return 30;
+  if (medium.some((word) => text.includes(word))) return 20;
+  if (low.some((word) => text.includes(word))) return 10;
+  return 0;
+}
+
+function safeDecodeURIComponent(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function isDiscoveredContactUrl(urlText, homepageUrl) {
+  return !candidateWebsiteUrls(homepageUrl).includes(normalizeWebsiteUrl(urlText));
 }
 
 function extractPublicEmail(text) {

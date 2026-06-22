@@ -8,6 +8,7 @@ const ROOT = process.cwd();
 const TMP = path.join(ROOT, 'tmp', 'gmail-google-places-discovery-test');
 const DATE = '2099-06-23';
 const workflowText = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'gmail-sales-candidate-refresh.yml'), 'utf8');
+const discoverText = fs.readFileSync(path.join(ROOT, 'scripts', 'gmail', 'discover-fresh-gmail-prospects.mjs'), 'utf8');
 
 fs.rmSync(TMP, { recursive: true, force: true });
 fs.mkdirSync(TMP, { recursive: true });
@@ -19,7 +20,7 @@ assert.equal(buildDailyQueryPlan({ dateText: DATE }).length, 15);
 assert.equal((workflowText.match(/gmail:prospects:discover --/g) || []).length, 1);
 assert.equal(workflowText.includes('--dry-run'), false);
 assert.equal(workflowText.includes('--write --output "$OUTPUT"'), true);
-assert.equal(workflowText.includes('--max-website-requests 320'), true);
+assert.equal(workflowText.includes('--max-website-requests 1200'), true);
 assert.equal(workflowText.includes('--website-concurrency 4'), true);
 assert.equal(workflowText.includes('--max-verification-duration-ms 1500000'), true);
 assert.equal(workflowText.includes('--summary-file "$SUMMARY"'), true);
@@ -28,6 +29,7 @@ assert.equal(workflowText.includes('set +e'), true);
 assert.equal(workflowText.includes('DISCOVERY_EXIT=$?'), true);
 assert.equal(workflowText.includes('discovery_summary_missing'), true);
 assert.equal(workflowText.includes('validate-candidate-discovery-summary.mjs'), true);
+assert.equal(workflowText.includes('--max-website-requests 1200'), true);
 assert.equal(workflowText.includes('npm run gmail:source:sync -- --date "$TARGET_DATE" --input "$OUTPUT" --write'), true);
 assert.equal(workflowText.indexOf('validate-candidate-discovery-summary.mjs') < workflowText.indexOf('npm run gmail:source:sync -- --date "$TARGET_DATE" --input "$OUTPUT" --write'), true);
 assert.equal(workflowText.includes("trap 'rm -rf"), true);
@@ -48,10 +50,10 @@ assert.equal(dryRun.uniquePlaceCount > 0, true);
 assert.equal(dryRun.strictEligibleCandidateCount, 90);
 assert.equal(dryRun.sourceSyncCandidateCount, 90);
 assert.equal(dryRun.websiteConcurrency, 4);
-assert.equal(dryRun.maxWebsiteRequests, 320);
+assert.equal(dryRun.maxWebsiteRequests, 1200);
 assert.equal(dryRun.maxVerificationDurationMs, 1500000);
 assert.equal(dryRun.requestTimeoutMs, 8000);
-assert.equal(dryRun.websiteRequestCount <= 320, true);
+assert.equal(dryRun.websiteRequestCount <= 1200, true);
 assert.equal(dryRun.maxObservedWebsiteConcurrency <= 4, true);
 assert.equal(dryRun.maxObservedWebsiteConcurrency > 1, true);
 assert.equal(dryRun.maxObservedSameDomainConcurrency, 1);
@@ -169,10 +171,10 @@ assert.equal(/gmail_prospect_verification_progress/.test(fs.readFileSync(progres
 assert.equal(/@[a-z0-9.-]+/i.test(progressWithSummaryFile.stdout), false);
 assert.equal(progressWithSummaryFile.stdout.includes('https://'), false);
 
-const validatorPass = captureValidator(['--summary', validatorSummaryFile, '--output', validatorOutput, '--min-strict-eligible', '45', '--max-provider-requests', '30', '--max-website-requests', '320']);
+const validatorPass = captureValidator(['--summary', validatorSummaryFile, '--output', validatorOutput, '--min-strict-eligible', '45', '--max-provider-requests', '30', '--max-website-requests', '1200']);
 assert.equal(validatorPass.status, 0);
 assert.equal(JSON.parse(validatorPass.stdout).status, 'pass');
-const validatorBlocked = captureValidator(['--summary', shortSummaryFile, '--output', output, '--min-strict-eligible', '45', '--max-provider-requests', '30', '--max-website-requests', '320']);
+const validatorBlocked = captureValidator(['--summary', shortSummaryFile, '--output', output, '--min-strict-eligible', '45', '--max-provider-requests', '30', '--max-website-requests', '1200']);
 assert.equal(validatorBlocked.status, 1);
 assert.equal(JSON.parse(validatorBlocked.stdout).sourceSyncExecuted, false);
 const validatorMissing = captureValidator(['--summary', path.join(TMP, 'missing-summary.json'), '--output', output]);
@@ -183,9 +185,20 @@ assert.equal((workflowText.match(/npm run gmail:source:sync -- --date "\$TARGET_
 assert.equal(workflowText.includes('gmail:outbox:sync-recovery-single'), false);
 assert.equal(workflowText.includes('MailApp.sendEmail'), false);
 assert.equal(workflowText.includes('GMAIL_SHEET_SYNC_DRY_RUN=false'), false);
+assert.equal(discoverText.includes("const maxWebsiteRequests = Number(args['max-website-requests'] || 1200)"), true);
+assert.equal(discoverText.includes('discoverContactUrls'), true);
+assert.equal(discoverText.includes('normalizeCandidateLink'), true);
+assert.equal(discoverText.includes("lower.startsWith('javascript:')"), true);
+assert.equal(discoverText.includes("lower.startsWith('data:')"), true);
+assert.equal(discoverText.includes("lower.startsWith('tel:')"), true);
+assert.equal(discoverText.includes("lower.startsWith('mailto:')"), true);
+assert.equal(discoverText.includes("url.protocol !== 'http:' && url.protocol !== 'https:'"), true);
+assert.equal(discoverText.includes('stripWww(url.hostname) !== stripWww(homepage.hostname)'), true);
+assert.equal(discoverText.includes('pageIndex < 4'), true);
+assert.equal(discoverText.indexOf('discoverContactUrls') < discoverText.indexOf('candidateWebsiteUrls(homepageUrl)'), true);
 
 console.log(JSON.stringify({
-  googlePlacesDiscoveryTestCount: 78,
+  googlePlacesDiscoveryTestCount: 95,
   passed: true,
   realNetworkRequestCount: 0,
   gmailSendExecuted: false,

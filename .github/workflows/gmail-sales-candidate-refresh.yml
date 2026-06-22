@@ -72,7 +72,7 @@ jobs:
           mkdir -p "$(dirname "$OUTPUT")"
           trap 'rm -rf "${RUNNER_TEMP}/gmail-candidate-refresh"' EXIT
           set +e
-          npm run --silent gmail:prospects:discover -- --provider google_places --date "$TARGET_DATE" --required-count 45 --target-count 90 --max-provider-requests 30 --max-website-requests 320 --website-concurrency 4 --max-verification-duration-ms 1500000 --write --output "$OUTPUT" --summary-file "$SUMMARY"
+          npm run --silent gmail:prospects:discover -- --provider google_places --date "$TARGET_DATE" --required-count 45 --target-count 90 --max-provider-requests 30 --max-website-requests 1200 --website-concurrency 4 --max-verification-duration-ms 1500000 --write --output "$OUTPUT" --summary-file "$SUMMARY"
           DISCOVERY_EXIT=$?
           set -e
           if [ ! -f "$SUMMARY" ]; then
@@ -80,7 +80,7 @@ jobs:
             exit 1
           fi
           set +e
-          node scripts/gmail/validate-candidate-discovery-summary.mjs --summary "$SUMMARY" --output "$OUTPUT" --min-strict-eligible 45 --max-provider-requests 30 --max-website-requests 320
+          node scripts/gmail/validate-candidate-discovery-summary.mjs --summary "$SUMMARY" --output "$OUTPUT" --min-strict-eligible 45 --max-provider-requests 30 --max-website-requests 1200
           VALIDATION_EXIT=$?
           set -e
           if [ "$DISCOVERY_EXIT" -ne 0 ] || [ "$VALIDATION_EXIT" -ne 0 ]; then

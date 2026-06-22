@@ -6,7 +6,7 @@ const summaryFile = String(args.summary || '').trim();
 const outputFile = String(args.output || '').trim();
 const minStrictEligible = Number(args['min-strict-eligible'] || 45);
 const maxProviderRequests = Number(args['max-provider-requests'] || 30);
-const maxWebsiteRequests = Number(args['max-website-requests'] || 320);
+const maxWebsiteRequests = Number(args['max-website-requests'] || 1200);
 
 if (!summaryFile) {
   printSafe({ status: 'failed', blockedReason: 'discovery_summary_missing', sourceSyncExecuted: false });
@@ -56,6 +56,10 @@ function sanitize(value) {
     'websiteMissingCount',
     'websitesChecked',
     'websiteRequestCount',
+    'contactLinksDiscoveredCount',
+    'homepageEmailFoundCount',
+    'contactPageEmailFoundCount',
+    'fixedFallbackRequestCount',
     'publicEmailFound',
     'salesProhibitedExcludedCount',
     'mxMissingCount',
