@@ -15,6 +15,8 @@
     "agent:status:open": "node scripts/agent-status/render-dashboard.mjs && echo \"Open tmp/agent-dashboard.html in your browser\"",
     "agent:office:render": "node scripts/agent-status/render-agent-office.mjs",
     "gmail:pool:validate": "node scripts/gmail/validate-gmail-pool.mjs",
+    "gmail:pool:refresh": "node scripts/gmail/refresh-gmail-candidate-pool.mjs",
+    "gmail:pool:refresh:test": "node scripts/gmail/test-refresh-gmail-candidate-pool.mjs",
     "gmail:pool:merge": "node scripts/gmail/merge-gmail-candidate-pool.mjs",
     "gmail:pool:merge:test": "node scripts/gmail/test-merge-gmail-candidate-pool.mjs",
     "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs",
