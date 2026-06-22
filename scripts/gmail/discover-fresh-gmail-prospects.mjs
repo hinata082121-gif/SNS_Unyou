@@ -26,7 +26,11 @@ const targetDate = requireDate(args.date);
 const requiredCount = Number(args['required-count'] || 45);
 const targetCount = Number(args['target-count'] || 90);
 const maxProviderRequests = Number(args['max-provider-requests'] || 30);
-const maxWebsiteRequests = Number(args['max-website-requests'] || 500);
+const maxWebsiteRequests = Number(args['max-website-requests'] || 320);
+const websiteConcurrency = Number(args['website-concurrency'] || 4);
+const maxVerificationDurationMs = Number(args['max-verification-duration-ms'] || 1500000);
+const requestTimeoutMs = Number(args['request-timeout-ms'] || 8000);
+const mockDelayMs = Number(args['mock-delay-ms'] || 0);
 const dryRun = Boolean(args['dry-run']);
 const write = Boolean(args.write);
 const mock = Boolean(args.mock);
@@ -66,7 +70,13 @@ if (placesSummary.errorCode) {
 }
 
 const verification = await verifyPlaces(placesSummary.places);
-const strictEligible = verification.eligible.slice(0, targetCount);
+const strictEligible = verification.eligible
+  .slice()
+  .sort((left, right) => String(left.prospectId || '').localeCompare(String(right.prospectId || '')))
+  .slice(0, targetCount);
+const blockedReason = verification.deadlineExceeded
+  ? 'website_verification_deadline_exceeded'
+  : strictEligible.length >= requiredCount ? '' : 'strict_eligible_count_below_required';
 const summary = Object.assign(baseSummary(), {
   apiKeyConfigured: placesSummary.apiKeyConfigured,
   queryCount: placesSummary.queryCount,
@@ -77,6 +87,8 @@ const summary = Object.assign(baseSummary(), {
   websiteMissingCount: placesSummary.websiteMissingCount,
   websitesChecked: verification.websitesChecked,
   websiteRequestCount: verification.websiteRequestCount,
+  maxObservedWebsiteConcurrency: verification.maxObservedWebsiteConcurrency,
+  maxObservedSameDomainConcurrency: verification.maxObservedSameDomainConcurrency,
   publicEmailFound: verification.publicEmailFound,
   salesProhibitedExcludedCount: verification.salesProhibitedExcludedCount,
   mxMissingCount: verification.mxMissingCount,
@@ -85,10 +97,12 @@ const summary = Object.assign(baseSummary(), {
   duplicateExcludedCount: verification.duplicateExcludedCount + placesSummary.duplicatePlaceExcludedCount,
   unavailableCount: verification.unavailableCount,
   emailMismatchCount: verification.emailMismatchCount,
+  workerExceptionCount: verification.workerExceptionCount,
   strictEligibleCandidateCount: strictEligible.length,
   sourceSyncCandidateCount: strictEligible.length,
-  status: strictEligible.length >= requiredCount ? 'pass' : 'blocked',
-  blockedReason: strictEligible.length >= requiredCount ? '' : 'strict_eligible_count_below_required',
+  status: blockedReason ? 'blocked' : 'pass',
+  blockedReason,
+  deadlineExceeded: verification.deadlineExceeded,
   outputCreated: false
 });
 
@@ -146,6 +160,9 @@ function baseSummary() {
     targetCount,
     maxProviderRequests,
     maxWebsiteRequests,
+    websiteConcurrency,
+    maxVerificationDurationMs,
+    requestTimeoutMs,
     gmailSendExecuted: false,
     googleSheetsUpdated: false,
     triggerChanged: false,
@@ -158,6 +175,9 @@ function blockedSummary(reason) {
 }
 
 async function verifyPlaces(places) {
+  const orderedPlaces = places
+    .slice()
+    .sort((left, right) => String(left.id || '').localeCompare(String(right.id || '')));
   const summary = {
     websitesChecked: 0,
     websiteRequestCount: 0,
@@ -169,77 +189,168 @@ async function verifyPlaces(places) {
     duplicateExcludedCount: 0,
     unavailableCount: 0,
     emailMismatchCount: 0,
+    workerExceptionCount: 0,
+    deadlineExceeded: false,
+    maxObservedWebsiteConcurrency: 0,
+    maxObservedSameDomainConcurrency: 0,
     eligible: []
   };
   const seen = buildSeenSets();
-  for (const place of places) {
-    if (summary.websiteRequestCount >= maxWebsiteRequests || summary.eligible.length >= targetCount) break;
+  const started = new Set();
+  const activeDomains = new Map();
+  const deadlineAt = Date.now() + maxVerificationDurationMs;
+  let activeWorkers = 0;
+  let completedSinceProgress = 0;
+  let lastProgressAt = Date.now();
+
+  async function worker() {
+    while (true) {
+      const place = nextPlace();
+      if (!place) return;
+      const domain = sourceDomain({ sourceUrl: place.websiteUri }) || String(place.id || '');
+      activeWorkers += 1;
+      activeDomains.set(domain, Number(activeDomains.get(domain) || 0) + 1);
+      summary.maxObservedWebsiteConcurrency = Math.max(summary.maxObservedWebsiteConcurrency, activeWorkers);
+      summary.maxObservedSameDomainConcurrency = Math.max(summary.maxObservedSameDomainConcurrency, Number(activeDomains.get(domain) || 0));
+      try {
+        await verifyOnePlace(place);
+      } catch {
+        summary.workerExceptionCount += 1;
+        summary.unavailableCount += 1;
+      } finally {
+        activeWorkers -= 1;
+        activeDomains.set(domain, Number(activeDomains.get(domain) || 1) - 1);
+        if (Number(activeDomains.get(domain) || 0) <= 0) activeDomains.delete(domain);
+        completedSinceProgress += 1;
+        maybeLogProgress(activeWorkers);
+      }
+    }
+  }
+
+  function nextPlace() {
+    if (summary.eligible.length >= targetCount) return null;
+    if (summary.websiteRequestCount >= maxWebsiteRequests) return null;
+    if (Date.now() >= deadlineAt) {
+      summary.deadlineExceeded = true;
+      return null;
+    }
+    for (const place of orderedPlaces) {
+      if (started.has(place.id)) continue;
+      const domain = sourceDomain({ sourceUrl: place.websiteUri }) || String(place.id || '');
+      if (activeDomains.has(domain)) continue;
+      started.add(place.id);
+      return place;
+    }
+    return null;
+  }
+
+  async function verifyOnePlace(place) {
     if (isChainBusiness(place)) {
       summary.duplicateExcludedCount += 1;
-      continue;
+      return;
     }
-    const website = await inspectWebsite(place);
+    const website = await inspectWebsite(place, {
+      deadlineAt,
+      takeRequest: () => {
+        if (summary.websiteRequestCount >= maxWebsiteRequests) return false;
+        if (Date.now() >= deadlineAt) {
+          summary.deadlineExceeded = true;
+          return false;
+        }
+        summary.websiteRequestCount += 1;
+        return true;
+      }
+    });
     summary.websitesChecked += 1;
-    summary.websiteRequestCount += website.requestCount;
+    if (website.deadlineExceeded) summary.deadlineExceeded = true;
     if (!website.ok) {
       if (website.reasonCode === 'sales_prohibited') summary.salesProhibitedExcludedCount += 1;
       else summary.unavailableCount += 1;
-      continue;
+      return;
     }
     if (!website.email) {
       summary.unavailableCount += 1;
-      continue;
+      return;
     }
     summary.publicEmailFound += 1;
     if (!domainsRelated(website.email.split('@')[1], sourceDomain({ sourceUrl: place.websiteUri })) && !website.pageContainedEmail) {
       summary.emailMismatchCount += 1;
-      continue;
+      return;
     }
     const mx = await checkMx(website.email.split('@')[1]);
     if (!mx) {
       summary.mxMissingCount += 1;
-      continue;
+      return;
     }
     const candidate = buildCandidate(place, website.email);
     const exclusion = exclusionReason(candidate, seen);
     if (exclusion === 'suppression') summary.suppressionExcludedCount += 1;
     if (exclusion === 'history') summary.historyExcludedCount += 1;
     if (exclusion === 'duplicate') summary.duplicateExcludedCount += 1;
-    if (exclusion) continue;
+    if (exclusion) return;
     markSeen(candidate, seen);
     summary.eligible.push(candidate);
   }
+
+  function maybeLogProgress(currentActiveWorkers) {
+    const now = Date.now();
+    if (completedSinceProgress < 20 && now - lastProgressAt < 60000) return;
+    completedSinceProgress = 0;
+    lastProgressAt = now;
+    process.stderr.write(JSON.stringify({
+      event: 'gmail_prospect_verification_progress',
+      elapsedSeconds: Math.round((now - (deadlineAt - maxVerificationDurationMs)) / 1000),
+      websitesChecked: summary.websitesChecked,
+      websiteRequestCount: summary.websiteRequestCount,
+      publicEmailFound: summary.publicEmailFound,
+      strictEligibleCandidateCount: summary.eligible.length,
+      unavailableCount: summary.unavailableCount,
+      activeWorkers: currentActiveWorkers,
+      queuedRemaining: Math.max(0, orderedPlaces.length - started.size),
+      providerRequestCount: placesSummary.providerRequestCount
+    }) + '\n');
+  }
+
+  await Promise.all(Array.from({ length: Math.max(1, websiteConcurrency) }, () => worker()));
   return summary;
 }
 
-async function inspectWebsite(place) {
-  if (mock) return mockInspectWebsite(place);
+async function inspectWebsite(place, controls = {}) {
+  if (mock) {
+    if (!controls.takeRequest || !controls.takeRequest()) {
+      return { ok: false, reasonCode: 'website_request_budget_exhausted', deadlineExceeded: Date.now() >= Number(controls.deadlineAt || 0) };
+    }
+    return mockInspectWebsite(place);
+  }
   const urls = candidateWebsiteUrls(place.websiteUri);
-  let requestCount = 0;
   for (const url of urls.slice(0, 4)) {
-    requestCount += 1;
+    if (!controls.takeRequest || !controls.takeRequest()) {
+      return { ok: false, reasonCode: 'website_request_budget_exhausted', deadlineExceeded: Date.now() >= Number(controls.deadlineAt || 0) };
+    }
     try {
-      const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(10000), headers: { 'user-agent': 'ICHI-Social-public-contact-verifier/1.0' } });
+      const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(requestTimeoutMs), headers: { 'user-agent': 'ICHI-Social-public-contact-verifier/1.0' } });
       if (!response.ok) continue;
       const text = (await response.text()).slice(0, 250000);
-      if (salesProhibited(text)) return { ok: false, reasonCode: 'sales_prohibited', requestCount };
+      if (salesProhibited(text)) return { ok: false, reasonCode: 'sales_prohibited' };
       const email = extractPublicEmail(text);
-      if (email) return { ok: true, email, pageContainedEmail: true, requestCount };
+      if (email) return { ok: true, email, pageContainedEmail: true };
     } catch {
       // Try the next public page candidate.
     }
   }
-  return { ok: false, reasonCode: 'email_missing', requestCount };
+  return { ok: false, reasonCode: 'email_missing' };
 }
 
-function mockInspectWebsite(place) {
+async function mockInspectWebsite(place) {
+  if (mockDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, mockDelayMs));
   const id = String(place.id || '');
-  if (id.includes('http-failure')) return { ok: false, reasonCode: 'http_failure', requestCount: 1 };
-  if (id.includes('sales-ng')) return { ok: false, reasonCode: 'sales_prohibited', requestCount: 1 };
-  if (id.includes('email-missing')) return { ok: false, reasonCode: 'email_missing', requestCount: 1 };
+  if (id.includes('deadline')) return { ok: false, reasonCode: 'website_verification_deadline_exceeded', deadlineExceeded: true };
+  if (id.includes('http-failure')) return { ok: false, reasonCode: 'http_failure' };
+  if (id.includes('sales-ng')) return { ok: false, reasonCode: 'sales_prohibited' };
+  if (id.includes('email-missing')) return { ok: false, reasonCode: 'email_missing' };
   const domain = new URL(place.websiteUri).hostname;
   const local = id.includes('nomx') ? 'nomx' : 'contact';
-  return { ok: true, email: `${local}@${domain}`, pageContainedEmail: true, requestCount: 1 };
+  return { ok: true, email: `${local}@${domain}`, pageContainedEmail: true };
 }
 
 function candidateWebsiteUrls(value) {
