@@ -1137,6 +1137,67 @@ const scenarios = [
     assert.equal(env.propertyWriteCount, 0);
     assert.equal(env.triggerWriteCount, 0);
   }],
+  ['normal daily source sync writes only dedicated source tab and configures property', (env) => {
+    env.entry = 'dailySourceSyncWebhook';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.sheetSyncPayload = buildDailySourceSyncPayload(env, 45);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sourceRowsWritten, 45);
+    assert.equal(result.sourceRowsReadBack, 45);
+    assert.equal(result.sourceDigestMatch, true);
+    assert.equal(result.propertyConfigured, true);
+    assert.equal(env.props.GMAIL_DAILY_SOURCE_TAB_NAME, 'Gmail営業候補プール');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+    assert.equal(env.workbook.sheets.sales.rows.length, 31);
+  }],
+  ['normal daily source sync rejects source rows below minimum without writes', (env) => {
+    env.entry = 'dailySourceSyncWebhook';
+    env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+    env.sheetSyncPayload = buildDailySourceSyncPayload(env, 29);
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason.includes('source_row_count_below_minimum'), true);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['future arm succeeds after source sync without sending or trigger changes', (env) => {
+    env.entry = 'dailyFutureArm';
+    installDailyFutureArmReadyState(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'armed', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.armedForDate, '2026-06-23');
+    assert.equal(result.sourceRowsReadBack, 45);
+    assert.equal(result.propertyWriteCount, 1);
+    assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'true');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'true');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['future arm is idempotent once armed', (env) => {
+    env.entry = 'dailyFutureArm';
+    installDailyFutureArmReadyState(env);
+    env.afterRun = () => {
+      env.secondResult = env.context.armGmailSalesDailyAutomationForFutureRunsOnce();
+    };
+  }, (env, result) => {
+    assert.equal(result.status, 'armed');
+    assert.equal(env.secondResult.status, 'already_armed');
+    assert.equal(env.secondResult.propertyWriteCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['future arm rejects insufficient source rows', (env) => {
+    env.entry = 'dailyFutureArm';
+    installDailyFutureArmReadyState(env);
+    env.workbook.sheets['Gmail営業候補プール'].rows = [OUTBOX_HEADERS, ...Array.from({ length: 29 }, (_, index) => outboxRowToCells(buildSourceOutboxRow(index + 1)))];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason.includes('source_rows_below_recommended'), true);
+    assert.equal(env.mailSendCount, 0);
+  }],
   ['automatic strict manifest is accepted by normal pre-send', (env) => {
     env.manifest = buildAutomaticDailyManifest(env);
     env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
@@ -1804,6 +1865,7 @@ function runEntry(env) {
   if (env.entry === 'dailyActivate') return env.context.activateGmailSalesDailyAutomationOnce();
   if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
   if (env.entry === 'dailyCatchUp') return env.context.activateAndRunGmailSalesDailyCatchUpOnce();
+  if (env.entry === 'dailyFutureArm') return env.context.armGmailSalesDailyAutomationForFutureRunsOnce();
   if (env.entry === 'sheetSyncConnectedDryRun' || env.entry === 'sheetSyncReadOnlySnapshot') {
     if (env.entry === 'sheetSyncReadOnlySnapshot') {
       env.sheetSyncPayload.action = 'read_only_snapshot';
@@ -1837,6 +1899,12 @@ function runEntry(env) {
     return { first, second };
   }
   if (env.entry === 'dailySourceReadWebhook') {
+    const output = env.context.handleGmailOutboxSheetSync_({
+      postData: { contents: JSON.stringify(env.sheetSyncPayload) }
+    });
+    return JSON.parse(output.text);
+  }
+  if (env.entry === 'dailySourceSyncWebhook') {
     const output = env.context.handleGmailOutboxSheetSync_({
       postData: { contents: JSON.stringify(env.sheetSyncPayload) }
     });
@@ -1920,6 +1988,16 @@ function buildOutboxRow(index) {
     lastCheckedAt: '',
     notes: ''
   };
+}
+
+function buildSourceOutboxRow(index) {
+  return Object.assign({}, buildOutboxRow(index), {
+    sendDate: '',
+    nextActionDate: '',
+    sendBatchId: '',
+    lastCheckedAt: '2026-06-22T00:00:00+09:00',
+    notes: 'verified normal daily source'
+  });
 }
 
 function buildRecoveryOutboxRow() {
@@ -2072,6 +2150,43 @@ function buildDailySourceReadPayload(env) {
   return payload;
 }
 
+function buildDailySourceSyncPayload(env, count) {
+  const rows = Array.from({ length: count }, (_, index) => outboxRowToCells(buildSourceOutboxRow(index + 1)));
+  const payload = {
+    action: 'sync_normal_daily_source',
+    mode: 'normal_daily',
+    sourceType: 'normal_daily_source',
+    sourceVerificationStatus: 'verified_only',
+    dryRun: false,
+    automationVersion: 'normal-daily-v1',
+    autoApprovalPolicyVersion: 'automatic-strict-gate-v1',
+    targetDate: '2026-06-22',
+    sendDate: '2026-06-22',
+    sendBatchId: 'gmail-sales-2026-06-22',
+    sourceTabName: 'Gmail営業候補プール',
+    candidateCount: rows.length,
+    verifiedCandidateCount: rows.length,
+    headers: OUTBOX_HEADERS.slice(),
+    rows,
+    requestId: `runtime-daily-source-sync-${crypto.randomBytes(4).toString('hex')}`,
+    timestamp: new Date().toISOString(),
+    nonce: `nonce-${crypto.randomBytes(4).toString('hex')}`
+  };
+  payload.bodyDigest = sha256(webhookBodyMaterial(payload));
+  payload.signature = crypto
+    .createHmac('sha256', env.props.GMAIL_AUTOMATION_SHARED_SECRET)
+    .update([
+      payload.timestamp,
+      payload.nonce,
+      payload.requestId,
+      payload.action,
+      payload.targetDate,
+      payload.bodyDigest
+    ].join('\n'))
+    .digest('hex');
+  return payload;
+}
+
 function installDailyActivationReadyState(env) {
   env.nowIso = '2026-06-22T03:00:00.000Z';
   const config = env.context.getConfig_();
@@ -2141,6 +2256,34 @@ function installDailyCatchUpReadyState(env) {
   });
 }
 
+function installDailyFutureArmReadyState(env) {
+  env.nowIso = '2026-06-22T13:00:00.000Z';
+  env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+  env.props.AUTOMATION_MASTER_ENABLED = 'false';
+  env.props.AUTO_SEND_ENABLED = 'false';
+  env.props.LIVE_SEND_ENABLED = 'false';
+  env.props.GMAIL_DAILY_SOURCE_TAB_NAME = 'Gmail営業候補プール';
+  env.props.GMAIL_SALES_SEND_WINDOW_START = '11:45';
+  env.props.GMAIL_SALES_SEND_WINDOW_END = '12:45';
+  env.props.ALLOWED_SEND_END_HOUR = '12';
+  env.props.ALLOWED_SEND_END_MINUTE = '45';
+  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
+    OUTBOX_HEADERS,
+    ...Array.from({ length: 45 }, (_, index) => outboxRowToCells(buildSourceOutboxRow(index + 1)))
+  ]);
+  env.workbook.sheets['Gmail営業候補プール'].env = env;
+  env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+    targetDate: '',
+    mode: 'normal_daily',
+    state: 'not_started',
+    sendAttemptCount: 0,
+    actualSendCount: 0,
+    resultUnknown: false,
+    automationVersion: 'normal-daily-v1'
+  });
+}
+
 function buildAutomaticDailyManifest(env) {
   const digests = env.rows.map((row) => env.context.computeCandidateDigest_(row, TARGET_DATE, BATCH_ID));
   const manifest = {
@@ -2186,6 +2329,23 @@ function webhookBodyMaterial(payload) {
       cursor: payload.cursor,
       mode: payload.mode,
       sourceType: payload.sourceType,
+      automationVersion: payload.automationVersion,
+      autoApprovalPolicyVersion: payload.autoApprovalPolicyVersion
+    });
+  }
+  if (payload.action === 'sync_normal_daily_source') {
+    return JSON.stringify({
+      action: payload.action,
+      targetDate: payload.targetDate,
+      sourceTabName: payload.sourceTabName,
+      candidateCount: payload.candidateCount,
+      verifiedCandidateCount: payload.verifiedCandidateCount,
+      sourceVerificationStatus: payload.sourceVerificationStatus,
+      headers: payload.headers,
+      rows: payload.rows,
+      mode: payload.mode,
+      sourceType: payload.sourceType,
+      dryRun: payload.dryRun,
       automationVersion: payload.automationVersion,
       autoApprovalPolicyVersion: payload.autoApprovalPolicyVersion
     });

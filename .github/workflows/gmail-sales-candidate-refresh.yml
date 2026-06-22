@@ -1,0 +1,66 @@
+name: Gmail sales candidate refresh
+
+on:
+  schedule:
+    - cron: "30 20 * * *"
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Target date in YYYY-MM-DD. Empty means JST today."
+        required: false
+        type: string
+
+concurrency:
+  group: gmail-sales-candidate-refresh-${{ inputs.target_date || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GMAIL_SALES_AUTOMATION_VERSION: ${{ vars.GMAIL_SALES_AUTOMATION_VERSION }}
+      GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: ${{ vars.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION }}
+      CANDIDATE_DISCOVERY_PROVIDER: ${{ vars.GMAIL_CANDIDATE_DISCOVERY_PROVIDER }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Safety tests
+        run: |
+          npm run lint
+          npm run gmail:pool:refresh:test
+          npm run gmail:sales:send-safety:test
+
+      - name: Check candidate discovery provider
+        run: |
+          if [ -z "$CANDIDATE_DISCOVERY_PROVIDER" ]; then
+            echo '{"status":"blocked","errorCode":"candidate_discovery_provider_unconfigured"}'
+            exit 1
+          fi
+          echo "Candidate discovery provider configured"
+
+      - name: Refresh verified source candidates
+        env:
+          GMAIL_APPS_SCRIPT_WEBHOOK_URL: ${{ secrets.GMAIL_APPS_SCRIPT_WEBHOOK_URL }}
+          GMAIL_AUTOMATION_SHARED_SECRET: ${{ secrets.GMAIL_AUTOMATION_SHARED_SECRET }}
+        run: |
+          TARGET_DATE="${{ inputs.target_date }}"
+          if [ -z "$TARGET_DATE" ]; then
+            TARGET_DATE="$(TZ=Asia/Tokyo date +%F)"
+          fi
+          node scripts/gmail/refresh-gmail-candidate-pool.mjs --date "$TARGET_DATE" --pool data/gmail/pool/gmail-ready-candidate-pool.json --required-fresh-count 45 --max-candidates 130 --concurrency 5 --request-timeout-ms 12000 --dry-run
+          npm run gmail:source:sync -- --date "$TARGET_DATE" --dry-run

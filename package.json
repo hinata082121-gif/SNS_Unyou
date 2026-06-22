@@ -17,6 +17,8 @@
     "gmail:pool:validate": "node scripts/gmail/validate-gmail-pool.mjs",
     "gmail:pool:refresh": "node scripts/gmail/refresh-gmail-candidate-pool.mjs",
     "gmail:pool:refresh:test": "node scripts/gmail/test-refresh-gmail-candidate-pool.mjs",
+    "gmail:source:sync": "node scripts/gmail/sync-normal-daily-source.mjs",
+    "gmail:source:sync:test": "node scripts/gmail/test-sync-normal-daily-source.mjs",
     "gmail:pool:merge": "node scripts/gmail/merge-gmail-candidate-pool.mjs",
     "gmail:pool:merge:test": "node scripts/gmail/test-merge-gmail-candidate-pool.mjs",
     "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs",
