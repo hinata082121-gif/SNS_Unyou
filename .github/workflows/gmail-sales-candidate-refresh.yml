@@ -21,7 +21,7 @@ jobs:
   refresh:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       GMAIL_SALES_AUTOMATION_VERSION: ${{ vars.GMAIL_SALES_AUTOMATION_VERSION }}
       GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION: ${{ vars.GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION }}
@@ -43,18 +43,23 @@ jobs:
         run: |
           npm run lint
           npm run gmail:pool:refresh:test
+          npm run gmail:prospects:discover:test
+          npm run gmail:source:sync:test
           npm run gmail:sales:send-safety:test
 
       - name: Check candidate discovery provider
+        env:
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
         run: |
-          if [ -z "$CANDIDATE_DISCOVERY_PROVIDER" ]; then
+          if [ "$CANDIDATE_DISCOVERY_PROVIDER" != "google_places" ]; then
             echo '{"status":"blocked","errorCode":"candidate_discovery_provider_unconfigured"}'
             exit 1
           fi
-          echo "Candidate discovery provider configured"
+          test -n "$GOOGLE_PLACES_API_KEY"
 
       - name: Refresh verified source candidates
         env:
+          GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
           GMAIL_APPS_SCRIPT_WEBHOOK_URL: ${{ secrets.GMAIL_APPS_SCRIPT_WEBHOOK_URL }}
           GMAIL_AUTOMATION_SHARED_SECRET: ${{ secrets.GMAIL_AUTOMATION_SHARED_SECRET }}
         run: |
@@ -62,5 +67,9 @@ jobs:
           if [ -z "$TARGET_DATE" ]; then
             TARGET_DATE="$(TZ=Asia/Tokyo date +%F)"
           fi
-          node scripts/gmail/refresh-gmail-candidate-pool.mjs --date "$TARGET_DATE" --pool data/gmail/pool/gmail-ready-candidate-pool.json --required-fresh-count 45 --max-candidates 130 --concurrency 5 --request-timeout-ms 12000 --dry-run
-          npm run gmail:source:sync -- --date "$TARGET_DATE" --dry-run
+          OUTPUT="${RUNNER_TEMP}/gmail-candidate-refresh/${TARGET_DATE}-verified-candidates.json"
+          mkdir -p "$(dirname "$OUTPUT")"
+          npm run gmail:prospects:discover -- --provider google_places --date "$TARGET_DATE" --required-count 45 --target-count 90 --max-provider-requests 30 --dry-run
+          npm run gmail:prospects:discover -- --provider google_places --date "$TARGET_DATE" --required-count 45 --target-count 90 --max-provider-requests 30 --write --output "$OUTPUT"
+          npm run gmail:source:sync -- --date "$TARGET_DATE" --input "$OUTPUT" --write
+          rm -rf "${RUNNER_TEMP}/gmail-candidate-refresh"

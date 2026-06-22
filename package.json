@@ -19,6 +19,8 @@
     "gmail:pool:refresh:test": "node scripts/gmail/test-refresh-gmail-candidate-pool.mjs",
     "gmail:source:sync": "node scripts/gmail/sync-normal-daily-source.mjs",
     "gmail:source:sync:test": "node scripts/gmail/test-sync-normal-daily-source.mjs",
+    "gmail:prospects:discover": "node scripts/gmail/discover-fresh-gmail-prospects.mjs",
+    "gmail:prospects:discover:test": "node scripts/gmail/test-google-places-prospect-discovery.mjs",
     "gmail:pool:merge": "node scripts/gmail/merge-gmail-candidate-pool.mjs",
     "gmail:pool:merge:test": "node scripts/gmail/test-merge-gmail-candidate-pool.mjs",
     "gmail:outbox:select": "node scripts/gmail/select-daily-gmail-outbox.mjs",
