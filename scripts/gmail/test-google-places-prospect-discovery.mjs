@@ -7,6 +7,7 @@ import { GOOGLE_PLACES_TEXT_SEARCH_FIELD_MASK, buildDailyQueryPlan } from './pro
 const ROOT = process.cwd();
 const TMP = path.join(ROOT, 'tmp', 'gmail-google-places-discovery-test');
 const DATE = '2099-06-23';
+const workflowText = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'gmail-sales-candidate-refresh.yml'), 'utf8');
 
 fs.rmSync(TMP, { recursive: true, force: true });
 fs.mkdirSync(TMP, { recursive: true });
@@ -15,6 +16,14 @@ assert.equal(GOOGLE_PLACES_TEXT_SEARCH_FIELD_MASK.includes('*'), false);
 assert.equal(GOOGLE_PLACES_TEXT_SEARCH_FIELD_MASK.includes('reviews'), false);
 assert.equal(GOOGLE_PLACES_TEXT_SEARCH_FIELD_MASK.includes('photos'), false);
 assert.equal(buildDailyQueryPlan({ dateText: DATE }).length, 15);
+assert.equal((workflowText.match(/gmail:prospects:discover --/g) || []).length, 1);
+assert.equal(workflowText.includes('--dry-run'), false);
+assert.equal(workflowText.includes('--write --output "$OUTPUT"'), true);
+assert.equal(workflowText.includes('providerRequestCount'), true);
+assert.equal(workflowText.includes('strictEligibleCandidateCount'), true);
+assert.equal(workflowText.includes('fs.existsSync(process.argv[2])'), true);
+assert.equal(workflowText.includes('npm run gmail:source:sync -- --date "$TARGET_DATE" --input "$OUTPUT" --write'), true);
+assert.equal(workflowText.includes("trap 'rm -rf"), true);
 
 const unconfigured = runDiscoverAllowFailure(['--provider', 'google_places', '--date', DATE, '--required-count', '45', '--target-count', '90', '--dry-run']);
 assert.equal(unconfigured.status, 1);
@@ -66,7 +75,7 @@ assert.equal(raw.includes('Mock '), false);
 assert.equal(raw.includes('mock address'), false);
 
 console.log(JSON.stringify({
-  googlePlacesDiscoveryTestCount: 25,
+  googlePlacesDiscoveryTestCount: 32,
   passed: true,
   realNetworkRequestCount: 0,
   gmailSendExecuted: false,
