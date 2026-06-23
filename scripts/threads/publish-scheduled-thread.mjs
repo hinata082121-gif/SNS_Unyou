@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { loadLocalEnv } from "../lib/load-local-env.mjs";
 import { validateThreadsMedia } from "./lib/media-validation.mjs";
+import { writePublishedLogAtomic } from "./lib/published-log-writer.mjs";
 import { publishThread } from "./lib/threads-api-client.mjs";
 
 loadLocalEnv();
@@ -74,7 +75,8 @@ const result = {
   blockedReason: "",
   postIdPresent: false,
   postIdHash: "",
-  errorSummary: ""
+  errorSummary: "",
+  localLogWriteFailed: false
 };
 
 if (alreadyPublished) {
@@ -147,7 +149,9 @@ if (alreadyPublished) {
   }
 }
 
-writeSafePublishLog(result);
+const logWrite = writeSafePublishLog(result);
+result.localLogWriteFailed = !logWrite.ok;
+if (!logWrite.ok && !result.errorSummary) result.errorSummary = "local_log_write_failed";
 console.log(JSON.stringify(result));
 process.exit(result.ok ? 0 : 1);
 
@@ -312,45 +316,12 @@ function findSection(source, heading, nextHeadingPattern) {
 }
 
 function writeSafePublishLog(value) {
-  const safe = {
-    ok: value.ok,
-    commandReached: value.commandReached,
-    slot: value.slot,
-    postDate: value.postDate,
-    publishEnabled: value.publishEnabled,
-    dryRun: value.dryRun,
-    insideSlotWindow: value.insideSlotWindow,
-    apiConfigured: value.apiConfigured,
-    planEnsured: value.planEnsured,
-    planGenerated: value.planGenerated,
-    postPrepared: value.postPrepared,
-    postValidated: value.postValidated,
-    mediaType: value.mediaType,
-    mediaItemCount: value.mediaItemCount,
-    contentPillar: value.contentPillar,
-    format: value.format,
-    hookType: value.hookType,
-    targetIndustry: value.targetIndustry,
-    hasQuestion: value.hasQuestion,
-    hasCta: value.hasCta,
-    hasDirectSalesCta: value.hasDirectSalesCta,
-    textLengthBand: value.textLengthBand,
-    mediaValidated: value.mediaValidated,
-    mediaValidationErrorCount: value.mediaValidationErrorCount,
-    wouldPublish: value.wouldPublish,
-    published: value.published,
-    compensationPostExecuted: value.compensationPostExecuted,
-    blockedReason: value.blockedReason,
-    postIdPresent: value.postIdPresent,
-    postIdHash: value.postIdHash,
-    errorSummary: value.errorSummary
-  };
-  const outDir = path.join(process.cwd(), "data", "threads", "published");
-  fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(outDir, `${value.postDate}-${value.slot}.json`),
-    `${JSON.stringify(safe, null, 2)}\n`
-  );
+  try {
+    const logPath = path.join(process.cwd(), "data", "threads", "published", `${value.postDate}-${value.slot}.json`);
+    return writePublishedLogAtomic(logPath, value);
+  } catch {
+    return { ok: false, blockedReason: "local_log_write_failed" };
+  }
 }
 
 function jstDate(daysFromToday = 0) {

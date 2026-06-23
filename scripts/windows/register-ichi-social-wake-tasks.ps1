@@ -1,5 +1,7 @@
 param(
-  [string]$TaskPath = "\ICHI-Social\"
+  [string]$TaskPath = "\ICHI-Social\",
+  [ValidateSet("All", "Threads", "Gmail", "Gateway")]
+  [string]$Scope = "All"
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,6 +59,36 @@ function Register-ICHIWakeTask($Task) {
   }
 }
 
+function Test-TaskInScope($Task, [string]$SelectedScope) {
+  if ($SelectedScope -eq "All") { return $true }
+  if ($SelectedScope -eq "Threads") { return $Task.Name -like "ICHI-Threads-*" }
+  if ($SelectedScope -eq "Gmail") { return $Task.Name -like "ICHI-Gmail-*" }
+  if ($SelectedScope -eq "Gateway") { return $Task.Name -like "ICHI-Hermes-Gateway-*" }
+  return $false
+}
+
+function Get-RegisteredTaskSummary($Task) {
+  $registered = Get-ScheduledTask -TaskPath $TaskPath -TaskName $Task.Name -ErrorAction SilentlyContinue
+  if ($null -eq $registered) {
+    return [pscustomobject]@{
+      taskName = $Task.Name
+      found = $false
+      wakeToRun = $false
+      startWhenAvailable = $false
+      multipleInstances = ""
+      executionTimeLimit = ""
+    }
+  }
+  return [pscustomobject]@{
+    taskName = $Task.Name
+    found = $true
+    wakeToRun = [bool]$registered.Settings.WakeToRun
+    startWhenAvailable = [bool]$registered.Settings.StartWhenAvailable
+    multipleInstances = [string]$registered.Settings.MultipleInstances
+    executionTimeLimit = [string]$registered.Settings.ExecutionTimeLimit
+  }
+}
+
 $tasks = @(
   @{ Name="ICHI-Threads-Plan-1050"; Script="scripts\windows\tasks\threads-plan-check.ps1"; Arguments="-Slot 1100"; Trigger=(New-ScheduledTaskTrigger -Daily -At "10:50"); MaxMinutes=10; RestartMinutes=5; RestartCount=2; Wake=$true; Description="ICHI Social Threads 11:00 plan check. No secret/body logging." },
   @{ Name="ICHI-Threads-Post-1100"; Script="scripts\windows\tasks\threads-post-11.ps1"; Arguments=""; Trigger=(New-ScheduledTaskTrigger -Daily -At "11:00"); MaxMinutes=5; RestartMinutes=5; RestartCount=1; Wake=$true; Description="ICHI Social Threads 11:00 publish task with top-level time window and duplicate guard." },
@@ -77,16 +109,32 @@ $tasks = @(
   @{ Name="ICHI-Hermes-Gateway-Logon"; Script="scripts\windows\tasks\hermes-gateway-ensure.ps1"; Arguments=""; Trigger=(New-ScheduledTaskTrigger -AtLogOn); MaxMinutes=5; RestartMinutes=2; RestartCount=1; Wake=$false; Description="Ensure a single Hermes Gateway process at user logon." }
 )
 
-$results = foreach ($task in $tasks) {
+$targetTasks = @($tasks | Where-Object { Test-TaskInScope $_ $Scope })
+
+if ($targetTasks.Count -eq 0) {
+  throw "No tasks matched Scope=$Scope"
+}
+
+Write-Host "Registering ICHI Social scheduled tasks"
+Write-Host ("Scope: {0}" -f $Scope)
+Write-Host "Target tasks:"
+$targetTasks | ForEach-Object { Write-Host ("- {0}" -f $_.Name) }
+
+$results = foreach ($task in $targetTasks) {
   Register-ICHIWakeTask $task
 }
 
-& (Join-Path $PSScriptRoot "show-ichi-social-wake-task-status.ps1")
+$verification = foreach ($task in $targetTasks) {
+  Get-RegisteredTaskSummary $task
+}
 
 [pscustomobject]@{
-  expectedTaskCount = $tasks.Count
+  scope = $Scope
+  expectedTaskCount = $targetTasks.Count
+  targetTasks = @($targetTasks | ForEach-Object { [string]$_["Name"] })
   registeredCount = @($results | Where-Object registered).Count
   failedCount = @($results | Where-Object { -not $_.registered }).Count
   failedTasks = @($results | Where-Object { -not $_.registered } | Select-Object -ExpandProperty taskName)
+  verification = @($verification)
   note = "Gateway startup/logon tasks can require administrator registration on this Windows profile."
 } | ConvertTo-Json -Depth 4

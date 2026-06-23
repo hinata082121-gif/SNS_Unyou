@@ -66,6 +66,7 @@
     "threads:media:test": "node scripts/threads/test-media-validation.mjs",
     "threads:runner:test": "node scripts/threads/test-thread-runner-safety.mjs",
     "threads:api:test": "node scripts/threads/test-threads-api-timeout.mjs",
+    "threads:utf8:test": "node scripts/threads/test-published-log-utf8.mjs && python scripts/threads/test-runner-utf8.py && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/test-register-wake-task-scope.ps1",
     "threads:post:11": "node scripts/threads/publish-scheduled-thread.mjs --slot 11",
     "threads:post:19": "node scripts/threads/publish-scheduled-thread.mjs --slot 19",
     "threads:weekly:analyze": "node scripts/threads/weekly-viral-analysis.mjs",

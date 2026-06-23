@@ -8,6 +8,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = $utf8NoBom
+[Console]::OutputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
 
 function Get-SafeName([string]$Value) {
   return ($Value -replace '[^a-zA-Z0-9_.-]', '_')
@@ -23,7 +27,11 @@ function Redact-Text([string]$Value) {
 }
 
 function Write-JsonLog($Path, $Object) {
-  $Object | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding UTF8
+  Write-Utf8NoBomText $Path ($Object | ConvertTo-Json -Depth 8)
+}
+
+function Write-Utf8NoBomText([string]$Path, [string]$Value) {
+  [System.IO.File]::WriteAllText($Path, $Value, $utf8NoBom)
 }
 
 $safeTaskName = Get-SafeName $TaskName
@@ -89,7 +97,7 @@ if (Test-Path -LiteralPath $lockPath) {
   Remove-Item -LiteralPath $lockPath -Force
 }
 
-Set-Content -LiteralPath $lockPath -Value $PID -Encoding ASCII
+[System.IO.File]::WriteAllText($lockPath, [string]$PID, [System.Text.ASCIIEncoding]::new())
 $stdoutPath = Join-Path $logDir ("{0}-{1}.stdout.log" -f $safeTaskName, $startedAt.ToString("yyyyMMdd-HHmmss"))
 $stderrPath = Join-Path $logDir ("{0}-{1}.stderr.log" -f $safeTaskName, $startedAt.ToString("yyyyMMdd-HHmmss"))
 
@@ -114,7 +122,9 @@ try {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     $exitCode = 124
   } else {
-    $exitCode = $process.ExitCode
+    $process.WaitForExit()
+    $process.Refresh()
+    $exitCode = [int]$process.ExitCode
   }
 } finally {
   Pop-Location -ErrorAction SilentlyContinue
@@ -122,12 +132,12 @@ try {
 }
 
 $finishedAt = Get-Date
-$stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw } else { "" }
-$stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { "" }
+$stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8 } else { "" }
+$stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8 } else { "" }
 $safeStdout = Redact-Text $stdout
 $safeStderr = Redact-Text $stderr
-Set-Content -LiteralPath $stdoutPath -Value $safeStdout -Encoding UTF8
-Set-Content -LiteralPath $stderrPath -Value $safeStderr -Encoding UTF8
+Write-Utf8NoBomText $stdoutPath $safeStdout
+Write-Utf8NoBomText $stderrPath $safeStderr
 
 Write-JsonLog $logPath @{
   taskName = $TaskName

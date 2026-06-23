@@ -86,16 +86,21 @@ def main():
         ]
         env = os.environ.copy()
         env["THREADS_NOW_ISO"] = now.astimezone(JST).isoformat()
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
         completed = run_child(command, root, env, args.node_timeout_seconds)
         summary["nodeExitCode"] = completed["exitCode"]
         summary["timedOut"] = completed["timedOut"]
         summary["processAborted"] = completed["processAborted"]
+        summary["decodeFailed"] = completed.get("decodeFailed", False)
         child = parse_last_json(completed["stdout"])
         for key, value in child.items():
             if key in SAFE_CHILD_KEYS:
                 summary[key] = value
         if completed["timedOut"]:
             return finish(root, summary, 124, "node_runner_timeout")
+        if completed.get("decodeFailed"):
+            return finish(root, summary, 125, "node_output_decode_failed")
         if completed["exitCode"] != 0 and not summary.get("blockedReason"):
             return finish(root, summary, completed["exitCode"], "node_runner_failed")
         summary["ok"] = completed["exitCode"] == 0 and summary.get("ok") is not False
@@ -203,6 +208,8 @@ def run_child(command, root, env, timeout_seconds):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         shell=False,
     )
     try:
@@ -214,9 +221,22 @@ def run_child(command, root, env, timeout_seconds):
             "timedOut": False,
             "processAborted": False,
         }
+    except UnicodeError:
+        terminate_tree(process.pid)
+        return {
+            "exitCode": 125,
+            "stdout": "",
+            "stderr": "",
+            "timedOut": False,
+            "processAborted": True,
+            "decodeFailed": True,
+        }
     except subprocess.TimeoutExpired:
         terminate_tree(process.pid)
-        stdout, stderr = process.communicate(timeout=5)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except UnicodeError:
+            stdout, stderr = "", ""
         return {
             "exitCode": 124,
             "stdout": stdout,
