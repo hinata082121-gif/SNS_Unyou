@@ -140,7 +140,7 @@ export const THREADS_CONTENT_BANK = [
 function entry({ format, contentPillar, hookType, tone, theme, targetIndustry, text, hasDirectSalesCta = false }) {
   return {
     theme,
-    text,
+    text: expandText(text, format),
     cta: "",
     contentPillar,
     format,
@@ -151,6 +151,22 @@ function entry({ format, contentPillar, hookType, tone, theme, targetIndustry, t
     hasDirectSalesCta,
     media: { type: "none", items: [] }
   };
+}
+
+function expandText(text, format) {
+  if (String(text).length >= 70) return text;
+  const suffixByFormat = {
+    sns_tip: " 言い方を少し変えるだけで、見え方はちゃんと変わります。",
+    rewrite_demo: " 悩みを場面に寄せると、読み手が自分ごとにしやすいです。",
+    shop_sns_aruaru: " こういう小さな違和感、店舗SNSではかなり起きます。",
+    humorous_observation: " 少し笑えるけど、投稿づくりではけっこう大事です。",
+    behind_the_scenes: " こういう細かい調整を、投稿前にかなり見ています。",
+    honest_opinion: " きれいに言い切らない方が、伝わる日もあります。",
+    quick_fix: " まずはここだけ直す、くらいが続けやすいです。",
+    specific_question: " 答えやすい問いにすると、会話の入口になります。",
+    soft_showcase: " 情報は同じでも、雰囲気まで少し伝えられます。"
+  };
+  return `${text}${suffixByFormat[format] || " 少しだけ言い方を変えると、伝わり方が変わります。"}`;
 }
 
 function pillarForFormat(format) {
