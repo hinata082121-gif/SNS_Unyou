@@ -61,7 +61,7 @@ function inspectPlan(date) {
       ? plan.posts.map((post) => normalizeSlot(post.time)).filter(Boolean)
       : [];
     const strategyReady = Array.isArray(plan.posts)
-      ? plan.posts.every((post) => post.pillar && post.hookType && post.slotRole)
+      ? plan.posts.every((post) => post.contentPillar && post.format && post.hookType && post.slotRole)
       : false;
     return {
       ok: slotsPrepared.includes("11") && slotsPrepared.includes("19") && strategyReady,

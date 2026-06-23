@@ -11,9 +11,24 @@
     "実際の整理例はプロフィールのInstagramから確認できます。",
     "画像で見返したい方向けにInstagramにも掲載しています。"
   ],
+  "tonePolicy": {
+    "style": "casual_practical",
+    "professionalism": "friendly",
+    "emojiMaxPerPost": 1,
+    "avoidLectureTone": true,
+    "avoidContinuousSalesCta": true
+  },
+  "contentMix": {
+    "snsTip": 0.3,
+    "rewriteDemo": 0.25,
+    "humorAndAruaru": 0.2,
+    "behindTheScenes": 0.1,
+    "quickFix": 0.1,
+    "promotion": 0.05
+  },
   "ctaFrequencyPolicy": {
-    "targetMinRatio": 0.25,
-    "targetMaxRatio": 0.4,
+    "targetMinRatio": 0.05,
+    "targetMaxRatio": 0.15,
     "allowedSlots": ["19:00"],
     "disallowConsecutiveSameCta": true,
     "requireStandaloneValue": true,

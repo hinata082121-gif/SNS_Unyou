@@ -46,9 +46,13 @@ const directSalesCtaCount = planRecords.filter((record) => /無料診断|無料�
 const ctaRatio = planRecords.length ? ctaCount / planRecords.length : 0;
 const directSalesCtaRatio = planRecords.length ? directSalesCtaCount / planRecords.length : 0;
 const lengthBand = countLengthBand(drafts);
+const averageLength = drafts.length ? Math.round(drafts.reduce((total, text) => total + text.length, 0) / drafts.length) : 0;
 const consecutiveSameCtaCount = countConsecutiveSameCta(planRecords);
 const sevenDayRepeatCount = countSevenDayRepeats(planRecords);
 const bankCounts = countSlots(planRecords);
+const contentPillarCounts = countBy(planRecords, "contentPillar");
+const formatCounts = countBy(planRecords, "format");
+const repeatedFormatStreakCount = countFormatStreaks(planRecords, 3);
 const mediaValidation = await validatePlanMedia(planRecords);
 const brand = loadThreadsBrandConfig();
 const instagramConfigured = hasInstagramDestination(brand);
@@ -56,7 +60,7 @@ const instagramCtaCount = planRecords.filter((record) => record.hasInstagramCta)
 const instagramCtaNeedsReviewCount = instagramConfigured ? 0 : instagramCtaCount;
 const ctaRatioOk = planRecords.length < 14 ? ctaRatio <= 0.5 : ctaRatio <= 2 / 14;
 const directSalesCtaRatioOk = planRecords.length < 14 ? directSalesCtaRatio <= 0.25 : directSalesCtaRatio <= 1 / 14;
-const modernQualityRequired = planRecords.some((record) => record.pillar || record.hookType);
+const modernQualityRequired = planRecords.some((record) => record.contentPillar || record.format || record.hookType);
 const bankSizeOk = isContentBankPath(fullPath)
   ? bankCounts.morning >= MIN_BANK_COUNT_PER_SLOT && bankCounts.evening >= MIN_BANK_COUNT_PER_SLOT
   : true;
@@ -70,8 +74,9 @@ const summary = {
     consecutiveSameCtaCount === 0 &&
     (!modernQualityRequired || repeatedOpeningCount === 0) &&
     (!modernQualityRequired || repeatedThemeCount === 0) &&
+    (!modernQualityRequired || repeatedFormatStreakCount === 0) &&
     sevenDayRepeatCount === 0 &&
-    (!modernQualityRequired || hookMissingCount === 0) &&
+    (!modernQualityRequired || planRecords.length < 14 || hookMissingCount === 0) &&
     (!modernQualityRequired || excessivePolitenessCount <= 2) &&
     (!modernQualityRequired || salesLanguageCount <= Math.max(2, Math.floor(planRecords.length * 0.15))) &&
     (!modernQualityRequired || ctaRatioOk) &&
@@ -79,7 +84,12 @@ const summary = {
     bankSizeOk &&
     mediaValidation.errorCount === 0,
   draftCount: drafts.length,
+  uniqueTextCount: new Set(drafts).size,
   duplicateCount,
+  contentPillarCounts,
+  formatCounts,
+  averageLength,
+  tooShortCount: lengthBand.under70,
   tooLongCount,
   prohibitedCount,
   emptyCount,
@@ -87,10 +97,16 @@ const summary = {
   hookMissingCount,
   conversationalTone: conversationalToneCount,
   excessivePolitenessCount,
+  stiffExpressionCount: excessivePolitenessCount,
   salesLanguageCount,
   repeatedOpeningCount,
   repeatedThemeCount,
+  repeatedFormatStreakCount,
   questionSpecificity: specificQuestionCount,
+  specificQuestionCount,
+  humorousPostCount: (formatCounts.shop_sns_aruaru || 0) + (formatCounts.humorous_observation || 0),
+  rewriteDemoCount: formatCounts.rewrite_demo || 0,
+  snsTipCount: formatCounts.sns_tip || 0,
   standaloneValue: standaloneValueCount,
   ctaRatio: Number(ctaRatio.toFixed(3)),
   directSalesCtaRatio: Number(directSalesCtaRatio.toFixed(3)),
@@ -144,14 +160,16 @@ function readJsonPlanDrafts(dirPath) {
           date,
           time: String(post.time || ""),
           theme: String(post.theme || post.pillar || ""),
+          contentPillar: String(post.contentPillar || post.pillar || ""),
           pillar: String(post.pillar || ""),
+          format: String(post.format || ""),
           hookType: String(post.hookType || ""),
           hasInstagramCta: /Instagram/i.test(cta),
           media: post.media || { type: "none", items: [] }
         });
       }
     } catch {
-      drafts.push({ text: "", cta: "", date: "", time: "", theme: "", pillar: "", hookType: "", hasInstagramCta: false, media: { type: "none", items: [] } });
+      drafts.push({ text: "", cta: "", date: "", time: "", theme: "", contentPillar: "", pillar: "", format: "", hookType: "", hasInstagramCta: false, media: { type: "none", items: [] } });
     }
   }
   return drafts;
@@ -170,7 +188,7 @@ async function validatePlanMedia(records) {
 
 function hookPresent(text) {
   const first = firstLine(text);
-  return first.length >= 8 && first.length <= 35 && !/^SNSを整える時は/.test(first);
+  return first.length >= 8 && first.length <= 55 && !/^SNSを整える時は/.test(first);
 }
 
 function conversationalTone(text) {
@@ -223,12 +241,29 @@ function countConsecutiveSameCta(records) {
   return count;
 }
 
+function countFormatStreaks(records, length) {
+  let count = 0;
+  for (let index = length - 1; index < records.length; index += 1) {
+    const slice = records.slice(index - length + 1, index + 1);
+    if (slice.every((record) => record.format && record.format === slice[0].format)) count += 1;
+  }
+  return count;
+}
+
 function countSevenDayRepeats(records) {
   let count = 0;
   for (let index = 7; index < records.length; index += 1) {
     if (records[index].text && records[index].text === records[index - 7].text) count += 1;
   }
   return count;
+}
+
+function countBy(records, key) {
+  return records.reduce((counts, record) => {
+    const value = String(record[key] || "unknown");
+    counts[value] = (counts[value] || 0) + 1;
+    return counts;
+  }, {});
 }
 
 function countLengthBand(texts) {

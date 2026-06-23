@@ -17,10 +17,12 @@ const published = readPublishedLogs();
 const manualMetrics = metricsFile ? readManualMetrics(metricsFile) : [];
 const merged = mergeMetrics(published, manualMetrics);
 const byPillar = groupBy(merged, (item) => item.contentPillar || "unknown");
+const byFormat = groupBy(merged, (item) => item.format || "unknown");
 const bySlot = groupBy(merged, (item) => item.slot || "unknown");
 const ctaRows = merged.filter((item) => item.hasCta);
 const followerDelta = sum(merged, "followerDelta");
 const publishedCount = merged.filter((item) => item.published).length;
+const analysisStatus = publishedCount > 0 || manualMetrics.length > 0 ? "pass" : "insufficient_data";
 const top = rankRows(merged).slice(0, 3);
 const bottom = rankRows(merged).slice(-3);
 
@@ -34,6 +36,7 @@ const body = [
   "",
   `- published count: ${publishedCount}`,
   `- manual metrics loaded: ${manualMetrics.length}`,
+  `- status: ${analysisStatus}`,
   "- Threads API read-only insights: not executed",
   "- scraping/login automation: false",
   "- auto reply/like/follow: false",
@@ -50,14 +53,18 @@ const body = [
   "",
   safeGroupList(byPillar),
   "",
+  "## format別",
+  "",
+  safeGroupList(byFormat),
+  "",
   "## スロット別",
   "",
   safeGroupList(bySlot),
   "",
   "## 次週方針",
   "",
-  `- 次週増やす柱: ${recommendMore(byPillar)}`,
-  `- 次週減らす柱: ${recommendLess(byPillar)}`,
+  `- 次週増やすformat: ${recommendMore(byFormat)}`,
+  `- 次週減らすformat: ${recommendLess(byFormat)}`,
   "- 冒頭文: 説明から入らず、観察・本音・問いで始める",
   `- CTA比率: ${merged.length ? (ctaRows.length / merged.length).toFixed(2) : "0.00"}`,
   `- フォロワー増減: ${followerDelta}`,
@@ -73,6 +80,7 @@ const body = [
 fs.writeFileSync(outFile, body);
 console.log(JSON.stringify({
   ok: true,
+  status: analysisStatus,
   file: path.relative(process.cwd(), outFile),
   publishedCount,
   manualMetricCount: manualMetrics.length,
@@ -97,6 +105,7 @@ function readPublishedLogs() {
         slot,
         published: data.published === true,
         contentPillar: data.contentPillar || "unknown",
+        format: data.format || "unknown",
         hookType: data.hookType || "unknown",
         hasCta: Boolean(data.hasCta),
         textLengthBand: data.textLengthBand || "unknown",
@@ -132,6 +141,7 @@ function normalizeMetricRow(row) {
     slot: String(row.slot || ""),
     published: row.published !== false,
     contentPillar: String(row.contentPillar || row.pillar || "unknown"),
+    format: String(row.format || "unknown"),
     hookType: String(row.hookType || "unknown"),
     hasCta: row.hasCta === true || String(row.hasCta || "").toLowerCase() === "true",
     textLengthBand: String(row.textLengthBand || "unknown"),
@@ -162,7 +172,7 @@ function score(row) {
 
 function safeList(rows) {
   if (!rows.length) return "- no safe metric rows";
-  return rows.map((row) => `- slot=${row.slot || "unknown"} pillar=${row.contentPillar || "unknown"} hook=${row.hookType || "unknown"} cta=${Boolean(row.hasCta)} length=${row.textLengthBand || "unknown"} score=${score(row).toFixed(3)}`).join("\n");
+  return rows.map((row) => `- slot=${row.slot || "unknown"} pillar=${row.contentPillar || "unknown"} format=${row.format || "unknown"} hook=${row.hookType || "unknown"} cta=${Boolean(row.hasCta)} length=${row.textLengthBand || "unknown"} score=${score(row).toFixed(3)}`).join("\n");
 }
 
 function groupBy(rows, keyFn) {

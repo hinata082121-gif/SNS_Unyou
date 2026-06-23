@@ -58,6 +58,14 @@ const result = {
   postValidated: false,
   mediaType: "none",
   mediaItemCount: 0,
+  contentPillar: "",
+  format: "",
+  hookType: "",
+  targetIndustry: "",
+  hasQuestion: false,
+  hasCta: false,
+  hasDirectSalesCta: false,
+  textLengthBand: "unknown",
   mediaValidated: false,
   mediaValidationErrorCount: 0,
   wouldPublish: false,
@@ -90,6 +98,14 @@ if (alreadyPublished) {
   result.postValidated = draft.ok;
   result.mediaType = draft.media?.type || "none";
   result.mediaItemCount = Array.isArray(draft.media?.items) ? draft.media.items.length : 0;
+  result.contentPillar = draft.contentPillar || "";
+  result.format = draft.format || "";
+  result.hookType = draft.hookType || "";
+  result.targetIndustry = draft.targetIndustry || "";
+  result.hasQuestion = draft.hasQuestion === true;
+  result.hasCta = Boolean(draft.cta);
+  result.hasDirectSalesCta = draft.hasDirectSalesCta === true;
+  result.textLengthBand = textLengthBand(draft.text);
   const mediaValidation = draft.ok
     ? await validateThreadsMedia(draft.media, { network: publishEnabled && !dryRun })
     : { ok: true, errors: [], media: { type: "none", items: [] } };
@@ -182,7 +198,19 @@ function readJsonDraft({ postDate, slot }) {
     const draftText = [post.text, post.cta].filter(Boolean).join("\n\n").trim();
     if (!draftText) return { ok: false, text: "", blockedReason: "post_text_empty" };
     if (draftText.length > MAX_LENGTH) return { ok: false, text: "", blockedReason: "post_text_too_long" };
-    return { ok: true, text: draftText, media: post.media || { type: "none", items: [] }, blockedReason: "" };
+    return {
+      ok: true,
+      text: draftText,
+      cta,
+      contentPillar: String(post.contentPillar || ""),
+      format: String(post.format || ""),
+      hookType: String(post.hookType || ""),
+      targetIndustry: String(post.targetIndustry || ""),
+      hasQuestion: post.hasQuestion === true,
+      hasDirectSalesCta: post.hasDirectSalesCta === true,
+      media: post.media || { type: "none", items: [] },
+      blockedReason: ""
+    };
   } catch {
     return { ok: false, text: "", blockedReason: "generated_plan_invalid" };
   }
@@ -298,6 +326,14 @@ function writeSafePublishLog(value) {
     postValidated: value.postValidated,
     mediaType: value.mediaType,
     mediaItemCount: value.mediaItemCount,
+    contentPillar: value.contentPillar,
+    format: value.format,
+    hookType: value.hookType,
+    targetIndustry: value.targetIndustry,
+    hasQuestion: value.hasQuestion,
+    hasCta: value.hasCta,
+    hasDirectSalesCta: value.hasDirectSalesCta,
+    textLengthBand: value.textLengthBand,
     mediaValidated: value.mediaValidated,
     mediaValidationErrorCount: value.mediaValidationErrorCount,
     wouldPublish: value.wouldPublish,
@@ -344,4 +380,12 @@ function isMediaPublishEnabled(media, flags) {
   if (type === "video") return flags.video;
   if (type === "carousel") return flags.carousel;
   return false;
+}
+
+function textLengthBand(text) {
+  const length = String(text || "").length;
+  if (length < 70) return "under70";
+  if (length <= 180) return "target70To180";
+  if (length <= MAX_LENGTH) return "over180";
+  return "tooLong";
 }
