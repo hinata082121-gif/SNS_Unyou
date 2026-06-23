@@ -17,6 +17,7 @@ const jobs = readHermesJobs(jobsPath);
 const windowsScheduler = readWindowsSchedulerHealth();
 const threadJobs = jobs.filter((job) => String(job.name || "").includes("Threads"));
 const gmailJobs = jobs.filter((job) => String(job.name || "").includes("Gmail"));
+const threadsAudit = readThreadsDailyAudit(jstDate(0));
 const rollingPlansReady = [jstDate(0), jstDate(1), jstDate(2)].every((date) => {
   const plan = readJson(path.join(root, "data", "threads", "post-plans", `${date}.json`), null);
   const slots = Array.isArray(plan?.posts) ? plan.posts.map((post) => String(post.time || "")) : [];
@@ -24,17 +25,33 @@ const rollingPlansReady = [jstDate(0), jstDate(1), jstDate(2)].every((date) => {
 });
 
 const metrics = outboxTask?.metrics || {};
+const threadsOk = threadJobs.length >= 2 &&
+  rollingPlansReady &&
+  isSuccessStatus(statusForJob(threadJobs, "11")) &&
+  isSuccessStatus(statusForJob(threadJobs, "19")) &&
+  threadsAudit.publishedPostCount === 2 &&
+  threadsAudit.duplicatePublishCount === 0;
+const gmailOk = Number(metrics.selectedCount || 0) === 30;
 const summary = {
-  ok: rollingPlansReady && Number(metrics.selectedCount || 0) === 30,
+  ok: threadsOk && gmailOk,
   checkedAt: new Date().toISOString(),
   threads: {
+    ok: threadsOk,
+    status: threadsOk ? "pass" : "blocked",
     gatewayRunning: null,
     jobsRegistered: threadJobs.length,
     rollingPlansReady,
     last11Status: statusForJob(threadJobs, "11"),
-    last19Status: statusForJob(threadJobs, "19")
+    last19Status: statusForJob(threadJobs, "19"),
+    publishedPostCount: threadsAudit.publishedPostCount,
+    expectedPostCount: threadsAudit.expectedPostCount,
+    missingSlotCount: threadsAudit.missingSlotCount,
+    missingSlots: threadsAudit.missingSlots,
+    duplicatePublishCount: threadsAudit.duplicatePublishCount,
+    compensationPostExecuted: false
   },
   gmail: {
+    ok: gmailOk,
     prepJobsRegistered: gmailJobs.length >= 6,
     registeredJobCount: gmailJobs.length,
     targetDate,
@@ -74,7 +91,34 @@ function readHermesJobs(filePath) {
 
 function statusForJob(jobs, marker) {
   const job = jobs.find((item) => String(item.name || "").includes(marker));
-  return job ? String(job.last_status || job.state || "unknown") : "missing";
+  return job ? String(job.last_status || job.lastStatus || job.state || "unknown") : "missing";
+}
+
+function isSuccessStatus(value) {
+  const normalized = String(value || "").toLowerCase();
+  return ["success", "ok", "pass", "completed"].includes(normalized);
+}
+
+function readThreadsDailyAudit(date) {
+  const slots = ["11", "19"].map((slot) => {
+    const log = readJson(path.join(root, "data", "threads", "published", `${date}-${slot}.json`), null);
+    return {
+      slot,
+      published: log?.published === true,
+      status: log?.published === true ? "success" : log ? "blocked" : "missing",
+      blockedReason: log?.published === true ? "" : String(log?.blockedReason || "missing_publish_log")
+    };
+  });
+  const publishedPostCount = slots.filter((slot) => slot.published).length;
+  const missingSlots = slots.filter((slot) => !slot.published).map((slot) => slot.slot);
+  return {
+    date,
+    expectedPostCount: 2,
+    publishedPostCount,
+    missingSlotCount: missingSlots.length,
+    missingSlots,
+    duplicatePublishCount: 0
+  };
 }
 
 function jstDate(daysFromToday = 0) {

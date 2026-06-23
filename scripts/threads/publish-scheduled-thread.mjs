@@ -12,7 +12,7 @@ const DEFAULT_PLAN = "docs/threads/post-plans/threads-post-plan-2026-06-week1.md
 const MAX_LENGTH = 500;
 
 if (process.argv.includes("--help")) {
-  console.log("Usage: node scripts/threads/publish-scheduled-thread.mjs --slot 11|19 [--date YYYY-MM-DD] [--plan docs/threads/post-plans/file.md]\nPublishes text or enabled image posts only when THREADS_PUBLISH_ENABLED=true and THREADS_DRY_RUN=false. Otherwise records blocked/dry-run status.");
+  console.log("Usage: node scripts/threads/publish-scheduled-thread.mjs --slot 11|19 [--date YYYY-MM-DD] [--plan docs/threads/post-plans/file.md]\nPublishes text or enabled image posts only inside the slot window and when THREADS_PUBLISH_ENABLED=true and THREADS_DRY_RUN=false. Otherwise records blocked/dry-run status.");
   process.exit(0);
 }
 
@@ -38,81 +38,97 @@ const mediaFeatureFlags = {
 };
 const hasToken = Boolean(accessToken);
 const hasUserId = Boolean(threadsUserId);
-const planEnsure = ensureDailyThreadsPlan({
-  date: postDate,
-  requiredSlots: ["11", "19"]
-});
 const alreadyPublished = isAlreadyPublished({ postDate, slot });
-const draft = planEnsure.ok ? readDraft({ planFile, postDate, slot }) : {
-  ok: false,
-  text: "",
-  blockedReason: planEnsure.blockedReason || "daily_plan_generation_failed"
-};
+const slotWindow = getSlotWindowStatus({ postDate, slot, now: getNow() });
 
 const result = {
   ok: false,
   commandReached: true,
   slot,
   postDate,
+  slotWindowStart: slotWindow.windowStart,
+  slotWindowEnd: slotWindow.windowEnd,
+  insideSlotWindow: slotWindow.inside,
   publishEnabled,
   dryRun,
   apiConfigured: hasToken && hasUserId,
-  planEnsured: planEnsure.ok,
-  planGenerated: planEnsure.generated,
-  postPrepared: Boolean(draft.text),
-  postValidated: draft.ok,
-  mediaType: draft.media?.type || "none",
-  mediaItemCount: Array.isArray(draft.media?.items) ? draft.media.items.length : 0,
+  planEnsured: false,
+  planGenerated: false,
+  postPrepared: false,
+  postValidated: false,
+  mediaType: "none",
+  mediaItemCount: 0,
   mediaValidated: false,
   mediaValidationErrorCount: 0,
   wouldPublish: false,
   published: false,
+  compensationPostExecuted: false,
   blockedReason: "",
   postIdPresent: false,
   postIdHash: "",
   errorSummary: ""
 };
 
-const mediaValidation = draft.ok
-  ? await validateThreadsMedia(draft.media, { network: publishEnabled && !dryRun })
-  : { ok: true, errors: [], media: { type: "none", items: [] } };
-result.mediaValidated = draft.ok ? mediaValidation.ok : false;
-result.mediaValidationErrorCount = mediaValidation.errors.length;
-
 if (alreadyPublished) {
   result.blockedReason = "already_published";
-} else if (!draft.ok) {
-  result.blockedReason = draft.blockedReason;
-} else if (!mediaValidation.ok) {
-  result.blockedReason = "media_validation_failed";
-} else if (!isMediaPublishEnabled(draft.media, mediaFeatureFlags)) {
-  result.blockedReason = `${draft.media?.type || "media"}_publish_disabled`;
-} else if (!hasToken || !hasUserId) {
-  result.blockedReason = "threads_api_not_configured";
-} else if (!publishEnabled) {
+} else if (!slotWindow.inside) {
   result.ok = true;
-  result.wouldPublish = false;
-  result.blockedReason = "publish_disabled";
-} else if (dryRun) {
-  result.ok = true;
-  result.wouldPublish = true;
-  result.blockedReason = "threads_dry_run";
+  result.blockedReason = "outside_slot_window";
 } else {
-  const publishResult = await publishThread({
-    baseUrl: graphBaseUrl,
-    apiVersion,
-    userId: threadsUserId,
-    accessToken,
-    text: draft.text,
-    media: draft.media,
-    featureFlags: mediaFeatureFlags
+  const planEnsure = ensureDailyThreadsPlan({
+    date: postDate,
+    requiredSlots: ["11", "19"]
   });
-  result.ok = publishResult.ok;
-  result.published = publishResult.published;
-  result.postIdPresent = publishResult.postIdPresent;
-  result.postIdHash = publishResult.postIdHash;
-  result.blockedReason = publishResult.ok ? "" : "threads_api_publish_failed";
-  result.errorSummary = publishResult.errorSummary;
+  result.planEnsured = planEnsure.ok;
+  result.planGenerated = planEnsure.generated;
+  const draft = planEnsure.ok ? readDraft({ planFile, postDate, slot }) : {
+    ok: false,
+    text: "",
+    blockedReason: planEnsure.blockedReason || "daily_plan_generation_failed"
+  };
+  result.postPrepared = Boolean(draft.text);
+  result.postValidated = draft.ok;
+  result.mediaType = draft.media?.type || "none";
+  result.mediaItemCount = Array.isArray(draft.media?.items) ? draft.media.items.length : 0;
+  const mediaValidation = draft.ok
+    ? await validateThreadsMedia(draft.media, { network: publishEnabled && !dryRun })
+    : { ok: true, errors: [], media: { type: "none", items: [] } };
+  result.mediaValidated = draft.ok ? mediaValidation.ok : false;
+  result.mediaValidationErrorCount = mediaValidation.errors.length;
+
+  if (!draft.ok) {
+    result.blockedReason = draft.blockedReason;
+  } else if (!mediaValidation.ok) {
+    result.blockedReason = "media_validation_failed";
+  } else if (!isMediaPublishEnabled(draft.media, mediaFeatureFlags)) {
+    result.blockedReason = `${draft.media?.type || "media"}_publish_disabled`;
+  } else if (!hasToken || !hasUserId) {
+    result.blockedReason = "threads_api_not_configured";
+  } else if (!publishEnabled) {
+    result.ok = true;
+    result.wouldPublish = false;
+    result.blockedReason = "publish_disabled";
+  } else if (dryRun) {
+    result.ok = true;
+    result.wouldPublish = true;
+    result.blockedReason = "threads_dry_run";
+  } else {
+    const publishResult = await publishThread({
+      baseUrl: graphBaseUrl,
+      apiVersion,
+      userId: threadsUserId,
+      accessToken,
+      text: draft.text,
+      media: draft.media,
+      featureFlags: mediaFeatureFlags
+    });
+    result.ok = publishResult.ok;
+    result.published = publishResult.published;
+    result.postIdPresent = publishResult.postIdPresent;
+    result.postIdHash = publishResult.postIdHash;
+    result.blockedReason = publishResult.ok ? "" : "threads_api_publish_failed";
+    result.errorSummary = publishResult.errorSummary;
+  }
 }
 
 writeSafePublishLog(result);
@@ -223,6 +239,41 @@ function isAlreadyPublished({ postDate, slot }) {
   }
 }
 
+function getNow() {
+  const override = String(process.env.THREADS_NOW_ISO || "").trim();
+  return override ? new Date(override) : new Date();
+}
+
+function getSlotWindowStatus({ postDate, slot, now }) {
+  const windows = {
+    "11": ["10:55", "11:30"],
+    "19": ["18:55", "19:30"]
+  };
+  const [start, end] = windows[slot] || ["00:00", "00:00"];
+  const current = jstParts(now);
+  const windowStart = `${postDate}T${start}:00+09:00`;
+  const windowEnd = `${postDate}T${end}:00+09:00`;
+  const currentMinutes = current.hour * 60 + current.minute;
+  const [startHour, startMinute] = start.split(":").map(Number);
+  const [endHour, endMinute] = end.split(":").map(Number);
+  const startMinutes = startHour * 60 + startMinute;
+  const endMinutes = endHour * 60 + endMinute;
+  return {
+    windowStart,
+    windowEnd,
+    inside: current.date === postDate && currentMinutes >= startMinutes && currentMinutes <= endMinutes
+  };
+}
+
+function jstParts(value) {
+  const date = new Date(value.getTime() + 9 * 60 * 60 * 1000);
+  return {
+    date: date.toISOString().slice(0, 10),
+    hour: date.getUTCHours(),
+    minute: date.getUTCMinutes()
+  };
+}
+
 function findSection(source, heading, nextHeadingPattern) {
   const start = source.indexOf(heading);
   if (start < 0) return "";
@@ -239,6 +290,7 @@ function writeSafePublishLog(value) {
     postDate: value.postDate,
     publishEnabled: value.publishEnabled,
     dryRun: value.dryRun,
+    insideSlotWindow: value.insideSlotWindow,
     apiConfigured: value.apiConfigured,
     planEnsured: value.planEnsured,
     planGenerated: value.planGenerated,
@@ -250,6 +302,7 @@ function writeSafePublishLog(value) {
     mediaValidationErrorCount: value.mediaValidationErrorCount,
     wouldPublish: value.wouldPublish,
     published: value.published,
+    compensationPostExecuted: value.compensationPostExecuted,
     blockedReason: value.blockedReason,
     postIdPresent: value.postIdPresent,
     postIdHash: value.postIdHash,

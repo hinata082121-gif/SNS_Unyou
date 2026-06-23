@@ -58,6 +58,8 @@
     "threads:plan:ensure": "node scripts/threads/create-daily-post-plan.mjs",
     "threads:plan:ensure:rolling": "node scripts/threads/ensure-rolling-post-plans.mjs",
     "threads:plan:validate": "node scripts/threads/validate-thread-posts.mjs data/threads/post-plans",
+    "threads:publish:audit": "node scripts/threads/audit-daily-thread-publishing.mjs",
+    "threads:cadence:test": "node scripts/threads/test-threads-cadence-and-content.mjs",
     "threads:media:validate": "node scripts/threads/validate-thread-media.mjs",
     "threads:media:test": "node scripts/threads/test-media-validation.mjs",
     "threads:post:11": "node scripts/threads/publish-scheduled-thread.mjs --slot 11",
