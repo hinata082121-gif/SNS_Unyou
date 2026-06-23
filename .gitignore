@@ -25,6 +25,8 @@ tmp/
 *.local.html
 tmp_*.txt
 *.bak
+data/threads/runtime-locks/*.lock
+data/threads/runner-logs/
 
 # operational sales data and reports
 data/prospects/

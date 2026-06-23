@@ -39,6 +39,8 @@ for (let offset = 0; offset < 45; offset += 1) {
 
 const generatedStats = summarize(generatedPosts);
 assert.equal(generatedStats.duplicateTextCount, 0);
+assert.equal(generatedStats.formatCounts.unknown || 0, 0);
+assert.equal(countMissingThreeDayCoverage(generatedPosts.slice(0, 6)), 0);
 assert.equal(countRepeatedThemes(generatedPosts), 0);
 assert.equal(countFormatStreaks(generatedPosts, 3), 0);
 assert.equal(countIndustryRepeats(generatedPosts), 0);
@@ -71,6 +73,8 @@ console.log(JSON.stringify({
   snsTipCount: bankStats.formatCounts.sns_tip,
   rewriteDemoCount: bankStats.formatCounts.rewrite_demo,
   humorAndAruaruCount: (bankStats.formatCounts.shop_sns_aruaru || 0) + (bankStats.formatCounts.humorous_observation || 0),
+  missingThreeDayCoverageCount: countMissingThreeDayCoverage(generatedPosts.slice(0, 6)),
+  unknownFormatCount: generatedStats.formatCounts.unknown || 0,
   fortyFiveDayReuseCount: generatedStats.duplicateTextCount,
   liveThreadsApiCallCount: 0,
   compensationPostExecuted: false,
@@ -92,6 +96,18 @@ function summarize(posts) {
     stiffExpressionCount: texts.filter((text) => /改善しやすいです|進みやすくなります|無料で確認します|一緒に整理できます|相談できます/.test(text)).length,
     formatCounts: countBy(posts, "format")
   };
+}
+
+function countMissingThreeDayCoverage(posts) {
+  let missing = 0;
+  for (let index = 0; index + 5 < posts.length; index += 6) {
+    const formats = new Set(posts.slice(index, index + 6).map((post) => post.format));
+    if (!formats.has("rewrite_demo")) missing += 1;
+    if (!formats.has("specific_question")) missing += 1;
+    if (!formats.has("sns_tip")) missing += 1;
+    if (!formats.has("shop_sns_aruaru") && !formats.has("humorous_observation")) missing += 1;
+  }
+  return missing;
 }
 
 function countBy(rows, key) {

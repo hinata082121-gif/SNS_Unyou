@@ -37,8 +37,9 @@ export function createDailyPlan(targetDate) {
   const brand = loadThreadsBrandConfig();
   const instagramReady = hasInstagramDestination(brand);
   const history = loadRecentPlanHistory(targetDate, 45);
-  const morning = selectCandidate({ date: targetDate, slot: "11", history, used: [], preferredFormats: MORNING_FORMATS });
-  const evening = selectCandidate({ date: targetDate, slot: "19", history, used: [morning], preferredFormats: EVENING_FORMATS });
+  const coverage = requiredCoverageForDate(targetDate);
+  const morning = selectCandidate({ date: targetDate, slot: "11", history, used: [], preferredFormats: coverage.morning });
+  const evening = selectCandidate({ date: targetDate, slot: "19", history, used: [morning], preferredFormats: coverage.evening });
   return {
     date: targetDate,
     strategyVersion: "casual-viral-formats-v1",
@@ -46,6 +47,26 @@ export function createDailyPlan(targetDate) {
       buildPost({ date: targetDate, time: "11:00", source: morning, cta: "" }),
       buildPost({ date: targetDate, time: "19:00", source: evening, cta: selectCta({ date: targetDate, source: evening, brand, instagramReady, history }) })
     ]
+  };
+}
+
+function requiredCoverageForDate(targetDate) {
+  const phase = dayNumber(targetDate) % 3;
+  if (phase === 0) {
+    return {
+      morning: new Set(["rewrite_demo", ...MORNING_FORMATS]),
+      evening: new Set(["shop_sns_aruaru", "humorous_observation", ...EVENING_FORMATS])
+    };
+  }
+  if (phase === 1) {
+    return {
+      morning: new Set(["sns_tip", ...MORNING_FORMATS]),
+      evening: new Set(["specific_question", ...EVENING_FORMATS])
+    };
+  }
+  return {
+    morning: new Set(["quick_fix", ...MORNING_FORMATS]),
+    evening: new Set(["behind_the_scenes", "honest_opinion", ...EVENING_FORMATS])
   };
 }
 
@@ -57,14 +78,17 @@ function selectCandidate({ date, slot, history, used, preferredFormats }) {
   const recentFormats = history.concat(used).slice(-2).map((post) => post.format);
   const previousIndustry = history.concat(used).slice(-1)[0]?.targetIndustry || "";
   const startIndex = Math.abs((dayIndex * 2 + offset) % THREADS_CONTENT_BANK.length);
-  for (let step = 0; step < THREADS_CONTENT_BANK.length; step += 1) {
-    const candidate = THREADS_CONTENT_BANK[(startIndex + step) % THREADS_CONTENT_BANK.length];
-    if (recentTexts.has(candidate.text) || recentKeys.has(candidate.contentKey)) continue;
-    if (used.some((post) => post.text === candidate.text || post.theme === candidate.theme)) continue;
-    if (used.some((post) => post.targetIndustry === candidate.targetIndustry)) continue;
-    if (previousIndustry && previousIndustry === candidate.targetIndustry) continue;
-    if (recentFormats.length >= 2 && recentFormats.every((format) => format === candidate.format)) continue;
-    if (preferredFormats.has(candidate.format)) return candidate;
+  for (const preferredFormat of preferredFormats) {
+    for (let step = 0; step < THREADS_CONTENT_BANK.length; step += 1) {
+      const candidate = THREADS_CONTENT_BANK[(startIndex + step) % THREADS_CONTENT_BANK.length];
+      if (candidate.format !== preferredFormat) continue;
+      if (recentTexts.has(candidate.text) || recentKeys.has(candidate.contentKey)) continue;
+      if (used.some((post) => post.text === candidate.text || post.theme === candidate.theme)) continue;
+      if (used.some((post) => post.targetIndustry === candidate.targetIndustry)) continue;
+      if (previousIndustry && previousIndustry === candidate.targetIndustry) continue;
+      if (recentFormats.length >= 2 && recentFormats.every((format) => format === candidate.format)) continue;
+      return candidate;
+    }
   }
   for (let step = 0; step < THREADS_CONTENT_BANK.length; step += 1) {
     const candidate = THREADS_CONTENT_BANK[(startIndex + step) % THREADS_CONTENT_BANK.length];

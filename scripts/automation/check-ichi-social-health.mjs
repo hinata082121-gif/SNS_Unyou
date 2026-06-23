@@ -29,6 +29,7 @@ const threadsOk = threadJobs.length >= 2 &&
   rollingPlansReady &&
   isSuccessStatus(statusForJob(threadJobs, "11")) &&
   isSuccessStatus(statusForJob(threadJobs, "19")) &&
+  !hasStaleThreadJobState(threadJobs) &&
   threadsAudit.publishedPostCount === 2 &&
   threadsAudit.duplicatePublishCount === 0;
 const gmailOk = Number(metrics.selectedCount || 0) === 30;
@@ -48,6 +49,13 @@ const summary = {
     missingSlotCount: threadsAudit.missingSlotCount,
     missingSlots: threadsAudit.missingSlots,
     duplicatePublishCount: threadsAudit.duplicatePublishCount,
+    schedulerTriggered: threadsAudit.schedulerTriggered,
+    runnerStarted: threadsAudit.runnerStarted,
+    withinWindowCount: threadsAudit.withinWindowCount,
+    nodeStartedCount: threadsAudit.nodeStartedCount,
+    timedOut: threadsAudit.timedOut,
+    processAborted: threadsAudit.processAborted,
+    staleJobState: hasStaleThreadJobState(threadJobs),
     compensationPostExecuted: false
   },
   gmail: {
@@ -73,6 +81,15 @@ process.exit(summary.ok ? 0 : 1);
 function argValue(name, fallback = "") {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 ? process.argv[index + 1] || fallback : fallback;
+}
+
+function hasStaleThreadJobState(jobs) {
+  if (!jobs.length) return true;
+  const today = jstDate(0);
+  return jobs.some((job) => {
+    const value = String(job.last_run_at || job.lastRunAt || job.last_run || job.lastRun || "");
+    return value && !value.startsWith(today);
+  });
 }
 
 function readJson(filePath, fallback) {
@@ -106,7 +123,12 @@ function readThreadsDailyAudit(date) {
       slot,
       published: log?.published === true,
       status: log?.published === true ? "success" : log ? "blocked" : "missing",
-      blockedReason: log?.published === true ? "" : String(log?.blockedReason || "missing_publish_log")
+      blockedReason: log?.published === true ? "" : String(log?.blockedReason || "missing_publish_log"),
+      runnerStarted: log?.runnerStarted === true || log?.commandReached === true,
+      withinWindow: log?.withinWindow === true || log?.insideSlotWindow === true,
+      nodeStarted: log?.nodeStarted === true || log?.commandReached === true,
+      timedOut: log?.timedOut === true,
+      processAborted: log?.processAborted === true
     };
   });
   const publishedPostCount = slots.filter((slot) => slot.published).length;
@@ -117,7 +139,13 @@ function readThreadsDailyAudit(date) {
     publishedPostCount,
     missingSlotCount: missingSlots.length,
     missingSlots,
-    duplicatePublishCount: 0
+    duplicatePublishCount: 0,
+    schedulerTriggered: slots.some((slot) => slot.runnerStarted || slot.status !== "missing"),
+    runnerStarted: slots.some((slot) => slot.runnerStarted),
+    withinWindowCount: slots.filter((slot) => slot.withinWindow).length,
+    nodeStartedCount: slots.filter((slot) => slot.nodeStarted).length,
+    timedOut: slots.some((slot) => slot.timedOut),
+    processAborted: slots.some((slot) => slot.processAborted)
   };
 }
 

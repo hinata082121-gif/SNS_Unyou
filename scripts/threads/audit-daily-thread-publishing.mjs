@@ -28,6 +28,15 @@ const summary = {
   last19Status: last19.status,
   last11BlockedReason: last11.blockedReason,
   last19BlockedReason: last19.blockedReason,
+  schedulerTriggered: slotResults.some((slot) => slot.runnerStarted || slot.logExists),
+  runnerStarted: slotResults.some((slot) => slot.runnerStarted),
+  withinWindowCount: slotResults.filter((slot) => slot.withinWindow).length,
+  nodeStartedCount: slotResults.filter((slot) => slot.nodeStarted).length,
+  apiCreateCompleted: false,
+  apiPublishCompleted: slotResults.some((slot) => slot.published),
+  verified: publishedPostCount === expectedSlots.length,
+  timedOut: slotResults.some((slot) => slot.timedOut),
+  processAborted: slotResults.some((slot) => slot.processAborted),
   duplicatePublishCount,
   ok: publishedPostCount === expectedSlots.length && duplicatePublishCount === 0,
   compensationPostExecuted: false
@@ -48,6 +57,11 @@ function inspectSlot(date, slot) {
     status: published ? "success" : data ? "blocked" : "missing",
     blockedReason: published ? "" : String(data?.blockedReason || "missing_publish_log"),
     published,
+    runnerStarted: data?.runnerStarted === true || data?.commandReached === true,
+    withinWindow: data?.withinWindow === true || data?.insideSlotWindow === true,
+    nodeStarted: data?.nodeStarted === true || data?.commandReached === true,
+    timedOut: data?.timedOut === true,
+    processAborted: data?.processAborted === true,
     postIdPresent: Boolean(data?.postIdPresent),
     compensationPostExecuted: false
   };

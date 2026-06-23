@@ -142,7 +142,7 @@ if (alreadyPublished) {
     result.published = publishResult.published;
     result.postIdPresent = publishResult.postIdPresent;
     result.postIdHash = publishResult.postIdHash;
-    result.blockedReason = publishResult.ok ? "" : "threads_api_publish_failed";
+    result.blockedReason = publishResult.ok ? "" : publishResult.blockedReason || "threads_api_publish_failed";
     result.errorSummary = publishResult.errorSummary;
   }
 }
@@ -195,7 +195,8 @@ function readJsonDraft({ postDate, slot }) {
       ? plan.posts.find((item) => normalizeSlot(item.time) === slot)
       : null;
     if (!post) return { ok: false, text: "", blockedReason: "post_slot_not_found" };
-    const draftText = [post.text, post.cta].filter(Boolean).join("\n\n").trim();
+    const cta = String(post.cta || "").trim();
+    const draftText = [post.text, cta].filter(Boolean).join("\n\n").trim();
     if (!draftText) return { ok: false, text: "", blockedReason: "post_text_empty" };
     if (draftText.length > MAX_LENGTH) return { ok: false, text: "", blockedReason: "post_text_too_long" };
     return {
