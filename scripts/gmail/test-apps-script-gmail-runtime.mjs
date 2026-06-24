@@ -1603,6 +1603,105 @@ const scenarios = [
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.propertyWriteCount, 0);
   }],
+  ['same-day candidate rejection inspect reports wrong send date as metadata repairable', (env) => {
+    env.entry = 'sameDayCandidateInspect20260624';
+    installSameDayMetadataRepairInputState(env, { wrongSendDate: true });
+  }, (env, result) => {
+    assert.equal(result.sourceCandidateCount, 30);
+    assert.equal(result.eligibleCount, 0);
+    assert.equal(result.wrongTargetDateCount, 30);
+    assert.equal(result.candidatesRepairableByMetadataOnly, 30);
+    assert.equal(result.readyForMetadataRepair, true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+  }],
+  ['same-day metadata repair fixes wrong send date without sending', (env) => {
+    env.entry = 'sameDayMetadataRepair20260624';
+    installSameDayMetadataRepairInputState(env, { wrongSendDate: true });
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.repairedCount, 30);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'true');
+    const postInspect = env.context.inspectGmailSalesSameDayCandidateRejections20260624();
+    assert.equal(postInspect.eligibleCount, 30);
+  }],
+  ['same-day metadata repair fixes wrong status without sending', (env) => {
+    env.entry = 'sameDayMetadataRepair20260624';
+    installSameDayMetadataRepairInputState(env, { wrongStatus: true });
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.repairedCount, 30);
+    assert.equal(env.mailSendCount, 0);
+    const postInspect = env.context.inspectGmailSalesSameDayCandidateRejections20260624();
+    assert.equal(postInspect.eligibleCount, 30);
+  }],
+  ['same-day metadata repair rejects invalid email', (env) => {
+    env.entry = 'sameDayMetadataRepair20260624';
+    installSameDayMetadataRepairInputState(env, { wrongSendDate: true });
+    env.rows[0].email = 'invalid-email';
+    env.rows[0].contactEmail = 'invalid-email';
+    env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.insertSheetCount, 0);
+  }],
+  ['same-day metadata repair rejects suppression match', (env) => {
+    env.entry = 'sameDayMetadataRepair20260624';
+    installSameDayMetadataRepairInputState(env, { wrongSendDate: true });
+    env.afterInstall = () => {
+      const row = env.rows[0];
+      env.suppression.recipientHashes = [env.context.hashValue_(env.context.normalizeEmail_(row.email))];
+      env.suppression.domainHashes = [env.context.hashValue_(env.context.sourceDomainFromRow_(row))];
+      env.suppression.businessFingerprints = [env.context.businessFingerprintFromRow_(row)];
+      installSuppressionProps(env);
+    };
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.insertSheetCount, 0);
+  }],
+  ['same-day metadata repair rejects already sent row', (env) => {
+    env.entry = 'sameDayMetadataRepair20260624';
+    installSameDayMetadataRepairInputState(env, { wrongSendDate: true });
+    env.rows[0].sentStatus = 'sent';
+    env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.insertSheetCount, 0);
+  }],
+  ['same-day metadata repair rejects duplicate candidate', (env) => {
+    env.entry = 'sameDayMetadataRepair20260624';
+    installSameDayMetadataRepairInputState(env, { wrongSendDate: true });
+    env.rows[1].email = env.rows[0].email;
+    env.rows[1].contactEmail = env.rows[0].contactEmail;
+    env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.insertSheetCount, 0);
+  }],
+  ['same-day metadata repair rejects missing body', (env) => {
+    env.entry = 'sameDayMetadataRepair20260624';
+    installSameDayMetadataRepairInputState(env, { wrongSendDate: true });
+    env.rows[0].body = '';
+    env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.insertSheetCount, 0);
+  }],
+  ['same-day metadata repair rejects after deadline', (env) => {
+    env.entry = 'sameDayMetadataRepair20260624';
+    installSameDayMetadataRepairInputState(env, { wrongSendDate: true });
+    env.nowIso = '2026-06-24T20:01:00.000Z';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.insertSheetCount, 0);
+  }],
   ['same-day emergency sends thirty once and enables future automation after success', (env) => {
     env.entry = 'sameDayEmergency20260624';
     installSameDayEmergencyReadyState(env);
@@ -2026,6 +2125,8 @@ function runEntry(env) {
   if (env.entry === 'sameDayPrepare20260624') return env.context.prepareGmailSalesSameDay20260624Once();
   if (env.entry === 'sameDayReadiness20260624') return env.context.inspectGmailSalesSameDay20260624Readiness();
   if (env.entry === 'sameDayPropertiesVerify20260624') return env.context.verifyGmailSalesSameDayProperties20260624();
+  if (env.entry === 'sameDayCandidateInspect20260624') return env.context.inspectGmailSalesSameDayCandidateRejections20260624();
+  if (env.entry === 'sameDayMetadataRepair20260624') return env.context.repairGmailSalesSameDayCandidateMetadata20260624Once();
   if (env.entry === 'sameDayEmergency20260624') return env.context.runGmailSalesSameDaySend20260624Once();
   if (env.entry === 'dailyCatchUp') return env.context.activateAndRunGmailSalesDailyCatchUpOnce();
   if (env.entry === 'dailyFutureArm') return env.context.armGmailSalesDailyAutomationForFutureRunsOnce();
@@ -2452,6 +2553,24 @@ function installSameDayPrepareInputState(env) {
     automationVersion: 'normal-daily-v1'
   });
   delete env.props.APPROVED_SEND_MANIFEST_JSON;
+}
+
+function installSameDayMetadataRepairInputState(env, options = {}) {
+  installSameDayPrepareInputState(env);
+  env.props.LIVE_SEND_ENABLED = 'true';
+  env.rows = env.rows.map((row) => {
+    const next = Object.assign({}, row);
+    if (options.wrongSendDate) {
+      next.sendDate = '2026-06-23';
+      next.sendBatchId = 'gmail-sales-2026-06-23';
+    }
+    if (options.wrongStatus) {
+      next.status = 'available';
+    }
+    next.lastCheckedAt = options.staleVerification === false ? '2026-06-24' : '2026-06-23';
+    return next;
+  });
+  env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
 }
 
 function installSameDayEmergencyReadyState(env) {

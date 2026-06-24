@@ -3257,6 +3257,20 @@ function inspectGmailSalesSameDay20260624Readiness() {
   });
 }
 
+function inspectGmailSalesSameDayCandidateRejections20260624() {
+  return inspectGmailSalesSameDayCandidateRejections_({
+    targetDate: GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624,
+    endHhmm: GMAIL_SAME_DAY_EMERGENCY_END_HHMM_20260624
+  });
+}
+
+function repairGmailSalesSameDayCandidateMetadata20260624Once() {
+  return repairGmailSalesSameDayCandidateMetadataOnce_({
+    targetDate: GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624,
+    endHhmm: GMAIL_SAME_DAY_EMERGENCY_END_HHMM_20260624
+  });
+}
+
 function prepareGmailSalesSameDayEmergencyOnce_(options) {
   const settings = options || {};
   const targetDate = String(settings.targetDate || '').trim();
@@ -3601,6 +3615,356 @@ function getScriptProjectIdentityHash_() {
     return '';
   }
   return '';
+}
+
+function inspectGmailSalesSameDayCandidateRejections_(options) {
+  const settings = options || {};
+  const targetDate = String(settings.targetDate || '').trim();
+  const config = getConfig_();
+  const batchId = buildSendBatchId_(targetDate);
+  const result = buildEmptySameDayCandidateRejectionSummary_(targetDate, config);
+  let rows = [];
+  let suppression = { loaded: false, entries: [] };
+  let sentEmails = {};
+  try {
+    rows = loadCandidateRows_(config);
+  } catch (error) {
+    result.rejectionReasonCounts.sheet_or_outbox_load_failed = 1;
+  }
+  try {
+    suppression = loadSuppressionLedgerFromProperties_();
+  } catch (error) {
+    suppression = { loaded: false, entries: [] };
+  }
+  try {
+    sentEmails = loadKnownSentEmails_(config);
+  } catch (error) {
+    sentEmails = {};
+  }
+
+  result.sourceCandidateCount = rows.length;
+  const rowDetails = rows.map((item) => analyzeSameDayCandidateRejection_(item.row, {
+    config,
+    targetDate,
+    batchId,
+    suppression,
+    sentEmails
+  }));
+  const duplicateFlags = markSameDayDuplicateFlags_(rowDetails);
+  rowDetails.forEach((detail) => {
+    applySameDayCandidateDetailToSummary_(result, detail, duplicateFlags);
+  });
+
+  let validation = { readyRows: [], errors: [] };
+  try {
+    validation = validateOutboxRows_(rows, config);
+  } catch (error) {
+    validation = { readyRows: [], errors: [{ reason: 'sheet_or_outbox_load_failed' }] };
+  }
+  result.eligibleCount = validation.readyRows.length;
+  result.selectedCount = validation.readyRows.length === gmailDailyExpectedCount_() ? gmailDailyExpectedCount_() : 0;
+  result.readyForMetadataRepair = result.sourceCandidateCount === gmailDailyExpectedCount_() &&
+    result.invalidEmailCount === 0 &&
+    result.missingSubjectCount === 0 &&
+    result.missingBodyCount === 0 &&
+    result.optOutMissingCount === 0 &&
+    result.unsubscribeCount === 0 &&
+    result.doNotContactCount === 0 &&
+    result.alreadySentCount === 0 &&
+    result.repliedCount === 0 &&
+    result.suppressionCount === 0 &&
+    result.duplicateEmailCount === 0 &&
+    result.duplicateDomainCount === 0 &&
+    result.duplicateBusinessCount === 0 &&
+    result.duplicateDedupeKeyCount === 0 &&
+    result.candidatesRepairableByMetadataOnly === gmailDailyExpectedCount_() &&
+    insideGmailSameDayEmergencyWindow_(config, targetDate, settings.endHhmm);
+  result.gmailSendExecuted = false;
+  result.googleSheetsUpdated = false;
+  result.scriptPropertiesUpdated = false;
+  appendSafeLog_(result);
+  return result;
+}
+
+function buildEmptySameDayCandidateRejectionSummary_(targetDate, config) {
+  return {
+    event: 'gmail_same_day_candidate_rejections',
+    mode: 'read_only',
+    targetDate,
+    sourceSheetNameHash: hashValue_(config.sheetName || ''),
+    sourceCandidateCount: 0,
+    eligibleCount: 0,
+    selectedCount: 0,
+    statusCounts: {},
+    sendDateCounts: {},
+    verificationDateCounts: {},
+    missingEmailCount: 0,
+    invalidEmailCount: 0,
+    missingSubjectCount: 0,
+    missingBodyCount: 0,
+    optOutMissingCount: 0,
+    unsubscribeCount: 0,
+    doNotContactCount: 0,
+    alreadySentCount: 0,
+    repliedCount: 0,
+    suppressionCount: 0,
+    duplicateEmailCount: 0,
+    duplicateDomainCount: 0,
+    duplicateBusinessCount: 0,
+    duplicateDedupeKeyCount: 0,
+    staleVerificationCount: 0,
+    wrongTargetDateCount: 0,
+    wrongStatusCount: 0,
+    rejectionReasonCounts: {},
+    candidatesPassingContentValidation: 0,
+    candidatesPassingHistoryValidation: 0,
+    candidatesPassingSuppressionValidation: 0,
+    candidatesPassingDedupeValidation: 0,
+    candidatesRepairableByMetadataOnly: 0,
+    readyForMetadataRepair: false
+  };
+}
+
+function analyzeSameDayCandidateRejection_(row, context) {
+  const targetDate = context.targetDate;
+  const batchId = context.batchId;
+  const email = normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']);
+  const subject = normalizeEmailSubject_(row.subject || row['件名']);
+  const body = normalizeEmailBody_(row.body || row['本文']);
+  const status = String(row.status || '').trim().toLowerCase();
+  const sendDate = normalizeDateText_(row.sendDate || row['送信日']);
+  const rowBatchId = String(row.sendBatchId || '').trim();
+  const verificationDate = normalizeDateText_(row.verifiedAt || row.lastCheckedAt || '');
+  const replyText = String(row.replyStatus || row['返信ステータス'] || '').trim().toLowerCase();
+  const unsubscribeText = String(row.unsubscribe || row['配信停止'] || '').trim().toLowerCase();
+  const doNotContactText = String(row.doNotContact || row['送信禁止'] || '').trim().toLowerCase();
+  const reasons = [];
+  const message = { subject, body };
+  let messageSafe = false;
+  let personalizationSafe = false;
+
+  if (!email) reasons.push('missing_email');
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) reasons.push('invalid_email');
+  if (!subject) reasons.push('missing_subject');
+  if (!body) reasons.push('missing_body');
+  try {
+    assertMessageSafe_(message);
+    messageSafe = true;
+  } catch (error) {
+    if (safeErrorCode_(error) === 'send_error' && String(error.message || '') === 'missing_opt_out_text') {
+      reasons.push('opt_out_missing');
+    } else {
+      reasons.push(String(error.message || 'message_invalid'));
+    }
+  }
+  try {
+    assertRecipientPersonalizationSafe_(row, message);
+    personalizationSafe = true;
+  } catch (error) {
+    reasons.push(String(error.message || 'personalization_invalid'));
+  }
+  if (status !== 'ready') reasons.push('wrong_status');
+  if (sendDate !== targetDate) reasons.push('wrong_target_date');
+  if (rowBatchId !== batchId) reasons.push('send_batch_id_mismatch');
+  if (verificationDate !== targetDate) reasons.push('stale_verification');
+  if (includesAny_(unsubscribeText, ['true', '1', 'yes', '配信停止', 'unsubscribe'])) reasons.push('unsubscribe');
+  if (includesAny_(doNotContactText, ['true', '1', 'yes', '送信禁止', 'do_not_contact'])) reasons.push('do_not_contact');
+  if (includesAny_(replyText, ['返信あり', 'replied', 'interested', 'not_interested', 'unsubscribe'])) reasons.push('replied');
+  if (hasSheetSentHistory_(row) || (email && context.sentEmails[email])) reasons.push('already_sent');
+  if (isSuppressedByLedger_(row, context.suppression)) reasons.push('suppression');
+  return {
+    row,
+    email,
+    domain: sourceDomainFromRow_(row),
+    business: businessFingerprintFromRow_(row),
+    dedupeKey: String(row.dedupeKey || '').trim().toLowerCase(),
+    status: status || '(blank)',
+    sendDate: sendDate || '(blank)',
+    verificationDate: verificationDate || '(blank)',
+    messageSafe,
+    personalizationSafe,
+    reasons: uniqueArray_(reasons)
+  };
+}
+
+function markSameDayDuplicateFlags_(details) {
+  const keys = {
+    email: {},
+    domain: {},
+    business: {},
+    dedupeKey: {}
+  };
+  details.forEach((detail) => {
+    ['email', 'domain', 'business', 'dedupeKey'].forEach((key) => {
+      const value = detail[key];
+      if (!value) return;
+      keys[key][value] = (keys[key][value] || 0) + 1;
+    });
+  });
+  return {
+    email: keys.email,
+    domain: keys.domain,
+    business: keys.business,
+    dedupeKey: keys.dedupeKey
+  };
+}
+
+function applySameDayCandidateDetailToSummary_(summary, detail, duplicateFlags) {
+  incrementCount_(summary.statusCounts, detail.status);
+  incrementCount_(summary.sendDateCounts, detail.sendDate);
+  incrementCount_(summary.verificationDateCounts, detail.verificationDate);
+  const reasons = detail.reasons.slice();
+  if (detail.email && duplicateFlags.email[detail.email] > 1) reasons.push('duplicate_email');
+  if (detail.domain && duplicateFlags.domain[detail.domain] > 1) reasons.push('duplicate_domain');
+  if (detail.business && duplicateFlags.business[detail.business] > 1) reasons.push('duplicate_business');
+  if (detail.dedupeKey && duplicateFlags.dedupeKey[detail.dedupeKey] > 1) reasons.push('duplicate_dedupe_key');
+  const uniqueReasons = uniqueArray_(reasons);
+  uniqueReasons.forEach((reason) => incrementCount_(summary.rejectionReasonCounts, reason));
+  if (uniqueReasons.indexOf('missing_email') !== -1) summary.missingEmailCount += 1;
+  if (uniqueReasons.indexOf('invalid_email') !== -1) summary.invalidEmailCount += 1;
+  if (uniqueReasons.indexOf('missing_subject') !== -1) summary.missingSubjectCount += 1;
+  if (uniqueReasons.indexOf('missing_body') !== -1) summary.missingBodyCount += 1;
+  if (uniqueReasons.indexOf('opt_out_missing') !== -1) summary.optOutMissingCount += 1;
+  if (uniqueReasons.indexOf('unsubscribe') !== -1) summary.unsubscribeCount += 1;
+  if (uniqueReasons.indexOf('do_not_contact') !== -1) summary.doNotContactCount += 1;
+  if (uniqueReasons.indexOf('already_sent') !== -1) summary.alreadySentCount += 1;
+  if (uniqueReasons.indexOf('replied') !== -1) summary.repliedCount += 1;
+  if (uniqueReasons.indexOf('suppression') !== -1) summary.suppressionCount += 1;
+  if (uniqueReasons.indexOf('duplicate_email') !== -1) summary.duplicateEmailCount += 1;
+  if (uniqueReasons.indexOf('duplicate_domain') !== -1) summary.duplicateDomainCount += 1;
+  if (uniqueReasons.indexOf('duplicate_business') !== -1) summary.duplicateBusinessCount += 1;
+  if (uniqueReasons.indexOf('duplicate_dedupe_key') !== -1) summary.duplicateDedupeKeyCount += 1;
+  if (uniqueReasons.indexOf('stale_verification') !== -1) summary.staleVerificationCount += 1;
+  if (uniqueReasons.indexOf('wrong_target_date') !== -1) summary.wrongTargetDateCount += 1;
+  if (uniqueReasons.indexOf('wrong_status') !== -1) summary.wrongStatusCount += 1;
+  const contentOk = detail.email &&
+    uniqueReasons.indexOf('invalid_email') === -1 &&
+    uniqueReasons.indexOf('missing_subject') === -1 &&
+    uniqueReasons.indexOf('missing_body') === -1 &&
+    uniqueReasons.indexOf('opt_out_missing') === -1 &&
+    detail.messageSafe &&
+    detail.personalizationSafe;
+  const historyOk = uniqueReasons.indexOf('already_sent') === -1 &&
+    uniqueReasons.indexOf('replied') === -1 &&
+    uniqueReasons.indexOf('unsubscribe') === -1 &&
+    uniqueReasons.indexOf('do_not_contact') === -1;
+  const suppressionOk = uniqueReasons.indexOf('suppression') === -1;
+  const dedupeOk = uniqueReasons.indexOf('duplicate_email') === -1 &&
+    uniqueReasons.indexOf('duplicate_domain') === -1 &&
+    uniqueReasons.indexOf('duplicate_business') === -1 &&
+    uniqueReasons.indexOf('duplicate_dedupe_key') === -1;
+  if (contentOk) summary.candidatesPassingContentValidation += 1;
+  if (historyOk) summary.candidatesPassingHistoryValidation += 1;
+  if (suppressionOk) summary.candidatesPassingSuppressionValidation += 1;
+  if (dedupeOk) summary.candidatesPassingDedupeValidation += 1;
+  if (contentOk && historyOk && suppressionOk && dedupeOk) {
+    summary.candidatesRepairableByMetadataOnly += 1;
+  }
+}
+
+function incrementCount_(target, key) {
+  const normalized = String(key || '(blank)');
+  target[normalized] = (target[normalized] || 0) + 1;
+}
+
+function repairGmailSalesSameDayCandidateMetadataOnce_(options) {
+  const settings = options || {};
+  const targetDate = String(settings.targetDate || '').trim();
+  const config = getConfig_();
+  const inspection = inspectGmailSalesSameDayCandidateRejections_(settings);
+  if (!inspection.readyForMetadataRepair) {
+    return {
+      event: 'gmail_same_day_metadata_repair_blocked',
+      status: 'blocked',
+      blockedReason: 'not_ready_for_metadata_repair',
+      targetDate,
+      sourceCandidateCount: inspection.sourceCandidateCount,
+      candidatesRepairableByMetadataOnly: inspection.candidatesRepairableByMetadataOnly,
+      readyForMetadataRepair: false,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false
+    };
+  }
+  if (!insideGmailSameDayEmergencyWindow_(config, targetDate, settings.endHhmm)) {
+    return buildSameDayMetadataRepairBlockedResult_(targetDate, 'same_day_emergency_window_closed');
+  }
+  const spreadsheet = SpreadsheetApp.openById(config.sheetId);
+  const sheet = spreadsheet.getSheetByName(config.sheetName);
+  if (!sheet || sheet.getLastRow() !== gmailDailyExpectedCount_() + 1) {
+    return buildSameDayMetadataRepairBlockedResult_(targetDate, 'source_sheet_row_count_not_30');
+  }
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map((value) => String(value));
+  const index = buildHeaderIndex_(headers);
+  const required = ['status', 'sendDate', 'sendBatchId'];
+  const missing = required.filter((key) => index[key] === undefined);
+  if (missing.length > 0 || (index.lastCheckedAt === undefined && index.verifiedAt === undefined)) {
+    return buildSameDayMetadataRepairBlockedResult_(targetDate, 'metadata_columns_missing');
+  }
+  const backupName = '_gmail_same_day_metadata_backup_20260624_' + new Date().getTime();
+  const backupSheet = spreadsheet.insertSheet(backupName);
+  backupSheet.getRange(1, 1, values.length, headers.length).setValues(values);
+  const repairedValues = values.map((row, rowIndex) => {
+    const next = row.slice();
+    if (rowIndex === 0) return next;
+    next[index.status] = 'ready';
+    next[index.sendDate] = targetDate;
+    next[index.sendBatchId] = buildSendBatchId_(targetDate);
+    if (index.lastCheckedAt !== undefined) next[index.lastCheckedAt] = targetDate;
+    if (index.verifiedAt !== undefined) next[index.verifiedAt] = targetDate;
+    return next;
+  });
+  try {
+    sheet.getRange(1, 1, repairedValues.length, headers.length).setValues(repairedValues);
+    SpreadsheetApp.flush();
+    const readBackRows = loadCandidateRows_(config);
+    const readBackValidation = validateOutboxRows_(readBackRows, config);
+    if (readBackValidation.readyRows.length !== gmailDailyExpectedCount_() || readBackValidation.errors.length > 0) {
+      sheet.clearContents();
+      sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+      SpreadsheetApp.flush();
+      return buildSameDayMetadataRepairBlockedResult_(targetDate, 'repair_read_back_failed');
+    }
+    const result = {
+      event: 'gmail_same_day_metadata_repair_completed',
+      status: 'pass',
+      targetDate,
+      sourceCandidateCount: inspection.sourceCandidateCount,
+      repairedCount: gmailDailyExpectedCount_(),
+      backupSheetNameHash: hashValue_(backupName),
+      readBackEligibleCount: readBackValidation.readyRows.length,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: true,
+      scriptPropertiesUpdated: false
+    };
+    appendSafeLog_(result);
+    return result;
+  } catch (error) {
+    try {
+      sheet.clearContents();
+      sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+      SpreadsheetApp.flush();
+    } catch (rollbackError) {
+      return buildSameDayMetadataRepairBlockedResult_(targetDate, 'repair_rollback_failed');
+    }
+    return buildSameDayMetadataRepairBlockedResult_(targetDate, safeErrorCode_(error));
+  }
+}
+
+function buildSameDayMetadataRepairBlockedResult_(targetDate, blockedReason) {
+  const result = {
+    event: 'gmail_same_day_metadata_repair_blocked',
+    status: 'blocked',
+    blockedReason,
+    targetDate,
+    repairedCount: 0,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false
+  };
+  appendSafeLog_(result);
+  return result;
 }
 
 function activateAndRunGmailSalesSameDayEmergencyOnce_(options) {

@@ -74,6 +74,8 @@ assertIncludesAll([
   'prepareGmailSalesSameDay20260624Once',
   'inspectGmailSalesSameDay20260624Readiness',
   'verifyGmailSalesSameDayProperties20260624',
+  'inspectGmailSalesSameDayCandidateRejections20260624',
+  'repairGmailSalesSameDayCandidateMetadata20260624Once',
   'same_day_emergency_20260624',
   'GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624',
   'handleGmailSalesNormalDailyPrepareWebhook_',
@@ -115,6 +117,8 @@ const sameDayEmergencyBody = functionBody('runGmailSalesSameDaySend20260624Once'
 const sameDayPrepareBody = functionBody('prepareGmailSalesSameDay20260624Once');
 const sameDayReadinessBody = functionBody('inspectGmailSalesSameDay20260624Readiness');
 const sameDayPropertyVerifyBody = functionBody('verifyGmailSalesSameDayProperties20260624');
+const sameDayCandidateInspectBody = functionBody('inspectGmailSalesSameDayCandidateRejections20260624');
+const sameDayMetadataRepairBody = functionBody('repairGmailSalesSameDayCandidateMetadata20260624Once');
 const sameDayEmergencyExecutorBody = functionBody('activateAndRunGmailSalesSameDayEmergencyOnce_');
 const sameDayEmergencyValidatorBody = functionBody('validateGmailSalesSameDayEmergencySend_');
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayEmergencyBody), false);
@@ -124,6 +128,8 @@ assert.equal(sameDayPrepareBody.includes('prepareGmailSalesSameDayEmergencyOnce_
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|setProperty|setProperties|deleteProperty|deleteAllProperties|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayReadinessBody), false);
 assert.equal(sameDayReadinessBody.includes('inspectGmailSalesSameDayReadiness_'), true);
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|setProperty|setProperties|deleteProperty|deleteAllProperties|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayPropertyVerifyBody), false);
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|setProperty|setProperties|deleteProperty|deleteAllProperties|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger|setValue|setValues|clearContents|insertSheet/.test(sameDayCandidateInspectBody), false);
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|setProperty|setProperties|deleteProperty|deleteAllProperties|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayMetadataRepairBody), false);
 assert.equal(sameDayEmergencyExecutorBody.includes('executeApprovedGmailSalesPreSendDryRun_'), true);
 assert.equal(sameDayEmergencyExecutorBody.includes('executeApprovedGmailSalesBatch_'), true);
 assert.equal(sameDayEmergencyExecutorBody.includes('skipDailySendWindow: true'), true);
