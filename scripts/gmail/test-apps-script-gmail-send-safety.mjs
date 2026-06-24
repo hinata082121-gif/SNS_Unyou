@@ -11,8 +11,10 @@ assert.equal(/GmailApp\.createDraft\s*\(/.test(code), false);
 assert.equal(/GmailApp\.sendEmail\s*\(/.test(code), false);
 
 assertBodyCallsExecutor('dailySalesEmailJob', 'executeApprovedGmailSalesBatch_');
-assertBodyCallsExecutor('runScheduledDailySend', 'executeApprovedGmailSalesBatch_');
 assertBodyCallsExecutor('runDailyGmailSalesSend', 'executeApprovedGmailSalesBatch_');
+const legacyScheduledDailySendBody = functionBody('runScheduledDailySend');
+assert.equal(legacyScheduledDailySendBody.includes('inspectGmailSalesDailyReadiness'), true);
+assert.equal(/executeApprovedGmailSalesBatch_|MailApp\.sendEmail|GmailApp\.createDraft/.test(legacyScheduledDailySendBody), false);
 assert.equal(/function\s+executeDailyGmailSalesSend_\s*\([^)]*\)\s*\{\s*return executeApprovedGmailSalesBatch_/.test(code), true);
 
 assert.equal(/liveSendEnabled:\s*props\.getProperty\('LIVE_SEND_ENABLED'\)\s*===\s*'true'/.test(code), true);
@@ -70,6 +72,8 @@ assertIncludesAll([
   'resolveSheetSyncOperationMode_',
   'runGmailSalesDailyAutomationTrigger',
   'runGmailSalesDailyAutomationHealthCheck',
+  'inspectGmailSalesDailyReadiness',
+  'enableGmailSalesNormalAutomationWhenReadyOnce',
   'runGmailSalesSameDaySend20260624Once',
   'prepareGmailSalesSameDay20260624Once',
   'inspectGmailSalesSameDay20260624Readiness',

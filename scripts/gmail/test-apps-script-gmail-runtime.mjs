@@ -1532,6 +1532,54 @@ const scenarios = [
     assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
     assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
   }],
+  ['daily readiness passes for verified normal daily batch', (env) => {
+    env.entry = 'dailyReadiness';
+    installNormalDailyReadyState(env);
+  }, (env, result) => {
+    assert.equal(result.readyForScheduledSend, true);
+    assert.equal(result.schedulerAuthority, 'runGmailSalesDailyAutomationTrigger');
+    assert.equal(result.sourceCandidateCount, 45);
+    assert.equal(result.verifiedCandidateCount, 45);
+    assert.equal(result.selectedCount, 30);
+    assert.equal(result.reserveCount, 15);
+    assert.equal(result.preflightPassed, true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['daily enable when ready sets three flags without sending', (env) => {
+    env.entry = 'dailyEnableWhenReady';
+    installNormalDailyReadyState(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'enabled');
+    assert.equal(result.readyForScheduledSend, true);
+    assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'true');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'true');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'true');
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['legacy scheduled daily send is monitor only', (env) => {
+    env.entry = 'legacyScheduledDailySend';
+    installNormalDailyReadyState(env);
+    env.props.AUTOMATION_MASTER_ENABLED = 'true';
+    env.props.AUTO_SEND_ENABLED = 'true';
+    env.props.LIVE_SEND_ENABLED = 'true';
+  }, (env, result) => {
+    assert.equal(result.status, 'monitor_only');
+    assert.equal(result.gmailSendExecuted, false);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['daily automation trigger authority sends thirty once when enabled', (env) => {
+    env.entry = 'dailyAutomationTrigger';
+    installNormalDailyReadyState(env);
+    env.props.AUTOMATION_MASTER_ENABLED = 'true';
+    env.props.AUTO_SEND_ENABLED = 'true';
+    env.props.LIVE_SEND_ENABLED = 'true';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sentCount, 30);
+    assert.equal(env.mailSendCount, 30);
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sent');
+  }],
   ['same-day prepare creates strict state and manifest without sending', (env) => {
     env.entry = 'sameDayPrepare20260624';
     installSameDayPrepareInputState(env);
@@ -2122,6 +2170,10 @@ function runEntry(env) {
   if (env.entry === 'dailyInstall') return env.context.installGmailSalesDailyAutomationTriggers();
   if (env.entry === 'dailyActivate') return env.context.activateGmailSalesDailyAutomationOnce();
   if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
+  if (env.entry === 'dailyReadiness') return env.context.inspectGmailSalesDailyReadiness();
+  if (env.entry === 'dailyEnableWhenReady') return env.context.enableGmailSalesNormalAutomationWhenReadyOnce();
+  if (env.entry === 'legacyScheduledDailySend') return env.context.runScheduledDailySend();
+  if (env.entry === 'dailyAutomationTrigger') return env.context.runGmailSalesDailyAutomationTrigger();
   if (env.entry === 'sameDayPrepare20260624') return env.context.prepareGmailSalesSameDay20260624Once();
   if (env.entry === 'sameDayReadiness20260624') return env.context.inspectGmailSalesSameDay20260624Readiness();
   if (env.entry === 'sameDayPropertiesVerify20260624') return env.context.verifyGmailSalesSameDayProperties20260624();
@@ -2555,6 +2607,63 @@ function installSameDayPrepareInputState(env) {
   delete env.props.APPROVED_SEND_MANIFEST_JSON;
 }
 
+function installNormalDailyReadyState(env) {
+  const targetDate = '2026-06-25';
+  const batchId = `gmail-sales-${targetDate}`;
+  env.nowIso = '2026-06-25T12:00:00.000Z';
+  env.props.SEND_DATE = targetDate;
+  env.props.SEND_BATCH_ID = batchId;
+  env.props.SEND_DATE_OVERRIDE = 'true';
+  env.props.SEND_BATCH_ID_OVERRIDE = 'true';
+  env.props.GMAIL_SEND_MAX_SEND_COUNT = '30';
+  env.props.DAILY_SEND_LIMIT = '30';
+  env.props.AUTOMATION_MASTER_ENABLED = 'false';
+  env.props.AUTO_SEND_ENABLED = 'false';
+  env.props.LIVE_SEND_ENABLED = 'false';
+  env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+  env.props.GMAIL_DAILY_SOURCE_TAB_NAME = 'Gmail営業候補プール';
+  env.props.ALLOWED_SEND_START_HOUR = '11';
+  env.props.ALLOWED_SEND_START_MINUTE = '45';
+  env.props.ALLOWED_SEND_END_HOUR = '12';
+  env.props.ALLOWED_SEND_END_MINUTE = '45';
+  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.rows = Array.from({ length: 30 }, (_, index) => Object.assign({}, buildRow(index + 1), {
+    sendDate: targetDate,
+    sendBatchId: batchId,
+    lastCheckedAt: targetDate
+  }));
+  env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
+    OUTBOX_HEADERS,
+    ...Array.from({ length: 45 }, (_, index) => outboxRowToCells(Object.assign({}, buildSourceOutboxRow(index + 1), {
+      lastCheckedAt: targetDate
+    })))
+  ]);
+  env.workbook.sheets['Gmail営業候補プール'].env = env;
+  const candidateDigests = env.rows.map((row) => env.context.computeCandidateDigest_(row, targetDate, batchId));
+  env.manifest = Object.assign({}, buildAutomaticDailyManifest(env), {
+    targetDate,
+    batchId,
+    maxSendCount: 30,
+    candidateCount: 30,
+    expectedCandidateCount: 30,
+    candidateDigests
+  });
+  env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
+  env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+    targetDate,
+    mode: 'normal_daily',
+    sendBatchId: batchId,
+    expectedCandidateCount: 30,
+    actualCandidateCount: 30,
+    state: 'sheet_synced',
+    sendAttemptCount: 0,
+    actualSendCount: 0,
+    resultUnknown: false,
+    automationVersion: 'normal-daily-v1'
+  });
+}
+
 function installSameDayMetadataRepairInputState(env, options = {}) {
   installSameDayPrepareInputState(env);
   env.props.LIVE_SEND_ENABLED = 'true';
@@ -2879,6 +2988,8 @@ function formatDate(date, pattern) {
   if (pattern === 'yyyy-MM-dd') return `${year}-${month}-${day}`;
   if (pattern === 'yyyy/MM/dd') return `${year}/${month}/${day}`;
   if (pattern === 'HH:mm') return `${hour}:${minute}`;
+  if (pattern === 'H') return String(value.getUTCHours());
+  if (pattern === 'm') return String(value.getUTCMinutes());
   return value.toISOString();
 }
 
