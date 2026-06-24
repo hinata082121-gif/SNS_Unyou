@@ -1532,6 +1532,77 @@ const scenarios = [
     assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
     assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
   }],
+  ['same-day prepare creates strict state and manifest without sending', (env) => {
+    env.entry = 'sameDayPrepare20260624';
+    installSameDayPrepareInputState(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.selectedCount, 30);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.sheetWriteCount, 0);
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+    const state = JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON);
+    const manifest = JSON.parse(env.props.APPROVED_SEND_MANIFEST_JSON);
+    assert.equal(state.state, 'sheet_synced');
+    assert.equal(state.targetDate, '2026-06-24');
+    assert.equal(manifest.targetDate, '2026-06-24');
+    assert.equal(manifest.batchId, 'gmail-sales-2026-06-24');
+    assert.equal(manifest.candidateCount, 30);
+    assert.equal(manifest.maxSendCount, 30);
+    assert.equal(manifest.approvalType, 'automatic_strict_gate');
+    assert.equal(manifest.targetAutoApproved, true);
+    assert.equal(manifest.humanReviewCompleted, false);
+    assert.equal(manifest.humanReviewedCount, 0);
+  }],
+  ['same-day prepare blocks with twenty-nine candidates and writes nothing', (env) => {
+    env.entry = 'sameDayPrepare20260624';
+    installSameDayPrepareInputState(env);
+    env.rows = env.rows.slice(0, 29);
+    env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReason || '').includes('candidate_count_not_30'), true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.setPropertyCount, 0);
+    assert.equal(env.setPropertiesCount, 0);
+  }],
+  ['same-day prepare blocks after deadline and writes nothing', (env) => {
+    env.entry = 'sameDayPrepare20260624';
+    installSameDayPrepareInputState(env);
+    env.nowIso = '2026-06-24T20:01:00.000Z';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReason || '').includes('same_day_emergency_window_closed'), true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.setPropertyCount, 0);
+    assert.equal(env.setPropertiesCount, 0);
+  }],
+  ['same-day readiness is true only after live send is enabled', (env) => {
+    env.entry = 'sameDayReadiness20260624';
+    installSameDayEmergencyReadyState(env);
+    env.props.LIVE_SEND_ENABLED = 'true';
+  }, (env, result) => {
+    assert.equal(result.readyToSend, true);
+    assert.equal(result.candidateCount, 30);
+    assert.equal(result.manifestCandidateCount, 30);
+    assert.equal(result.manifestMaxSendCount, 30);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['same-day properties verify is read-only', (env) => {
+    env.entry = 'sameDayPropertiesVerify20260624';
+    installSameDayPrepareInputState(env);
+    env.props.LIVE_SEND_ENABLED = 'true';
+  }, (env, result) => {
+    assert.equal(result.masterEnabled, true);
+    assert.equal(result.autoSendEnabled, false);
+    assert.equal(result.liveSendEnabled, true);
+    assert.equal(result.automationVersionConfigured, true);
+    assert.equal(result.approvalPolicyVersionConfigured, true);
+    assert.equal(result.sharedSecretPresent, true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.propertyWriteCount, 0);
+  }],
   ['same-day emergency sends thirty once and enables future automation after success', (env) => {
     env.entry = 'sameDayEmergency20260624';
     installSameDayEmergencyReadyState(env);
@@ -1870,6 +1941,7 @@ function buildContext(env) {
       createTextOutput: (text) => ({ setMimeType: () => ({ text }) })
     },
     ScriptApp: {
+      getScriptId: () => 'mock-script-id',
       getProjectTriggers: () => env.triggers.map((trigger) => ({
         getHandlerFunction: () => trigger.handler
       })),
@@ -1951,6 +2023,9 @@ function runEntry(env) {
   if (env.entry === 'dailyInstall') return env.context.installGmailSalesDailyAutomationTriggers();
   if (env.entry === 'dailyActivate') return env.context.activateGmailSalesDailyAutomationOnce();
   if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
+  if (env.entry === 'sameDayPrepare20260624') return env.context.prepareGmailSalesSameDay20260624Once();
+  if (env.entry === 'sameDayReadiness20260624') return env.context.inspectGmailSalesSameDay20260624Readiness();
+  if (env.entry === 'sameDayPropertiesVerify20260624') return env.context.verifyGmailSalesSameDayProperties20260624();
   if (env.entry === 'sameDayEmergency20260624') return env.context.runGmailSalesSameDaySend20260624Once();
   if (env.entry === 'dailyCatchUp') return env.context.activateAndRunGmailSalesDailyCatchUpOnce();
   if (env.entry === 'dailyFutureArm') return env.context.armGmailSalesDailyAutomationForFutureRunsOnce();
@@ -2342,6 +2417,41 @@ function installDailyCatchUpReadyState(env) {
     resultUnknown: false,
     automationVersion: 'normal-daily-v1'
   });
+}
+
+function installSameDayPrepareInputState(env) {
+  const targetDate = '2026-06-24';
+  const batchId = `gmail-sales-${targetDate}`;
+  env.nowIso = '2026-06-24T09:00:00.000Z';
+  env.props.SEND_DATE = targetDate;
+  env.props.SEND_BATCH_ID = batchId;
+  env.props.SEND_DATE_OVERRIDE = 'true';
+  env.props.SEND_BATCH_ID_OVERRIDE = 'true';
+  env.props.GMAIL_SEND_MAX_SEND_COUNT = '30';
+  env.props.DAILY_SEND_LIMIT = '30';
+  env.props.AUTOMATION_MASTER_ENABLED = 'true';
+  env.props.AUTO_SEND_ENABLED = 'false';
+  env.props.LIVE_SEND_ENABLED = 'false';
+  env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.rows = Array.from({ length: 30 }, (_, index) => Object.assign({}, buildRow(index + 1), {
+    sendDate: targetDate,
+    sendBatchId: batchId
+  }));
+  env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+    targetDate: '',
+    mode: 'normal_daily',
+    sendBatchId: '',
+    expectedCandidateCount: 0,
+    actualCandidateCount: 0,
+    state: 'not_started',
+    sendAttemptCount: 0,
+    actualSendCount: 0,
+    resultUnknown: false,
+    automationVersion: 'normal-daily-v1'
+  });
+  delete env.props.APPROVED_SEND_MANIFEST_JSON;
 }
 
 function installSameDayEmergencyReadyState(env) {
