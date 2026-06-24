@@ -70,6 +70,9 @@ assertIncludesAll([
   'resolveSheetSyncOperationMode_',
   'runGmailSalesDailyAutomationTrigger',
   'runGmailSalesDailyAutomationHealthCheck',
+  'runGmailSalesSameDaySend20260624Once',
+  'same_day_emergency_20260624',
+  'GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624',
   'handleGmailSalesNormalDailyPrepareWebhook_',
   'verifyGmailDailyAutomationWebhook_',
   'GMAIL_DAILY_AUTOMATION_STATE_JSON',
@@ -105,6 +108,22 @@ assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(dryRunExecutorBody)
 assert.equal(/setValue|setValues|setProperty|setProperties|deleteProperty|newTrigger|deleteTrigger|SpreadsheetApp\.flush|acquireSheetMaintenanceLease_/.test(dryRunExecutorBody), false);
 assert.equal(/if \(settings\.dryRun === true\) \{\s*return executeApprovedGmailSalesPreSendDryRun_/.test(executorBody), true);
 assert.equal(/if \(configForReset && settings\.dryRun !== true\)/.test(executorBody), true);
+const sameDayEmergencyBody = functionBody('runGmailSalesSameDaySend20260624Once');
+const sameDayEmergencyExecutorBody = functionBody('activateAndRunGmailSalesSameDayEmergencyOnce_');
+const sameDayEmergencyValidatorBody = functionBody('validateGmailSalesSameDayEmergencySend_');
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayEmergencyBody), false);
+assert.equal(sameDayEmergencyBody.includes('activateAndRunGmailSalesSameDayEmergencyOnce_'), true);
+assert.equal(sameDayEmergencyExecutorBody.includes('executeApprovedGmailSalesPreSendDryRun_'), true);
+assert.equal(sameDayEmergencyExecutorBody.includes('executeApprovedGmailSalesBatch_'), true);
+assert.equal(sameDayEmergencyExecutorBody.includes('skipDailySendWindow: true'), true);
+assert.equal(sameDayEmergencyExecutorBody.includes('oneWeekCatchUpSendCount: 0'), true);
+assert.equal(sameDayEmergencyExecutorBody.includes('pastDateSendCount: 0'), true);
+assert.equal(sameDayEmergencyValidatorBody.includes("targetDate !== GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624"), true);
+assert.equal(sameDayEmergencyValidatorBody.includes("state.state === 'sent'"), true);
+assert.equal(sameDayEmergencyValidatorBody.includes('candidate_count_not_30'), true);
+assert.equal(sameDayEmergencyValidatorBody.includes('manifest_max_send_count_not_30'), true);
+assert.equal(sameDayEmergencyValidatorBody.includes('auto_send_not_disabled_before_emergency'), true);
+assert.equal(sameDayEmergencyValidatorBody.includes('live_send_not_at_rest_before_emergency'), true);
 const recoveryDryRunFunction = functionBody('runGmailSalesRecoveryPreSendDryRun');
 assert.equal(recoveryDryRunFunction.includes('executeApprovedGmailSalesRecoveryPreSendDryRun_'), true);
 assert.equal(recoveryDryRunFunction.includes('executeApprovedGmailSalesBatch_'), false);

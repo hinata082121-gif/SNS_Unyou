@@ -1532,6 +1532,64 @@ const scenarios = [
     assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
     assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
   }],
+  ['same-day emergency sends thirty once and enables future automation after success', (env) => {
+    env.entry = 'sameDayEmergency20260624';
+    installSameDayEmergencyReadyState(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sentCount, 30);
+    assert.equal(result.oneWeekCatchUpSendCount, 0);
+    assert.equal(result.pastDateSendCount, 0);
+    assert.equal(env.mailSendCount, 30);
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sent');
+    assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'true');
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'true');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'true');
+  }],
+  ['same-day emergency rerun after sent sends zero', (env) => {
+    env.entry = 'sameDayEmergency20260624';
+    installSameDayEmergencyReadyState(env);
+    env.afterRun = () => {
+      env.secondResult = env.context.runGmailSalesSameDaySend20260624Once();
+    };
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.sentCount, 30);
+    assert.equal(env.secondResult.status, 'blocked');
+    assert.equal((env.secondResult.blockedReason || '').includes('already_sent'), true);
+    assert.equal(env.mailSendCount, 30);
+  }],
+  ['same-day emergency blocks after 20:00 without sending', (env) => {
+    env.entry = 'sameDayEmergency20260624';
+    installSameDayEmergencyReadyState(env);
+    env.nowIso = '2026-06-24T20:01:00.000Z';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReason || '').includes('same_day_emergency_window_closed'), true);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['same-day emergency blocks unless exactly thirty candidates are ready', (env) => {
+    env.entry = 'sameDayEmergency20260624';
+    installSameDayEmergencyReadyState(env);
+    env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify(Object.assign(
+      JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON),
+      { actualCandidateCount: 29 }
+    ));
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReason || '').includes('candidate_count_not_30'), true);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['same-day emergency blocks past-date batches without sending', (env) => {
+    env.entry = 'sameDayEmergency20260624';
+    installSameDayEmergencyReadyState(env);
+    env.props.SEND_DATE = '2026-06-23';
+    env.props.SEND_BATCH_ID = 'gmail-sales-2026-06-23';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReason || '').includes('send_date_mismatch'), true);
+    assert.equal(env.mailSendCount, 0);
+  }],
   ['daily catch-up sends thirty once and enables future automation after success', (env) => {
     env.entry = 'dailyCatchUp';
     installDailyCatchUpReadyState(env);
@@ -1893,6 +1951,7 @@ function runEntry(env) {
   if (env.entry === 'dailyInstall') return env.context.installGmailSalesDailyAutomationTriggers();
   if (env.entry === 'dailyActivate') return env.context.activateGmailSalesDailyAutomationOnce();
   if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
+  if (env.entry === 'sameDayEmergency20260624') return env.context.runGmailSalesSameDaySend20260624Once();
   if (env.entry === 'dailyCatchUp') return env.context.activateAndRunGmailSalesDailyCatchUpOnce();
   if (env.entry === 'dailyFutureArm') return env.context.armGmailSalesDailyAutomationForFutureRunsOnce();
   if (env.entry === 'sheetSyncConnectedDryRun' || env.entry === 'sheetSyncReadOnlySnapshot') {
@@ -2268,6 +2327,50 @@ function installDailyCatchUpReadyState(env) {
     targetDate,
     batchId,
     maxSendCount: 30,
+    candidateDigests
+  });
+  env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
+  env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+    targetDate,
+    mode: 'normal_daily',
+    sendBatchId: batchId,
+    expectedCandidateCount: 30,
+    actualCandidateCount: 30,
+    state: 'sheet_synced',
+    sendAttemptCount: 0,
+    actualSendCount: 0,
+    resultUnknown: false,
+    automationVersion: 'normal-daily-v1'
+  });
+}
+
+function installSameDayEmergencyReadyState(env) {
+  const targetDate = '2026-06-24';
+  const batchId = `gmail-sales-${targetDate}`;
+  env.nowIso = '2026-06-24T09:00:00.000Z';
+  env.props.SEND_DATE = targetDate;
+  env.props.SEND_BATCH_ID = batchId;
+  env.props.SEND_DATE_OVERRIDE = 'true';
+  env.props.SEND_BATCH_ID_OVERRIDE = 'true';
+  env.props.GMAIL_SEND_MAX_SEND_COUNT = '30';
+  env.props.DAILY_SEND_LIMIT = '30';
+  env.props.AUTOMATION_MASTER_ENABLED = 'true';
+  env.props.AUTO_SEND_ENABLED = 'false';
+  env.props.LIVE_SEND_ENABLED = 'false';
+  env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.rows = Array.from({ length: 30 }, (_, index) => Object.assign({}, buildRow(index + 1), {
+    sendDate: targetDate,
+    sendBatchId: batchId
+  }));
+  env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
+  const candidateDigests = env.rows.map((row) => env.context.computeCandidateDigest_(row, targetDate, batchId));
+  env.manifest = Object.assign({}, buildAutomaticDailyManifest(env), {
+    targetDate,
+    batchId,
+    maxSendCount: 30,
+    candidateCount: 30,
+    expectedCandidateCount: 30,
     candidateDigests
   });
   env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
