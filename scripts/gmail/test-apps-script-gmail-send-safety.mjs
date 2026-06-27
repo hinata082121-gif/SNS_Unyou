@@ -74,6 +74,18 @@ assertIncludesAll([
   'runGmailSalesDailyAutomationHealthCheck',
   'inspectGmailSalesDailyReadiness',
   'enableGmailSalesNormalAutomationWhenReadyOnce',
+  'runGmailSalesProductionControlLoop',
+  'runGmailSalesProductionControlLoopManualSafe',
+  'prepareGmailSalesDailyBatchForTodayOnce',
+  'runGmailSalesDailyEnableWhenReady',
+  'runGmailSalesDailyPostSendAudit',
+  'runGmailSalesWeeklyReportAndOptimization',
+  'installGmailSalesProductionTriggersOnce',
+  'inspectGmailSalesProductionTriggers',
+  'setGmailSalesSafeRestPropertiesOnce',
+  'inspectGmailSalesProductionProperties',
+  'inspectGmailSalesCurrentOperationalStatus',
+  'getGmailSalesOperationalDayPolicy_',
   'runGmailSalesSameDaySend20260624Once',
   'prepareGmailSalesSameDay20260624Once',
   'inspectGmailSalesSameDay20260624Readiness',
@@ -118,6 +130,9 @@ assert.equal(/setValue|setValues|setProperty|setProperties|deleteProperty|newTri
 assert.equal(/if \(settings\.dryRun === true\) \{\s*return executeApprovedGmailSalesPreSendDryRun_/.test(executorBody), true);
 assert.equal(/if \(configForReset && settings\.dryRun !== true\)/.test(executorBody), true);
 const sameDayEmergencyBody = functionBody('runGmailSalesSameDaySend20260624Once');
+const productionControlLoopBody = functionBody('runGmailSalesProductionControlLoop');
+const productionControlLoopInternalBody = functionBody('runGmailSalesProductionControlLoop_');
+const weeklyReportBody = functionBody('runGmailSalesWeeklyReportAndOptimization');
 const sameDayPrepareBody = functionBody('prepareGmailSalesSameDay20260624Once');
 const sameDayReadinessBody = functionBody('inspectGmailSalesSameDay20260624Readiness');
 const sameDayPropertyVerifyBody = functionBody('verifyGmailSalesSameDayProperties20260624');
@@ -126,6 +141,9 @@ const sameDayMetadataRepairBody = functionBody('repairGmailSalesSameDayCandidate
 const sameDayEmergencyExecutorBody = functionBody('activateAndRunGmailSalesSameDayEmergencyOnce_');
 const sameDayEmergencyValidatorBody = functionBody('validateGmailSalesSameDayEmergencySend_');
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayEmergencyBody), false);
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(productionControlLoopBody), false);
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(productionControlLoopInternalBody), false);
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(weeklyReportBody), false);
 assert.equal(sameDayEmergencyBody.includes('activateAndRunGmailSalesSameDayEmergencyOnce_'), true);
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayPrepareBody), false);
 assert.equal(sameDayPrepareBody.includes('prepareGmailSalesSameDayEmergencyOnce_'), true);

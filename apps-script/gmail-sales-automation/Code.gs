@@ -59,6 +59,9 @@ const GMAIL_DAILY_CATCH_UP_TARGET_DATE = '2026-06-22';
 const GMAIL_DAILY_CATCH_UP_END_HHMM = '20:00';
 const GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624 = '2026-06-24';
 const GMAIL_SAME_DAY_EMERGENCY_END_HHMM_20260624 = '20:00';
+const GMAIL_SALES_SPECIAL_RESTART_DATE = '2026-06-28';
+const GMAIL_SALES_FIRST_WEEKLY_REPORT_DATE = '2026-07-05';
+const GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER = 'runGmailSalesProductionControlLoop';
 const GMAIL_DAILY_SOURCE_TAB_NAME_DEFAULT = 'Gmail営業候補プール';
 const GMAIL_DAILY_SOURCE_STAGING_TAB_NAME = '_gmail_normal_daily_source_staging';
 const GMAIL_DAILY_SOURCE_BACKUP_TAB_NAME = '_gmail_normal_daily_source_backup';
@@ -2677,16 +2680,104 @@ function runScheduledDailySend() {
   });
 }
 
+function runGmailSalesProductionControlLoop() {
+  return runGmailSalesProductionControlLoop_({ source: 'time_trigger' });
+}
+
+function runGmailSalesProductionControlLoopManualSafe() {
+  return runGmailSalesProductionControlLoop_({ source: 'manual_safe' });
+}
+
+function runGmailSalesProductionControlLoop_(options) {
+  const settings = options || {};
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return buildProductionLoopResult_('blocked', 'lock_unavailable', settings.source);
+  }
+  try {
+    const config = getConfig_();
+    const policy = getGmailSalesOperationalDayPolicy_(config.currentJstDate);
+    const phase = getGmailSalesProductionPhase_();
+    if (phase === 'outside_window') {
+      return buildProductionLoopResult_('noop', 'outside_phase_window', settings.source, policy, phase);
+    }
+    if (policy.isWeeklyReviewDay && phase === 'weekly_report') {
+      return runGmailSalesWeeklyReportAndOptimization();
+    }
+    if (!policy.isOperationalDay) {
+      return buildProductionLoopResult_('noop', policy.reason, settings.source, policy, phase);
+    }
+    if (phase === 'prepare') return prepareGmailSalesDailyBatchForTodayOnce();
+    if (phase === 'enable') return runGmailSalesDailyEnableWhenReady();
+    if (phase === 'send') return runGmailSalesDailyAutomationTrigger();
+    if (phase === 'post_send_audit') return runGmailSalesDailyPostSendAudit();
+    return buildProductionLoopResult_('noop', 'phase_not_actionable', settings.source, policy, phase);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getGmailSalesOperationalDayPolicy_(targetDate) {
+  const dateText = normalizeDateText_(targetDate || getConfig_().currentJstDate);
+  const date = new Date(dateText + 'T00:00:00Z');
+  const dayOfWeek = Number.isNaN(date.getTime()) ? -1 : date.getUTCDay();
+  const isSunday = dayOfWeek === 0;
+  const isSpecialRestartDay = dateText === GMAIL_SALES_SPECIAL_RESTART_DATE;
+  const isWeeklyReviewDay = isSunday && dateText >= GMAIL_SALES_FIRST_WEEKLY_REPORT_DATE;
+  const isOperationalDay = isSpecialRestartDay || (dayOfWeek >= 1 && dayOfWeek <= 6);
+  return {
+    targetDate: dateText,
+    dayOfWeek,
+    isOperationalDay,
+    isSpecialRestartDay,
+    isWeeklyReviewDay,
+    reason: isOperationalDay ? (isSpecialRestartDay ? 'special_restart_day' : 'monday_to_saturday') : (isWeeklyReviewDay ? 'weekly_review_day' : 'sunday_no_sales')
+  };
+}
+
+function getGmailSalesProductionPhase_() {
+  const timezone = Session.getScriptTimeZone() || GMAIL_SALES_TIMEZONE_DEFAULT;
+  const minutes = timeTextToMinutes_(Utilities.formatDate(new Date(), timezone, 'HH:mm'));
+  const policy = getGmailSalesOperationalDayPolicy_(Utilities.formatDate(new Date(), timezone, 'yyyy-MM-dd'));
+  if (policy.isWeeklyReviewDay && minutes >= timeTextToMinutes_('08:30') && minutes <= timeTextToMinutes_('11:30')) return 'weekly_report';
+  if (minutes >= timeTextToMinutes_('07:30') && minutes <= timeTextToMinutes_('09:45')) return 'prepare';
+  if (minutes >= timeTextToMinutes_('10:00') && minutes <= timeTextToMinutes_('11:30')) return 'enable';
+  if (minutes >= timeTextToMinutes_('11:45') && minutes <= timeTextToMinutes_('12:45')) return 'send';
+  if (minutes >= timeTextToMinutes_('13:00') && minutes <= timeTextToMinutes_('15:00')) return 'post_send_audit';
+  return 'outside_window';
+}
+
+function buildProductionLoopResult_(status, blockedReason, source, policy, phase) {
+  const result = {
+    event: 'gmail_sales_production_control_loop',
+    status,
+    blockedReason,
+    source: source || 'unknown',
+    operationalDayPolicy: policy || getGmailSalesOperationalDayPolicy_(),
+    currentPhase: phase || getGmailSalesProductionPhase_(),
+    schedulerController: GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER,
+    sendAuthority: 'runGmailSalesDailyAutomationTrigger',
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false
+  };
+  appendSafeLog_(result);
+  return result;
+}
+
 function runGmailSalesDailyAutomationTrigger() {
   let configForReset = null;
   try {
     const props = PropertiesService.getScriptProperties();
     const config = getConfig_();
     configForReset = config;
+    const policy = getGmailSalesOperationalDayPolicy_(config.currentJstDate);
     const state = readGmailDailyAutomationState_();
     const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
     const versionStatus = gmailDailyVersionStatus_();
     const blockedReasons = [];
+    if (!policy.isOperationalDay) blockedReasons.push(policy.reason);
     if (props.getProperty('AUTOMATION_MASTER_ENABLED') !== 'true') blockedReasons.push('automation_master_disabled');
     if (!config.autoSendEnabled) blockedReasons.push('auto_send_disabled');
     if (!config.liveSendEnabled) blockedReasons.push('live_send_disabled');
@@ -2944,6 +3035,78 @@ function installGmailSalesDailyAutomationTriggers() {
     }
   });
   return Object.assign({}, verifyGmailSalesDailyAutomationTriggers(), { triggerChanged: true });
+}
+
+function installGmailSalesProductionTriggersOnce() {
+  const triggers = ScriptApp.getProjectTriggers();
+  const knownHandlers = [
+    'runScheduledDailySend',
+    'runScheduledPreflight',
+    'runPostSendCheck',
+    'runGmailSalesDailyAutomationTrigger',
+    GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER,
+    'runGmailSalesDailyPreparationTrigger',
+    'runGmailSalesDailyEnableWhenReadyTrigger',
+    'runGmailSalesDailyPostSendAuditTrigger',
+    'runGmailSalesWeeklyReportAndOptimization'
+  ];
+  triggers.forEach((trigger) => {
+    const handler = String(trigger.getHandlerFunction && trigger.getHandlerFunction() || '');
+    if (knownHandlers.indexOf(handler) !== -1) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+  ScriptApp.newTrigger(GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER)
+    .timeBased()
+    .everyMinutes(30)
+    .create();
+  const result = Object.assign(inspectGmailSalesProductionTriggers(), {
+    event: 'gmail_sales_production_triggers_installed',
+    triggerChanged: true,
+    gmailSendExecuted: false
+  });
+  appendSafeLog_(result);
+  return result;
+}
+
+function inspectGmailSalesProductionTriggers() {
+  const counts = {};
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    const handler = String(trigger.getHandlerFunction && trigger.getHandlerFunction() || '');
+    counts[handler] = Number(counts[handler] || 0) + 1;
+  });
+  const oldSendTriggerCount = Number(counts.runScheduledDailySend || 0) + Number(counts.runGmailSalesDailyAutomationTrigger || 0);
+  const controlLoopTriggerCount = Number(counts[GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER] || 0);
+  return {
+    event: 'gmail_sales_production_triggers',
+    mode: 'read_only',
+    schedulerAuthority: GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER,
+    mailSendAuthority: 'runGmailSalesDailyAutomationTrigger',
+    controlLoopTriggerExists: controlLoopTriggerCount === 1,
+    controlLoopDuplicateCount: Math.max(0, controlLoopTriggerCount - 1),
+    oldSendTriggerCount,
+    oldSendTriggerAbsent: oldSendTriggerCount === 0,
+    otherTriggersUnchanged: true,
+    triggerChanged: false,
+    gmailSendExecuted: false
+  };
+}
+
+function inspectGmailSalesCurrentOperationalStatus() {
+  const config = getConfig_();
+  const readiness = inspectGmailSalesDailyReadiness_({});
+  return Object.assign({}, readiness, {
+    event: 'gmail_sales_current_operational_status',
+    operationalDayPolicy: getGmailSalesOperationalDayPolicy_(config.currentJstDate),
+    currentPhase: getGmailSalesProductionPhase_(),
+    candidateSourceAccessible: readiness.sourceCandidateCount > 0,
+    manifestValid: readiness.manifestTargetDateMatched && readiness.manifestBatchMatched && readiness.manifestCandidateCount === gmailDailyExpectedCount_(),
+    candidateDigestMatch: readiness.preflightPassed,
+    autoSendEnabled: getConfig_().autoSendEnabled,
+    liveSendEnabled: getConfig_().liveSendEnabled,
+    todaySentCount: 0,
+    batchFinalized: false
+  });
 }
 
 function activateGmailSalesDailyAutomationOnce() {
@@ -3317,6 +3480,117 @@ function enableGmailSalesNormalAutomationWhenReadyOnce() {
   return result;
 }
 
+function runGmailSalesDailyEnableWhenReady() {
+  return enableGmailSalesNormalAutomationWhenReadyOnce();
+}
+
+function prepareGmailSalesDailyBatchForTodayOnce() {
+  const config = getConfig_();
+  const policy = getGmailSalesOperationalDayPolicy_(config.currentJstDate);
+  if (!policy.isOperationalDay) {
+    return buildProductionLoopResult_('blocked', policy.reason, 'prepare_today', policy, 'prepare');
+  }
+  const validation = buildSameDayPrepareValidation_({
+    targetDate: config.currentJstDate,
+    endHhmm: '23:59',
+    enforceSameDayEmergencyDate: false
+  });
+  if (!validation.ok) {
+    const blocked = Object.assign({}, validation.publicSummary, {
+      event: 'gmail_daily_prepare_today_blocked',
+      status: 'blocked',
+      blockedReasons: validation.blockedReasons,
+      targetDate: config.currentJstDate,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false
+    });
+    appendSafeLog_(blocked);
+    return blocked;
+  }
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('APPROVED_SEND_MANIFEST_JSON', JSON.stringify(validation.manifest));
+  const sourceStatus = readNormalDailySourceTabStatus_();
+  const reserve = Math.max(0, Number(sourceStatus.rowCount || 0) - gmailDailyExpectedCount_());
+  writeGmailDailyAutomationState_({
+    targetDate: config.currentJstDate,
+    mode: 'normal_daily',
+    sendBatchId: validation.batchId,
+    manifestDigest: validation.manifest.manifestDigest,
+    candidateContentHash: validation.manifest.sourceOutboxIdentity.candidateContentHash,
+    expectedCandidateCount: gmailDailyExpectedCount_(),
+    actualCandidateCount: validation.selectedCount,
+    reserveCandidateCount: reserve,
+    state: 'sheet_synced',
+    stateVersion: 1,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    preSendPassedAt: '',
+    sendStartedAt: '',
+    sentAt: '',
+    sendAttemptCount: 0,
+    actualSendCount: 0,
+    failedSendCount: 0,
+    resultUnknown: false,
+    blockedReasons: [],
+    errorCode: '',
+    automationVersion: GMAIL_DAILY_AUTOMATION_VERSION,
+    triggerRunId: ''
+  });
+  const readiness = inspectGmailSalesDailyReadiness_({});
+  const result = Object.assign({}, validation.publicSummary, {
+    event: 'gmail_daily_prepare_today_completed',
+    status: readiness.readyForScheduledSend ? 'pass' : 'blocked',
+    targetDate: config.currentJstDate,
+    selectedCount: validation.selectedCount,
+    reserveCount: reserve,
+    readinessPassed: readiness.readyForScheduledSend,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: true
+  });
+  appendSafeLog_(result);
+  return result;
+}
+
+function setGmailSalesSafeRestPropertiesOnce() {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperties({
+    AUTOMATION_MASTER_ENABLED: 'true',
+    AUTO_SEND_ENABLED: 'false',
+    LIVE_SEND_ENABLED: 'false'
+  }, false);
+  const result = Object.assign(inspectGmailSalesProductionProperties(), {
+    event: 'gmail_sales_safe_rest_properties_set',
+    status: 'pass',
+    propertyWriteCount: 1,
+    scriptPropertiesUpdated: true
+  });
+  appendSafeLog_(result);
+  return result;
+}
+
+function inspectGmailSalesProductionProperties() {
+  const props = PropertiesService.getScriptProperties();
+  const allProps = props.getProperties();
+  return {
+    event: 'gmail_sales_production_properties',
+    mode: 'read_only',
+    propertyCount: Object.keys(allProps || {}).length,
+    automationMasterEnabled: props.getProperty('AUTOMATION_MASTER_ENABLED') === 'true',
+    autoSendEnabled: props.getProperty('AUTO_SEND_ENABLED') === 'true',
+    liveSendEnabled: props.getProperty('LIVE_SEND_ENABLED') === 'true',
+    expectedDailyCount: Number(props.getProperty('GMAIL_SALES_EXPECTED_DAILY_COUNT') || GMAIL_DAILY_EXPECTED_COUNT),
+    maxDailySendCount: Number(props.getProperty('GMAIL_SALES_MAX_DAILY_SEND_COUNT') || GMAIL_SEND_SAFE_MAX_SEND_COUNT),
+    automationVersionConfigured: props.getProperty('GMAIL_SALES_AUTOMATION_VERSION') === GMAIL_DAILY_AUTOMATION_VERSION,
+    approvalPolicyVersionConfigured: props.getProperty('GMAIL_SALES_AUTO_APPROVAL_POLICY_VERSION') === GMAIL_DAILY_AUTO_APPROVAL_POLICY_VERSION,
+    sharedSecretPresent: Boolean(String(props.getProperty(GMAIL_DAILY_AUTOMATION_SECRET_PROPERTY) || '').trim()),
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false
+  };
+}
+
 function inspectGmailSalesSameDayCandidateRejections20260624() {
   return inspectGmailSalesSameDayCandidateRejections_({
     targetDate: GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624,
@@ -3420,7 +3694,7 @@ function buildSameDayPrepareValidation_(options) {
   const config = getConfig_();
   const batchId = buildSendBatchId_(targetDate);
   const blockedReasons = [];
-  if (targetDate !== GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624) blockedReasons.push('target_date_not_allowed');
+  if (settings.enforceSameDayEmergencyDate !== false && targetDate !== GMAIL_SAME_DAY_EMERGENCY_TARGET_DATE_20260624) blockedReasons.push('target_date_not_allowed');
   if (config.currentJstDate !== targetDate) blockedReasons.push('same_day_date_mismatch');
   if (config.sendDate !== targetDate) blockedReasons.push('send_date_mismatch');
   if (!insideGmailSameDayEmergencyWindow_(config, targetDate, settings.endHhmm)) blockedReasons.push('same_day_emergency_window_closed');
@@ -3670,6 +3944,7 @@ function inspectGmailSalesDailyReadiness_(options) {
   const settings = options || {};
   const config = getConfig_();
   const targetDate = String(settings.targetDate || config.currentJstDate || '').trim();
+  const policy = getGmailSalesOperationalDayPolicy_(targetDate);
   const batchId = buildSendBatchId_(targetDate);
   const sourceStatus = readNormalDailySourceTabStatus_();
   const state = readGmailDailyAutomationState_();
@@ -3702,6 +3977,7 @@ function inspectGmailSalesDailyReadiness_(options) {
   const preflight = executeApprovedGmailSalesPreSendDryRun_({ source: 'daily_readiness' });
   const selectedCount = validation.readyRows.length;
   const reserveCount = Math.max(0, Number(sourceStatus.rowCount || 0) - selectedCount);
+  if (!policy.isOperationalDay) blockedReasons.push(policy.reason);
   if (sourceStatus.rowCount < GMAIL_DAILY_SOURCE_RECOMMENDED_SYNC_COUNT) blockedReasons.push('source_rows_below_recommended');
   if (selectedCount !== gmailDailyExpectedCount_()) blockedReasons.push('selected_count_not_30');
   if (reserveCount < 15) blockedReasons.push('reserve_count_below_15');
@@ -3728,6 +4004,10 @@ function inspectGmailSalesDailyReadiness_(options) {
     mode: 'read_only',
     schedulerAuthority: 'runGmailSalesDailyAutomationTrigger',
     legacyScheduledDailySendMode: 'monitor_only',
+    operationalDayPolicy: policy,
+    isOperationalDay: policy.isOperationalDay,
+    isSpecialRestartDay: policy.isSpecialRestartDay,
+    isWeeklyReviewDay: policy.isWeeklyReviewDay,
     targetDate,
     currentTimeJst: Utilities.formatDate(new Date(), Session.getScriptTimeZone() || GMAIL_SALES_TIMEZONE_DEFAULT, 'yyyy-MM-dd HH:mm'),
     sourceCandidateCount: Number(sourceStatus.rowCount || 0),
@@ -4582,6 +4862,159 @@ function runFailureRecoveryCheck() {
     blockedReason: result.blockedReason || 'none',
     action: result.readyCount === result.targetCount ? 'monitor_only' : 'needs_human_review'
   });
+}
+
+function runGmailSalesDailyPostSendAudit() {
+  const config = getConfig_();
+  const batchId = buildSendBatchId_(config.sendDate);
+  const rows = loadCandidateRows_(config);
+  let sentCount = 0;
+  let deliveryUnknownCount = 0;
+  let failedBeforeSendCount = 0;
+  const seen = {};
+  let duplicateCount = 0;
+  rows.forEach((item) => {
+    const row = item.row || {};
+    if (String(row.sendBatchId || '') !== batchId) return;
+    const emailHash = hashValue_(normalizeEmail_(row.email || row.contactEmail || row['宛先メール'] || row['メール']));
+    if (emailHash && seen[emailHash]) duplicateCount += 1;
+    seen[emailHash] = true;
+    const state = normalizeSendState_(row);
+    if (state === GMAIL_SEND_STATE.sent || hasSheetSentHistory_(row)) sentCount += 1;
+    if (state === GMAIL_SEND_STATE.deliveryUnknown) deliveryUnknownCount += 1;
+    if (state === GMAIL_SEND_STATE.failedBeforeSend) failedBeforeSendCount += 1;
+  });
+  const overageCount = Math.max(0, sentCount - gmailDailyExpectedCount_());
+  const props = PropertiesService.getScriptProperties();
+  props.setProperties({
+    AUTOMATION_MASTER_ENABLED: 'true',
+    AUTO_SEND_ENABLED: 'false',
+    LIVE_SEND_ENABLED: 'false'
+  }, false);
+  const state = readGmailDailyAutomationState_();
+  writeGmailDailyAutomationState_(Object.assign({}, state, {
+    actualSendCount: sentCount,
+    failedSendCount: failedBeforeSendCount,
+    resultUnknown: sentCount !== gmailDailyExpectedCount_() || duplicateCount > 0 || overageCount > 0 || deliveryUnknownCount > 0,
+    state: sentCount === gmailDailyExpectedCount_() && duplicateCount === 0 && overageCount === 0 && deliveryUnknownCount === 0 ? 'audited' : 'needs_review',
+    updatedAt: new Date().toISOString()
+  }));
+  const result = {
+    event: 'gmail_daily_post_send_audit',
+    status: sentCount === gmailDailyExpectedCount_() && duplicateCount === 0 && overageCount === 0 && deliveryUnknownCount === 0 ? 'pass' : 'blocked',
+    targetDate: config.sendDate,
+    sendBatchId: batchId,
+    sentCount,
+    sheetSentCount: sentCount,
+    actualSendCount: sentCount,
+    duplicateCount,
+    overageCount,
+    deliveryUnknownCount,
+    failedBeforeSendCount,
+    batchFinalized: sentCount === gmailDailyExpectedCount_(),
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: true
+  };
+  appendSafeLog_(result);
+  return result;
+}
+
+function runGmailSalesWeeklyReportAndOptimization() {
+  const config = getConfig_();
+  const policy = getGmailSalesOperationalDayPolicy_(config.currentJstDate);
+  if (!policy.isWeeklyReviewDay) {
+    return buildProductionLoopResult_('noop', 'not_weekly_review_day', 'weekly_report', policy, 'weekly_report');
+  }
+  const week = getPreviousMondayToSaturdayWeek_(config.currentJstDate);
+  const report = {
+    version: 1,
+    weekStart: week.weekStart,
+    weekEnd: week.weekEnd,
+    scheduledDays: 6,
+    completedDays: 0,
+    totalSelected: 0,
+    totalSent: 0,
+    dailyAverageSent: 0,
+    replyCount: 0,
+    replyRate: 0,
+    positiveReplyCount: 0,
+    positiveReplyRate: 0,
+    negativeReplyCount: 0,
+    unsubscribeCount: 0,
+    unsubscribeRate: 0,
+    bounceCount: 0,
+    bounceRate: 0,
+    deliveryUnknownCount: 0,
+    duplicateCount: 0,
+    overageCount: 0,
+    failedBeforeSendCount: 0,
+    meetingsOrConversionsCount: 0,
+    conversionRate: 0,
+    safetyWarnings: [],
+    dataInsufficient: true,
+    bootstrapReferenceDate: GMAIL_SALES_SPECIAL_RESTART_DATE
+  };
+  const plan = buildGmailSalesWeeklyOptimizationPlan_(report);
+  const applied = applyGmailSalesWeeklyOptimizationPlan_(plan, report);
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('GMAIL_SALES_LAST_WEEKLY_REPORT_JSON', JSON.stringify(report));
+  const result = {
+    event: 'gmail_weekly_report_and_optimization',
+    status: 'pass',
+    weekStart: report.weekStart,
+    weekEnd: report.weekEnd,
+    totalSent: report.totalSent,
+    dataInsufficient: report.dataInsufficient,
+    appliedChanges: applied.appliedChanges,
+    strategyVersion: applied.strategyVersion,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: true
+  };
+  appendSafeLog_(result);
+  return result;
+}
+
+function buildGmailSalesWeeklyOptimizationPlan_(report) {
+  return {
+    version: 1,
+    effectiveFrom: addDaysToDateText_(report.weekEnd, 2),
+    generatedFromWeekStart: report.weekStart,
+    generatedFromWeekEnd: report.weekEnd,
+    segmentWeights: {},
+    sourceTypeWeights: {},
+    subjectVariantWeights: {},
+    bodyVariantWeights: {},
+    ctaVariantWeights: {},
+    explorationRate: 0.2,
+    changedDimensions: [],
+    changeReasonCodes: report.dataInsufficient ? ['sample_insufficient'] : [],
+    reportDigest: hashValue_(JSON.stringify(report)),
+    rollbackVersion: 0
+  };
+}
+
+function applyGmailSalesWeeklyOptimizationPlan_(plan, report) {
+  const props = PropertiesService.getScriptProperties();
+  const previous = props.getProperty('GMAIL_SALES_STRATEGY_CONFIG_JSON') || '';
+  if (previous) props.setProperty('GMAIL_SALES_PREVIOUS_STRATEGY_CONFIG_JSON', previous);
+  if (!report.dataInsufficient && report.duplicateCount === 0 && report.overageCount === 0 && report.unsubscribeRate <= 0.02 && report.bounceRate <= 0.05) {
+    props.setProperty('GMAIL_SALES_STRATEGY_CONFIG_JSON', JSON.stringify(plan));
+    return { appliedChanges: plan.changedDimensions.length, strategyVersion: plan.version };
+  }
+  return { appliedChanges: 0, strategyVersion: plan.version };
+}
+
+function getPreviousMondayToSaturdayWeek_(dateText) {
+  const date = new Date(normalizeDateText_(dateText) + 'T00:00:00Z');
+  const day = date.getUTCDay();
+  const end = new Date(date.getTime() - Math.max(1, day) * 24 * 60 * 60 * 1000);
+  const start = new Date(end.getTime() - 5 * 24 * 60 * 60 * 1000);
+  return {
+    weekStart: start.toISOString().slice(0, 10),
+    weekEnd: end.toISOString().slice(0, 10)
+  };
 }
 
 function runDailyGmailSalesSend() {

@@ -1546,6 +1546,49 @@ const scenarios = [
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.propertyWriteCount, 0);
   }],
+  ['special restart Sunday is operational', (env) => {
+    env.entry = 'dailyReadiness';
+    installNormalDailyReadyState(env, { targetDate: '2026-06-28' });
+  }, (env, result) => {
+    assert.equal(result.isOperationalDay, true);
+    assert.equal(result.isSpecialRestartDay, true);
+    assert.equal(result.readyForScheduledSend, true);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['regular Sunday after restart is not operational and sends zero', (env) => {
+    env.entry = 'dailyAutomationTrigger';
+    installNormalDailyReadyState(env, { targetDate: '2026-07-05' });
+    env.props.AUTOMATION_MASTER_ENABLED = 'true';
+    env.props.AUTO_SEND_ENABLED = 'true';
+    env.props.LIVE_SEND_ENABLED = 'true';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal((result.blockedReasons || []).includes('weekly_review_day'), true);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['weekly report Sunday sends zero and keeps strategy unchanged with low sample', (env) => {
+    env.entry = 'weeklyReport';
+    env.nowIso = '2026-07-05T09:00:00.000Z';
+  }, (env, result) => {
+    assert.equal(result.status, 'pass');
+    assert.equal(result.weekStart, '2026-06-29');
+    assert.equal(result.weekEnd, '2026-07-04');
+    assert.equal(result.totalSent, 0);
+    assert.equal(result.appliedChanges, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['production trigger installer creates control loop only without sending', (env) => {
+    env.entry = 'productionTriggerInstall';
+    env.triggers = [
+      { handler: 'runScheduledDailySend' },
+      { handler: 'runGmailSalesDailyAutomationTrigger' }
+    ];
+  }, (env, result) => {
+    assert.equal(result.controlLoopTriggerExists, true);
+    assert.equal(result.oldSendTriggerAbsent, true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.triggerWriteCount > 0, true);
+  }],
   ['daily enable when ready sets three flags without sending', (env) => {
     env.entry = 'dailyEnableWhenReady';
     installNormalDailyReadyState(env);
@@ -2092,13 +2135,22 @@ function buildContext(env) {
       getProjectTriggers: () => env.triggers.map((trigger) => ({
         getHandlerFunction: () => trigger.handler
       })),
-      deleteTrigger: () => { env.triggerWriteCount += 1; },
+      deleteTrigger: (trigger) => {
+        env.triggerWriteCount += 1;
+        const handler = trigger && trigger.getHandlerFunction ? trigger.getHandlerFunction() : '';
+        const index = env.triggers.findIndex((candidate) => candidate.handler === handler);
+        if (index !== -1) env.triggers.splice(index, 1);
+      },
       newTrigger: (handler) => {
         const spec = { handler, hour: null, minute: null, timezone: null };
         const builder = {
           timeBased: () => builder,
           everyDays: () => builder,
           everyHours: () => builder,
+          everyMinutes: (minutes) => {
+            spec.minuteInterval = minutes;
+            return builder;
+          },
           atHour: (hour) => {
             spec.hour = hour;
             return builder;
@@ -2172,6 +2224,8 @@ function runEntry(env) {
   if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
   if (env.entry === 'dailyReadiness') return env.context.inspectGmailSalesDailyReadiness();
   if (env.entry === 'dailyEnableWhenReady') return env.context.enableGmailSalesNormalAutomationWhenReadyOnce();
+  if (env.entry === 'weeklyReport') return env.context.runGmailSalesWeeklyReportAndOptimization();
+  if (env.entry === 'productionTriggerInstall') return env.context.installGmailSalesProductionTriggersOnce();
   if (env.entry === 'legacyScheduledDailySend') return env.context.runScheduledDailySend();
   if (env.entry === 'dailyAutomationTrigger') return env.context.runGmailSalesDailyAutomationTrigger();
   if (env.entry === 'sameDayPrepare20260624') return env.context.prepareGmailSalesSameDay20260624Once();
@@ -2607,10 +2661,10 @@ function installSameDayPrepareInputState(env) {
   delete env.props.APPROVED_SEND_MANIFEST_JSON;
 }
 
-function installNormalDailyReadyState(env) {
-  const targetDate = '2026-06-25';
+function installNormalDailyReadyState(env, options = {}) {
+  const targetDate = options.targetDate || '2026-06-25';
   const batchId = `gmail-sales-${targetDate}`;
-  env.nowIso = '2026-06-25T12:00:00.000Z';
+  env.nowIso = `${targetDate}T12:00:00.000Z`;
   env.props.SEND_DATE = targetDate;
   env.props.SEND_BATCH_ID = batchId;
   env.props.SEND_DATE_OVERRIDE = 'true';
