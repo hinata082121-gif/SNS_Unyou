@@ -76,6 +76,7 @@ assertIncludesAll([
   'enableGmailSalesNormalAutomationWhenReadyOnce',
   'runGmailSalesProductionControlLoop',
   'runGmailSalesProductionControlLoopManualSafe',
+  'prepareDailyPipeline',
   'prepareGmailSalesDailyBatchForTodayOnce',
   'runGmailSalesDailyEnableWhenReady',
   'runGmailSalesDailyPostSendAudit',
@@ -132,6 +133,8 @@ assert.equal(/if \(configForReset && settings\.dryRun !== true\)/.test(executorB
 const sameDayEmergencyBody = functionBody('runGmailSalesSameDaySend20260624Once');
 const productionControlLoopBody = functionBody('runGmailSalesProductionControlLoop');
 const productionControlLoopInternalBody = functionBody('runGmailSalesProductionControlLoop_');
+const prepareDailyPipelineBody = functionBody('prepareDailyPipeline');
+const prepareDailyPipelineInternalBody = functionBody('prepareDailyPipeline_');
 const weeklyReportBody = functionBody('runGmailSalesWeeklyReportAndOptimization');
 const sameDayPrepareBody = functionBody('prepareGmailSalesSameDay20260624Once');
 const sameDayReadinessBody = functionBody('inspectGmailSalesSameDay20260624Readiness');
@@ -143,6 +146,8 @@ const sameDayEmergencyValidatorBody = functionBody('validateGmailSalesSameDayEme
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayEmergencyBody), false);
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(productionControlLoopBody), false);
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(productionControlLoopInternalBody), false);
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(prepareDailyPipelineBody), false);
+assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(prepareDailyPipelineInternalBody), false);
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft/.test(weeklyReportBody), false);
 assert.equal(sameDayEmergencyBody.includes('activateAndRunGmailSalesSameDayEmergencyOnce_'), true);
 assert.equal(/MailApp\.sendEmail|GmailApp\.createDraft|ScriptApp\.newTrigger|ScriptApp\.deleteTrigger/.test(sameDayPrepareBody), false);

@@ -1070,7 +1070,8 @@ const scenarios = [
     assert.equal(env.draftCreateCount, 0);
     assert.equal(env.triggerWriteCount, 0);
     assert.equal(env.props.APPROVED_SEND_MANIFEST_JSON.includes('automatic_strict_gate'), true);
-    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'ready');
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).sheetSynced, true);
   }],
   ['normal daily prepare webhook rejects replay before second write', (env) => {
     env.entry = 'dailyPrepareWebhookReplay';
@@ -1097,7 +1098,8 @@ const scenarios = [
   }, (env, result) => {
     assert.equal(result.status, 'pass');
     const state = JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON);
-    assert.equal(state.state, 'sheet_synced');
+    assert.equal(state.state, 'ready');
+    assert.equal(state.sheetSynced, true);
     assert.equal(state.recoveredFromState, 'blocked');
     assert.equal(state.recoveryReason, 'prepare_completed_before_any_send');
   }],
@@ -1487,7 +1489,7 @@ const scenarios = [
     env.entry = 'dailyActivate';
     installDailyActivationReadyState(env);
   }, (env, result) => {
-    assert.equal(result.status, 'activated');
+    assert.equal(result.status, 'activated', JSON.stringify(safeResultForAssertionMessage(result)));
     assert.equal(result.propertyWriteCount, 1);
     assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'true');
     assert.equal(env.props.AUTO_SEND_ENABLED, 'true');
@@ -1530,7 +1532,7 @@ const scenarios = [
     assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'false');
     assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
     assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
-    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'ready');
   }],
   ['daily readiness passes for verified normal daily batch', (env) => {
     env.entry = 'dailyReadiness';
@@ -1545,6 +1547,34 @@ const scenarios = [
     assert.equal(result.preflightPassed, true);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.propertyWriteCount, 0);
+  }],
+  ['prepareDailyPipeline selects thirty, syncs sheet, and creates ready state', (env) => {
+    env.entry = 'dailyPreparePipeline';
+    installDailyPipelineSourceState(env);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.selectedCount, 30);
+    assert.equal(result.reserveCount, 15);
+    assert.equal(result.sheetSynced, true);
+    assert.equal(result.manifestCandidateCount, 30);
+    assert.equal(result.candidateDigestMatch, true);
+    assert.equal(result.readyForScheduledSend, true);
+    const state = JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON);
+    const manifest = JSON.parse(env.props.APPROVED_SEND_MANIFEST_JSON);
+    assert.equal(state.state, 'ready');
+    assert.equal(state.sheetSynced, true);
+    assert.equal(state.actualCandidateCount, 30);
+    assert.equal(manifest.candidateCount, 30);
+    assert.equal(manifest.maxSendCount, 30);
+    assert.equal(manifest.approvalStatus, 'approved');
+    assert.equal(manifest.approvalType, 'automatic_strict_gate');
+    assert.equal(manifest.targetAutoApproved, true);
+    assert.equal(manifest.humanReviewCompleted, false);
+    assert.equal(manifest.humanReviewedCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.draftCreateCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+    assert.equal(env.sheetWriteCount > 0, true);
   }],
   ['special restart Sunday is operational', (env) => {
     env.entry = 'dailyReadiness';
@@ -2223,6 +2253,7 @@ function runEntry(env) {
   if (env.entry === 'dailyActivate') return env.context.activateGmailSalesDailyAutomationOnce();
   if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
   if (env.entry === 'dailyReadiness') return env.context.inspectGmailSalesDailyReadiness();
+  if (env.entry === 'dailyPreparePipeline') return env.context.prepareDailyPipeline();
   if (env.entry === 'dailyEnableWhenReady') return env.context.enableGmailSalesNormalAutomationWhenReadyOnce();
   if (env.entry === 'weeklyReport') return env.context.runGmailSalesWeeklyReportAndOptimization();
   if (env.entry === 'productionTriggerInstall') return env.context.installGmailSalesProductionTriggersOnce();
@@ -2579,7 +2610,8 @@ function installDailyActivationReadyState(env) {
     sendBatchId: `gmail-sales-${config.currentJstDate}`,
     expectedCandidateCount: 30,
     actualCandidateCount: 30,
-    state: 'sheet_synced',
+    sheetSynced: true,
+    state: 'ready',
     automationVersion: 'normal-daily-v1'
   });
 }
@@ -2710,7 +2742,53 @@ function installNormalDailyReadyState(env, options = {}) {
     sendBatchId: batchId,
     expectedCandidateCount: 30,
     actualCandidateCount: 30,
-    state: 'sheet_synced',
+    sheetSynced: true,
+    state: 'ready',
+    sendAttemptCount: 0,
+    actualSendCount: 0,
+    resultUnknown: false,
+    automationVersion: 'normal-daily-v1'
+  });
+}
+
+function installDailyPipelineSourceState(env, options = {}) {
+  const targetDate = options.targetDate || '2026-06-30';
+  env.nowIso = `${targetDate}T08:00:00.000Z`;
+  env.props.SEND_DATE = '2026-06-19';
+  env.props.SEND_BATCH_ID = 'gmail-sales-2026-06-19';
+  env.props.SEND_DATE_OVERRIDE = 'true';
+  env.props.SEND_BATCH_ID_OVERRIDE = 'true';
+  env.props.GMAIL_SEND_MAX_SEND_COUNT = '30';
+  env.props.DAILY_SEND_LIMIT = '30';
+  env.props.AUTOMATION_MASTER_ENABLED = 'true';
+  env.props.AUTO_SEND_ENABLED = 'false';
+  env.props.LIVE_SEND_ENABLED = 'false';
+  env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+  env.props.GMAIL_DAILY_SOURCE_TAB_NAME = 'Gmail営業候補プール';
+  env.props.GMAIL_SHEET_READY_TAB_NAME = 'sales';
+  env.props.ALLOWED_SEND_START_HOUR = '11';
+  env.props.ALLOWED_SEND_START_MINUTE = '45';
+  env.props.ALLOWED_SEND_END_HOUR = '12';
+  env.props.ALLOWED_SEND_END_MINUTE = '45';
+  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.rows = [];
+  env.workbook.sheets.sales.rows = [HEADERS];
+  env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
+    OUTBOX_HEADERS,
+    ...Array.from({ length: 45 }, (_, index) => outboxRowToCells(Object.assign({}, buildSourceOutboxRow(index + 1), {
+      lastCheckedAt: targetDate
+    })))
+  ]);
+  env.workbook.sheets['Gmail営業候補プール'].env = env;
+  delete env.props.APPROVED_SEND_MANIFEST_JSON;
+  env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+    targetDate: '',
+    mode: 'normal_daily',
+    sendBatchId: '',
+    expectedCandidateCount: 0,
+    actualCandidateCount: 0,
+    sheetSynced: false,
+    state: 'not_started',
     sendAttemptCount: 0,
     actualSendCount: 0,
     resultUnknown: false,
