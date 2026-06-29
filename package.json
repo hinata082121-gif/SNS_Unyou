@@ -51,6 +51,7 @@
     "gmail:sales:daily:simulate": "node scripts/gmail/run-gmail-sales-daily-automation.mjs --phase simulate --dry-run true",
     "gmail:sales:daily:health-check": "node scripts/gmail/run-gmail-sales-daily-automation.mjs --phase health-check",
     "gmail:sales:daily:test": "node scripts/gmail/test-gmail-sales-daily-automation.mjs",
+    "gmail:sales:e2e:test": "node scripts/gmail/test-gmail-sales-daily-e2e.mjs",
     "gmail:sales:send-safety:test": "node scripts/gmail/test-apps-script-gmail-send-safety.mjs",
     "gmail:sales:apps-script-runtime:test": "node scripts/gmail/test-apps-script-gmail-runtime.mjs",
     "gmail:sheet-history:export-safe:test": "node scripts/gmail/test-google-sheet-send-history-safe-export.mjs",

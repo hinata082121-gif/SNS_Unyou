@@ -59,8 +59,26 @@ const OUTBOX_HEADERS = [
   'unsubscribe',
   'doNotContact',
   'lastCheckedAt',
-  'notes'
+  'notes',
+  'sendState',
+  'sendRunId',
+  'sendReservedAt',
+  'sendAttemptCount',
+  'approvedBatchId',
+  'approvedCandidateDigest',
+  'deliveryUncertainAt',
+  'lastSendErrorCode'
 ];
+const SOURCE_HEADERS = OUTBOX_HEADERS.concat([
+  'contactBasisType',
+  'contactBasisRecordedAt',
+  'sourceType',
+  'sourceReferenceHash',
+  'optOutAvailable',
+  'lastVerifiedAt',
+  'suppressionCheckedAt',
+  'historyCheckedAt'
+]);
 const MAINTENANCE_HEADERS = [
   'lockName',
   'holderType',
@@ -232,7 +250,7 @@ const scenarios = [
     env.props.AUTO_SEND_ENABLED = 'false';
   }, (env, result) => {
     assertBlockedNoMail(env, result, 'live_send_disabled');
-    assert.equal(getRecoveryCell(env, 2, 'sendState'), undefined);
+    assert.equal(getRecoveryCell(env, 2, 'sendState'), '');
   }],
   ['recovery send-once blocks when auto send enabled', (env) => {
     installRecoveryReadyRowAndManifest(env);
@@ -241,7 +259,7 @@ const scenarios = [
     env.props.AUTO_SEND_ENABLED = 'true';
   }, (env, result) => {
     assertBlockedNoMail(env, result, 'auto_send_must_be_disabled');
-    assert.equal(getRecoveryCell(env, 2, 'sendState'), undefined);
+    assert.equal(getRecoveryCell(env, 2, 'sendState'), '');
   }],
   ['candidate digest is stable across Node and Apps Script canonicalization fixtures', (env) => {
     env.entry = 'digestFixtureOnly';
@@ -726,7 +744,7 @@ const scenarios = [
     assert.equal(result.status, 'pass');
     assert.equal(result.connectedToGoogleSheet, true);
     assert.equal(result.targetWorksheetExists, true);
-    assert.equal(result.incomingHeaderCount, 26);
+    assert.equal(result.incomingHeaderCount, OUTBOX_HEADERS.length);
     assert.equal(result.incomingCandidateCount, 30);
     assert.equal(result.wouldInsertCount, 30);
     assert.equal(result.wouldWriteCount, 30);
@@ -833,7 +851,7 @@ const scenarios = [
     assert.equal(result.status, 'pass');
     assert.equal(result.event, 'gmail_sheet_sync_read_only_snapshot');
     assert.equal(result.mode, 'read_only_snapshot');
-    assert.equal(result.headers.length, 26);
+    assert.equal(result.headers.length, OUTBOX_HEADERS.length);
     assert.equal(result.rows.length, 30);
     assert.equal(result.currentRowCount, 30);
     assert.equal(env.logs.join('\n').includes(result.rows[0][0]), false);
@@ -1070,7 +1088,7 @@ const scenarios = [
     assert.equal(env.draftCreateCount, 0);
     assert.equal(env.triggerWriteCount, 0);
     assert.equal(env.props.APPROVED_SEND_MANIFEST_JSON.includes('automatic_strict_gate'), true);
-    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'ready');
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
     assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).sheetSynced, true);
   }],
   ['normal daily prepare webhook rejects replay before second write', (env) => {
@@ -1098,7 +1116,7 @@ const scenarios = [
   }, (env, result) => {
     assert.equal(result.status, 'pass');
     const state = JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON);
-    assert.equal(state.state, 'ready');
+    assert.equal(state.state, 'sheet_synced');
     assert.equal(state.sheetSynced, true);
     assert.equal(state.recoveredFromState, 'blocked');
     assert.equal(state.recoveryReason, 'prepare_completed_before_any_send');
@@ -1131,7 +1149,7 @@ const scenarios = [
     assert.equal(result.availableSourceCount, 90);
     assert.equal(result.sourceCount, 90);
     assert.equal(result.rows.length, 90);
-    assert.equal(result.headers.length, 26);
+    assert.equal(result.headers.length, OUTBOX_HEADERS.length);
     assert.equal(result.recoveryEntryCount, 0);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.draftCreateCount, 0);
@@ -1532,7 +1550,7 @@ const scenarios = [
     assert.equal(env.props.AUTOMATION_MASTER_ENABLED, 'false');
     assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
     assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
-    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'ready');
+    assert.equal(JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON).state, 'sheet_synced');
   }],
   ['daily readiness passes for verified normal daily batch', (env) => {
     env.entry = 'dailyReadiness';
@@ -1561,7 +1579,7 @@ const scenarios = [
     assert.equal(result.readyForScheduledSend, true);
     const state = JSON.parse(env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON);
     const manifest = JSON.parse(env.props.APPROVED_SEND_MANIFEST_JSON);
-    assert.equal(state.state, 'ready');
+    assert.equal(state.state, 'sheet_synced');
     assert.equal(state.sheetSynced, true);
     assert.equal(state.actualCandidateCount, 30);
     assert.equal(manifest.candidateCount, 30);
@@ -1575,6 +1593,53 @@ const scenarios = [
     assert.equal(env.draftCreateCount, 0);
     assert.equal(env.triggerWriteCount, 0);
     assert.equal(env.sheetWriteCount > 0, true);
+  }],
+  ['prepareDailyPipeline blocks source below thirty without sending', (env) => {
+    env.entry = 'dailyPreparePipeline';
+    installDailyPipelineSourceState(env, { sourceCount: 29 });
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'selected_count_not_30');
+    assert.equal(result.selectedCount, 29);
+    assert.equal(result.sheetSynced, false);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
+  }],
+  ['prepareDailyPipeline excludes unknown contact basis before selection', (env) => {
+    env.entry = 'dailyPreparePipeline';
+    installDailyPipelineSourceState(env, { sourceCount: 30 });
+    const sourceSheet = env.workbook.sheets['Gmail営業候補プール'];
+    const basisColumn = sourceSheet.rows[0].indexOf('contactBasisType');
+    sourceSheet.rows[1][basisColumn] = 'unknown';
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.blockedReason, 'selected_count_not_30');
+    assert.equal(result.eligibleCount, 29);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['daily E2E pipeline prepares, enables, sends thirty, audits, and safe rests', (env) => {
+    env.entry = 'dailyE2E';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 57 });
+  }, (env, result) => {
+    assert.equal(result.prepare.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result.prepare)));
+    assert.equal(result.prepare.sourceCandidateCount, 57);
+    assert.equal(result.prepare.selectedCount, 30);
+    assert.equal(result.prepare.reserveCount, 27);
+    assert.equal(result.prepare.sheetSynced, true);
+    assert.equal(result.prepare.manifestCandidateCount, 30);
+    assert.equal(result.prepare.candidateDigestMatch, true);
+    assert.equal(result.prepare.readyForScheduledSend, true);
+    assert.equal(result.enable.status, 'enabled', JSON.stringify(safeResultForAssertionMessage(result.enable)));
+    assert.equal(result.send.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result.send)));
+    assert.equal(result.send.sentCount, 30);
+    assert.equal(result.audit.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result.audit)));
+    assert.equal(result.audit.sentCount, 30);
+    assert.equal(result.audit.duplicateCount, 0);
+    assert.equal(result.audit.overageCount, 0);
+    assert.equal(env.mailSendCount, 30);
+    assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
+    assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
   }],
   ['special restart Sunday is operational', (env) => {
     env.entry = 'dailyReadiness';
@@ -1595,6 +1660,27 @@ const scenarios = [
     assert.equal(result.status, 'blocked');
     assert.equal((result.blockedReasons || []).includes('weekly_review_day'), true);
     assert.equal(env.mailSendCount, 0);
+  }],
+  ['deployment readiness diagnostic is read-only', (env) => {
+    env.entry = 'deploymentReadiness';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 57 });
+  }, (env, result) => {
+    assert.equal(result.mode, 'read_only');
+    assert.equal(result.requiredFunctionsPresent, true, JSON.stringify(result.missingFunctions));
+    assert.equal(result.triggerInstallerPresent, true);
+    assert.equal(result.controlLoopFunctionPresent, true);
+    assert.equal(result.sendAuthorityPresent, true);
+    assert.equal(result.mailAppSendEmailCallSiteExpectedCount, 1);
+    assert.equal(result.spreadsheetAccessConfigured, true);
+    assert.equal(result.sourceTabAccessible, true);
+    assert.equal(result.contactBasisFieldsSupported, true);
+    assert.equal(result.suppressionSourceAccessible, true);
+    assert.equal(result.historySourceAccessible, true);
+    assert.equal(result.productionSendExecuted, false);
+    assert.equal(result.productionSheetUpdated, false);
+    assert.equal(result.productionPropertyUpdated, false);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
   }],
   ['weekly report Sunday sends zero and keeps strategy unchanged with low sample', (env) => {
     env.entry = 'weeklyReport';
@@ -2247,6 +2333,7 @@ function runEntry(env) {
   if (env.entry === 'recoverySourceHashReissueScheduled') return env.context.runGmailSalesRecoveryReissueSourceCandidateContentHash({ source: 'scheduled_trigger' });
   if (env.entry === 'recoveryHashRepair') return env.context.runGmailSalesRecoveryRepairDerivedCandidateHash();
   if (env.entry === 'suppressionDiagnostic') return env.context.runGmailSuppressionLedgerReadOnlyDiagnostic();
+  if (env.entry === 'deploymentReadiness') return env.context.inspectGmailSalesDeploymentReadiness();
   if (env.entry === 'dailyInitializer') return env.context.initializeGmailSalesDailyAutomationProperties();
   if (env.entry === 'dailyHealth') return env.context.runGmailSalesDailyAutomationHealthCheck();
   if (env.entry === 'dailyInstall') return env.context.installGmailSalesDailyAutomationTriggers();
@@ -2254,6 +2341,15 @@ function runEntry(env) {
   if (env.entry === 'dailyDeactivate') return env.context.deactivateGmailSalesDailyAutomation();
   if (env.entry === 'dailyReadiness') return env.context.inspectGmailSalesDailyReadiness();
   if (env.entry === 'dailyPreparePipeline') return env.context.prepareDailyPipeline();
+  if (env.entry === 'dailyE2E') {
+    const prepare = env.context.prepareDailyPipeline();
+    const enable = env.context.runGmailSalesDailyEnableWhenReady();
+    env.nowIso = '2026-06-30T12:00:00.000Z';
+    const send = env.context.runGmailSalesDailyAutomationTrigger();
+    env.nowIso = '2026-06-30T14:00:00.000Z';
+    const audit = env.context.runGmailSalesDailyPostSendAudit();
+    return { prepare, enable, send, audit };
+  }
   if (env.entry === 'dailyEnableWhenReady') return env.context.enableGmailSalesNormalAutomationWhenReadyOnce();
   if (env.entry === 'weeklyReport') return env.context.runGmailSalesWeeklyReportAndOptimization();
   if (env.entry === 'productionTriggerInstall') return env.context.installGmailSalesProductionTriggersOnce();
@@ -2373,7 +2469,7 @@ function buildOutboxRow(index) {
     issueHypothesis: 'issue',
     salesAngle: 'angle',
     subject: `Subject ${index}`,
-    body: `Body ${index} ご返信不要`,
+    body: `Business ${index} 様\nBody ${index} ご返信不要`,
     status: 'ready',
     sendDate: TARGET_DATE,
     nextActionDate: TARGET_DATE,
@@ -2397,6 +2493,14 @@ function buildSourceOutboxRow(index) {
     nextActionDate: '',
     sendBatchId: '',
     lastCheckedAt: '2026-06-22T00:00:00+09:00',
+    contactBasisType: 'valid_business_contact_exception',
+    contactBasisRecordedAt: '2026-06-22T00:00:00+09:00',
+    sourceType: 'public_business_contact',
+    sourceReferenceHash: `source-ref-${index}`,
+    optOutAvailable: 'true',
+    lastVerifiedAt: '2026-06-22T00:00:00+09:00',
+    suppressionCheckedAt: '2026-06-22T00:00:00+09:00',
+    historyCheckedAt: '2026-06-22T00:00:00+09:00',
     notes: 'verified normal daily source'
   });
 }
@@ -2413,6 +2517,10 @@ function buildRecoveryOutboxRow() {
 
 function outboxRowToCells(row) {
   return OUTBOX_HEADERS.map((header) => row[header] ?? '');
+}
+
+function sourceRowToCells(row) {
+  return SOURCE_HEADERS.map((header) => row[header] ?? '');
 }
 
 function getRecoveryCell(env, rowIndex, header) {
@@ -2611,7 +2719,7 @@ function installDailyActivationReadyState(env) {
     expectedCandidateCount: 30,
     actualCandidateCount: 30,
     sheetSynced: true,
-    state: 'ready',
+    state: 'sheet_synced',
     automationVersion: 'normal-daily-v1'
   });
 }
@@ -2720,8 +2828,8 @@ function installNormalDailyReadyState(env, options = {}) {
   }));
   env.workbook.sheets.sales.rows = [HEADERS, ...env.rows.map(rowToCells)];
   env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
-    OUTBOX_HEADERS,
-    ...Array.from({ length: 45 }, (_, index) => outboxRowToCells(Object.assign({}, buildSourceOutboxRow(index + 1), {
+    SOURCE_HEADERS,
+    ...Array.from({ length: 45 }, (_, index) => sourceRowToCells(Object.assign({}, buildSourceOutboxRow(index + 1), {
       lastCheckedAt: targetDate
     })))
   ]);
@@ -2743,7 +2851,7 @@ function installNormalDailyReadyState(env, options = {}) {
     expectedCandidateCount: 30,
     actualCandidateCount: 30,
     sheetSynced: true,
-    state: 'ready',
+    state: 'sheet_synced',
     sendAttemptCount: 0,
     actualSendCount: 0,
     resultUnknown: false,
@@ -2753,6 +2861,7 @@ function installNormalDailyReadyState(env, options = {}) {
 
 function installDailyPipelineSourceState(env, options = {}) {
   const targetDate = options.targetDate || '2026-06-30';
+  const sourceCount = options.sourceCount || 45;
   env.nowIso = `${targetDate}T08:00:00.000Z`;
   env.props.SEND_DATE = '2026-06-19';
   env.props.SEND_BATCH_ID = 'gmail-sales-2026-06-19';
@@ -2774,8 +2883,8 @@ function installDailyPipelineSourceState(env, options = {}) {
   env.rows = [];
   env.workbook.sheets.sales.rows = [HEADERS];
   env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
-    OUTBOX_HEADERS,
-    ...Array.from({ length: 45 }, (_, index) => outboxRowToCells(Object.assign({}, buildSourceOutboxRow(index + 1), {
+    SOURCE_HEADERS,
+    ...Array.from({ length: sourceCount }, (_, index) => sourceRowToCells(Object.assign({}, buildSourceOutboxRow(index + 1), {
       lastCheckedAt: targetDate
     })))
   ]);
