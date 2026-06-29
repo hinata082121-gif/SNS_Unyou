@@ -31,7 +31,25 @@ const HEADERS = [
   'approvedCandidateDigest',
   'deliveryUncertainAt',
   'lastSendErrorCode',
+  'contactBasisType',
+  'contactBasisRecordedAt',
+  'sourceType',
+  'sourceReferenceHash',
+  'optOutAvailable',
+  'lastVerifiedAt',
+  'suppressionCheckedAt',
+  'historyCheckedAt',
   'lastCheckedAt'
+];
+const CONTACT_BASIS_HEADERS = [
+  'contactBasisType',
+  'contactBasisRecordedAt',
+  'sourceType',
+  'sourceReferenceHash',
+  'optOutAvailable',
+  'lastVerifiedAt',
+  'suppressionCheckedAt',
+  'historyCheckedAt'
 ];
 const OUTBOX_HEADERS = [
   'prospectId',
@@ -67,18 +85,10 @@ const OUTBOX_HEADERS = [
   'approvedBatchId',
   'approvedCandidateDigest',
   'deliveryUncertainAt',
-  'lastSendErrorCode'
+  'lastSendErrorCode',
+  ...CONTACT_BASIS_HEADERS
 ];
-const SOURCE_HEADERS = OUTBOX_HEADERS.concat([
-  'contactBasisType',
-  'contactBasisRecordedAt',
-  'sourceType',
-  'sourceReferenceHash',
-  'optOutAvailable',
-  'lastVerifiedAt',
-  'suppressionCheckedAt',
-  'historyCheckedAt'
-]);
+const SOURCE_HEADERS = OUTBOX_HEADERS.slice();
 const MAINTENANCE_HEADERS = [
   'lockName',
   'holderType',
@@ -1599,8 +1609,8 @@ const scenarios = [
     installDailyPipelineSourceState(env, { sourceCount: 29 });
   }, (env, result) => {
     assert.equal(result.status, 'blocked');
-    assert.equal(result.blockedReason, 'selected_count_not_30');
-    assert.equal(result.selectedCount, 29);
+    assert.equal(result.blockedReason, 'operational_candidates_not_ready');
+    assert.equal(result.operationalCandidateReady, false);
     assert.equal(result.sheetSynced, false);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
@@ -1614,8 +1624,8 @@ const scenarios = [
     sourceSheet.rows[1][basisColumn] = 'unknown';
   }, (env, result) => {
     assert.equal(result.status, 'blocked');
-    assert.equal(result.blockedReason, 'selected_count_not_30');
-    assert.equal(result.eligibleCount, 29);
+    assert.equal(result.blockedReason, 'operational_candidates_not_ready');
+    assert.equal(result.operationalCandidateReady, false);
     assert.equal(env.mailSendCount, 0);
   }],
   ['daily E2E pipeline prepares, enables, sends thirty, audits, and safe rests', (env) => {
@@ -1681,6 +1691,137 @@ const scenarios = [
     assert.equal(result.productionPropertyUpdated, false);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.triggerWriteCount, 0);
+  }],
+  ['deployment readiness separates configured max from stale manifest max', (env) => {
+    env.entry = 'deploymentReadiness';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 57 });
+    env.manifest = Object.assign({}, env.manifest, {
+      targetDate: '2026-06-19',
+      maxSendCount: 1,
+      candidateCount: 1
+    });
+    env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
+    env.props.GMAIL_SEND_MAX_SEND_COUNT = '1';
+  }, (env, result) => {
+    assert.equal(result.configuredMaxDailySendCount, 30);
+    assert.equal(result.currentManifestMaxSendCount, 1);
+    assert.equal(result.dailyLimitConfigurationValid, true);
+    assert.equal(result.deploymentReady, true);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['deployment readiness detects missing ready tab property and contact basis fields', (env) => {
+    env.entry = 'deploymentReadiness';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 57 });
+    delete env.props.GMAIL_SHEET_READY_TAB_NAME;
+    env.workbook.sheets['Gmail営業候補プール'].rows[0] = [
+      'prospectId',
+      'name',
+      'email',
+      'contactEmail',
+      'subject',
+      'body',
+      'status',
+      'sendDate',
+      'dedupeKey',
+      'sendBatchId',
+      'lastCheckedAt',
+      'notes'
+    ];
+  }, (env, result) => {
+    assert.equal(result.deploymentReady, false);
+    assert.equal(result.infrastructureBlockedReasons.includes('required_property_missing'), true);
+    assert.equal(result.infrastructureBlockedReasons.includes('contact_basis_fields_missing'), true);
+    assert.equal(result.configuredMaxDailySendCount, 30);
+    assert.equal(result.currentManifestMaxSendCount, 0);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['production schema installer sets ready tab and appends missing contact basis columns', (env) => {
+    env.entry = 'schemaInstall';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 57 });
+    delete env.props.GMAIL_SHEET_READY_TAB_NAME;
+    env.workbook.sheets['Gmail営業候補プール'].rows[0] = OUTBOX_HEADERS.filter((header) => CONTACT_BASIS_HEADERS.indexOf(header) === -1);
+    env.workbook.sheets.sales.rows[0] = HEADERS.filter((header) => CONTACT_BASIS_HEADERS.indexOf(header) === -1);
+  }, (env, result) => {
+    assert.equal(result.status, 'pass', JSON.stringify(result));
+    assert.equal(env.props.GMAIL_SHEET_READY_TAB_NAME, 'sales');
+    assert.equal(env.props.GMAIL_SALES_EXPECTED_DAILY_COUNT, '30');
+    assert.equal(env.props.GMAIL_SALES_MAX_DAILY_SEND_COUNT, '30');
+    assert.equal(result.schemaColumnsAddedCount, CONTACT_BASIS_HEADERS.length * 2);
+    assert.equal(result.sourceColumnsAdded, CONTACT_BASIS_HEADERS.length);
+    assert.equal(result.outboxColumnsAdded, CONTACT_BASIS_HEADERS.length);
+    assert.equal(result.backupCreated, true);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+    assert.equal(env.setPropertiesCount >= 1, true);
+  }],
+  ['production schema installer rolls back header mismatch before property write', (env) => {
+    env.entry = 'schemaInstall';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 57 });
+    delete env.props.GMAIL_SHEET_READY_TAB_NAME;
+    env.schemaHeaderCorruptionsRemaining = 1;
+    env.workbook.sheets.sales.rows[0] = HEADERS.filter((header) => CONTACT_BASIS_HEADERS.indexOf(header) === -1);
+  }, (env, result) => {
+    assert.equal(result.status, 'blocked', JSON.stringify(result));
+    assert.equal(result.blockedReason, 'header_read_back_failed');
+    assert.equal(result.readBackPassed, false);
+    assert.equal(env.props.GMAIL_SHEET_READY_TAB_NAME, undefined);
+    assert.equal(env.setPropertiesCount, 0);
+    assert.equal(env.mailSendCount, 0);
+    assert.equal(env.triggerWriteCount, 0);
+    assert.equal(env.workbook.sheets.sales.rows[0].includes('contactBasisType'), false);
+  }],
+  ['production schema inspector is read-only', (env) => {
+    env.entry = 'productionSchema';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 57 });
+  }, (env, result) => {
+    assert.equal(result.schemaReady, true, JSON.stringify(result.blockedReasons));
+    assert.equal(result.configuredMaxDailySendCount, 30);
+    assert.equal(result.currentManifestMaxSendCount, 0);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['contact basis coverage reports operational candidates', (env) => {
+    env.entry = 'contactBasisCoverage';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 57 });
+  }, (env, result) => {
+    assert.equal(result.fieldsSupported, true);
+    assert.equal(result.approvedBasisCount, 57);
+    assert.equal(result.validBusinessContactExceptionCount, 57);
+    assert.equal(result.eligibleAfterBasisCheckCount, 57);
+    assert.equal(result.operationalCandidateReady, true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['contact basis coverage classifies allowed and blocked basis types without auto approval', (env) => {
+    env.entry = 'contactBasisCoverage';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 45 });
+    const sourceSheet = env.workbook.sheets['Gmail営業候補プール'];
+    const basisIndex = sourceSheet.rows[0].indexOf('contactBasisType');
+    sourceSheet.rows[1][basisIndex] = 'explicit_opt_in';
+    sourceSheet.rows[2][basisIndex] = 'existing_relationship';
+    sourceSheet.rows[3][basisIndex] = 'manual_legal_reviewed';
+    sourceSheet.rows[4][basisIndex] = 'needs_review';
+    sourceSheet.rows[5][basisIndex] = 'guessed';
+    sourceSheet.rows[6][basisIndex] = 'private_personal_contact';
+    sourceSheet.rows[7][basisIndex] = '';
+  }, (env, result) => {
+    assert.equal(result.explicitOptInCount, 1);
+    assert.equal(result.existingRelationshipCount, 1);
+    assert.equal(result.manualLegalReviewedCount, 1);
+    assert.equal(result.needsReviewCount, 1);
+    assert.equal(result.guessedContactCount, 1);
+    assert.equal(result.privatePersonalContactCount, 1);
+    assert.equal(result.missingBasisCount, 1);
+    assert.equal(result.approvedBasisCount, 41);
+    assert.equal(result.operationalCandidateReady, true);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['contact basis coverage blocks when eligible basis count is below thirty', (env) => {
+    env.entry = 'contactBasisCoverage';
+    installDailyPipelineSourceState(env, { targetDate: '2026-06-30', sourceCount: 29 });
+  }, (env, result) => {
+    assert.equal(result.eligibleAfterBasisCheckCount, 29);
+    assert.equal(result.operationalCandidateReady, false);
+    assert.equal(result.blockedReasons.includes('eligible_basis_count_below_30'), true);
+    assertDiagnosticReadOnly(env);
   }],
   ['weekly report Sunday sends zero and keeps strategy unchanged with low sample', (env) => {
     env.entry = 'weeklyReport';
@@ -2121,6 +2262,7 @@ function createEnvironment() {
     openSheetThrows: false,
     failSentUpdate: false,
     corruptApprovedManifestOnSet: false,
+    schemaHeaderCorruptionsRemaining: 0,
     cache: {},
     logs: []
   };
@@ -2334,6 +2476,9 @@ function runEntry(env) {
   if (env.entry === 'recoveryHashRepair') return env.context.runGmailSalesRecoveryRepairDerivedCandidateHash();
   if (env.entry === 'suppressionDiagnostic') return env.context.runGmailSuppressionLedgerReadOnlyDiagnostic();
   if (env.entry === 'deploymentReadiness') return env.context.inspectGmailSalesDeploymentReadiness();
+  if (env.entry === 'productionSchema') return env.context.inspectGmailSalesProductionSchema();
+  if (env.entry === 'contactBasisCoverage') return env.context.inspectGmailSalesContactBasisCoverage();
+  if (env.entry === 'schemaInstall') return env.context.installGmailSalesProductionSchemaOnce();
   if (env.entry === 'dailyInitializer') return env.context.initializeGmailSalesDailyAutomationProperties();
   if (env.entry === 'dailyHealth') return env.context.runGmailSalesDailyAutomationHealthCheck();
   if (env.entry === 'dailyInstall') return env.context.installGmailSalesDailyAutomationTriggers();
@@ -2448,6 +2593,14 @@ function buildRow(index) {
     approvedCandidateDigest: '',
     deliveryUncertainAt: '',
     lastSendErrorCode: '',
+    contactBasisType: 'valid_business_contact_exception',
+    contactBasisRecordedAt: '2026-06-22T00:00:00+09:00',
+    sourceType: 'public_business_contact',
+    sourceReferenceHash: `source-ref-${index}`,
+    optOutAvailable: 'true',
+    lastVerifiedAt: '2026-06-22T00:00:00+09:00',
+    suppressionCheckedAt: '2026-06-22T00:00:00+09:00',
+    historyCheckedAt: '2026-06-22T00:00:00+09:00',
     lastCheckedAt: ''
   };
 }
@@ -2483,6 +2636,22 @@ function buildOutboxRow(index) {
     unsubscribe: '',
     doNotContact: '',
     lastCheckedAt: '',
+    sendState: '',
+    sendRunId: '',
+    sendReservedAt: '',
+    sendAttemptCount: '',
+    approvedBatchId: '',
+    approvedCandidateDigest: '',
+    deliveryUncertainAt: '',
+    lastSendErrorCode: '',
+    contactBasisType: 'valid_business_contact_exception',
+    contactBasisRecordedAt: '2026-06-22T00:00:00+09:00',
+    sourceType: 'public_business_contact',
+    sourceReferenceHash: `source-ref-${index}`,
+    optOutAvailable: 'true',
+    lastVerifiedAt: '2026-06-22T00:00:00+09:00',
+    suppressionCheckedAt: '2026-06-22T00:00:00+09:00',
+    historyCheckedAt: '2026-06-22T00:00:00+09:00',
     notes: ''
   };
 }
@@ -2493,14 +2662,6 @@ function buildSourceOutboxRow(index) {
     nextActionDate: '',
     sendBatchId: '',
     lastCheckedAt: '2026-06-22T00:00:00+09:00',
-    contactBasisType: 'valid_business_contact_exception',
-    contactBasisRecordedAt: '2026-06-22T00:00:00+09:00',
-    sourceType: 'public_business_contact',
-    sourceReferenceHash: `source-ref-${index}`,
-    optOutAvailable: 'true',
-    lastVerifiedAt: '2026-06-22T00:00:00+09:00',
-    suppressionCheckedAt: '2026-06-22T00:00:00+09:00',
-    historyCheckedAt: '2026-06-22T00:00:00+09:00',
     notes: 'verified normal daily source'
   });
 }
@@ -3389,7 +3550,17 @@ class MockRange {
       if (!this.sheet.rows[targetRowIndex]) this.sheet.rows[targetRowIndex] = [];
       rowValues.forEach((value, c) => {
         this.assertCanWrite(targetRowIndex, this.column + c - 1, value);
-        this.sheet.rows[targetRowIndex][this.column + c - 1] = value;
+        let nextValue = value;
+        if (
+          this.sheet.env?.schemaHeaderCorruptionsRemaining > 0 &&
+          this.sheet.name === 'sales' &&
+          targetRowIndex === 0 &&
+          value === 'contactBasisType'
+        ) {
+          this.sheet.env.schemaHeaderCorruptionsRemaining -= 1;
+          nextValue = 'corruptedContactBasisType';
+        }
+        this.sheet.rows[targetRowIndex][this.column + c - 1] = nextValue;
       });
     });
   }

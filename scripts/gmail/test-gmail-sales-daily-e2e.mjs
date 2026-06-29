@@ -15,7 +15,12 @@ const requiredScenarioNames = [
   'MailApp exception leaves DELIVERY_UNKNOWN and rerun does not resend',
   'existing DELIVERY_UNKNOWN blocks MailApp',
   'regular Sunday after restart is not operational and sends zero',
-  'deployment readiness diagnostic is read-only'
+  'deployment readiness diagnostic is read-only',
+  'deployment readiness separates configured max from stale manifest max',
+  'production schema installer sets ready tab and appends missing contact basis columns',
+  'production schema installer rolls back header mismatch before property write',
+  'contact basis coverage reports operational candidates',
+  'contact basis coverage classifies allowed and blocked basis types without auto approval'
 ];
 
 for (const scenarioName of requiredScenarioNames) {
@@ -39,7 +44,7 @@ assert.equal(summary.realGmailSendExecuted, false);
 assert.equal(summary.realGoogleSheetsUpdated, false);
 assert.equal(summary.realScriptPropertiesUpdated, false);
 assert.equal(summary.appsScriptExecuted, false);
-assert.ok(summary.runtimeTestScenarioCount >= 174);
+assert.ok(summary.runtimeTestScenarioCount >= 182);
 
 console.log(JSON.stringify({
   e2eTestPassed: true,
