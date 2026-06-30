@@ -12,6 +12,13 @@ This note documents the local implementation for automated contact-basis verific
 - `MailApp.sendEmail` remains a single call site.
 - AI contact-basis verification runs in the production control loop during the `ai_verification` phase from 06:30 to 07:30, before daily prepare.
 
+The AI verification phase runs the repair pipeline in this order:
+
+1. refresh contact-basis review queue
+2. discover missing official source references with Gemini Google Search grounding
+3. enrich official evidence from verified source references
+4. run AI contact-basis verification
+
 ## Public Functions
 
 - `installGmailSalesAiVerificationConfigurationOnce`
@@ -24,6 +31,18 @@ This note documents the local implementation for automated contact-basis verific
   - Read-only status inspector.
   - Reports aggregate counts and configuration presence only.
   - Does not output email addresses, business names, URLs, message content, API keys, or hashes.
+
+- `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`
+  - Read-only grounded discovery status inspector.
+  - Reports queue counts, configuration presence, last-run counts, budget state, and recommended next action.
+  - Does not output raw URLs, business names, emails, prompts, API keys, citation bodies, or hashes.
+
+- `runGmailSalesGroundedOfficialSourceDiscoveryOnce`
+  - Requires safe-rest and Gemini provider configuration.
+  - Processes source-missing replenishment queue rows.
+  - Calls Gemini with Google Search grounding and accepts only citation-derived official URLs.
+  - Writes source-reference metadata and aggregate-safe audit fields only.
+  - Does not send Gmail, create drafts, modify triggers, or change send authority.
 
 - `runGmailSalesAiContactBasisVerificationOnce`
   - Requires safe-rest and `GMAIL_SALES_AI_ENABLED=true`.

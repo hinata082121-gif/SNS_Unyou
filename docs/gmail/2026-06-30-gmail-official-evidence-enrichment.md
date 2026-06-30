@@ -115,6 +115,14 @@ Rows without usable official evidence are written to `Gmail_Evidence_Replenishme
 
 This prepares future candidate replacement without asking a human to edit 66 rows manually.
 
+## Grounded Source Discovery Handoff
+
+Rows in the replenishment queue that are missing an official source reference can be repaired by `runGmailSalesGroundedOfficialSourceDiscoveryOnce` before this enrichment step runs again.
+
+That discovery step uses Gemini Google Search grounding, accepts only citation-derived official URLs, and writes only source-reference metadata plus aggregate-safe audit fields. It does not guess URLs, does not lower the evidence gate, and does not send Gmail.
+
+After grounded discovery applies new source references, run this enrichment function to fetch the newly verified official pages and rebuild evidence packages for AI verification.
+
 ## Production Steps
 
 1. Replace Apps Script `Code.gs` with the latest local version.
@@ -122,10 +130,12 @@ This prepares future candidate replacement without asking a human to edit 66 row
 3. Run `setGmailSalesSafeRestPropertiesOnce`.
 4. Run `inspectGmailSalesAiProviderConfiguration`.
 5. Confirm `configurationValid=true`.
-6. Run `runGmailSalesOfficialEvidenceEnrichmentOnce` once.
-7. Run `inspectGmailSalesAiContactBasisStatus`.
-8. Confirm `evidenceDigestChangedCount` and `aiReevaluationEligibleCount`.
-9. Run `runGmailSalesAiContactBasisVerificationOnce` once.
-10. Run the contact-basis status, review queue, coverage, and deployment readiness inspectors.
+6. Run `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`.
+7. If eligible source-missing targets exist, run `runGmailSalesGroundedOfficialSourceDiscoveryOnce` once.
+8. Run `runGmailSalesOfficialEvidenceEnrichmentOnce` once.
+9. Run `inspectGmailSalesAiContactBasisStatus`.
+10. Confirm `evidenceDigestChangedCount` and `aiReevaluationEligibleCount`.
+11. Run `runGmailSalesAiContactBasisVerificationOnce` once.
+12. Run the contact-basis status, review queue, coverage, and deployment readiness inspectors.
 
 Do not directly run the send authority during this repair.
