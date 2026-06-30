@@ -28,7 +28,7 @@ This note documents the local implementation for automated contact-basis verific
 - `runGmailSalesAiContactBasisVerificationOnce`
   - Requires safe-rest and `GMAIL_SALES_AI_ENABLED=true`.
   - Applies deterministic approvals for explicit opt-in and existing-relationship evidence.
-  - Uses AI only for business-contact-exception evidence that cannot be deterministically approved.
+  - Routes deterministic `ai_required` rows into the AI provider dispatch queue.
   - Writes only contact-basis fields and AI audit fields.
   - Updates the review queue with `approved_ai` / `applied_ai` or `needs_more_evidence`.
   - Rolls back source writes when read-back validation fails.
@@ -46,23 +46,28 @@ Supported provider names:
 
 ## Data Minimization
 
-AI payloads include only policy and evidence metadata:
+AI payloads include only policy and minimized public evidence metadata:
 
+- temporary candidate token
 - policy version
 - prompt version
 - source row digest
 - source type
-- source reference hash
 - source reference presence
+- official-domain/source-reference verification booleans
+- public business channel classification
+- opt-in, relationship, suppression, opt-out, history, and delivery-state booleans
+- sanitized public evidence snippets
+- deterministic reason codes
 - evidence presence booleans
 - suggested basis type
 - suggestion reason code
-- domain hash
 - evidence digest
 - opt-out availability
-- personal-email flag
 
-AI payloads do not include raw email addresses, names, business names, URLs, subjects, or message bodies.
+AI payloads do not include raw email addresses, names, business names, URLs, URL query strings, subjects, message bodies, API keys, setup tokens, Sheet IDs, Script IDs, or raw source rows.
+
+Sanitized public evidence snippets are capped and have email addresses, phone numbers, and URLs masked before dispatch. If a row has no usable public evidence, the provider is not called and the row remains `needs_more_evidence`.
 
 ## Auto-Approval Conditions
 
@@ -78,11 +83,117 @@ AI approval is allowed for:
 - matching source and evidence digests
 - no risk flags
 - no human-review requirement
-- business-contact evidence present
-- source reference present
-- non-personal email domain classification
+- source reference present and verified
+- official business channel evidence
+- public business channel classification
+- opt-out available
+- no suppression, do-not-contact, unsubscribe, sent-history, reply-history, delivery-unknown, guessed-contact, or private-personal-contact flags
+- provider evidence quote supported by the dispatched sanitized evidence
 
 All other cases are routed to human exception review.
+
+## P0.3.4 AI_REQUIRED Routing Repair
+
+The 2026-06-30 production issue was not an AI provider configuration problem. The provider was enabled and configured, but deterministic rows with `ai_required` were treated as terminal review failures instead of being sent to Gemini.
+
+Observed failure shape:
+
+- `aiEvaluatedCount=0`
+- `payloadFields=[]`
+- `aiNeedsReviewCount=66`
+- `rejectionReasonCounts.ai_required=66`
+- `eligibleAfterBasisCheckCount=0`
+
+Correct routing:
+
+- deterministic approved evidence is applied by rules
+- deterministic blocked evidence remains blocked
+- deterministic `ai_required` is an intermediate state
+- `ai_required` rows build minimized public evidence payloads
+- valid payloads are batched to the configured provider
+- validated high-confidence results become `approved_ai` / `applied_ai`
+- insufficient or invalid results become `needs_more_evidence`
+
+`ai_required` is not counted as a rejection reason after this repair.
+
+## Misrouted Row Requeue
+
+`runGmailSalesAiContactBasisVerificationOnce` now repairs only the previous erroneous signature before dispatch:
+
+- `reviewDecision=needs_more_evidence`
+- `applyStatus=needs_more_evidence` or non-applied
+- reason metadata contains `ai_required`
+- no AI provider/model/evaluation timestamp/confidence/evidence digest is present
+- not applied or auto-approved
+- current source row digest still matches
+- source contact basis has not already been applied
+
+Requeued rows keep stable identifiers:
+
+- `reviewId`
+- `sourceRowKey`
+- `leadIdHash`
+- `sourceRowDigest`
+- source/evidence fields
+- priority fields
+
+Protected rows are skipped:
+
+- `applied`
+- `applied_ai`
+- `aiAutoApproved=true`
+- rejected rows
+- source-applied rows
+- source digest mismatches
+- stale rows
+
+The two stale approved rows from the production snapshot are not automatically approved or reflected into source. They remain stale/refresh candidates and do not block the 66-row AI retry.
+
+## Gemini Batch Dispatch
+
+AI dispatch uses the provider abstraction and batches candidate payloads. Default batch size is:
+
+- `GMAIL_SALES_AI_BATCH_SIZE=8`
+
+For 66 candidates this is at most 9 provider requests. Candidate-level counts and request-level counts are separate:
+
+- `aiBatchRequestCount` counts provider requests
+- `aiProviderCandidateResponseCount` counts candidate results returned by the provider
+- `aiEvaluatedCount` counts candidates with valid provider responses
+
+Gemini is called with the API key in a request header, not in the URL query string.
+
+## Structured Output Validation
+
+Provider output is accepted only when each candidate result passes all gates:
+
+- `candidateToken` matches one request candidate
+- duplicate or unknown candidate tokens are rejected
+- classification is allowlisted
+- confidence is at least the configured threshold
+- risk flags are empty
+- `requiresHumanReview=false`
+- evidence digest matches the request
+- source row digest matches the request
+- evidence quote is supported by the dispatched sanitized evidence
+- source reference, public business channel, opt-out, suppression, history, and delivery flags still pass
+
+One invalid candidate response does not discard the whole batch. Invalid candidates remain `needs_more_evidence`; valid candidates in the same batch can still be applied.
+
+## Apply Error Semantics
+
+`needs_more_evidence` is not an apply error. It means the row did not satisfy the automatic approval gates.
+
+`applyErrorCount` is reserved for actual processing failures:
+
+- rollback failure
+- write failure
+- read-back failure
+- stale source apply failure
+- provider/internal processing error
+- invalid response error
+
+Old `suspicious_bulk_approval_pattern` metadata is cleared only for rows that match the safe reset/requeue signatures.
 
 ## Bulk Handling
 

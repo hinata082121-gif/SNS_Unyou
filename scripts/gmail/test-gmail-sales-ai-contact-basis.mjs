@@ -178,10 +178,78 @@ test('mock provider can approve business contact exception with unique evidence 
   assert.equal(result.aiEvaluatedCount, 30);
   assert.equal(result.aiAutoApprovedCount, 30);
   assert.equal(result.aiAppliedCount, 30);
+  assert.equal(result.aiDispatchEligibleCount, 30);
+  assert.equal(result.aiBatchSize, 8);
+  assert.equal(result.aiBatchRequestCount, 4);
+  assert.equal(result.aiProviderCandidateResponseCount, 30);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.rejectionReasonCounts, 'ai_required'), false);
+  assert.equal(result.payloadFields.includes('candidateToken'), true);
+  assert.equal(result.payloadFields.includes('sanitizedPublicEvidenceSnippets'), true);
   assert.equal(result.aiBulkApprovalBlocked, false);
   assert.equal(result.uniqueEvidenceDigestCount, 30);
   assert.equal(readSource(env, 2, 'contactBasisType'), 'valid_business_contact_exception');
   assert.equal(readSource(env, 2, 'aiAutoApproved'), 'true');
+});
+
+test('misrouted ai_required needs_more_evidence rows are requeued and stale rows are skipped', () => {
+  const env = createEnvironment({ sourceCount: 68, aiEnabled: true, provider: 'mock', mockAutoApproval: true });
+  for (let rowIndex = 2; rowIndex <= 69; rowIndex += 1) {
+    setSource(env, rowIndex, { businessContactEvidence: `public contact evidence ${rowIndex}` });
+  }
+  env.context.installGmailSalesAiVerificationConfigurationOnce();
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  for (let rowIndex = 2; rowIndex <= 67; rowIndex += 1) {
+    writeReview(env, rowIndex, 'reviewDecision', 'needs_more_evidence');
+    writeReview(env, rowIndex, 'applyStatus', 'needs_more_evidence');
+    writeReview(env, rowIndex, 'applyErrorCode', 'ai_required');
+    writeReview(env, rowIndex, 'evidenceNotes', 'ai_exception_ai_required');
+  }
+  for (let rowIndex = 68; rowIndex <= 69; rowIndex += 1) {
+    writeReview(env, rowIndex, 'reviewDecision', 'needs_more_evidence');
+    writeReview(env, rowIndex, 'applyStatus', 'needs_more_evidence');
+    writeReview(env, rowIndex, 'applyErrorCode', 'ai_required');
+    writeReview(env, rowIndex, 'evidenceNotes', 'ai_exception_ai_required');
+    writeReview(env, rowIndex, 'sourceRowDigest', `stale-${rowIndex}`);
+  }
+  const before = snapshotReviewRow(env, 2);
+  const result = env.context.runGmailSalesAiContactBasisVerificationOnce();
+  assert.equal(result.aiRequiredRowsDetected, 66);
+  assert.equal(result.aiRequiredRowsRequeued, 66);
+  assert.equal(result.aiRequiredRowsStale, 2);
+  assert.equal(result.aiDispatchEligibleCount, 66);
+  assert.equal(result.aiBatchRequestCount, 9);
+  assert.equal(result.aiEvaluatedCount, 66);
+  assert.equal(result.aiAutoApprovedCount, 66);
+  assert.equal(readReview(env, 2, 'reviewId'), before.reviewId);
+  assert.equal(readReview(env, 2, 'sourceRowKey'), before.sourceRowKey);
+  assert.equal(readReview(env, 2, 'leadIdHash'), before.leadIdHash);
+  assert.equal(readReview(env, 2, 'sourceRowDigest'), before.sourceRowDigest);
+  assert.equal(readReview(env, 2, 'applyErrorCode'), '');
+  assert.equal(readReview(env, 68, 'sourceRowDigest'), 'stale-68');
+});
+
+test('ai_required without usable public evidence does not call provider', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock', mockAutoApproval: true });
+  setSource(env, 2, { publicSource: '', sourceUrl: '', sourceReference: '', sourceType: '', businessContactEvidence: '' });
+  env.context.installGmailSalesAiVerificationConfigurationOnce();
+  const result = env.context.runGmailSalesAiContactBasisVerificationOnce();
+  assert.equal(result.aiDispatchEligibleCount, 0);
+  assert.equal(result.aiBatchRequestCount, 0);
+  assert.equal(result.aiEvaluatedCount, 0);
+  assert.equal(result.evidencePayloadMissingCount, 1);
+  assert.equal(readReview(env, 2, 'reviewDecision'), 'needs_more_evidence');
+});
+
+test('needs_more_evidence is not counted as apply error', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+  env.context.installGmailSalesAiVerificationConfigurationOnce();
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  writeReview(env, 2, 'reviewDecision', 'needs_more_evidence');
+  writeReview(env, 2, 'applyStatus', 'needs_more_evidence');
+  writeReview(env, 2, 'applyErrorCode', 'ai_required');
+  const queue = env.context.inspectGmailSalesContactBasisReviewQueue();
+  assert.equal(queue.needsMoreEvidenceCount, 1);
+  assert.equal(queue.applyErrorCount, 0);
 });
 
 test('installer resets suspicious bulk skipped rows back to AI eligible pending', () => {
@@ -730,7 +798,7 @@ for (const [name, fn] of tests) {
 console.log(JSON.stringify({
   aiContactBasisTestPassed: true,
   scenarioCount: tests.length,
-  coveredRequirementCount: 63,
+  coveredRequirementCount: 72,
   mockSourceCandidateCount: 68,
   deterministicApprovedCount: 2,
   aiEvaluatedCount: 30,

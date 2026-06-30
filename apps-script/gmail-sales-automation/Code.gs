@@ -4571,11 +4571,15 @@ function runGmailSalesAiContactBasisVerificationOnce() {
       });
     }
     const sourceData = readSheetObjects_(context.sourceSheet);
-    const reviewData = readSheetObjects_(context.reviewSheet);
+    let reviewData = readSheetObjects_(context.reviewSheet);
     const sourceByKey = {};
     sourceData.items.forEach((item) => {
       sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
     });
+    const aiRequiredRepair = requeueMisroutedAiRequiredRows_(context, reviewData, sourceByKey);
+    if (aiRequiredRepair.requeuedCount > 0) {
+      reviewData = readSheetObjects_(context.reviewSheet);
+    }
     const reviewById = {};
     reviewData.items.forEach((item) => {
       const id = String(item.row.reviewId || '').trim();
@@ -4590,9 +4594,19 @@ function runGmailSalesAiContactBasisVerificationOnce() {
     let aiNeedsReviewCount = 0;
     let excludedCount = 0;
     let budgetBlockedCount = 0;
+    let aiDispatchEligibleCount = 0;
+    let aiBatchRequestCount = 0;
+    let aiProviderRequestSuccessCount = 0;
+    let aiProviderRequestFailureCount = 0;
+    let aiProviderCandidateResponseCount = 0;
+    let aiUnprocessedDueToRuntimeCount = 0;
+    let cacheHitCount = 0;
+    let evidencePayloadReadyCount = 0;
+    let evidencePayloadMissingCount = 0;
     const reasonCounts = {};
     const payloadFieldSet = {};
     const uniqueEvidenceDigests = {};
+    const aiDispatchItems = [];
     sourceData.items.forEach((sourceItem) => {
       sourceCandidatesEvaluatedCount += 1;
       const queue = buildContactBasisReviewQueueRow_(sourceItem, now);
@@ -4604,6 +4618,14 @@ function runGmailSalesAiContactBasisVerificationOnce() {
       const existingReview = reviewById[queue.row.reviewId];
       const existingDecision = existingReview ? String(existingReview.row.reviewDecision || '').trim() : '';
       const existingApplyStatus = existingReview ? String(existingReview.row.applyStatus || '').trim() : '';
+      if (existingReview && String(existingReview.row.sourceRowDigest || '').trim() !== String(queue.row.sourceRowDigest || '').trim()) {
+        const staleAiRequired = isMisroutedAiRequiredReviewRow_(existingReview.row, sourceByKey);
+        if (staleAiRequired.looksAiRequired) {
+          excludedCount += 1;
+          incrementCount_(reasonCounts, 'stale_ai_required_review');
+          return;
+        }
+      }
       if (existingApplyStatus === 'applied' || existingApplyStatus === 'applied_ai' || existingDecision === 'approved' || existingDecision === 'rejected') {
         excludedCount += 1;
         incrementCount_(reasonCounts, 'already_reviewed');
@@ -4612,8 +4634,8 @@ function runGmailSalesAiContactBasisVerificationOnce() {
       const evidence = collectGmailSalesContactBasisEvidence_(sourceItem.row, queue.row);
       const deterministic = buildDeterministicGmailSalesAiDecision_(evidence);
       let decision = deterministic;
-      if (!decision.autoApproved && evidence.suggestedBasisType === 'valid_business_contact_exception') {
-        if (!isGmailSalesAiBudgetAvailable_(config, aiEvaluatedCount + 1)) {
+      if (decision.status === 'needs_ai') {
+        if (!isGmailSalesAiBudgetAvailable_(config, aiDispatchItems.length + 1)) {
           budgetBlockedCount += 1;
           decision = {
             autoApproved: false,
@@ -4628,19 +4650,20 @@ function runGmailSalesAiContactBasisVerificationOnce() {
           const payload = buildMinimizedAiEvidencePayload_(evidence, config);
           Object.keys(payload).forEach((field) => { payloadFieldSet[field] = true; });
           if (!validateGmailSalesAiPayloadMinimized_(payload)) {
-            decision = {
-              autoApproved: false,
-              status: 'needs_human_review',
-              approvedBasisType: '',
-              confidence: 0,
-              reasonCodes: ['payload_minimization_failed'],
-              riskFlags: ['payload_minimization_failed'],
-              requiresHumanReview: true
-            };
+            evidencePayloadMissingCount += 1;
+            decision = buildGmailSalesAiDecision_('needs_human_review', '', 0, ['evidence_payload_missing'], ['evidence_payload_missing'], true, evidence, false);
           } else {
-            aiEvaluatedCount += 1;
-            const providerDecision = callGmailSalesAiProvider_(config, payload);
-            decision = validateGmailSalesAiDecision_(providerDecision, evidence, config);
+            evidencePayloadReadyCount += 1;
+            aiDispatchEligibleCount += 1;
+            aiDispatchItems.push({
+              sourceItem,
+              reviewItem: existingReview || null,
+              queueRow: queue.row,
+              evidence,
+              payload,
+              now
+            });
+            return;
           }
         }
       }
@@ -4666,6 +4689,42 @@ function runGmailSalesAiContactBasisVerificationOnce() {
           queueRow: queue.row,
           aiDecision: decision,
           now,
+          needsHumanReview: true
+        });
+      }
+      (decision.reasonCodes || []).forEach((reason) => incrementCount_(reasonCounts, reason));
+    });
+    const batchResult = dispatchGmailSalesAiRequiredCandidates_(config, aiDispatchItems);
+    aiBatchRequestCount = batchResult.aiBatchRequestCount;
+    aiProviderRequestSuccessCount = batchResult.aiProviderRequestSuccessCount;
+    aiProviderRequestFailureCount = batchResult.aiProviderRequestFailureCount;
+    aiProviderCandidateResponseCount = batchResult.aiProviderCandidateResponseCount;
+    aiUnprocessedDueToRuntimeCount = batchResult.aiUnprocessedDueToRuntimeCount;
+    cacheHitCount = batchResult.cacheHitCount;
+    batchResult.items.forEach((item) => {
+      aiEvaluatedCount += item.evaluated ? 1 : 0;
+      const decision = item.decision;
+      if (decision.autoApproved) {
+        aiAutoApprovedCount += 1;
+        uniqueEvidenceDigests[decision.evidenceDigest] = true;
+        updates.push({
+          sourceItem: item.sourceItem,
+          reviewItem: item.reviewItem,
+          queueRow: item.queueRow,
+          approvedBasisType: decision.approvedBasisType,
+          sourceType: item.queueRow.sourceType,
+          sourceReferenceHash: item.queueRow.sourceReferenceHash,
+          aiDecision: decision,
+          now: item.now
+        });
+      } else {
+        aiNeedsReviewCount += 1;
+        updates.push({
+          sourceItem: null,
+          reviewItem: item.reviewItem,
+          queueRow: item.queueRow,
+          aiDecision: decision,
+          now: item.now,
           needsHumanReview: true
         });
       }
@@ -4713,6 +4772,21 @@ function runGmailSalesAiContactBasisVerificationOnce() {
       aiNeedsReviewCount,
       excludedCount,
       budgetBlockedCount,
+      aiRequiredRowsDetected: aiRequiredRepair.detectedCount,
+      aiRequiredRowsRequeued: aiRequiredRepair.requeuedCount,
+      aiRequiredRowsSkipped: aiRequiredRepair.skippedCount,
+      aiRequiredRowsStale: aiRequiredRepair.staleCount,
+      aiDispatchEligibleCount,
+      aiBatchSize: config.batchSize,
+      aiBatchRequestCount,
+      aiProviderRequestSuccessCount,
+      aiProviderRequestFailureCount,
+      aiProviderCandidateResponseCount,
+      aiUnprocessedDueToRuntimeCount,
+      cacheHitCount,
+      estimatedCostYen: estimateGmailSalesAiCostYen_(config, aiBatchRequestCount),
+      evidencePayloadReadyCount,
+      evidencePayloadMissingCount,
       aiAppliedCount: sourceUpdates.length,
       uniqueEvidenceDigestCount: Object.keys(uniqueEvidenceDigests).length,
       aiBulkApprovalBlocked: false,
@@ -4869,6 +4943,77 @@ function countAiEligibleReviewRows_(items, sourceByKey) {
   return (items || []).filter((item) => isAiEligibleReviewQueueRow_(item.row || {}, sourceByKey)).length;
 }
 
+function emptyAiRequiredRequeueResult_() {
+  return {
+    detectedCount: 0,
+    requeuedCount: 0,
+    skippedCount: 0,
+    staleCount: 0
+  };
+}
+
+function requeueMisroutedAiRequiredRows_(context, reviewData, sourceByKey) {
+  const result = emptyAiRequiredRequeueResult_();
+  if (!context || !context.reviewSheet || !reviewData || !reviewData.items) return result;
+  const targets = [];
+  reviewData.items.forEach((item) => {
+    const validation = isMisroutedAiRequiredReviewRow_(item.row, sourceByKey);
+    if (validation.ok) {
+      result.detectedCount += 1;
+      targets.push(item);
+    } else if (validation.stale) {
+      result.staleCount += 1;
+    } else if (validation.looksAiRequired) {
+      result.skippedCount += 1;
+    }
+  });
+  targets.forEach((item) => {
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'reviewDecision', 'pending');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'approvedBasisType', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'evidenceNotes', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'reviewerLabel', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'reviewedAt', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'applyStatus', 'pending');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'applyErrorCode', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'appliedAt', '');
+    GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS.forEach((field) => {
+      setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, field, '');
+    });
+  });
+  result.requeuedCount = targets.length;
+  return result;
+}
+
+function isMisroutedAiRequiredReviewRow_(row, sourceByKey) {
+  const decision = String(row.reviewDecision || '').trim();
+  const applyStatus = String(row.applyStatus || '').trim();
+  const reasonText = normalizeTextForComparison_([
+    row.applyErrorCode,
+    row.evidenceNotes,
+    row.aiReasonCodes,
+    row.suggestionReasonCode,
+    row.priorityReasonCode
+  ].join(' '));
+  const looksAiRequired = decision === 'needs_more_evidence' && reasonText.indexOf('ai_required') !== -1;
+  if (!looksAiRequired) return { ok: false, stale: false, looksAiRequired: false };
+  if (['applied', 'applied_ai'].indexOf(applyStatus) !== -1) return { ok: false, stale: false, looksAiRequired };
+  if (String(row.appliedAt || '').trim()) return { ok: false, stale: false, looksAiRequired };
+  if (String(row.aiAutoApproved || '').toLowerCase() === 'true') return { ok: false, stale: false, looksAiRequired };
+  if (String(row.aiVerifiedAt || '').trim()) return { ok: false, stale: false, looksAiRequired };
+  if (String(row.aiProvider || '').trim() || String(row.aiModel || '').trim()) return { ok: false, stale: false, looksAiRequired };
+  if (String(row.aiResponseDigest || '').trim() || String(row.aiEvidenceDigest || '').trim()) return { ok: false, stale: false, looksAiRequired };
+  const confidence = Number(row.aiConfidence || 0);
+  if (Number.isFinite(confidence) && confidence > 0) return { ok: false, stale: false, looksAiRequired };
+  const sourceItem = sourceByKey[String(row.sourceRowKey || '').trim()];
+  if (!sourceItem) return { ok: false, stale: true, looksAiRequired };
+  if (hasAllowedGmailSalesContactBasis_(sourceItem.row)) return { ok: false, stale: false, looksAiRequired };
+  const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+  if (!queue.include || String(queue.row.sourceRowDigest || '') !== String(row.sourceRowDigest || '').trim()) {
+    return { ok: false, stale: true, looksAiRequired };
+  }
+  return { ok: true, stale: false, looksAiRequired };
+}
+
 function getGmailSalesAiConfig_() {
   const props = PropertiesService.getScriptProperties();
   const provider = String(props.getProperty('GMAIL_SALES_AI_PROVIDER') || 'disabled').trim().toLowerCase();
@@ -4880,6 +5025,7 @@ function getGmailSalesAiConfig_() {
     confidenceThreshold: Number.isFinite(threshold) ? threshold : 0.95,
     maxDailyRequests: Math.max(0, Number(props.getProperty('GMAIL_SALES_AI_MAX_DAILY_REQUESTS') || '100')),
     maxDailyCostYen: Math.max(0, Number(props.getProperty('GMAIL_SALES_AI_MAX_DAILY_COST_YEN') || '100')),
+    batchSize: Math.max(1, Math.min(20, Number(props.getProperty('GMAIL_SALES_AI_BATCH_SIZE') || '8'))),
     policyVersion: String(props.getProperty('GMAIL_SALES_AI_POLICY_VERSION') || GMAIL_SALES_AI_DEFAULT_POLICY_VERSION).trim(),
     dataMinimizationMode: String(props.getProperty('GMAIL_SALES_AI_DATA_MINIMIZATION_MODE') || 'strict').trim(),
     mockAutoApprovalEnabled: props.getProperty('GMAIL_SALES_AI_MOCK_AUTO_APPROVAL_ENABLED') === 'true',
@@ -4893,10 +5039,19 @@ function buildGmailSalesAiContactBasisStatus_(context, config, sourceData, revie
   const schema = buildGmailSalesContactBasisReviewSchemaInspection_(context);
   const statusCounts = {};
   const basisCounts = {};
+  const sourceByKey = {};
+  (sourceData.items || []).forEach((item) => {
+    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+  });
   let pendingCount = 0;
   let approvedAiCount = 0;
   let appliedAiCount = 0;
   let needsMoreEvidenceCount = 0;
+  let aiRequiredRowsRemaining = 0;
+  let evidencePayloadReadyCount = 0;
+  let evidencePayloadMissingCount = 0;
+  let applyErrorCount = 0;
+  const payloadFieldSet = {};
   (reviewData.items || []).forEach((item) => {
     const decision = String(item.row.reviewDecision || 'pending').trim() || 'pending';
     const applyStatus = String(item.row.applyStatus || 'pending').trim() || 'pending';
@@ -4905,11 +5060,35 @@ function buildGmailSalesAiContactBasisStatus_(context, config, sourceData, revie
     if (decision === 'approved_ai') approvedAiCount += 1;
     if (decision === 'needs_more_evidence') needsMoreEvidenceCount += 1;
     if (applyStatus === 'applied_ai') appliedAiCount += 1;
+    const errorCode = String(item.row.applyErrorCode || '').trim();
+    if (['rollback', 'error', 'skipped_invalid', 'skipped_stale_source'].indexOf(applyStatus) !== -1 &&
+      errorCode &&
+      errorCode !== 'ai_required' &&
+      errorCode !== 'evidence_payload_missing' &&
+      errorCode !== 'insufficient_evidence') {
+      applyErrorCount += 1;
+    }
+    if (isMisroutedAiRequiredReviewRow_(item.row, sourceByKey).looksAiRequired) aiRequiredRowsRemaining += 1;
   });
   (sourceData.items || []).forEach((item) => {
     const basis = normalizeContactBasisType_(getContactBasisValue_(item.row, 'contactBasisType')) || 'missing';
     incrementCount_(basisCounts, basis);
+    const queue = buildContactBasisReviewQueueRow_(item, new Date().toISOString());
+    if (!queue.include) return;
+    const evidence = collectGmailSalesContactBasisEvidence_(item.row, queue.row);
+    const deterministic = buildDeterministicGmailSalesAiDecision_(evidence);
+    if (deterministic.status !== 'needs_ai') return;
+    const payload = buildMinimizedAiEvidencePayload_(evidence, config);
+    Object.keys(payload).forEach((field) => { payloadFieldSet[field] = true; });
+    if (validateGmailSalesAiPayloadMinimized_(payload)) evidencePayloadReadyCount += 1;
+    else evidencePayloadMissingCount += 1;
   });
+  let recommendedNextAction = 'blocked';
+  if (!config.enabled || config.provider === 'disabled' || !config.apiKeyConfigured) recommendedNextAction = 'fix_provider_configuration';
+  else if (evidencePayloadReadyCount > 0 || aiRequiredRowsRemaining > 0 || pendingCount > 0) recommendedNextAction = 'run_ai_verification';
+  else if (needsMoreEvidenceCount > 0) recommendedNextAction = 'review_evidence_missing_exceptions';
+  else if (basisCounts.missing >= GMAIL_DAILY_EXPECTED_COUNT) recommendedNextAction = 'blocked';
+  else recommendedNextAction = 'ready_for_daily_pipeline';
   return {
     event: 'gmail_sales_ai_contact_basis_status',
     mode: 'read_only',
@@ -4929,6 +5108,26 @@ function buildGmailSalesAiContactBasisStatus_(context, config, sourceData, revie
     approvedAiCount,
     appliedAiCount,
     needsMoreEvidenceCount,
+    aiRequiredRowsRemaining,
+    aiRequiredRowsRequeued: 0,
+    evidencePayloadReadyCount,
+    evidencePayloadMissingCount,
+    lastAiDispatchCandidateCount: 0,
+    lastAiBatchRequestCount: 0,
+    lastAiProviderSuccessCount: 0,
+    lastAiProviderFailureCount: 0,
+    lastAiEvaluatedCount: 0,
+    lastAiAutoApprovedCount: 0,
+    lastAiNeedsReviewCount: 0,
+    lastAiUnprocessedCount: 0,
+    payloadFields: Object.keys(payloadFieldSet).sort(),
+    providerConnectionAttempted: false,
+    providerConnectionSucceeded: false,
+    lastProviderErrorCategory: '',
+    estimatedCostTodayYen: 0,
+    budgetExceeded: false,
+    recommendedNextAction,
+    applyErrorCount,
     reviewDecisionCounts: statusCounts,
     contactBasisCounts: basisCounts,
     reviewHeaderValid: schema.schemaValid,
@@ -5144,6 +5343,20 @@ function collectGmailSalesContactBasisEvidence_(sourceRow, queueRow) {
     existingRelationshipEvidencePresent: Boolean(String(queueRow.existingRelationshipEvidence || '').trim()),
     explicitOptInEvidencePresent: Boolean(String(queueRow.explicitOptInEvidence || '').trim()),
     businessContactEvidencePresent: Boolean(String(queueRow.businessContactEvidence || '').trim()),
+    contactChannelType: inferGmailSalesContactChannelType_(row, queueRow),
+    isPublicBusinessChannel: isGmailSalesPublicBusinessChannel_(row, queueRow),
+    officialDomainMatched: Boolean(String(queueRow.sourceReferenceHash || '').trim()) && !isLikelyPersonalEmail_(row.email || row.contactEmail || ''),
+    sourceReferenceVerified: Boolean(String(queueRow.sourceReferenceHash || '').trim()),
+    suppressionPresent: Boolean(row.suppressionPresent || row.suppressed),
+    doNotContactPresent: row.doNotContact === true || String(row.doNotContact || '').toLowerCase() === 'true',
+    unsubscribePresent: row.unsubscribe === true || String(row.unsubscribe || '').toLowerCase() === 'true',
+    alreadySentPresent: Boolean(String(row.sentStatus || '').trim()),
+    deliveryUnknownPresent: String(row.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown,
+    priorReplyPresent: String(row.replyStatus || '').toLowerCase() === 'replied',
+    priorInquiryPresent: Boolean(String(row.priorInquiry || row.existingRelationshipEvidence || '').trim()),
+    guessedContactFlag: false,
+    privatePersonalContactFlag: isLikelyPersonalEmail_(row.email || row.contactEmail || ''),
+    sanitizedPublicEvidenceSnippets: buildSanitizedGmailSalesPublicEvidenceSnippets_(row, queueRow),
     suggestedBasisType: normalizeContactBasisType_(queueRow.suggestedBasisType),
     suggestionReasonCode: String(queueRow.suggestionReasonCode || '').trim(),
     domainHash: hashValue_(extractEmailDomain_(row.email || row.contactEmail || '')),
@@ -5152,6 +5365,57 @@ function collectGmailSalesContactBasisEvidence_(sourceRow, queueRow) {
     personalEmail: isLikelyPersonalEmail_(row.email || row.contactEmail || ''),
     evidenceDigest: buildGmailSalesAiEvidenceDigest_(queueRow)
   };
+}
+
+function inferGmailSalesContactChannelType_(row, queueRow) {
+  const text = normalizeTextForComparison_([
+    row.publicSource,
+    row.sourceType,
+    queueRow.sourceType,
+    queueRow.businessContactEvidence
+  ].join(' '));
+  if (includesAny_(text, ['contact', 'inquiry', 'お問い合わせ', '窓口'])) return 'public_business_contact_form_or_address';
+  if (includesAny_(text, ['directory', 'listing', '公式', 'official'])) return 'public_business_directory';
+  return 'public_business_channel';
+}
+
+function isGmailSalesPublicBusinessChannel_(row, queueRow) {
+  const text = normalizeTextForComparison_([
+    row.publicSource,
+    row.sourceType,
+    queueRow.sourceType,
+    queueRow.businessContactEvidence
+  ].join(' '));
+  return !isLikelyPersonalEmail_(row.email || row.contactEmail || '') &&
+    !includesAny_(text, ['private personal', 'personal contact', '個人用', 'guessed', '推測']);
+}
+
+function buildSanitizedGmailSalesPublicEvidenceSnippets_(row, queueRow) {
+  const values = [
+    row.publicSource,
+    row.sourceType,
+    row.notes,
+    queueRow.sourceType,
+    queueRow.businessContactEvidence,
+    queueRow.suggestionReasonCode
+  ];
+  const snippets = [];
+  values.forEach((value) => {
+    const sanitized = sanitizeGmailSalesAiPublicEvidenceText_(value);
+    if (sanitized && snippets.indexOf(sanitized) === -1) snippets.push(sanitized.slice(0, 300));
+  });
+  return snippets.join(' ').slice(0, 1200) ? snippets : [];
+}
+
+function sanitizeGmailSalesAiPublicEvidenceText_(value) {
+  return String(value || '')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, '[phone]')
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/[?&][A-Za-z0-9_=-]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 300);
 }
 
 function buildDeterministicGmailSalesAiDecision_(evidence) {
@@ -5168,35 +5432,57 @@ function buildDeterministicGmailSalesAiDecision_(evidence) {
 }
 
 function buildMinimizedAiEvidencePayload_(evidence, config) {
+  const snippets = (evidence.sanitizedPublicEvidenceSnippets || []).slice(0, 4);
   return {
     task: 'contact_basis_verification',
+    candidateToken: hashValue_('candidate|' + evidence.sourceRowKey + '|' + evidence.evidenceDigest),
     policyVersion: config.policyVersion,
     promptVersion: GMAIL_SALES_AI_PROMPT_VERSION,
     sourceRowDigest: evidence.sourceRowDigest,
     sourceType: evidence.sourceType,
-    sourceReferenceHash: evidence.sourceReferenceHash,
     sourceReferencePresent: evidence.sourceReferencePresent,
+    officialDomainMatched: evidence.officialDomainMatched,
+    sourceReferenceVerified: evidence.sourceReferenceVerified,
+    contactChannelType: evidence.contactChannelType,
+    isPublicBusinessChannel: evidence.isPublicBusinessChannel,
+    explicitOptInRecordPresent: evidence.explicitOptInEvidencePresent,
+    existingRelationshipRecordPresent: evidence.existingRelationshipEvidencePresent,
+    priorReplyPresent: evidence.priorReplyPresent,
+    priorInquiryPresent: evidence.priorInquiryPresent,
+    suppressionPresent: evidence.suppressionPresent,
+    doNotContactPresent: evidence.doNotContactPresent,
+    unsubscribePresent: evidence.unsubscribePresent,
+    alreadySentPresent: evidence.alreadySentPresent,
+    deliveryUnknownPresent: evidence.deliveryUnknownPresent,
+    guessedContactFlag: evidence.guessedContactFlag,
+    privatePersonalContactFlag: evidence.privatePersonalContactFlag,
+    optOutAvailable: evidence.optOutAvailable,
+    sanitizedPublicEvidenceSnippets: snippets,
+    deterministicReasonCodes: [evidence.suggestionReasonCode, 'ai_required'].filter(Boolean),
     businessContactEvidencePresent: evidence.businessContactEvidencePresent,
     suggestedBasisType: evidence.suggestedBasisType,
-    suggestionReasonCode: evidence.suggestionReasonCode,
-    domainHash: evidence.domainHash,
-    evidenceDigest: evidence.evidenceDigest,
-    optOutAvailable: evidence.optOutAvailable,
-    personalEmail: evidence.personalEmail
+    sourceEvidenceDigest: evidence.evidenceDigest,
+    evidenceDigest: evidence.evidenceDigest
   };
 }
 
 function validateGmailSalesAiPayloadMinimized_(payload) {
   const forbidden = ['email', 'contactEmail', 'name', 'businessDisplayName', 'sourceReference', 'sourceUrl', 'body', 'subject'];
   return forbidden.every((field) => payload[field] === undefined) &&
+    Boolean(payload.candidateToken) &&
     Boolean(payload.sourceRowDigest) &&
     Boolean(payload.evidenceDigest) &&
-    Boolean(payload.sourceReferenceHash);
+    Boolean(payload.sourceEvidenceDigest) &&
+    payload.sourceReferencePresent === true &&
+    payload.sourceReferenceVerified === true &&
+    payload.isPublicBusinessChannel === true &&
+    Array.isArray(payload.sanitizedPublicEvidenceSnippets) &&
+    payload.sanitizedPublicEvidenceSnippets.length > 0;
 }
 
 function callGmailSalesAiProvider_(config, payload) {
   if (config.provider === 'mock') {
-    if (config.mockAutoApprovalEnabled && payload.suggestedBasisType === 'valid_business_contact_exception' && payload.businessContactEvidencePresent && !payload.personalEmail) {
+    if (config.mockAutoApprovalEnabled && payload.suggestedBasisType === 'valid_business_contact_exception' && payload.businessContactEvidencePresent && !payload.privatePersonalContactFlag) {
       return {
         status: 'pass',
         approvedBasisType: 'valid_business_contact_exception',
@@ -5205,7 +5491,9 @@ function callGmailSalesAiProvider_(config, payload) {
         riskFlags: [],
         requiresHumanReview: false,
         evidenceDigest: payload.evidenceDigest,
-        sourceRowDigest: payload.sourceRowDigest
+        sourceRowDigest: payload.sourceRowDigest,
+        candidateToken: payload.candidateToken,
+        evidence: [{ normalizedQuote: (payload.sanitizedPublicEvidenceSnippets || [])[0] || '', evidenceDigest: payload.evidenceDigest }]
       };
     }
     return {
@@ -5216,7 +5504,8 @@ function callGmailSalesAiProvider_(config, payload) {
       riskFlags: ['mock_manual_review_required'],
       requiresHumanReview: true,
       evidenceDigest: payload.evidenceDigest,
-      sourceRowDigest: payload.sourceRowDigest
+      sourceRowDigest: payload.sourceRowDigest,
+      candidateToken: payload.candidateToken
     };
   }
   if (!config.apiKeyConfigured) {
@@ -5228,7 +5517,8 @@ function callGmailSalesAiProvider_(config, payload) {
       riskFlags: ['provider_not_callable'],
       requiresHumanReview: true,
       evidenceDigest: payload.evidenceDigest,
-      sourceRowDigest: payload.sourceRowDigest
+      sourceRowDigest: payload.sourceRowDigest,
+      candidateToken: payload.candidateToken
     };
   }
   if (config.provider === 'openai' || config.provider === 'gemini') {
@@ -5242,24 +5532,98 @@ function callGmailSalesAiProvider_(config, payload) {
     riskFlags: ['manual_review_required'],
     requiresHumanReview: true,
     evidenceDigest: payload.evidenceDigest,
-    sourceRowDigest: payload.sourceRowDigest
+    sourceRowDigest: payload.sourceRowDigest,
+    candidateToken: payload.candidateToken
+  };
+}
+
+function dispatchGmailSalesAiRequiredCandidates_(config, dispatchItems) {
+  const result = {
+    aiBatchRequestCount: 0,
+    aiProviderRequestSuccessCount: 0,
+    aiProviderRequestFailureCount: 0,
+    aiProviderCandidateResponseCount: 0,
+    aiUnprocessedDueToRuntimeCount: 0,
+    cacheHitCount: 0,
+    items: []
+  };
+  const items = dispatchItems || [];
+  const batchSize = Math.max(1, Math.min(20, Number(config.batchSize || 8)));
+  for (let index = 0; index < items.length; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    result.aiBatchRequestCount += 1;
+    const providerResult = callGmailSalesAiProviderBatch_(config, batch.map((item) => item.payload));
+    if (providerResult.ok) result.aiProviderRequestSuccessCount += 1;
+    else result.aiProviderRequestFailureCount += 1;
+    const decisionsByToken = providerResult.decisionsByToken || {};
+    const invalidTokens = providerResult.invalidTokens || {};
+    batch.forEach((item) => {
+      const token = item.payload.candidateToken;
+      const providerDecision = decisionsByToken[token] || buildGmailSalesAiInvalidProviderResponse_(item.payload, invalidTokens[token] || providerResult.reasonCode || 'ai_provider_response_missing');
+      if (decisionsByToken[token]) result.aiProviderCandidateResponseCount += 1;
+      const decision = validateGmailSalesAiDecision_(providerDecision, item.evidence, config, item.payload);
+      result.items.push(Object.assign({}, item, {
+        decision,
+        evaluated: Boolean(decisionsByToken[token])
+      }));
+    });
+  }
+  return result;
+}
+
+function callGmailSalesAiProviderBatch_(config, payloads) {
+  const items = payloads || [];
+  if (config.provider === 'mock') {
+    const decisionsByToken = {};
+    items.forEach((payload) => {
+      decisionsByToken[payload.candidateToken] = callGmailSalesAiProvider_(config, payload);
+    });
+    return { ok: true, decisionsByToken, invalidTokens: {} };
+  }
+  if (!config.apiKeyConfigured) {
+    return {
+      ok: false,
+      reasonCode: 'ai_api_key_missing',
+      decisionsByToken: {},
+      invalidTokens: {}
+    };
+  }
+  if (config.provider === 'openai' || config.provider === 'gemini') {
+    return callExternalGmailSalesAiProviderBatch_(config, items);
+  }
+  return {
+    ok: false,
+    reasonCode: 'external_provider_call_disabled_in_safe_code_path',
+    decisionsByToken: {},
+    invalidTokens: {}
   };
 }
 
 function callExternalGmailSalesAiProvider_(config, payload) {
+  const batch = callExternalGmailSalesAiProviderBatch_(config, [payload]);
+  return batch.decisionsByToken[payload.candidateToken] || buildGmailSalesAiInvalidProviderResponse_(payload, batch.reasonCode || 'ai_provider_response_missing');
+}
+
+function callExternalGmailSalesAiProviderBatch_(config, payloads) {
   const prompt = JSON.stringify({
-    instruction: 'Return JSON only. Verify whether this minimized evidence supports valid_business_contact_exception under the configured policy.',
+    instruction: 'Return JSON only. Verify each minimized evidence item independently for valid business contact exception under the configured policy. Do not infer missing evidence.',
     requiredSchema: {
-      status: 'pass|blocked',
-      approvedBasisType: 'valid_business_contact_exception|',
-      confidence: 'number 0..1',
-      reasonCodes: ['classification strings only'],
-      riskFlags: ['risk strings only'],
-      requiresHumanReview: 'boolean',
-      evidenceDigest: payload.evidenceDigest,
-      sourceRowDigest: payload.sourceRowDigest
+      results: [{
+        candidateToken: 'must match request candidateToken',
+        classification: 'existing_relationship|explicit_opt_in|valid_business_contact_exception|needs_review|blocked',
+        confidence: 'number 0..1',
+        isOfficialBusinessChannel: 'boolean',
+        isGuessedContact: 'boolean',
+        isPrivatePersonalContact: 'boolean',
+        sourceReferenceSupported: 'boolean',
+        optOutSupported: 'boolean',
+        requiresHumanReview: 'boolean',
+        evidence: [{ sourceField: 'string', normalizedQuote: 'quote from request evidence only', evidenceDigest: 'request evidenceDigest' }],
+        riskFlags: ['risk strings only'],
+        reasonCodes: ['classification strings only']
+      }]
     },
-    payload
+    payloads
   });
   try {
     if (config.provider === 'openai') {
@@ -5273,28 +5637,25 @@ function callExternalGmailSalesAiProvider_(config, payload) {
           input: prompt
         })
       });
-      return parseGmailSalesAiProviderJson_(response, payload);
+      return parseGmailSalesAiProviderBatchJson_(response, payloads);
     }
     const model = encodeURIComponent(config.model || 'gemini-1.5-flash');
-    const response = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(config.apiKey), {
+    const response = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
       method: 'post',
       contentType: 'application/json',
       muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': config.apiKey },
       payload: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }]
       })
     });
-    return parseGmailSalesAiProviderJson_(response, payload);
+    return parseGmailSalesAiProviderBatchJson_(response, payloads);
   } catch (error) {
     return {
-      status: 'blocked',
-      approvedBasisType: '',
-      confidence: 0,
-      reasonCodes: ['ai_provider_exception_' + safeErrorCode_(error)],
-      riskFlags: ['provider_exception'],
-      requiresHumanReview: true,
-      evidenceDigest: payload.evidenceDigest,
-      sourceRowDigest: payload.sourceRowDigest
+      ok: false,
+      reasonCode: 'ai_provider_exception_' + safeErrorCode_(error),
+      decisionsByToken: {},
+      invalidTokens: {}
     };
   }
 }
@@ -5341,6 +5702,72 @@ function parseGmailSalesAiProviderJson_(response, payload) {
   }
 }
 
+function parseGmailSalesAiProviderBatchJson_(response, payloads) {
+  const payloadByToken = {};
+  (payloads || []).forEach((payload) => { payloadByToken[payload.candidateToken] = payload; });
+  const statusCode = typeof response.getResponseCode === 'function' ? response.getResponseCode() : 0;
+  if (statusCode < 200 || statusCode >= 300) {
+    return { ok: false, reasonCode: 'ai_provider_http_' + statusCode, decisionsByToken: {}, invalidTokens: {} };
+  }
+  const body = String(typeof response.getContentText === 'function' ? response.getContentText() : '');
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch (error) {
+    return { ok: false, reasonCode: 'ai_provider_json_invalid', decisionsByToken: {}, invalidTokens: {} };
+  }
+  const text = String(parsed.output_text ||
+    (((parsed.output || [])[0] || {}).content || []).map((part) => part.text || '').join('') ||
+    (((((parsed.candidates || [])[0] || {}).content || {}).parts || [])[0] || {}).text ||
+    '');
+  let decisionEnvelope;
+  try {
+    decisionEnvelope = JSON.parse(text);
+  } catch (error) {
+    return { ok: false, reasonCode: 'ai_provider_decision_json_invalid', decisionsByToken: {}, invalidTokens: {} };
+  }
+  const rawResults = Array.isArray(decisionEnvelope) ? decisionEnvelope : decisionEnvelope.results;
+  if (!Array.isArray(rawResults)) {
+    return { ok: false, reasonCode: 'ai_provider_results_missing', decisionsByToken: {}, invalidTokens: {} };
+  }
+  const decisionsByToken = {};
+  const invalidTokens = {};
+  rawResults.forEach((decision) => {
+    const token = String(decision && decision.candidateToken || '').trim();
+    if (!token || !payloadByToken[token]) {
+      if (token) invalidTokens[token] = 'ai_provider_unknown_candidate_token';
+      return;
+    }
+    if (decisionsByToken[token]) {
+      invalidTokens[token] = 'ai_provider_duplicate_candidate_token';
+      delete decisionsByToken[token];
+      return;
+    }
+    const payload = payloadByToken[token];
+    const classification = String(decision.classification || decision.approvedBasisType || '').trim();
+    const evidenceItems = Array.isArray(decision.evidence) ? decision.evidence : [];
+    const evidenceDigest = evidenceItems.length > 0 ? String(evidenceItems[0].evidenceDigest || '') : String(decision.evidenceDigest || '');
+    decisionsByToken[token] = {
+      status: classification === 'valid_business_contact_exception' ? 'pass' : 'blocked',
+      approvedBasisType: classification === 'valid_business_contact_exception' ? 'valid_business_contact_exception' : '',
+      confidence: Number(decision.confidence || 0),
+      reasonCodes: Array.isArray(decision.reasonCodes) ? decision.reasonCodes.map(String) : ['ai_reason_missing'],
+      riskFlags: Array.isArray(decision.riskFlags) ? decision.riskFlags.map(String) : ['ai_risk_missing'],
+      requiresHumanReview: decision.requiresHumanReview !== false,
+      evidenceDigest,
+      sourceRowDigest: payload.sourceRowDigest,
+      candidateToken: token,
+      evidence: evidenceItems,
+      isGuessedContact: decision.isGuessedContact === true,
+      isPrivatePersonalContact: decision.isPrivatePersonalContact === true,
+      sourceReferenceSupported: decision.sourceReferenceSupported === true,
+      optOutSupported: decision.optOutSupported === true,
+      isOfficialBusinessChannel: decision.isOfficialBusinessChannel === true
+    };
+  });
+  return { ok: true, decisionsByToken, invalidTokens };
+}
+
 function buildGmailSalesAiInvalidProviderResponse_(payload, reasonCode) {
   return {
     status: 'blocked',
@@ -5350,26 +5777,45 @@ function buildGmailSalesAiInvalidProviderResponse_(payload, reasonCode) {
     riskFlags: ['provider_response_invalid'],
     requiresHumanReview: true,
     evidenceDigest: payload.evidenceDigest,
-    sourceRowDigest: payload.sourceRowDigest
+    sourceRowDigest: payload.sourceRowDigest,
+    candidateToken: payload.candidateToken
   };
 }
 
-function validateGmailSalesAiDecision_(providerDecision, evidence, config) {
+function validateGmailSalesAiDecision_(providerDecision, evidence, config, payload) {
   const decision = providerDecision || {};
   const confidence = Number(decision.confidence || 0);
   const riskFlags = Array.isArray(decision.riskFlags) ? decision.riskFlags : [];
   const reasonCodes = Array.isArray(decision.reasonCodes) ? decision.reasonCodes : ['ai_response_invalid'];
   const approvedBasisType = normalizeContactBasisType_(decision.approvedBasisType);
+  const payloadSnippets = payload && Array.isArray(payload.sanitizedPublicEvidenceSnippets) ? payload.sanitizedPublicEvidenceSnippets : [];
+  const evidenceItems = Array.isArray(decision.evidence) ? decision.evidence : [];
+  const evidenceQuoteSupported = evidenceItems.length > 0 && evidenceItems.every((item) => {
+    const quote = normalizeTextForComparison_(item.normalizedQuote || '');
+    return quote && payloadSnippets.some((snippet) => normalizeTextForComparison_(snippet).indexOf(quote) !== -1 || quote.indexOf(normalizeTextForComparison_(snippet)) !== -1);
+  });
   const ok = decision.status === 'pass' &&
+    (!payload || String(decision.candidateToken || '') === String(payload.candidateToken || '')) &&
     approvedBasisType === 'valid_business_contact_exception' &&
     confidence >= config.confidenceThreshold &&
     riskFlags.length === 0 &&
     decision.requiresHumanReview === false &&
     String(decision.evidenceDigest || '') === evidence.evidenceDigest &&
     String(decision.sourceRowDigest || '') === evidence.sourceRowDigest &&
-    evidence.businessContactEvidencePresent &&
+    evidenceQuoteSupported &&
     evidence.sourceReferencePresent &&
-    !evidence.personalEmail;
+    evidence.sourceReferenceVerified &&
+    evidence.officialDomainMatched &&
+    evidence.isPublicBusinessChannel &&
+    evidence.optOutAvailable &&
+    !evidence.suppressionPresent &&
+    !evidence.doNotContactPresent &&
+    !evidence.unsubscribePresent &&
+    !evidence.alreadySentPresent &&
+    !evidence.priorReplyPresent &&
+    !evidence.deliveryUnknownPresent &&
+    !evidence.guessedContactFlag &&
+    !evidence.privatePersonalContactFlag;
   if (!ok) {
     return buildGmailSalesAiDecision_('needs_human_review', '', confidence, reasonCodes, riskFlags.length ? riskFlags : ['ai_validation_failed'], true, evidence, true);
   }
@@ -5407,6 +5853,11 @@ function buildGmailSalesAiEvidenceDigest_(queueRow) {
 function isGmailSalesAiBudgetAvailable_(config, nextRequestCount) {
   if (config.provider === 'mock') return nextRequestCount <= config.maxDailyRequests;
   return nextRequestCount <= config.maxDailyRequests && config.maxDailyCostYen > 0;
+}
+
+function estimateGmailSalesAiCostYen_(config, requestCount) {
+  if (config.provider === 'mock') return 0;
+  return Math.min(Number(config.maxDailyCostYen || 0), Math.max(0, Number(requestCount || 0)));
 }
 
 function writeAiAuditToSourceRow_(sheet, headers, rowIndex, decision, now) {
@@ -5949,7 +6400,14 @@ function buildGmailSalesContactBasisReviewQueueInspection_(context) {
     if (applyStatus === 'applied') result.appliedCount += 1;
     if (applyStatus === 'skipped_invalid') result.skippedInvalidCount += 1;
     if (applyStatus === 'skipped_stale_source') result.skippedStaleSourceCount += 1;
-    if (String(item.row.applyErrorCode || '').trim()) result.applyErrorCount += 1;
+    const applyErrorCode = String(item.row.applyErrorCode || '').trim();
+    if (['rollback', 'error', 'skipped_invalid', 'skipped_stale_source'].indexOf(applyStatus) !== -1 &&
+      applyErrorCode &&
+      applyErrorCode !== 'ai_required' &&
+      applyErrorCode !== 'evidence_payload_missing' &&
+      applyErrorCode !== 'insufficient_evidence') {
+      result.applyErrorCount += 1;
+    }
     if (decision === 'approved' && !String(item.row.evidenceNotes || '').trim()) result.missingEvidenceCount += 1;
     if (decision === 'approved' && !String(item.row.reviewerLabel || '').trim()) result.missingReviewerCount += 1;
     if (decision === 'approved' && String(item.row.optOutAvailable || '').toLowerCase() !== 'true') result.optOutUnavailableCount += 1;
