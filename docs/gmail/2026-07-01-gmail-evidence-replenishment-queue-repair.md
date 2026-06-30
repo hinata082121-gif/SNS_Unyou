@@ -137,6 +137,8 @@ Rows with an empty `queueSchemaVersion` are migrated to `evidence-replenishment-
 
 When no repair is required, `queueRepairSucceeded` remains false and `queueRepairNotRequired` is true. Repair success is only reported after an actual repair was required, executed, and read back.
 
+Queue migration writes are read back before Grounded Discovery can call Gemini. If header/schema/version/status read-back fails, the run blocks with `queue_repair_read_back_failed`, attempts rollback from the queue snapshot, and sends zero grounding requests.
+
 The user does not need to re-enter or edit the 66 rows manually.
 
 ## Recommended Actions

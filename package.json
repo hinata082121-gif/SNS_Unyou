@@ -58,6 +58,7 @@
     "gmail:sales:evidence-enrichment:test": "node scripts/gmail/test-gmail-sales-official-evidence-enrichment.mjs",
     "gmail:sales:evidence-replenishment-queue:test": "node scripts/gmail/test-gmail-sales-grounded-source-discovery.mjs",
     "gmail:sales:grounded-source-discovery:test": "node scripts/gmail/test-gmail-sales-grounded-source-discovery.mjs",
+    "gmail:sales:grounding-response-contract:test": "node scripts/gmail/test-gmail-sales-grounding-response-contract.mjs",
     "gmail:sales:ai-provider-setup:test": "node scripts/gmail/test-gmail-sales-ai-provider-setup.mjs",
     "gmail:sales:apps-script-runtime:test": "node scripts/gmail/test-apps-script-gmail-runtime.mjs",
     "gmail:sheet-history:export-safe:test": "node scripts/gmail/test-google-sheet-send-history-safe-export.mjs",

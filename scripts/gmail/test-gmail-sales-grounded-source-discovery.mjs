@@ -68,6 +68,9 @@ test('grounded source discovery applies verified citation sources with one Gemin
     assert.equal(call.options.headers['x-goog-api-key'], env.props.GMAIL_SALES_AI_API_KEY);
     const payload = JSON.parse(call.options.payload);
     assert.deepEqual(payload.tools, [{ type: 'google_search' }]);
+    assert.equal(payload.store, false);
+    assert.equal(Object.prototype.hasOwnProperty.call(payload, 'previous_interaction_id'), false);
+    assert.equal(call.url.includes(env.props.GMAIL_SALES_AI_API_KEY), false);
     assert.equal(payload.input.includes('@example.invalid'), false);
     assert.equal(payload.input.includes('Subject'), false);
     assert.equal(payload.input.includes('Body'), false);
@@ -306,10 +309,10 @@ test('identity resolver supports English and Japanese public identity aliases wi
   assert.equal(status.publicBrandNamePresentCount, 2);
   assert.equal(status.publicServiceNamePresentCount, 2);
   const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
-  const prompts = env.fetchCalls.map((call) => JSON.parse(JSON.parse(call.options.payload).input));
-  assert.equal(prompts.some((prompt) => prompt.publicBusinessName === 'Company Alias'), true);
-  assert.equal(prompts.some((prompt) => prompt.publicBrandName === 'Brand Alias'), true);
-  assert.equal(prompts.some((prompt) => prompt.publicServiceName === 'Service Alias'), true);
+  const prompts = env.fetchCalls.map((call) => JSON.parse(call.options.payload).input);
+  assert.equal(prompts.some((prompt) => prompt.includes('Company Alias')), true);
+  assert.equal(prompts.some((prompt) => prompt.includes('Brand Alias')), true);
+  assert.equal(prompts.some((prompt) => prompt.includes('Service Alias')), true);
   assert.equal(env.fetchCalls.some((call) => JSON.parse(call.options.payload).input.includes('Person Name')), false);
   assert.equal(env.fetchCalls.some((call) => JSON.parse(call.options.payload).input.includes('localpart')), false);
   assert.equal(result.sourceReferencesAppliedCount, 6);
@@ -355,6 +358,19 @@ test('grounding is fail-closed when Gemini configuration is not valid', () => {
   assert.equal(env.fetchCalls.length, 0);
   assert.equal(env.sheetWriteCount, 0);
   assert.equal(env.propertyWriteCount, 0);
+});
+
+test('grounded discovery is blocked until response contract probe is valid', () => {
+  const env = createEnvironment({ sourceCount: 1, contractProbeValid: false });
+  seedGroundingReviewAndQueue(env, 1);
+  const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'grounding_contract_probe_required');
+  assert.equal(result.recommendedNextAction, 'run_grounding_contract_probe');
+  assert.equal(result.candidatesAttemptedCount, 0);
+  assert.equal(result.searchQueryCount, 0);
+  assert.equal(result.aiApiCalled, false);
+  assert.equal(env.fetchCalls.length, 0);
 });
 
 test('citation selection requires grounded citation URL, official confidence, identity match, and safe domain', () => {
@@ -462,7 +478,8 @@ function createEnvironment(options = {}) {
       GMAIL_SALES_GROUNDING_MODEL: 'gemini-mock-grounded',
       GMAIL_SALES_GROUNDING_MAX_CANDIDATES_PER_RUN: '10',
       GMAIL_SALES_GROUNDING_MAX_SEARCH_QUERIES_PER_DAY: '30',
-      GMAIL_SALES_GROUNDING_MAX_DAILY_COST_YEN: '100'
+      GMAIL_SALES_GROUNDING_MAX_DAILY_COST_YEN: '100',
+      GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_JSON: options.contractProbeValid === false ? '' : JSON.stringify({ responseContractValid: true, completedAt: '2026-07-01T00:00:00.000Z' })
     },
     workbook: {
       sheets: {
@@ -631,29 +648,30 @@ function buildContext(env) {
       fetch: (url, options = {}) => {
         env.fetchCalls.push({ url: String(url), options });
         const prompt = JSON.parse(options.payload).input;
-        const parsedPrompt = JSON.parse(prompt);
+        const token = /Candidate token for traceability:\s*([a-f0-9]+)/.exec(prompt)?.[1] || 'mock-token';
+        const citationText = 'The official website was verified. Contact and business inquiry information is available.';
         return {
           getResponseCode: () => 200,
           getContentText: () => JSON.stringify({
-            output_text: JSON.stringify({
-              candidateToken: parsedPrompt.candidateToken,
-              officialConfidence: 0.98,
-              businessIdentityMatched: true,
-              officialUrlFromCitationOnly: true,
-              contactPageDiscovered: true,
-              businessInquiryEvidencePresent: true,
-              solicitationRestrictionPresent: false,
-              riskFlags: [],
-              reasonCodes: ['official_site_verified']
-            }),
-            groundingMetadata: {
-              groundingChunks: [{
-                web: {
-                  uri: `https://official-${env.fetchCalls.length}.example/contact`,
-                  title: 'official contact'
-                }
-              }]
-            }
+            steps: [
+              { type: 'google_search_call', arguments: { queries: ['redacted public business official website'] } },
+              { type: 'google_search_result', call_id: 'call-1', result: { count: 1 } },
+              {
+                type: 'model_output',
+                content: [{
+                  type: 'text',
+                  text: citationText,
+                  annotations: [{
+                    type: 'url_citation',
+                    url: `https://official-${env.fetchCalls.length}.example/contact`,
+                    title: 'official contact',
+                    start_index: 4,
+                    end_index: 20
+                  }]
+                }]
+              }
+            ],
+            metadata: { tokenDigest: token.slice(0, 8) }
           })
         };
       }

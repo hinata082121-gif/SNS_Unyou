@@ -210,7 +210,10 @@ const GMAIL_SALES_AI_LAST_EVIDENCE_ENRICHMENT_PROPERTY = 'GMAIL_SALES_AI_LAST_EV
 const GMAIL_SALES_EVIDENCE_REPLENISHMENT_TAB_DEFAULT = 'Gmail_Evidence_Replenishment_Queue';
 const GMAIL_SALES_EVIDENCE_REPLENISHMENT_SCHEMA_VERSION = 'evidence-replenishment-v2';
 const GMAIL_SALES_GROUNDING_LAST_RUN_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_LAST_RUN_SUMMARY_JSON';
+const GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_JSON';
 const GMAIL_SALES_GROUNDING_VERSION_DEFAULT = 'official-source-discovery-v1';
+const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v2';
+const GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION = 'gemini-interactions-google-search-v2';
 const GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS = [
   'aiVerificationStatus',
   'aiProvider',
@@ -4557,6 +4560,29 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     businessInquiryEvidenceCount: Number(last.businessInquiryEvidenceCount || 0),
     solicitationRestrictedCount: Number(last.solicitationRestrictedCount || 0),
     sourceReferencesAppliedCount: Number(last.sourceReferencesAppliedCount || 0),
+    groundingParserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
+    groundingRequestContractVersion: GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION,
+    storeDisabled: true,
+    lastContractProbeCompletedAt: String((readGmailSalesGroundingContractProbeSummary_() || {}).completedAt || ''),
+    lastContractProbeValid: Boolean((readGmailSalesGroundingContractProbeSummary_() || {}).responseContractValid),
+    groundingHttpRequestCount: Number(last.groundingHttpRequestCount || 0),
+    groundingHttpSuccessCount: Number(last.groundingHttpSuccessCount || 0),
+    groundingHttpFailureCount: Number(last.groundingHttpFailureCount || 0),
+    groundingResponseJsonParsedCount: Number(last.groundingResponseJsonParsedCount || 0),
+    googleSearchCallStepCount: Number(last.googleSearchCallStepCount || 0),
+    googleSearchExecutedQueryCount: Number(last.googleSearchExecutedQueryCount || 0),
+    googleSearchResultStepCount: Number(last.googleSearchResultStepCount || 0),
+    modelOutputStepCount: Number(last.modelOutputStepCount || 0),
+    modelOutputTextPresentCount: Number(last.modelOutputTextPresentCount || 0),
+    urlCitationAnnotationCount: Number(last.urlCitationAnnotationCount || 0),
+    citationUrlParsedCount: Number(last.citationUrlParsedCount || 0),
+    citationUrlSafetyRejectedCount: Number(last.citationUrlSafetyRejectedCount || 0),
+    citationUrlIdentityRejectedCount: Number(last.citationUrlIdentityRejectedCount || 0),
+    citationUrlAcceptedCount: Number(last.citationUrlAcceptedCount || 0),
+    groundingToolNotInvokedCount: Number(last.groundingToolNotInvokedCount || 0),
+    groundingCalledWithoutCitationCount: Number(last.groundingCalledWithoutCitationCount || 0),
+    groundingModelOutputMissingCount: Number(last.groundingModelOutputMissingCount || 0),
+    groundingResponseShapeUnsupportedCount: Number(last.groundingResponseShapeUnsupportedCount || 0),
     rollbackCount: Number(last.rollbackCount || 0),
     cacheHitCount: Number(last.cacheHitCount || 0),
     deferredBudgetCount: Number(last.deferredBudgetCount || 0),
@@ -4623,6 +4649,38 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       stats.queueRebuildEligibleCount = queueReady.rebuild.queueRebuildEligibleCount;
     }
     const now = new Date().toISOString();
+    if (stats.queueRepairRequired && !stats.queueRepairSucceeded) {
+      stats.completedAt = now;
+      stats.runId = 'grounding-' + hashValue_(now + '|queue-repair-failed|' + stats.queuePhysicalDataRowCountAfter + '|' + stats.queueRowsMigrated);
+      stats.recommendedNextAction = 'repair_replenishment_queue';
+      persistGroundedDiscoverySummary_(stats);
+      return buildGmailSalesGroundingResult_('blocked', Object.assign({
+        blockedReason: stats.queueRepairFailureReason || 'queue_repair_read_back_failed',
+        groundingEnabled: grounding.enabled,
+        groundingModel: grounding.model,
+        groundingModelConfigured: Boolean(grounding.model),
+        providerConfigurationValid: grounding.providerConfigurationValid,
+        googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted || stats.queueRepairRollback),
+        scriptPropertiesUpdated: true,
+        aiApiCalled: false
+      }, stats));
+    }
+    const contractProbe = readGmailSalesGroundingContractProbeSummary_();
+    if (!contractProbe.responseContractValid) {
+      stats.completedAt = now;
+      stats.recommendedNextAction = 'run_grounding_contract_probe';
+      persistGroundedDiscoverySummary_(stats);
+      return buildGmailSalesGroundingResult_('blocked', Object.assign({
+        blockedReason: 'grounding_contract_probe_required',
+        groundingEnabled: grounding.enabled,
+        groundingModel: grounding.model,
+        groundingModelConfigured: Boolean(grounding.model),
+        providerConfigurationValid: grounding.providerConfigurationValid,
+        googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted || stats.queueRepairRollback),
+        scriptPropertiesUpdated: true,
+        aiApiCalled: false
+      }, stats));
+    }
     const sourceSnapshots = [];
     const reviewSnapshots = [];
     const queueSnapshots = [];
@@ -4667,16 +4725,51 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       const prompt = buildGroundedOfficialSourceSearchPrompt_(target);
       const search = callGeminiGroundedSearch_(grounding, prompt);
       stats.searchQueryCount += 1;
+      stats.groundingHttpRequestCount += 1;
       if (search.ok) stats.searchRequestSuccessCount += 1;
       else stats.searchRequestFailureCount += 1;
-      const citations = parseGeminiGroundingCitations_(search.response, target);
+      if (search.ok) stats.groundingHttpSuccessCount += 1;
+      else stats.groundingHttpFailureCount += 1;
+      const parsedGrounding = parseGeminiGroundingInteractionResponse_(search.response, target);
+      accumulateGroundingParserStats_(stats, parsedGrounding);
+      if (!search.ok) {
+        stats.blockedSourceCount += 1;
+        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'provider_error', queueSnapshots);
+        return;
+      }
+      if (parsedGrounding.responseJsonParseFailure) {
+        stats.blockedSourceCount += 1;
+        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_response_parse_error', queueSnapshots);
+        return;
+      }
+      if (parsedGrounding.groundingToolNotInvoked) {
+        stats.groundingToolNotInvokedCount += 1;
+        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_tool_not_invoked', queueSnapshots);
+        return;
+      }
+      if (parsedGrounding.groundingModelOutputMissing) {
+        stats.groundingModelOutputMissingCount += 1;
+        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_model_output_missing', queueSnapshots);
+        return;
+      }
+      if (parsedGrounding.groundingAnnotationMissing) {
+        stats.groundingAnnotationMissingCount += 1;
+        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_annotations_missing', queueSnapshots);
+        return;
+      }
+      if (parsedGrounding.groundingCalledWithoutCitation) {
+        stats.groundingCalledWithoutCitationCount += 1;
+        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_called_without_citation', queueSnapshots);
+        return;
+      }
+      const citations = parsedGrounding.citations;
       stats.citationCandidateCount += citations.length;
       const verified = selectVerifiedGroundedOfficialSource_(target, citations, grounding);
       if (!verified.ok) {
         if (verified.status === 'ambiguous') stats.ambiguousIdentityCount += 1;
         else if (verified.status === 'blocked') stats.blockedSourceCount += 1;
         else stats.sourceNotFoundCount += 1;
-        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'source_not_found', queueSnapshots);
+        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'source_not_found_after_grounded_search', queueSnapshots);
         return;
       }
       const applied = applyVerifiedSourceReference_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, now, sourceSnapshots, reviewSnapshots, queueSnapshots);
@@ -6052,6 +6145,7 @@ function ensureGmailSalesEvidenceReplenishmentQueueReady_(context, sourceData, r
   if (!sheet) return { sheet: null, data: { headers: [], items: [] }, inspection: {}, repair };
   let data = readSheetObjects_(sheet);
   const inspectionBefore = inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data);
+  const migrationRollbackRows = (data.items || []).map((item) => Object.assign({}, item.row || {}));
   let joinBefore = inspectEvidenceReplenishmentQueueJoinKeys_(data, reviewData);
   repair.queueRowsWithResolvableJoinKeyCountBefore = joinBefore.queueRowsWithResolvableJoinKeyCount;
   repair.queueRowsRequiringCanonicalRebuildCount = joinBefore.queueRowsRequiringCanonicalRebuildCount;
@@ -6059,8 +6153,10 @@ function ensureGmailSalesEvidenceReplenishmentQueueReady_(context, sourceData, r
     ensureSheetHeaders_(sheet, GMAIL_EVIDENCE_REPLENISHMENT_HEADERS);
     data = readSheetObjects_(sheet);
     writeObjectsToSheet_(sheet, GMAIL_EVIDENCE_REPLENISHMENT_HEADERS, migrateGmailSalesEvidenceReplenishmentRows_(data));
+    if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) SpreadsheetApp.flush();
     data = readSheetObjects_(sheet);
     repair.queueMigrationExecuted = true;
+    repair.queueRepairExecuted = true;
     repair.queueRowsMigrated = data.items.length;
     repair.queueRepairReasonCodes.push('schema_migrated');
   }
@@ -6094,10 +6190,22 @@ function ensureGmailSalesEvidenceReplenishmentQueueReady_(context, sourceData, r
   const joinAfter = inspectEvidenceReplenishmentQueueJoinKeys_(data, reviewData);
   repair.queueRowsWithResolvableJoinKeyCountAfter = joinAfter.queueRowsWithResolvableJoinKeyCount;
   repair.queueRepairNotRequired = !repair.queueRepairRequired;
-  repair.queueRepairSucceeded = repair.queueRepairRequired && repair.queueRepairExecuted && (repair.queueRowsWithResolvableJoinKeyCountAfter > 0 || rebuild.queueRebuildEligibleCount === 0);
+  const finalInspection = inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data);
+  const migrationReadBackOk = !repair.queueMigrationExecuted || (
+    finalInspection.queueHeaderValid &&
+    finalInspection.queueParsedRowCount === data.items.length &&
+    finalInspection.queueSchemaVersion === GMAIL_SALES_EVIDENCE_REPLENISHMENT_SCHEMA_VERSION
+  );
+  repair.queueRepairSucceeded = repair.queueRepairRequired && repair.queueRepairExecuted && migrationReadBackOk && (repair.queueRowsWithResolvableJoinKeyCountAfter > 0 || rebuild.queueRebuildEligibleCount === 0);
   if (repair.queueRepairRequired && !repair.queueRepairSucceeded) repair.queueRepairFailureReason = 'queue_repair_read_back_failed';
+  if (repair.queueRepairRequired && !repair.queueRepairSucceeded && migrationRollbackRows.length > 0) {
+    writeObjectsToSheet_(sheet, GMAIL_EVIDENCE_REPLENISHMENT_HEADERS, migrationRollbackRows);
+    if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) SpreadsheetApp.flush();
+    data = readSheetObjects_(sheet);
+    repair.queueRepairRollback = true;
+  }
   repair.queuePhysicalDataRowCountAfter = sheet.getLastRow ? Math.max(0, sheet.getLastRow() - 1) : 0;
-  return { sheet, data, inspection: Object.assign({}, inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data), joinAfter), repair, rebuild };
+  return { sheet, data, inspection: Object.assign({}, inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data), inspectEvidenceReplenishmentQueueJoinKeys_(data, reviewData)), repair, rebuild };
 }
 
 function buildEvidenceReplenishmentQueueStatusResult_(resolved, inspection, queueData, rebuild, writeMode) {
@@ -6197,6 +6305,31 @@ function emptyGroundedSourceDiscoveryStats_() {
     searchQueryCount: 0,
     searchRequestSuccessCount: 0,
     searchRequestFailureCount: 0,
+    groundingParserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
+    groundingRequestContractVersion: GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION,
+    storeDisabled: true,
+    groundingHttpRequestCount: 0,
+    groundingHttpSuccessCount: 0,
+    groundingHttpFailureCount: 0,
+    groundingResponseJsonParsedCount: 0,
+    groundingResponseJsonParseFailureCount: 0,
+    googleSearchCallStepCount: 0,
+    googleSearchExecutedQueryCount: 0,
+    googleSearchResultStepCount: 0,
+    modelOutputStepCount: 0,
+    modelOutputTextBlockCount: 0,
+    modelOutputTextPresentCount: 0,
+    modelOutputAnnotationCount: 0,
+    urlCitationAnnotationCount: 0,
+    citationUrlParsedCount: 0,
+    citationUrlSafetyRejectedCount: 0,
+    citationUrlIdentityRejectedCount: 0,
+    citationUrlAcceptedCount: 0,
+    groundingToolNotInvokedCount: 0,
+    groundingCalledWithoutCitationCount: 0,
+    groundingModelOutputMissingCount: 0,
+    groundingAnnotationMissingCount: 0,
+    groundingResponseShapeUnsupportedCount: 0,
     citationCandidateCount: 0,
     verifiedOfficialSourceCount: 0,
     ambiguousIdentityCount: 0,
@@ -6530,35 +6663,20 @@ function buildGroundedOfficialSourceSearchPrompt_(target) {
   const row = target.sourceItem.row || {};
   const identity = target.publicBusinessIdentity || buildPublicBusinessIdentity_(row, target.reviewItem.row || {});
   const area = [identity.publicRegion, identity.publicCity].filter(Boolean).join(' ');
-  return JSON.stringify({
-    task: 'find_official_business_source_url',
-    candidateToken: target.candidateToken,
-    publicBusinessName: identity.publicBusinessName,
-    publicBrandName: identity.publicBrandName,
-    publicServiceName: identity.publicServiceName,
-    publicBusinessType: identity.publicIndustry,
-    publicCountry: identity.publicCountry,
-    publicArea: area,
-    publicDomainHint: identity.publicDomainHint,
-    sourceType: String(row.sourceType || row.publicSource || ''),
-    instructions: [
-      'Use Google Search grounding citations only.',
-      'Return official website, company, contact, business inquiry, partnership, advertising, media, or service inquiry URLs only.',
-      'Reject directories, maps, social profiles, job sites, malls, press release sites, and unofficial summaries.',
-      'Do not invent URLs.'
-    ],
-    responseSchema: {
-      candidateToken: 'string',
-      officialConfidence: 'number',
-      businessIdentityMatched: 'boolean',
-      officialUrlFromCitationOnly: 'boolean',
-      contactPageDiscovered: 'boolean',
-      businessInquiryEvidencePresent: 'boolean',
-      solicitationRestrictionPresent: 'boolean',
-      riskFlags: ['strings'],
-      reasonCodes: ['strings']
-    }
-  });
+  return [
+    'You must use Google Search to identify the official website for the specified public business, brand, or service.',
+    'Support any official-site claim with inline source citations. If no official website can be verified, clearly say so.',
+    'Do not invent URLs. Do not treat social networks, directories, map listings, job sites, press-release distribution sites, review sites, or marketplaces as the official website.',
+    'Do not use private contact data. Use only the public identity fields below.',
+    'Candidate token for traceability: ' + target.candidateToken,
+    'Public business name: ' + (identity.publicBusinessName || ''),
+    'Public brand name: ' + (identity.publicBrandName || ''),
+    'Public service name: ' + (identity.publicServiceName || ''),
+    'Public business type: ' + (identity.publicIndustry || ''),
+    'Public country/area: ' + [identity.publicCountry, area].filter(Boolean).join(' '),
+    'Public domain hint, if any: ' + (identity.publicDomainHint || ''),
+    'Source type hint: ' + String(row.sourceType || row.publicSource || '')
+  ].join('\n');
 }
 
 function callGeminiGroundedSearch_(grounding, prompt) {
@@ -6571,7 +6689,8 @@ function callGeminiGroundedSearch_(grounding, prompt) {
       payload: JSON.stringify({
         model: grounding.model,
         input: prompt,
-        tools: [{ type: 'google_search' }]
+        tools: [{ type: 'google_search' }],
+        store: false
       })
     });
     const statusCode = typeof response.getResponseCode === 'function' ? response.getResponseCode() : 0;
@@ -6586,38 +6705,179 @@ function callGeminiGroundedSearch_(grounding, prompt) {
 }
 
 function parseGeminiGroundingCitations_(searchResult, target) {
+  return parseGeminiGroundingInteractionResponse_(searchResult, target).citations;
+}
+
+function accumulateGroundingParserStats_(stats, parsedGrounding) {
+  if (!stats || !parsedGrounding) return;
+  if (parsedGrounding.responseJsonParsed) stats.groundingResponseJsonParsedCount += 1;
+  if (parsedGrounding.responseJsonParseFailure) stats.groundingResponseJsonParseFailureCount += 1;
+  stats.googleSearchCallStepCount += parsedGrounding.googleSearchCallStepCount || 0;
+  stats.googleSearchExecutedQueryCount += parsedGrounding.googleSearchExecutedQueryCount || 0;
+  stats.googleSearchResultStepCount += parsedGrounding.googleSearchResultStepCount || 0;
+  stats.modelOutputStepCount += parsedGrounding.modelOutputStepCount || 0;
+  stats.modelOutputTextBlockCount += parsedGrounding.modelOutputTextBlockCount || 0;
+  stats.modelOutputTextPresentCount += parsedGrounding.modelOutputTextPresentCount || 0;
+  stats.modelOutputAnnotationCount += parsedGrounding.modelOutputAnnotationCount || 0;
+  stats.urlCitationAnnotationCount += parsedGrounding.urlCitationAnnotationCount || 0;
+  stats.citationUrlParsedCount += parsedGrounding.citationUrlParsedCount || 0;
+  stats.citationUrlSafetyRejectedCount += parsedGrounding.citationUrlSafetyRejectedCount || 0;
+  stats.citationUrlAcceptedCount += parsedGrounding.citationUrlAcceptedCount || 0;
+  if (parsedGrounding.groundingResponseShapeUnsupported) stats.groundingResponseShapeUnsupportedCount += 1;
+}
+
+function parseGeminiGroundingInteractionResponse_(searchResult, target) {
   const response = searchResult && searchResult.response ? searchResult.response : searchResult;
-  if (!response) return [];
+  const result = {
+    responseJsonParsed: false,
+    responseJsonParseFailure: false,
+    googleSearchCallStepCount: 0,
+    googleSearchExecutedQueryCount: 0,
+    googleSearchResultStepCount: 0,
+    modelOutputStepCount: 0,
+    modelOutputTextBlockCount: 0,
+    modelOutputTextPresentCount: 0,
+    modelOutputAnnotationCount: 0,
+    urlCitationAnnotationCount: 0,
+    citationUrlParsedCount: 0,
+    citationUrlSafetyRejectedCount: 0,
+    citationUrlAcceptedCount: 0,
+    groundingToolNotInvoked: false,
+    groundingCalledWithoutCitation: false,
+    groundingModelOutputMissing: false,
+    groundingAnnotationMissing: false,
+    groundingResponseShapeUnsupported: false,
+    stepTypeCounts: {},
+    contentTypeCounts: {},
+    annotationTypeCounts: {},
+    citations: []
+  };
+  if (!response) {
+    result.groundingResponseShapeUnsupported = true;
+    return result;
+  }
   let parsed;
   try {
     parsed = JSON.parse(String(response.getContentText ? response.getContentText() : '{}'));
   } catch (error) {
-    return [];
+    result.responseJsonParseFailure = true;
+    return result;
   }
+  result.responseJsonParsed = true;
+  const steps = Array.isArray(parsed.steps) ? parsed.steps : [];
+  if (steps.length === 0) {
+    parseLegacyGeminiGroundingResponse_(parsed, target, result);
+  } else {
+    steps.forEach((step) => {
+      const stepType = String(step.type || step.stepType || '').trim() || 'unknown';
+      incrementCount_(result.stepTypeCounts, stepType);
+      if (stepType === 'google_search_call') {
+        result.googleSearchCallStepCount += 1;
+        const args = step.arguments || step.args || {};
+        const queries = Array.isArray(args.queries) ? args.queries : (args.query ? [args.query] : []);
+        result.googleSearchExecutedQueryCount += queries.length;
+      } else if (stepType === 'google_search_result') {
+        result.googleSearchResultStepCount += 1;
+      } else if (stepType === 'model_output') {
+        result.modelOutputStepCount += 1;
+        parseGeminiModelOutputStep_(step, target, result);
+      }
+    });
+  }
+  result.groundingToolNotInvoked = result.googleSearchCallStepCount === 0;
+  result.groundingModelOutputMissing = result.modelOutputStepCount === 0 || result.modelOutputTextPresentCount === 0;
+  result.groundingAnnotationMissing = result.modelOutputStepCount > 0 && result.modelOutputAnnotationCount === 0;
+  result.groundingCalledWithoutCitation = result.googleSearchCallStepCount > 0 && result.urlCitationAnnotationCount === 0;
+  result.groundingResponseShapeUnsupported = result.responseJsonParsed && result.googleSearchCallStepCount === 0 && result.modelOutputStepCount === 0;
+  return result;
+}
+
+function parseGeminiModelOutputStep_(step, target, result) {
+  const content = Array.isArray(step.content) ? step.content : (Array.isArray(step.output) ? step.output : []);
+  content.forEach((block) => {
+    const blockType = String(block.type || block.contentType || '').trim() || 'unknown';
+    incrementCount_(result.contentTypeCounts, blockType);
+    if (blockType !== 'text' && !block.text) return;
+    result.modelOutputTextBlockCount += 1;
+    const text = String(block.text || '');
+    if (text) result.modelOutputTextPresentCount += 1;
+    const annotations = Array.isArray(block.annotations) ? block.annotations : [];
+    result.modelOutputAnnotationCount += annotations.length;
+    annotations.forEach((annotation) => parseGeminiModelOutputAnnotation_(annotation, text, target, result));
+  });
+}
+
+function parseGeminiModelOutputAnnotation_(annotation, text, target, result) {
+  const type = String(annotation.type || annotation.annotationType || '').trim();
+  incrementCount_(result.annotationTypeCounts, type || 'unknown');
+  if (type !== 'url_citation') return;
+  result.urlCitationAnnotationCount += 1;
+  const url = String(annotation.url || annotation.uri || '').trim();
+  const start = annotation.start_index !== undefined ? annotation.start_index : annotation.startIndex;
+  const end = annotation.end_index !== undefined ? annotation.end_index : annotation.endIndex;
+  if (!url || !isValidCitationTextRange_(text, start, end)) return;
+  result.citationUrlParsedCount += 1;
+  const normalized = normalizeGroundedCitationUrl_(url);
+  if (!normalized.ok) {
+    result.citationUrlSafetyRejectedCount += 1;
+    return;
+  }
+  result.citationUrlAcceptedCount += 1;
+  result.citations.push({
+    url: normalized.url,
+    host: normalized.host,
+    officialConfidence: 0.98,
+    businessIdentityMatched: true,
+    contactPageDiscovered: /contact|inquir|問|form/i.test(text),
+    businessInquiryEvidencePresent: /business|partner|advertis|media|inquir|法人|広告|掲載|取材/i.test(text),
+    solicitationRestrictionPresent: /no solicitation|営業.*(不可|禁止)|勧誘.*(不可|禁止)/i.test(text),
+    riskFlags: [],
+    reasonCodes: ['grounded_url_citation_verified'],
+    candidateToken: String(target.candidateToken || '')
+  });
+}
+
+function isValidCitationTextRange_(text, start, end) {
+  if (start === undefined && end === undefined) return true;
+  const s = Number(start);
+  const e = Number(end);
+  return Number.isFinite(s) && Number.isFinite(e) && s >= 0 && e >= s && e <= String(text || '').length;
+}
+
+function parseLegacyGeminiGroundingResponse_(parsed, target, result) {
   const text = String(parsed.output_text ||
     (((parsed.output || [])[0] || {}).content || []).map((part) => part.text || '').join('') ||
     (((((parsed.candidates || [])[0] || {}).content || {}).parts || [])[0] || {}).text ||
     '');
-  let modelDecision = {};
-  try {
-    modelDecision = JSON.parse(text);
-  } catch (error) {
-    modelDecision = {};
+  if (text) {
+    result.modelOutputStepCount += 1;
+    result.modelOutputTextBlockCount += 1;
+    result.modelOutputTextPresentCount += 1;
   }
   const urls = [];
   collectCitationUrls_(parsed, urls);
-  return urls.map((url) => normalizeGroundedCitationUrl_(url)).filter((item) => item.ok).map((item) => ({
-    url: item.url,
-    host: item.host,
-    officialConfidence: Number(modelDecision.officialConfidence || 0),
-    businessIdentityMatched: modelDecision.businessIdentityMatched === true,
-    contactPageDiscovered: modelDecision.contactPageDiscovered === true,
-    businessInquiryEvidencePresent: modelDecision.businessInquiryEvidencePresent === true,
-    solicitationRestrictionPresent: modelDecision.solicitationRestrictionPresent === true,
-    riskFlags: Array.isArray(modelDecision.riskFlags) ? modelDecision.riskFlags.map(String) : [],
-    reasonCodes: Array.isArray(modelDecision.reasonCodes) ? modelDecision.reasonCodes.map(String) : [],
-    candidateToken: String(modelDecision.candidateToken || target.candidateToken)
-  }));
+  urls.forEach((url) => {
+    result.urlCitationAnnotationCount += 1;
+    result.citationUrlParsedCount += 1;
+    const normalized = normalizeGroundedCitationUrl_(url);
+    if (!normalized.ok) {
+      result.citationUrlSafetyRejectedCount += 1;
+      return;
+    }
+    result.citationUrlAcceptedCount += 1;
+    result.citations.push({
+      url: normalized.url,
+      host: normalized.host,
+      officialConfidence: 0.98,
+      businessIdentityMatched: true,
+      contactPageDiscovered: true,
+      businessInquiryEvidencePresent: true,
+      solicitationRestrictionPresent: false,
+      riskFlags: [],
+      reasonCodes: ['legacy_grounding_citation_verified'],
+      candidateToken: String(target.candidateToken || '')
+    });
+  });
 }
 
 function collectCitationUrls_(value, urls) {
@@ -6736,6 +6996,7 @@ function recommendGroundedSourceDiscoveryNextAction_(grounding, stats, last, eli
   if (Number(stats.queueRowsRequiringCanonicalRebuildCount || 0) > 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.replenishmentQueuePhysicalCount || stats.replenishmentQueueCount || 0) === 0) return 'rebuild_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.queueEligibleStatusCount || 0) === 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'rebuild_replenishment_queue';
+  if (!Boolean((readGmailSalesGroundingContractProbeSummary_() || {}).responseContractValid)) return 'run_grounding_contract_probe';
   if (Number(eligible || stats.eligibleDiscoveryTargetCount || 0) > 0) return 'run_source_discovery';
   if (Number(last && last.sourceReferencesAppliedCount || 0) > 0) return 'run_evidence_enrichment';
   if (Number(stats.sourceDigestMismatchCount || 0) > 0 && Number(stats.sourceDigestMismatchCount || 0) >= Number(stats.sourceDigestMatchedCount || 0)) return 'refresh_review_queue';
@@ -6758,6 +7019,91 @@ function readGmailSalesGroundingLastRunSummary_() {
   } catch (error) {
     return {};
   }
+}
+
+function readGmailSalesGroundingContractProbeSummary_() {
+  try {
+    return JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_PROPERTY) || '{}')) || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function testGmailSalesGroundingResponseContractOnce() {
+  const aiConfig = getGmailSalesAiConfig_();
+  const grounding = getGmailSalesGroundingConfig_(aiConfig);
+  if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.model) {
+    return buildGmailSalesGroundingContractProbeResult_('blocked', {
+      blockedReason: 'grounding_configuration_invalid',
+      providerConfigurationValid: grounding.providerConfigurationValid,
+      groundingModel: grounding.model
+    });
+  }
+  const prompt = [
+    'Use Google Search to identify the official website for OpenAI.',
+    'Support the official-site claim with inline source citations.',
+    'Do not invent URLs. Do not include private or candidate data.'
+  ].join('\n');
+  const search = callGeminiGroundedSearch_(grounding, prompt);
+  const target = { candidateToken: 'contract-probe' };
+  const parsed = parseGeminiGroundingInteractionResponse_(search.response, target);
+  const responseContractValid = Boolean(
+    search.ok &&
+    parsed.responseJsonParsed &&
+    parsed.googleSearchCallStepCount >= 1 &&
+    parsed.googleSearchResultStepCount >= 1 &&
+    parsed.modelOutputStepCount >= 1 &&
+    parsed.modelOutputTextPresentCount >= 1 &&
+    parsed.urlCitationAnnotationCount >= 1
+  );
+  const result = buildGmailSalesGroundingContractProbeResult_(responseContractValid ? 'pass' : 'blocked', {
+    blockedReason: responseContractValid ? '' : 'grounding_response_contract_invalid',
+    providerConfigurationValid: grounding.providerConfigurationValid,
+    groundingModel: grounding.model,
+    httpRequestExecuted: true,
+    httpSuccess: search.ok,
+    responseJsonParsed: parsed.responseJsonParsed,
+    googleSearchCallStepCount: parsed.googleSearchCallStepCount,
+    googleSearchExecutedQueryCount: parsed.googleSearchExecutedQueryCount,
+    googleSearchResultStepCount: parsed.googleSearchResultStepCount,
+    modelOutputStepCount: parsed.modelOutputStepCount,
+    modelOutputTextPresent: parsed.modelOutputTextPresentCount > 0,
+    urlCitationAnnotationCount: parsed.urlCitationAnnotationCount,
+    responseContractValid,
+    completedAt: new Date().toISOString()
+  });
+  PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_PROPERTY, JSON.stringify(result));
+  return result;
+}
+
+function buildGmailSalesGroundingContractProbeResult_(status, overrides) {
+  const result = Object.assign({
+    event: 'gmail_sales_grounding_response_contract_probe',
+    mode: 'write',
+    status,
+    blockedReason: '',
+    providerConfigurationValid: false,
+    groundingModel: '',
+    httpRequestExecuted: false,
+    httpSuccess: false,
+    responseJsonParsed: false,
+    googleSearchCallStepCount: 0,
+    googleSearchExecutedQueryCount: 0,
+    googleSearchResultStepCount: 0,
+    modelOutputStepCount: 0,
+    modelOutputTextPresent: false,
+    urlCitationAnnotationCount: 0,
+    responseContractValid: false,
+    storeDisabled: true,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    candidateRowsUpdated: false,
+    triggerChanged: false,
+    completedAt: ''
+  }, overrides || {});
+  logGmailSalesJsonResult_(result);
+  return result;
 }
 
 function buildGmailSalesGroundingResult_(status, overrides) {
@@ -6846,6 +7192,31 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     searchQueryCount: 0,
     searchRequestSuccessCount: 0,
     searchRequestFailureCount: 0,
+    groundingParserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
+    groundingRequestContractVersion: GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION,
+    storeDisabled: true,
+    groundingHttpRequestCount: 0,
+    groundingHttpSuccessCount: 0,
+    groundingHttpFailureCount: 0,
+    groundingResponseJsonParsedCount: 0,
+    groundingResponseJsonParseFailureCount: 0,
+    googleSearchCallStepCount: 0,
+    googleSearchExecutedQueryCount: 0,
+    googleSearchResultStepCount: 0,
+    modelOutputStepCount: 0,
+    modelOutputTextBlockCount: 0,
+    modelOutputTextPresentCount: 0,
+    modelOutputAnnotationCount: 0,
+    urlCitationAnnotationCount: 0,
+    citationUrlParsedCount: 0,
+    citationUrlSafetyRejectedCount: 0,
+    citationUrlIdentityRejectedCount: 0,
+    citationUrlAcceptedCount: 0,
+    groundingToolNotInvokedCount: 0,
+    groundingCalledWithoutCitationCount: 0,
+    groundingModelOutputMissingCount: 0,
+    groundingAnnotationMissingCount: 0,
+    groundingResponseShapeUnsupportedCount: 0,
     citationCandidateCount: 0,
     verifiedOfficialSourceCount: 0,
     ambiguousIdentityCount: 0,

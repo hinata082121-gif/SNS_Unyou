@@ -89,6 +89,16 @@ Grounded discovery now uses one shared eligibility snapshot for read-only inspec
 
 `replenishmentQueueCount` is now the final discovery-eligible count. Physical and intermediate counts are reported separately as `replenishmentQueuePhysicalCount`, `replenishmentQueueParsedCount`, `replenishmentQueueStatusEligibleCount`, `replenishmentQueueReasonEligibleCount`, `replenishmentQueueJoinEligibleCount`, and `replenishmentQueueFinalEligibleCount`.
 
+## P0.3.11 Grounding Response Contract
+
+Grounded Discovery now separates HTTP success from actual Google Search tool execution. `searchRequestSuccessCount` remains HTTP-oriented compatibility data; Google Search execution is measured with `googleSearchCallStepCount` and `googleSearchExecutedQueryCount`.
+
+Requests explicitly set `store=false`, use the API key only in the `x-goog-api-key` header, and do not share `previous_interaction_id` across candidates.
+
+The parser reads Interactions `steps` and extracts official-source candidates only from `model_output` text block `url_citation` annotations. Body-only URLs and search-result/suggestion URLs are not accepted. Snake_case and camelCase citation ranges are supported.
+
+Discovery is blocked with `run_grounding_contract_probe` until `testGmailSalesGroundingResponseContractOnce` records a valid response contract. Queue repair/read-back failures also block before any Gemini candidate request.
+
 ## Public Functions
 
 - `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`
