@@ -306,3 +306,39 @@ After deploying this repair:
 19. Run the coverage and deployment readiness inspectors.
 
 Do not ask operators to manually edit the affected rows. Do not directly run send authority functions during this repair.
+
+## P0.3.5 Official Evidence Enrichment
+
+Gemini connectivity was confirmed by provider success counts, but no row was approved because the available evidence was still too weak:
+
+- 51 rows returned insufficient evidence.
+- 15 rows had missing payload-safe evidence.
+- The confidence threshold and evidence gates remain unchanged.
+
+`runGmailSalesOfficialEvidenceEnrichmentOnce` enriches only from saved official source references. It does not guess URLs, search the web, scrape unrelated directories, or use personal/social sources.
+
+The control-loop AI phase now runs:
+
+1. review queue refresh
+2. official evidence enrichment
+3. AI verification
+4. coverage/readiness recalculation through existing inspectors
+
+Enrichment writes only safe evidence metadata and sanitized public business-contact evidence. It updates source/review evidence digests so only changed evidence is resent to Gemini. Unchanged evidence is treated as a cache hit and is not resent.
+
+Rows that still lack official evidence are written to `Gmail_Evidence_Replenishment_Queue` with non-identifying tokens and failure reason codes. Humans do not need to investigate or edit all 66 rows manually.
+
+Inspector values now persist the last AI run and last enrichment run:
+
+- `lastRunIdPresent`
+- `lastAiEvaluatedCount`
+- `lastAiBatchRequestCount`
+- `providerConnectionAttempted`
+- `providerConnectionSucceeded`
+- `estimatedCostTodayYen`
+- `lastEvidenceEnrichmentAt`
+- `evidenceDigestChangedCount`
+- `aiReevaluationEligibleCount`
+- `evidenceReplenishmentQueueCount`
+
+Inspector execution is read-only and does not reset these values to zero.
