@@ -53,6 +53,7 @@
     "gmail:sales:daily:test": "node scripts/gmail/test-gmail-sales-daily-automation.mjs",
     "gmail:sales:e2e:test": "node scripts/gmail/test-gmail-sales-daily-e2e.mjs",
     "gmail:sales:send-safety:test": "node scripts/gmail/test-apps-script-gmail-send-safety.mjs",
+    "gmail:sales:contact-basis-review:test": "node scripts/gmail/test-gmail-sales-contact-basis-review.mjs",
     "gmail:sales:apps-script-runtime:test": "node scripts/gmail/test-apps-script-gmail-runtime.mjs",
     "gmail:sheet-history:export-safe:test": "node scripts/gmail/test-google-sheet-send-history-safe-export.mjs",
     "threads:post:validate": "node scripts/threads/validate-thread-posts.mjs",
