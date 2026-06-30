@@ -2,7 +2,7 @@
 
 Date: 2026-07-01
 
-This note documents P0.3.8 and P0.3.9, the repairs for the evidence replenishment queue being read as empty or physically present but unjoinable before grounded source discovery.
+This note documents P0.3.8 through P0.3.10, the repairs for the evidence replenishment queue being read as empty, physically present but unjoinable, or eligible in the inspector while skipped by grounded source discovery.
 
 ## Problem
 
@@ -47,6 +47,21 @@ Additional aggregate diagnostics:
 - resolvable join key row count
 - unresolvable candidate token row count
 - canonical rebuild required row count
+
+P0.3.10 makes the queue inspector and grounded discovery execution share the same eligibility snapshot. A row cannot be reported as discovery-ready by the inspector while being silently filtered out by the run path.
+
+The snapshot reports staged counts for:
+
+- physical queue rows
+- parsed rows
+- status-eligible rows
+- failure-reason-eligible rows
+- token/stable-key resolution
+- source/review join
+- policy eligibility
+- public identity availability
+- final discovery eligibility
+- exclusion reason counts
 
 ## Sheet Resolution
 
@@ -117,6 +132,10 @@ Rebuild rows are deduplicated by stable non-identifying keys only:
 `candidateToken` alone is not a stable dedupe key for rebuilt queue rows.
 
 Successful repair writes `queueSchemaVersion=evidence-replenishment-v2` and is idempotent. A later run should not append another 66 rows when the canonical rows already exist.
+
+Rows with an empty `queueSchemaVersion` are migrated to `evidence-replenishment-v2`; an empty schema version is not treated as a clear valid schema.
+
+When no repair is required, `queueRepairSucceeded` remains false and `queueRepairNotRequired` is true. Repair success is only reported after an actual repair was required, executed, and read back.
 
 The user does not need to re-enter or edit the 66 rows manually.
 

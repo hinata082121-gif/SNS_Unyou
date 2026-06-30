@@ -77,6 +77,18 @@ Grounded discovery now detects that state as `repair_replenishment_queue`, rebui
 
 The run reports aggregate repair fields such as canonical rows built/applied, legacy rows replaced, resolvable join key counts before/after, and unresolved legacy row count. `googleSheetsUpdated=true` when the repair writes queue headers, schema, status, or canonical row data, even if no source reference has been applied yet.
 
+## P0.3.10 Eligibility Snapshot
+
+A production run showed the queue inspector reporting 66 resolvable rows while the discovery executor produced zero targets. The cause was divergent eligibility routing: `invalid_source_reference` rows were repair/rebuild eligible, but not allowed into grounded source discovery.
+
+Grounded discovery now uses one shared eligibility snapshot for read-only inspectors and the executor. The snapshot includes physical, parsed, status-eligible, failure-reason-eligible, join-eligible, policy-eligible, identity-present, and final-eligible counts. Every excluded row increments an aggregate reason; a physical queue with zero final targets and empty exclusion reasons is invalid.
+
+`invalid_source_reference` is a discovery-eligible reason. The invalid existing URL is not trusted, fetched, or included in the search payload. Discovery searches from public business identity only and writes back only citation-verified official URLs.
+
+`candidateToken` resolution is unique-map based. A raw token is counted separately from a uniquely resolved token, ambiguous token, or unresolved token. If the snapshot reports resolved tokens but source join remains zero, the run blocks with `eligibility_snapshot_invariant_failed` before any Gemini request.
+
+`replenishmentQueueCount` is now the final discovery-eligible count. Physical and intermediate counts are reported separately as `replenishmentQueuePhysicalCount`, `replenishmentQueueParsedCount`, `replenishmentQueueStatusEligibleCount`, `replenishmentQueueReasonEligibleCount`, `replenishmentQueueJoinEligibleCount`, and `replenishmentQueueFinalEligibleCount`.
+
 ## Public Functions
 
 - `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`

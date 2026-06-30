@@ -4493,10 +4493,31 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     queueRowsWithResolvableJoinKeyCount: queueJoinDiagnostics.queueRowsWithResolvableJoinKeyCount,
     queueRowsWithUnresolvableCandidateTokenCount: queueJoinDiagnostics.queueRowsWithUnresolvableCandidateTokenCount,
     queueRowsRequiringCanonicalRebuildCount: queueJoinDiagnostics.queueRowsRequiringCanonicalRebuildCount,
+    queueCandidateTokenAmbiguousCount: queueJoinDiagnostics.queueCandidateTokenAmbiguousCount,
     queueRepairRequired: Boolean(queueInspection.queueMigrationRequired || queueJoinDiagnostics.queueRowsRequiringCanonicalRebuildCount > 0 || (queueInspection.queueParsedRowCount > 0 && queueJoinDiagnostics.queueRowsWithResolvableJoinKeyCount === 0 && rebuild.queueRebuildEligibleCount > 0)),
     reviewNeedsMoreEvidenceCount: rebuild.reviewNeedsMoreEvidenceCount,
     queueRebuildEligibleCount: rebuild.queueRebuildEligibleCount,
-    replenishmentQueueCount: replenishmentData.items.length,
+    replenishmentQueueCount: collected.stats.replenishmentQueueCount,
+    replenishmentQueuePhysicalCount: collected.stats.replenishmentQueuePhysicalCount,
+    replenishmentQueueParsedCount: collected.stats.replenishmentQueueParsedCount,
+    replenishmentQueueStatusEligibleCount: collected.stats.replenishmentQueueStatusEligibleCount,
+    replenishmentQueueReasonEligibleCount: collected.stats.replenishmentQueueReasonEligibleCount,
+    replenishmentQueueJoinEligibleCount: collected.stats.replenishmentQueueJoinEligibleCount,
+    replenishmentQueueFinalEligibleCount: collected.stats.replenishmentQueueFinalEligibleCount,
+    queuePhysicalRowCount: collected.stats.queuePhysicalRowCount,
+    queueStatusEligibleCount: collected.stats.queueStatusEligibleCount,
+    queueFailureReasonEligibleCount: collected.stats.queueFailureReasonEligibleCount,
+    queueFailureReasonIneligibleCount: collected.stats.queueFailureReasonIneligibleCount,
+    queueCandidateTokenResolvedCount: collected.stats.queueCandidateTokenResolvedCount,
+    queueCandidateTokenUnresolvedCount: collected.stats.queueCandidateTokenUnresolvedCount,
+    queueStableKeyResolvedCount: collected.stats.queueStableKeyResolvedCount,
+    queueSourceJoinAttemptCount: collected.stats.queueSourceJoinAttemptCount,
+    queuePolicyEligibleCount: collected.stats.queuePolicyEligibleCount,
+    queuePolicyExcludedCount: collected.stats.queuePolicyExcludedCount,
+    queuePublicIdentityPresentCount: collected.stats.queuePublicIdentityPresentCount,
+    queuePublicIdentityMissingCount: collected.stats.queuePublicIdentityMissingCount,
+    finalDiscoveryEligibleCount: collected.stats.finalDiscoveryEligibleCount,
+    eligibilitySnapshotInvariantFailed: collected.stats.eligibilitySnapshotInvariantFailed,
     queueRowsWithJoinKeyCount: collected.stats.queueRowsWithJoinKeyCount,
     sourceJoinSucceededCount: collected.stats.sourceJoinSucceededCount,
     sourceJoinFailedCount: collected.stats.sourceJoinFailedCount,
@@ -4606,6 +4627,22 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     const reviewSnapshots = [];
     const queueSnapshots = [];
     const targets = collected.targets.slice(0, grounding.maxCandidatesPerRun);
+    if (stats.eligibilitySnapshotInvariantFailed) {
+      stats.completedAt = now;
+      stats.runId = 'grounding-' + hashValue_(now + '|invariant|' + stats.replenishmentQueuePhysicalCount + '|' + stats.queueCandidateTokenResolvedCount);
+      stats.recommendedNextAction = 'repair_source_identity_join';
+      persistGroundedDiscoverySummary_(stats);
+      return buildGmailSalesGroundingResult_('blocked', Object.assign({
+        blockedReason: 'eligibility_snapshot_invariant_failed',
+        groundingEnabled: grounding.enabled,
+        groundingModel: grounding.model,
+        groundingModelConfigured: Boolean(grounding.model),
+        providerConfigurationValid: grounding.providerConfigurationValid,
+        googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted),
+        scriptPropertiesUpdated: true,
+        aiApiCalled: false
+      }, stats));
+    }
     if (targets.length === 0) {
       stats.completedAt = now;
       stats.runId = 'grounding-' + hashValue_(now + '|0|' + stats.replenishmentQueueCount + '|' + stats.eligibleDiscoveryTargetCount);
@@ -5692,7 +5729,10 @@ function inspectGmailSalesEvidenceReplenishmentQueueStatus() {
   const inspection = inspectGmailSalesEvidenceReplenishmentQueueSchema_(resolved.sheet, queueData);
   const joinDiagnostics = inspectEvidenceReplenishmentQueueJoinKeys_(queueData, reviewData);
   const rebuild = buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, new Date().toISOString());
-  const status = buildEvidenceReplenishmentQueueStatusResult_(resolved, Object.assign({}, inspection, joinDiagnostics), queueData, rebuild, false);
+  const aiConfig = getGmailSalesAiConfig_();
+  const grounding = getGmailSalesGroundingConfig_(aiConfig);
+  const snapshot = buildGmailSalesGroundedDiscoveryEligibilitySnapshot_(sourceData, reviewData, queueData, grounding, { diagnosticsOnly: true });
+  const status = buildEvidenceReplenishmentQueueStatusResult_(resolved, Object.assign({}, inspection, joinDiagnostics, snapshot.stats), queueData, rebuild, false);
   logGmailSalesJsonResult_(status);
   return status;
 }
@@ -5769,6 +5809,7 @@ function inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, queueData) {
     queueRowsWithResolvableJoinKeyCount: 0,
     queueRowsWithUnresolvableCandidateTokenCount: 0,
     queueRowsRequiringCanonicalRebuildCount: 0,
+    queueCandidateTokenAmbiguousCount: 0,
     queueRowsMissingJoinKeyCount: 0,
     queueFailureReasonCounts: {},
     queueStatusCounts: {},
@@ -5800,6 +5841,7 @@ function inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, queueData) {
     else result.queueRowsMissingJoinKeyCount += 1;
     if (normalized.queueSchemaVersion) result.queueSchemaVersion = normalized.queueSchemaVersion;
   });
+  if (result.queueParsedRowCount > 0 && result.queueSchemaVersion !== GMAIL_SALES_EVIDENCE_REPLENISHMENT_SCHEMA_VERSION) result.queueMigrationRequired = true;
   return result;
 }
 
@@ -5842,7 +5884,8 @@ function inspectEvidenceReplenishmentQueueJoinKeys_(queueData, reviewData) {
     queueRowsWithResolvableCandidateTokenCount: 0,
     queueRowsWithResolvableJoinKeyCount: 0,
     queueRowsWithUnresolvableCandidateTokenCount: 0,
-    queueRowsRequiringCanonicalRebuildCount: 0
+    queueRowsRequiringCanonicalRebuildCount: 0,
+    queueCandidateTokenAmbiguousCount: 0
   };
   (queueData.items || []).forEach((item) => {
     const normalized = normalizeGmailSalesEvidenceReplenishmentQueueRow_(item.row || {});
@@ -5854,7 +5897,9 @@ function inspectEvidenceReplenishmentQueueJoinKeys_(queueData, reviewData) {
     if (normalized.reviewId && reviewMaps.byReviewId[normalized.reviewId]) resolvable = true;
     if (normalized.leadIdHash && reviewMaps.byLeadIdHash[normalized.leadIdHash]) resolvable = true;
     if (normalized.sourceRowDigest && reviewMaps.bySourceDigest[normalized.sourceRowDigest]) resolvable = true;
-    if (normalized.candidateToken && reviewMaps.byCandidateToken[normalized.candidateToken]) {
+    if (normalized.candidateToken && reviewMaps.ambiguousCandidateTokens[normalized.candidateToken]) {
+      result.queueCandidateTokenAmbiguousCount += 1;
+    } else if (normalized.candidateToken && reviewMaps.byCandidateToken[normalized.candidateToken]) {
       result.queueRowsWithResolvableCandidateTokenCount += 1;
       resolvable = true;
     } else if (normalized.candidateToken) {
@@ -5994,6 +6039,7 @@ function ensureGmailSalesEvidenceReplenishmentQueueReady_(context, sourceData, r
     queueRepairRequired: false,
     queueRepairExecuted: false,
     queueRepairSucceeded: false,
+    queueRepairNotRequired: false,
     queueRepairFailureReason: '',
     queueRepairRollback: false,
     queueRepairReasonCodes: []
@@ -6047,7 +6093,8 @@ function ensureGmailSalesEvidenceReplenishmentQueueReady_(context, sourceData, r
   }
   const joinAfter = inspectEvidenceReplenishmentQueueJoinKeys_(data, reviewData);
   repair.queueRowsWithResolvableJoinKeyCountAfter = joinAfter.queueRowsWithResolvableJoinKeyCount;
-  repair.queueRepairSucceeded = !repair.queueRepairRequired || repair.queueRowsWithResolvableJoinKeyCountAfter > 0 || rebuild.queueRebuildEligibleCount === 0;
+  repair.queueRepairNotRequired = !repair.queueRepairRequired;
+  repair.queueRepairSucceeded = repair.queueRepairRequired && repair.queueRepairExecuted && (repair.queueRowsWithResolvableJoinKeyCountAfter > 0 || rebuild.queueRebuildEligibleCount === 0);
   if (repair.queueRepairRequired && !repair.queueRepairSucceeded) repair.queueRepairFailureReason = 'queue_repair_read_back_failed';
   repair.queuePhysicalDataRowCountAfter = sheet.getLastRow ? Math.max(0, sheet.getLastRow() - 1) : 0;
   return { sheet, data, inspection: Object.assign({}, inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data), joinAfter), repair, rebuild };
@@ -6107,6 +6154,27 @@ function getGmailSalesGroundingConfig_(aiConfig) {
 function emptyGroundedSourceDiscoveryStats_() {
   return {
     replenishmentQueueCount: 0,
+    replenishmentQueuePhysicalCount: 0,
+    replenishmentQueueParsedCount: 0,
+    replenishmentQueueStatusEligibleCount: 0,
+    replenishmentQueueReasonEligibleCount: 0,
+    replenishmentQueueJoinEligibleCount: 0,
+    replenishmentQueueFinalEligibleCount: 0,
+    queuePhysicalRowCount: 0,
+    queueStatusEligibleCount: 0,
+    queueFailureReasonEligibleCount: 0,
+    queueFailureReasonIneligibleCount: 0,
+    queueCandidateTokenResolvedCount: 0,
+    queueCandidateTokenAmbiguousCount: 0,
+    queueCandidateTokenUnresolvedCount: 0,
+    queueStableKeyResolvedCount: 0,
+    queueSourceJoinAttemptCount: 0,
+    queuePolicyEligibleCount: 0,
+    queuePolicyExcludedCount: 0,
+    queuePublicIdentityPresentCount: 0,
+    queuePublicIdentityMissingCount: 0,
+    finalDiscoveryEligibleCount: 0,
+    eligibilitySnapshotInvariantFailed: false,
     queueRowsWithJoinKeyCount: 0,
     sourceJoinSucceededCount: 0,
     sourceJoinFailedCount: 0,
@@ -6147,15 +6215,43 @@ function emptyGroundedSourceDiscoveryStats_() {
 }
 
 function collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenishmentData, grounding) {
+  const snapshot = buildGmailSalesGroundedDiscoveryEligibilitySnapshot_(sourceData, reviewData, replenishmentData, grounding, {});
+  return { targets: snapshot.finalEligibleTargets, stats: snapshot.stats };
+}
+
+function buildGmailSalesGroundedDiscoveryEligibilitySnapshot_(sourceData, reviewData, replenishmentData, grounding, options) {
+  const settings = options || {};
   const stats = emptyGroundedSourceDiscoveryStats_();
   const sourceMaps = buildGroundedSourceDiscoverySourceMaps_(sourceData);
   const reviewMaps = buildGroundedSourceDiscoveryReviewMaps_(reviewData);
-  const queueItems = (replenishmentData.items || []).filter((item) => isGroundedSourceDiscoveryQueueReason_(item.row));
-  stats.replenishmentQueueCount = queueItems.length;
+  const queueItems = replenishmentData.items || [];
+  stats.replenishmentQueuePhysicalCount = queueItems.length;
+  stats.queuePhysicalRowCount = queueItems.length;
   const targets = [];
   queueItems.forEach((queueItem) => {
+    const normalized = normalizeGmailSalesEvidenceReplenishmentQueueRow_(queueItem.row || {});
+    if (!String((queueItem.row || {}).candidateToken || (queueItem.row || {}).failureReasonCode || (queueItem.row || {}).status || (queueItem.row || {}).sourceRowDigest || '').trim()) return;
+    stats.replenishmentQueueParsedCount += 1;
+    if (!normalized.searchEligibleStatus) {
+      incrementCount_(stats.exclusionReasonCounts, normalized.status === 'unknown' ? 'queue_status_unknown' : 'queue_status_ineligible');
+      return;
+    }
+    stats.replenishmentQueueStatusEligibleCount += 1;
+    stats.queueStatusEligibleCount += 1;
+    const reason = normalizeGroundedSourceDiscoveryFailureReason_(normalized.failureReasonCode);
+    if (!isGroundedSourceDiscoveryEligibleFailureReason_(reason)) {
+      stats.queueFailureReasonIneligibleCount += 1;
+      incrementCount_(stats.exclusionReasonCounts, reason || 'unknown_failure_reason');
+      return;
+    }
+    stats.replenishmentQueueReasonEligibleCount += 1;
+    stats.queueFailureReasonEligibleCount += 1;
     const joined = joinReplenishmentQueueRowToReview_(queueItem, reviewMaps);
     if (joined.hasJoinKey) stats.queueRowsWithJoinKeyCount += 1;
+    if (joined.joinKey === 'candidateToken') stats.queueCandidateTokenResolvedCount += 1;
+    if (joined.joinKey && joined.joinKey !== 'candidateToken') stats.queueStableKeyResolvedCount += 1;
+    if (joined.reasonCode === 'candidate_token_ambiguous') stats.queueCandidateTokenAmbiguousCount += 1;
+    if (joined.reasonCode === 'candidate_token_unresolved') stats.queueCandidateTokenUnresolvedCount += 1;
     if (!joined.reviewItem) {
       stats.reviewJoinFailedCount += 1;
       stats.excludedJoinFailureCount += 1;
@@ -6163,25 +6259,38 @@ function collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenis
       return;
     }
     stats.reviewJoinSucceededCount += 1;
+    stats.queueReviewJoinSucceededCount = stats.reviewJoinSucceededCount;
+    stats.queueSourceJoinAttemptCount += 1;
     const sourceJoined = joinReplenishmentQueueRowToSource_(queueItem, joined.reviewItem, sourceMaps);
     if (!sourceJoined.sourceItem) {
       stats.sourceJoinFailedCount += 1;
+      stats.queueSourceJoinFailedCount = stats.sourceJoinFailedCount;
       stats.excludedJoinFailureCount += 1;
       incrementCount_(stats.exclusionReasonCounts, sourceJoined.reasonCode || 'source_join_failed');
       return;
     }
     stats.sourceJoinSucceededCount += 1;
+    stats.queueSourceJoinSucceededCount = stats.sourceJoinSucceededCount;
+    stats.replenishmentQueueJoinEligibleCount += 1;
     const identity = buildPublicBusinessIdentity_(sourceJoined.sourceItem.row, joined.reviewItem.row);
     const validation = validateSourceDiscoveryTargetEligibility_(sourceJoined.sourceItem, joined.reviewItem, queueItem, identity);
     if (validation.sourceDigestMatched) stats.sourceDigestMatchedCount += 1;
     if (validation.sourceDigestMismatch) stats.sourceDigestMismatchCount += 1;
+    stats.queueSourceDigestMatchedCount = stats.sourceDigestMatchedCount;
+    stats.queueSourceDigestMismatchCount = stats.sourceDigestMismatchCount;
     if (identity.publicBusinessName) stats.publicBusinessNamePresentCount += 1;
     if (identity.publicBrandName) stats.publicBrandNamePresentCount += 1;
     if (identity.publicServiceName) stats.publicServiceNamePresentCount += 1;
     if (identity.publicDomainHint) stats.publicDomainHintPresentCount += 1;
-    if (identity.identityPresent) stats.publicBusinessIdentityPresentCount += 1;
-    else stats.publicBusinessIdentityMissingCount += 1;
+    if (identity.identityPresent) {
+      stats.publicBusinessIdentityPresentCount += 1;
+      stats.queuePublicIdentityPresentCount += 1;
+    } else {
+      stats.publicBusinessIdentityMissingCount += 1;
+      stats.queuePublicIdentityMissingCount += 1;
+    }
     if (!validation.ok) {
+      stats.queuePolicyExcludedCount += 1;
       if (validation.reasonCode === 'public_business_identity_missing') {
         stats.excludedMissingIdentityCount += 1;
       }
@@ -6189,6 +6298,7 @@ function collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenis
       incrementCount_(stats.exclusionReasonCounts, validation.reasonCode);
       return;
     }
+    stats.queuePolicyEligibleCount += 1;
     const token = String((queueItem.row || {}).candidateToken || '').trim() || buildGroundingCandidateToken_(joined.reviewItem.row);
     targets.push({
       sourceItem: sourceJoined.sourceItem,
@@ -6201,14 +6311,33 @@ function collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenis
     });
   });
   stats.eligibleDiscoveryTargetCount = targets.length;
-  return { targets, stats };
+  stats.finalDiscoveryEligibleCount = targets.length;
+  stats.replenishmentQueueFinalEligibleCount = targets.length;
+  stats.replenishmentQueueCount = targets.length;
+  if (stats.queueCandidateTokenResolvedCount > 0 && stats.sourceJoinSucceededCount === 0) {
+    stats.eligibilitySnapshotInvariantFailed = true;
+    incrementCount_(stats.exclusionReasonCounts, 'eligibility_snapshot_invariant_failed');
+  }
+  const max = Number(settings.maxCandidates || 0);
+  return { finalEligibleTargets: max > 0 ? targets.slice(0, max) : targets, targets, stats };
 }
 
 function isGroundedSourceDiscoveryQueueReason_(row) {
   const normalized = normalizeGmailSalesEvidenceReplenishmentQueueRow_(row || {});
   if (!normalized.searchEligibleStatus) return false;
-  const reason = String(normalized.failureReasonCode || '').trim();
-  return ['no_source_reference', 'no_official_domain', 'evidence_payload_missing', 'insufficient_evidence', 'official_page_unreachable', 'no_business_contact_evidence', 'unsupported_page_type', 'public_business_identity_missing', 'source_not_found'].indexOf(reason) !== -1;
+  return isGroundedSourceDiscoveryEligibleFailureReason_(normalizeGroundedSourceDiscoveryFailureReason_(normalized.failureReasonCode));
+}
+
+function normalizeGroundedSourceDiscoveryFailureReason_(reason) {
+  const value = String(reason || '').trim();
+  if (!value) return 'unknown_failure_reason';
+  if (value === 'source_reference_invalid') return 'invalid_source_reference';
+  if (value === 'source_discovery_required') return 'invalid_source_reference';
+  return value;
+}
+
+function isGroundedSourceDiscoveryEligibleFailureReason_(reason) {
+  return ['invalid_source_reference', 'no_source_reference', 'no_official_domain', 'evidence_payload_missing', 'insufficient_evidence', 'official_page_unreachable', 'no_business_contact_evidence', 'unsupported_page_type', 'public_business_identity_missing', 'source_not_found'].indexOf(reason) !== -1;
 }
 
 function buildGroundedSourceDiscoverySourceMaps_(sourceData) {
@@ -6225,6 +6354,8 @@ function buildGroundedSourceDiscoverySourceMaps_(sourceData) {
 
 function buildGroundedSourceDiscoveryReviewMaps_(reviewData) {
   const byCandidateToken = {};
+  const candidateTokenCounts = {};
+  const ambiguousCandidateTokens = {};
   const byReviewId = {};
   const byLeadIdHash = {};
   const bySourceRowKey = {};
@@ -6232,19 +6363,26 @@ function buildGroundedSourceDiscoveryReviewMaps_(reviewData) {
   (reviewData.items || []).forEach((item) => {
     const row = item.row || {};
     const token = buildGroundingCandidateToken_(row);
-    if (token) byCandidateToken[token] = item;
+    if (token) {
+      candidateTokenCounts[token] = (candidateTokenCounts[token] || 0) + 1;
+      if (!byCandidateToken[token]) byCandidateToken[token] = item;
+    }
     if (String(row.reviewId || '').trim()) byReviewId[String(row.reviewId).trim()] = item;
     if (String(row.leadIdHash || '').trim()) byLeadIdHash[String(row.leadIdHash).trim()] = item;
     if (String(row.sourceRowKey || '').trim()) bySourceRowKey[String(row.sourceRowKey).trim()] = item;
     if (String(row.sourceRowDigest || '').trim()) bySourceDigest[String(row.sourceRowDigest).trim()] = item;
   });
-  return { byCandidateToken, byReviewId, byLeadIdHash, bySourceRowKey, bySourceDigest };
+  Object.keys(candidateTokenCounts).forEach((token) => {
+    if (candidateTokenCounts[token] > 1) {
+      ambiguousCandidateTokens[token] = true;
+      delete byCandidateToken[token];
+    }
+  });
+  return { byCandidateToken, ambiguousCandidateTokens, byReviewId, byLeadIdHash, bySourceRowKey, bySourceDigest };
 }
 
 function joinReplenishmentQueueRowToReview_(queueItem, reviewMaps) {
   const row = queueItem.row || {};
-  const candidateToken = String(row.candidateToken || '').trim();
-  if (candidateToken && reviewMaps.byCandidateToken[candidateToken]) return { reviewItem: reviewMaps.byCandidateToken[candidateToken], hasJoinKey: true, joinKey: 'candidateToken' };
   const reviewId = String(row.reviewId || '').trim();
   if (reviewId && reviewMaps.byReviewId[reviewId]) return { reviewItem: reviewMaps.byReviewId[reviewId], hasJoinKey: true, joinKey: 'reviewId' };
   const leadIdHash = String(row.leadIdHash || '').trim();
@@ -6253,10 +6391,13 @@ function joinReplenishmentQueueRowToReview_(queueItem, reviewMaps) {
   if (sourceRowKey && reviewMaps.bySourceRowKey[sourceRowKey]) return { reviewItem: reviewMaps.bySourceRowKey[sourceRowKey], hasJoinKey: true, joinKey: 'sourceRowKey' };
   const sourceRowDigest = String(row.sourceRowDigest || '').trim();
   if (sourceRowDigest && reviewMaps.bySourceDigest[sourceRowDigest]) return { reviewItem: reviewMaps.bySourceDigest[sourceRowDigest], hasJoinKey: true, joinKey: 'sourceRowDigest' };
+  const candidateToken = String(row.candidateToken || '').trim();
+  if (candidateToken && reviewMaps.ambiguousCandidateTokens[candidateToken]) return { reviewItem: null, hasJoinKey: true, reasonCode: 'candidate_token_ambiguous' };
+  if (candidateToken && reviewMaps.byCandidateToken[candidateToken]) return { reviewItem: reviewMaps.byCandidateToken[candidateToken], hasJoinKey: true, joinKey: 'candidateToken' };
   return {
     reviewItem: null,
     hasJoinKey: Boolean(candidateToken || reviewId || leadIdHash || sourceRowKey || sourceRowDigest),
-    reasonCode: candidateToken || reviewId || leadIdHash || sourceRowKey || sourceRowDigest ? 'review_row_missing' : 'queue_join_key_missing'
+    reasonCode: candidateToken ? 'candidate_token_unresolved' : (reviewId || leadIdHash || sourceRowKey || sourceRowDigest ? 'review_row_missing' : 'queue_join_key_missing')
   };
 }
 
@@ -6590,16 +6731,18 @@ function updateGroundingQueueStatus_(sheet, target, replenishmentData, status, q
 function recommendGroundedSourceDiscoveryNextAction_(grounding, stats, last, eligible) {
   if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.model) return 'fix_grounding_configuration';
   if (!stats.queueSheetPresent || stats.queueMigrationRequired) return 'repair_replenishment_queue';
+  if (stats.eligibilitySnapshotInvariantFailed) return 'repair_source_identity_join';
   if (Number(stats.queueParsedRowCount || 0) > 0 && Number(stats.queueRowsWithResolvableJoinKeyCount || 0) === 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
   if (Number(stats.queueRowsRequiringCanonicalRebuildCount || 0) > 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
-  if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.replenishmentQueueCount || 0) === 0) return 'rebuild_replenishment_queue';
+  if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.replenishmentQueuePhysicalCount || stats.replenishmentQueueCount || 0) === 0) return 'rebuild_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.queueEligibleStatusCount || 0) === 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'rebuild_replenishment_queue';
   if (Number(eligible || stats.eligibleDiscoveryTargetCount || 0) > 0) return 'run_source_discovery';
   if (Number(last && last.sourceReferencesAppliedCount || 0) > 0) return 'run_evidence_enrichment';
   if (Number(stats.sourceDigestMismatchCount || 0) > 0 && Number(stats.sourceDigestMismatchCount || 0) >= Number(stats.sourceDigestMatchedCount || 0)) return 'refresh_review_queue';
-  if (Number(stats.replenishmentQueueCount || 0) > 0 && (Number(stats.reviewJoinFailedCount || 0) + Number(stats.sourceJoinFailedCount || 0)) > (Number(stats.reviewJoinSucceededCount || 0) + Number(stats.sourceJoinSucceededCount || 0))) return 'repair_source_identity_join';
-  if (Number(stats.replenishmentQueueCount || 0) > 0 && Number(stats.publicBusinessIdentityPresentCount || 0) === 0) return 'replenish_with_new_candidates';
-  if (Number(stats.replenishmentQueueCount || 0) > 0 && Number(stats.publicBusinessIdentityMissingCount || 0) > Number(stats.publicBusinessIdentityPresentCount || 0)) return 'replenish_with_new_candidates';
+  const physicalQueueCount = Number(stats.replenishmentQueuePhysicalCount || stats.queuePhysicalRowCount || stats.replenishmentQueueCount || 0);
+  if (physicalQueueCount > 0 && (Number(stats.reviewJoinFailedCount || 0) + Number(stats.sourceJoinFailedCount || 0)) > (Number(stats.reviewJoinSucceededCount || 0) + Number(stats.sourceJoinSucceededCount || 0))) return 'repair_source_identity_join';
+  if (physicalQueueCount > 0 && Number(stats.publicBusinessIdentityPresentCount || 0) === 0) return 'replenish_with_new_candidates';
+  if (physicalQueueCount > 0 && Number(stats.publicBusinessIdentityMissingCount || 0) > Number(stats.publicBusinessIdentityPresentCount || 0)) return 'replenish_with_new_candidates';
   return 'ready_for_ai_verification';
 }
 
@@ -6646,6 +6789,7 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     queueRowsWithResolvableJoinKeyCount: 0,
     queueRowsWithUnresolvableCandidateTokenCount: 0,
     queueRowsRequiringCanonicalRebuildCount: 0,
+    queueCandidateTokenAmbiguousCount: 0,
     canonicalQueueRowsBuiltCount: 0,
     canonicalQueueRowsAppliedCount: 0,
     legacyQueueRowsReplacedCount: 0,
@@ -6653,12 +6797,33 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     queueRepairRequired: false,
     queueRepairExecuted: false,
     queueRepairSucceeded: false,
+    queueRepairNotRequired: false,
     queueRepairFailureReason: '',
     queueRepairRollback: false,
     queueRepairReasonCodes: [],
     reviewNeedsMoreEvidenceCount: 0,
     queueRebuildEligibleCount: 0,
     replenishmentQueueCount: 0,
+    replenishmentQueuePhysicalCount: 0,
+    replenishmentQueueParsedCount: 0,
+    replenishmentQueueStatusEligibleCount: 0,
+    replenishmentQueueReasonEligibleCount: 0,
+    replenishmentQueueJoinEligibleCount: 0,
+    replenishmentQueueFinalEligibleCount: 0,
+    queuePhysicalRowCount: 0,
+    queueStatusEligibleCount: 0,
+    queueFailureReasonEligibleCount: 0,
+    queueFailureReasonIneligibleCount: 0,
+    queueCandidateTokenResolvedCount: 0,
+    queueCandidateTokenUnresolvedCount: 0,
+    queueStableKeyResolvedCount: 0,
+    queueSourceJoinAttemptCount: 0,
+    queuePolicyEligibleCount: 0,
+    queuePolicyExcludedCount: 0,
+    queuePublicIdentityPresentCount: 0,
+    queuePublicIdentityMissingCount: 0,
+    finalDiscoveryEligibleCount: 0,
+    eligibilitySnapshotInvariantFailed: false,
     queueRowsWithJoinKeyCount: 0,
     sourceJoinSucceededCount: 0,
     sourceJoinFailedCount: 0,

@@ -79,6 +79,9 @@ test('grounded source discovery applies verified citation sources with one Gemin
   assert.equal(readCell(env.workbook.sheets.Gmail_Contact_Basis_Review, 2, 'sourceDiscoveryStatus'), 'verified');
   const status = env.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
   assert.equal(status.sourceReferencesAppliedCount, 10);
+  assert.equal(status.replenishmentQueuePhysicalCount, 12);
+  assert.equal(status.replenishmentQueueFinalEligibleCount, 2);
+  assert.equal(status.replenishmentQueueCount, 2);
   assert.equal(status.sourceJoinSucceededCount, 2);
   assert.equal(status.publicBusinessIdentityPresentCount, 2);
   assert.equal(status.eligibleDiscoveryTargetCount, 2);
@@ -101,6 +104,46 @@ test('runtime join handles 66 non-identifying queue rows without storing busines
   const queueHeaders = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue.rows[0];
   assert.equal(queueHeaders.includes('companyName'), false);
   assert.equal(queueHeaders.includes('email'), false);
+});
+
+test('invalid source reference rows use shared eligibility snapshot and continue grounded discovery', () => {
+  const env = createEnvironment({ sourceCount: 66 });
+  seedGroundingReviewAndQueue(env, 66, { failureReasonCode: 'invalid_source_reference', stableKeys: false, invalidSourceReference: true });
+  const queueStatus = env.context.inspectGmailSalesEvidenceReplenishmentQueueStatus();
+  assert.equal(queueStatus.queuePhysicalDataRowCount, 66);
+  assert.equal(queueStatus.queueFailureReasonCounts.invalid_source_reference, 66);
+  assert.equal(queueStatus.queueFailureReasonEligibleCount, 66);
+  assert.equal(queueStatus.queueRowsWithRawCandidateTokenCount, 66);
+  assert.equal(queueStatus.queueRowsWithStableJoinKeyCount, 0);
+  assert.equal(queueStatus.queueCandidateTokenResolvedCount, 66);
+  assert.equal(queueStatus.finalDiscoveryEligibleCount, 66);
+  assert.equal(queueStatus.recommendedNextAction, 'run_source_discovery');
+
+  const inspect = env.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
+  assert.equal(inspect.replenishmentQueuePhysicalCount, 66);
+  assert.equal(inspect.replenishmentQueueStatusEligibleCount, 66);
+  assert.equal(inspect.replenishmentQueueReasonEligibleCount, 66);
+  assert.equal(inspect.queueCandidateTokenResolvedCount, 66);
+  assert.equal(inspect.sourceJoinSucceededCount, 66);
+  assert.equal(inspect.reviewJoinSucceededCount, 66);
+  assert.equal(inspect.publicBusinessIdentityPresentCount, 66);
+  assert.equal(inspect.finalDiscoveryEligibleCount, 66);
+  assert.equal(inspect.eligibilitySnapshotInvariantFailed, false);
+  assert.equal(Object.keys(inspect.exclusionReasonCounts).length, 0);
+  assert.equal(inspect.recommendedNextAction, 'run_source_discovery');
+
+  const run = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(run.status, 'pass');
+  assert.equal(run.queueRepairRequired, false);
+  assert.equal(run.queueRepairExecuted, false);
+  assert.equal(run.queueRepairSucceeded, false);
+  assert.equal(run.queueRepairNotRequired, true);
+  assert.equal(run.queueCandidateTokenResolvedCount, 66);
+  assert.equal(run.finalDiscoveryEligibleCount, 66);
+  assert.equal(run.candidatesAttemptedCount, 10);
+  assert.equal(run.searchQueryCount, 10);
+  assert.equal(run.sourceReferencesAppliedCount, 10);
+  assert.equal(env.fetchCalls.some((call) => JSON.parse(call.options.payload).input.includes('not-a-valid-url')), false);
 });
 
 test('old P0.3.5 queue schema is detected as migration-required without losing physical rows', () => {
@@ -289,10 +332,13 @@ test('missing identity and join failure produce actionable diagnostics without G
     failureReasonCode: 'no_source_reference',
     requiredEvidenceType: 'official_source_reference',
     eligibleForAutomatedReplenishment: 'true',
-    status: 'queued'
+    status: 'queued',
+    queueSchemaVersion: 'evidence-replenishment-v2'
   }[header] || '')));
   const joinStatus = joinFailed.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
-  assert.equal(joinStatus.replenishmentQueueCount, 1);
+  assert.equal(joinStatus.replenishmentQueuePhysicalCount, 1);
+  assert.equal(joinStatus.replenishmentQueueCount, 0);
+  assert.equal(joinStatus.finalDiscoveryEligibleCount, 0);
   assert.equal(joinStatus.reviewJoinFailedCount, 1);
   assert.equal(joinStatus.excludedJoinFailureCount, 1);
   assert.equal(joinStatus.recommendedNextAction, 'repair_source_identity_join');
@@ -455,6 +501,7 @@ function seedGroundingReviewAndQueue(env, count, options = {}) {
   const queueSheet = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue;
   const queueHeaders = options.preserveHeaders ? queueSheet.rows[0] : REPLENISHMENT_HEADERS;
   for (let rowIndex = 2; rowIndex < 2 + count; rowIndex += 1) {
+    if (options.invalidSourceReference) writeCell(sourceSheet, rowIndex, 'sourceReference', 'not-a-valid-url');
     const sourceRow = rowFromSheet(sourceSheet, rowIndex);
     const queue = env.context.buildContactBasisReviewQueueRow_({ row: sourceRow, rowIndex }, '2026-07-01T00:00:00.000Z');
     assert.equal(queue.include, true);
@@ -467,9 +514,11 @@ function seedGroundingReviewAndQueue(env, count, options = {}) {
     reviewSheet.rows.push(REVIEW_HEADERS.map((header) => reviewRow[header] || ''));
     if (options.skipQueue) continue;
     const token = env.context.buildGroundingCandidateToken_(reviewRow);
+    const failureReasonCode = options.failureReasonCode || 'no_source_reference';
+    const stableKeys = options.stableKeys !== false;
     queueSheet.rows.push(queueHeaders.map((header) => ({
       candidateToken: token,
-      failureReasonCode: 'no_source_reference',
+      failureReasonCode,
       requiredEvidenceType: 'official_source_reference',
       existingSourceType: '',
       sourceReferencePresent: 'false',
@@ -477,16 +526,16 @@ function seedGroundingReviewAndQueue(env, count, options = {}) {
       eligibleForAutomatedReplenishment: 'true',
       queuedAt: '2026-07-01T00:00:00.000Z',
       status: 'queued',
-      reviewId: reviewRow.reviewId,
-      leadIdHash: reviewRow.leadIdHash,
-      sourceRowKey: reviewRow.sourceRowKey,
-      sourceRowKeyHash: env.context.hashValue_(String(reviewRow.sourceRowKey || '')),
-      reviewIdHash: env.context.hashValue_(String(reviewRow.reviewId || '')),
-      sourceRowDigest: reviewRow.sourceRowDigest,
+      reviewId: stableKeys ? reviewRow.reviewId : '',
+      leadIdHash: stableKeys ? reviewRow.leadIdHash : '',
+      sourceRowKey: stableKeys ? reviewRow.sourceRowKey : '',
+      sourceRowKeyHash: stableKeys ? env.context.hashValue_(String(reviewRow.sourceRowKey || '')) : '',
+      reviewIdHash: stableKeys ? env.context.hashValue_(String(reviewRow.reviewId || '')) : '',
+      sourceRowDigest: stableKeys ? reviewRow.sourceRowDigest : '',
       publicBusinessIdentityPresent: true,
       publicBusinessIdentityDigest: 'digest',
       identityJoinStatus: 'queued',
-      identityJoinReasonCode: 'no_source_reference',
+      identityJoinReasonCode: failureReasonCode,
       lastDiscoveryEligibilityCheckedAt: '',
       queueSchemaVersion: 'evidence-replenishment-v2'
     }[header] || '')));
