@@ -23,9 +23,9 @@ test('internal setup token validates and mismatched reused expired tokens are re
   const env = createEnvironment();
   const session = env.context.createGmailSalesAiSetupSession_({ includeToken: true });
   assert.equal(env.context.validateGmailSalesAiSetupToken_(session.token).ok, true);
-  assert.equal(env.context.validateGmailSalesAiSetupToken_('wrong-token').reason, 'setup_token_mismatch');
+  assert.equal(env.context.validateGmailSalesAiSetupToken_('wrong-token').reason, 'setup_token_invalid');
   env.props.GMAIL_SALES_AI_SETUP_TOKEN_USED = 'true';
-  assert.equal(env.context.validateGmailSalesAiSetupToken_(session.token).reason, 'setup_token_used');
+  assert.equal(env.context.validateGmailSalesAiSetupToken_(session.token).reason, 'setup_token_already_used');
   const env2 = createEnvironment();
   const session2 = env2.context.createGmailSalesAiSetupSession_({ includeToken: true });
   env2.props.GMAIL_SALES_AI_SETUP_TOKEN_EXPIRES_AT = '2000-01-01T00:00:00.000Z';
@@ -41,7 +41,46 @@ test('save rejects unsafe or invalid input', () => {
   assert.equal(env2.context.saveGmailSalesAiProviderConfiguration({ setupToken: session2.token, provider: 'openai', model: '', apiKey: VALID_KEY }).blockedReason, 'invalid_model');
   const env3 = createEnvironment();
   const session3 = env3.context.createGmailSalesAiSetupSession_({ includeToken: true });
-  assert.equal(env3.context.saveGmailSalesAiProviderConfiguration({ setupToken: session3.token, provider: 'openai', model: 'gpt-4.1-mini', apiKey: '' }).blockedReason, 'api_key_missing');
+  assert.equal(env3.context.saveGmailSalesAiProviderConfiguration({ setupToken: session3.token, provider: 'openai', model: 'gpt-4.1-mini', apiKey: '' }).blockedReason, 'invalid_api_key_format');
+});
+
+test('standalone web app doGet creates session and allows save without prior show call', () => {
+  const env = createEnvironment();
+  const page = env.context.doGet({ parameter: {} });
+  const html = page.getContent();
+  const token = extractSetupToken(html);
+  assert.equal(Boolean(token), true);
+  assert.equal(Boolean(env.props.GMAIL_SALES_AI_SETUP_TOKEN_DIGEST), true);
+  assert.equal(env.logs.join('\n').includes(token), false);
+  assert.equal(html.includes('?setupToken='), false);
+  const result = env.context.saveGmailSalesAiProviderConfiguration({
+    setupToken: token,
+    provider: 'gemini',
+    model: 'gemini-1.5-flash',
+    apiKey: VALID_KEY
+  });
+  assert.equal(result.status, 'pass');
+  assert.equal(result.configurationSaved, true);
+  assert.equal(result.apiKeyPresent, true);
+});
+
+test('page reload creates new session and invalidates old session', () => {
+  const env = createEnvironment();
+  const firstToken = extractSetupToken(env.context.doGet({ parameter: {} }).getContent());
+  const secondToken = extractSetupToken(env.context.doGet({ parameter: {} }).getContent());
+  assert.notEqual(firstToken, secondToken);
+  assert.equal(env.context.saveGmailSalesAiProviderConfiguration({
+    setupToken: firstToken,
+    provider: 'openai',
+    model: 'gpt-4.1-mini',
+    apiKey: VALID_KEY
+  }).blockedReason, 'setup_token_invalid');
+  assert.equal(env.context.saveGmailSalesAiProviderConfiguration({
+    setupToken: secondToken,
+    provider: 'openai',
+    model: 'gpt-4.1-mini',
+    apiKey: VALID_KEY
+  }).status, 'pass');
 });
 
 test('save stores provider model key and never logs the key', () => {
@@ -137,6 +176,20 @@ test('HTML setup page hides API key and clears password field on save', () => {
   assert.equal(html.includes(VALID_KEY), false);
   const page = env.context.serveGmailSalesAiProviderSetupPage_({ parameter: { setupToken: 'session-token-for-test' } });
   assert.equal(typeof page.getContent === 'function', true);
+  assert.notEqual(extractSetupToken(page.getContent()), 'session-token-for-test');
+});
+
+test('dialog flow passes token directly to template and failed dialog does not leave session', () => {
+  const env = createEnvironment();
+  const result = env.context.showGmailSalesAiProviderSetupDialog();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.dialogShown, true);
+  assert.equal(Boolean(extractSetupToken(env.dialogHtml)), true);
+  const failing = createEnvironment({ dialogFails: true });
+  const failed = failing.context.showGmailSalesAiProviderSetupDialog();
+  assert.equal(failed.status, 'pass');
+  assert.equal(failed.dialogShown, false);
+  assert.equal(failing.props.GMAIL_SALES_AI_SETUP_TOKEN_DIGEST || '', '');
 });
 
 test('non secret settings do not enable AI before key setup', () => {
@@ -170,6 +223,11 @@ test('send architecture remains unchanged', () => {
   assert.equal(code.includes('runScheduledDailySend'), true);
 });
 
+function extractSetupToken(html) {
+  const match = String(html || '').match(/var setupToken="([^"]+)"/);
+  return match ? match[1] : '';
+}
+
 function configuredEnvironment() {
   const env = createEnvironment();
   env.props.GMAIL_SALES_AI_ENABLED = 'true';
@@ -184,7 +242,7 @@ function configuredEnvironment() {
   return env;
 }
 
-function createEnvironment() {
+function createEnvironment(options = {}) {
   const env = {
     props: {
       AUTO_SEND_ENABLED: 'false',
@@ -241,7 +299,13 @@ function createEnvironment() {
     },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     SpreadsheetApp: {
-      getUi: () => ({ showModalDialog: () => { env.dialogShown = true; } }),
+      getUi: () => ({
+        showModalDialog: (output) => {
+          if (options.dialogFails) throw new Error('dialog unavailable');
+          env.dialogShown = true;
+          env.dialogHtml = output.getContent();
+        }
+      }),
       openById: () => ({ getSheetByName: () => null })
     },
     HtmlService: {
@@ -286,7 +350,7 @@ for (const [name, fn] of tests) {
 console.log(JSON.stringify({
   aiProviderSetupTestPassed: true,
   scenarioCount: tests.length,
-  coveredRequirementCount: 42,
+  coveredRequirementCount: 41,
   setupUsesScriptPropertiesUi: false,
   setupTokenDigestOnly: true,
   apiKeyLogExposureCount: 0,

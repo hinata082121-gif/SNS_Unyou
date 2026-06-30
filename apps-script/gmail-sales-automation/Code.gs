@@ -4308,25 +4308,47 @@ function createGmailSalesAiSetupSessionOnce() {
 }
 
 function showGmailSalesAiProviderSetupDialog() {
-  const session = createGmailSalesAiSetupSession_({ includeToken: true });
+  let ui = null;
+  try {
+    if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.getUi && typeof HtmlService !== 'undefined') {
+      ui = SpreadsheetApp.getUi();
+    }
+  } catch (error) {
+    ui = null;
+  }
+  if (!ui) {
+    const fallback = buildGmailSalesAiProviderSetupResult_('gmail_sales_ai_provider_setup_dialog', 'pass', {
+      dialogShown: false,
+      standaloneFallbackAvailable: true,
+      setupSessionCreated: false,
+      setupTokenReturned: false,
+      recommendedAction: 'open_web_app_exec_url'
+    });
+    return fallback;
+  }
+  const session = createGmailSalesAiSetupSessionForHtml_();
   if (session.publicResult.status !== 'pass') {
     logGmailSalesJsonResult_(session.publicResult);
     return session.publicResult;
   }
-  const html = buildGmailSalesAiProviderSetupHtml_(session.token);
-  let dialogShown = false;
+  const html = buildGmailSalesAiProviderSetupHtml_(session.rawToken);
   try {
-    if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.getUi && typeof HtmlService !== 'undefined') {
-      SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(640), 'Gmail Sales AI Provider Setup');
-      dialogShown = true;
-    }
+    ui.showModalDialog(HtmlService.createHtmlOutput(html).setWidth(520).setHeight(640), 'Gmail Sales AI Provider Setup');
   } catch (error) {
-    dialogShown = false;
+    invalidateGmailSalesAiSetupSession_();
+    const fallback = buildGmailSalesAiProviderSetupResult_('gmail_sales_ai_provider_setup_dialog', 'pass', {
+      dialogShown: false,
+      standaloneFallbackAvailable: true,
+      setupSessionCreated: false,
+      setupTokenReturned: false,
+      recommendedAction: 'open_web_app_exec_url'
+    });
+    return fallback;
   }
   const result = Object.assign({}, session.publicResult, {
     event: 'gmail_sales_ai_provider_setup_dialog',
-    dialogShown,
-    standaloneFallbackAvailable: !dialogShown,
+    dialogShown: true,
+    standaloneFallbackAvailable: false,
     setupTokenReturned: false
   });
   logGmailSalesJsonResult_(result);
@@ -4338,8 +4360,10 @@ function doGet(e) {
 }
 
 function serveGmailSalesAiProviderSetupPage_(e) {
-  const token = String(e && e.parameter && e.parameter.setupToken || '').trim();
-  const html = buildGmailSalesAiProviderSetupHtml_(token);
+  const session = createGmailSalesAiSetupSessionForHtml_();
+  const html = session.publicResult.status === 'pass'
+    ? buildGmailSalesAiProviderSetupHtml_(session.rawToken)
+    : buildGmailSalesAiProviderSetupErrorHtml_(session.publicResult.blockedReason || 'setup_session_failed');
   if (typeof HtmlService !== 'undefined') {
     return HtmlService.createHtmlOutput(html)
       .setTitle('Gmail Sales AI Provider Setup')
@@ -4373,9 +4397,15 @@ function saveGmailSalesAiProviderConfiguration(input) {
     const model = String(payload.model || '').trim();
     const keepExistingApiKey = payload.keepExistingApiKey === true || String(payload.keepExistingApiKey || '').toLowerCase() === 'true';
     const apiKey = String(payload.apiKey || '').trim();
-    const dailyRequestLimit = normalizeGmailSalesAiLimit_(payload.dailyRequestLimit, 100, 1, 1000);
-    const dailyCostLimitYen = normalizeGmailSalesAiLimit_(payload.dailyCostLimitYen, 100, 0, 100000);
-    const confidenceThreshold = normalizeGmailSalesAiFloat_(payload.confidenceThreshold, 0.95, 0.5, 1);
+    const limitsValidation = validateGmailSalesAiLimits_(payload.dailyRequestLimit, payload.dailyCostLimitYen, payload.confidenceThreshold);
+    if (!limitsValidation.ok) {
+      return buildGmailSalesAiProviderSetupResult_('gmail_sales_ai_provider_configuration_save', 'blocked', {
+        blockedReason: 'invalid_limits'
+      });
+    }
+    const dailyRequestLimit = limitsValidation.dailyRequestLimit;
+    const dailyCostLimitYen = limitsValidation.dailyCostLimitYen;
+    const confidenceThreshold = limitsValidation.confidenceThreshold;
     const validation = validateGmailSalesAiProviderSetupInput_(provider, model, apiKey, keepExistingApiKey, props);
     if (!validation.ok) {
       return buildGmailSalesAiProviderSetupResult_('gmail_sales_ai_provider_configuration_save', 'blocked', {
@@ -4403,7 +4433,7 @@ function saveGmailSalesAiProviderConfiguration(input) {
       props.getProperty('GMAIL_SALES_AI_MODEL') === model &&
       keyPresent;
     return buildGmailSalesAiProviderSetupResult_('gmail_sales_ai_provider_configuration_save', readBackPassed ? 'pass' : 'blocked', {
-      blockedReason: readBackPassed ? '' : 'property_read_back_failed',
+      blockedReason: readBackPassed ? '' : 'configuration_readback_failed',
       configurationSaved: readBackPassed,
       aiEnabled: props.getProperty('GMAIL_SALES_AI_ENABLED') === 'true',
       providerConfigured: Boolean(props.getProperty('GMAIL_SALES_AI_PROVIDER')),
@@ -4428,6 +4458,7 @@ function inspectGmailSalesAiProviderConfiguration() {
   const provider = String(props.getProperty('GMAIL_SALES_AI_PROVIDER') || '').trim();
   const model = String(props.getProperty('GMAIL_SALES_AI_MODEL') || '').trim();
   const keyPresent = Boolean(props.getProperty('GMAIL_SALES_AI_API_KEY'));
+  const sessionState = getGmailSalesAiSetupSessionState_();
   const blockedReasons = [];
   if (['openai', 'gemini'].indexOf(provider) === -1) blockedReasons.push('provider_not_configured');
   if (!model) blockedReasons.push('model_missing');
@@ -4445,7 +4476,10 @@ function inspectGmailSalesAiProviderConfiguration() {
     policyVersion: String(props.getProperty('GMAIL_SALES_AI_POLICY_VERSION') || GMAIL_SALES_AI_DEFAULT_POLICY_VERSION),
     dataMinimizationMode: String(props.getProperty('GMAIL_SALES_AI_DATA_MINIMIZATION_MODE') || 'strict'),
     configurationValid: blockedReasons.length === 0,
-    blockedReasons
+    blockedReasons,
+    setupSessionActive: sessionState.active,
+    setupSessionExpired: sessionState.expired,
+    setupSessionUsed: sessionState.used
   });
   logGmailSalesJsonResult_(result);
   return result;
@@ -4938,7 +4972,8 @@ function createGmailSalesAiSetupSession_(options) {
     props.setProperties({
       GMAIL_SALES_AI_SETUP_TOKEN_DIGEST: digestGmailSalesAiSetupToken_(token),
       GMAIL_SALES_AI_SETUP_TOKEN_EXPIRES_AT: expiresAt,
-      GMAIL_SALES_AI_SETUP_TOKEN_USED: 'false'
+      GMAIL_SALES_AI_SETUP_TOKEN_USED: 'false',
+      GMAIL_SALES_AI_SETUP_SESSION_VERSION: '1'
     }, false);
     return {
       token: settings.includeToken ? token : '',
@@ -4956,41 +4991,85 @@ function createGmailSalesAiSetupSession_(options) {
   }
 }
 
+function createGmailSalesAiSetupSessionForHtml_() {
+  const session = createGmailSalesAiSetupSession_({ includeToken: true });
+  return {
+    rawToken: session.token,
+    expiresAt: session.publicResult.expiresAtPresent ? PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_AI_SETUP_TOKEN_EXPIRES_AT_PROPERTY) : '',
+    publicResult: session.publicResult
+  };
+}
+
 function validateGmailSalesAiSetupToken_(token) {
   const props = PropertiesService.getScriptProperties();
   const value = String(token || '').trim();
   if (!value) return { ok: false, reason: 'setup_token_missing' };
-  if (props.getProperty(GMAIL_SALES_AI_SETUP_TOKEN_USED_PROPERTY) === 'true') return { ok: false, reason: 'setup_token_used' };
+  if (props.getProperty(GMAIL_SALES_AI_SETUP_TOKEN_USED_PROPERTY) === 'true') return { ok: false, reason: 'setup_token_already_used' };
   const expiresAt = Date.parse(String(props.getProperty(GMAIL_SALES_AI_SETUP_TOKEN_EXPIRES_AT_PROPERTY) || ''));
   if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return { ok: false, reason: 'setup_token_expired' };
   const expected = String(props.getProperty(GMAIL_SALES_AI_SETUP_TOKEN_DIGEST_PROPERTY) || '').trim();
-  if (!expected || digestGmailSalesAiSetupToken_(value) !== expected) return { ok: false, reason: 'setup_token_mismatch' };
+  if (!expected || !constantTimeStringEquals_(digestGmailSalesAiSetupToken_(value), expected)) return { ok: false, reason: 'setup_token_invalid' };
   return { ok: true, reason: '' };
+}
+
+function getGmailSalesAiSetupSessionState_() {
+  const props = PropertiesService.getScriptProperties();
+  const digest = String(props.getProperty(GMAIL_SALES_AI_SETUP_TOKEN_DIGEST_PROPERTY) || '').trim();
+  const used = props.getProperty(GMAIL_SALES_AI_SETUP_TOKEN_USED_PROPERTY) === 'true';
+  const expiresAt = Date.parse(String(props.getProperty(GMAIL_SALES_AI_SETUP_TOKEN_EXPIRES_AT_PROPERTY) || ''));
+  const expired = Boolean(digest) && (!Number.isFinite(expiresAt) || expiresAt < Date.now());
+  return {
+    active: Boolean(digest) && !used && !expired,
+    expired,
+    used
+  };
+}
+
+function invalidateGmailSalesAiSetupSession_() {
+  PropertiesService.getScriptProperties().setProperties({
+    GMAIL_SALES_AI_SETUP_TOKEN_DIGEST: '',
+    GMAIL_SALES_AI_SETUP_TOKEN_EXPIRES_AT: '',
+    GMAIL_SALES_AI_SETUP_TOKEN_USED: 'true'
+  }, false);
 }
 
 function digestGmailSalesAiSetupToken_(token) {
   return sha256Hex_(String(token || ''));
 }
 
+function constantTimeStringEquals_(left, right) {
+  const a = String(left || '');
+  const b = String(right || '');
+  let diff = a.length ^ b.length;
+  const max = Math.max(a.length, b.length);
+  for (let i = 0; i < max; i += 1) {
+    diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
 function validateGmailSalesAiProviderSetupInput_(provider, model, apiKey, keepExistingApiKey, props) {
   if (['openai', 'gemini'].indexOf(provider) === -1) return { ok: false, reason: 'invalid_provider' };
   if (!model || model.length > 120 || !/^[A-Za-z0-9._:/@+-]+$/.test(model)) return { ok: false, reason: 'invalid_model' };
   if (keepExistingApiKey && props.getProperty('GMAIL_SALES_AI_API_KEY') && !apiKey) return { ok: true, reason: '' };
-  if (!apiKey) return { ok: false, reason: 'api_key_missing' };
-  if (apiKey.length < 20 || apiKey.length > 300 || /\s/.test(apiKey)) return { ok: false, reason: 'api_key_invalid' };
+  if (!apiKey) return { ok: false, reason: 'invalid_api_key_format' };
+  if (apiKey.length < 20 || apiKey.length > 300 || /\s/.test(apiKey)) return { ok: false, reason: 'invalid_api_key_format' };
   return { ok: true, reason: '' };
 }
 
-function normalizeGmailSalesAiLimit_(value, fallback, min, max) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(number)));
-}
-
-function normalizeGmailSalesAiFloat_(value, fallback, min, max) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return fallback;
-  return Math.max(min, Math.min(max, number));
+function validateGmailSalesAiLimits_(requestLimit, costLimit, threshold) {
+  const dailyRequestLimit = requestLimit === undefined || requestLimit === '' ? 100 : Number(requestLimit);
+  const dailyCostLimitYen = costLimit === undefined || costLimit === '' ? 100 : Number(costLimit);
+  const confidenceThreshold = threshold === undefined || threshold === '' ? 0.95 : Number(threshold);
+  if (!Number.isFinite(dailyRequestLimit) || dailyRequestLimit < 1 || dailyRequestLimit > 1000) return { ok: false };
+  if (!Number.isFinite(dailyCostLimitYen) || dailyCostLimitYen < 0 || dailyCostLimitYen > 100000) return { ok: false };
+  if (!Number.isFinite(confidenceThreshold) || confidenceThreshold < 0.5 || confidenceThreshold > 1) return { ok: false };
+  return {
+    ok: true,
+    dailyRequestLimit: Math.floor(dailyRequestLimit),
+    dailyCostLimitYen: Math.floor(dailyCostLimitYen),
+    confidenceThreshold
+  };
 }
 
 function buildGmailSalesAiProviderSetupHtml_(setupToken) {
@@ -5009,8 +5088,13 @@ function buildGmailSalesAiProviderSetupHtml_(setupToken) {
     '<label>Confidence threshold<input id="confidenceThreshold" name="confidenceThreshold" type="number" value="0.95" min="0.5" max="1" step="0.01"></label>' +
     '<label><input id="confirm" name="confirm" type="checkbox" style="width:auto"> I understand this only configures AI provider settings.</label>' +
     '<button type="submit">Save AI Provider Settings</button></form><div id="result" class="result"></div>' +
-    '<script>(function(){var setupToken="' + escapedToken + '";try{if(setupToken){sessionStorage.setItem("gmailSalesAiSetupToken",setupToken);if(history.replaceState){history.replaceState(null,"",location.pathname);}}else{setupToken=sessionStorage.getItem("gmailSalesAiSetupToken")||"";}}catch(e){}document.getElementById("setupForm").addEventListener("submit",function(ev){ev.preventDefault();var api=document.getElementById("apiKey");if(!document.getElementById("confirm").checked){document.getElementById("result").textContent="Confirmation is required.";return;}var payload={provider:provider.value,model:model.value,apiKey:api.value,dailyRequestLimit:dailyRequestLimit.value,dailyCostLimitYen:dailyCostLimitYen.value,confidenceThreshold:confidenceThreshold.value,keepExistingApiKey:keepExistingApiKey.checked,setupToken:setupToken};google.script.run.withSuccessHandler(function(res){api.value="";document.getElementById("result").textContent=JSON.stringify({status:res.status,provider:res.provider,modelConfigured:res.modelConfigured,apiKeyPresent:res.apiKeyPresent,configurationSaved:res.configurationSaved},null,2);}).withFailureHandler(function(){api.value="";document.getElementById("result").textContent="Save failed. Check Apps Script execution logs.";}).saveGmailSalesAiProviderConfiguration(payload);});})();</script>' +
+    '<script>(function(){var setupToken="' + escapedToken + '";function messageFor(code){return {setup_token_missing:"セットアップセッションがありません。ページを再読み込みしてください。",setup_token_invalid:"セットアップセッションを確認できません。ページを再読み込みしてください。",setup_token_expired:"セットアップセッションが期限切れです。ページを再読み込みしてください。",setup_token_already_used:"このセットアップセッションは使用済みです。ページを再読み込みしてください。",invalid_provider:"Providerまたはモデルの入力を確認してください。",invalid_model:"Providerまたはモデルの入力を確認してください。",invalid_api_key_format:"API keyの入力を確認してください。",invalid_limits:"上限値の入力を確認してください。",configuration_readback_failed:"設定を保存できませんでした。ページを再読み込みしてください。"}[code]||"設定を保存できませんでした。ページを再読み込みしてください。";}document.getElementById("setupForm").addEventListener("submit",function(ev){ev.preventDefault();var api=document.getElementById("apiKey");if(!document.getElementById("confirm").checked){document.getElementById("result").textContent="Confirmation is required.";return;}var payload={provider:provider.value,model:model.value,apiKey:api.value,dailyRequestLimit:dailyRequestLimit.value,dailyCostLimitYen:dailyCostLimitYen.value,confidenceThreshold:confidenceThreshold.value,keepExistingApiKey:keepExistingApiKey.checked,setupToken:setupToken};google.script.run.withSuccessHandler(function(res){api.value="";if(res.status==="pass"){setupToken="";}document.getElementById("result").textContent=JSON.stringify({status:res.status,blockedReason:res.blockedReason||"",message:res.status==="pass"?"Saved":messageFor(res.blockedReason),provider:res.provider,modelConfigured:res.modelConfigured,apiKeyPresent:res.apiKeyPresent,configurationSaved:res.configurationSaved},null,2);}).withFailureHandler(function(){api.value="";setupToken="";document.getElementById("result").textContent="設定を保存できませんでした。ページを再読み込みしてください。";}).saveGmailSalesAiProviderConfiguration(payload);});})();</script>' +
     '</body></html>';
+}
+
+function buildGmailSalesAiProviderSetupErrorHtml_(reason) {
+  const safeReason = escapeHtml_(String(reason || 'setup_session_failed'));
+  return '<!doctype html><html><head><base target="_top"></head><body><h2>Gmail Sales AI Provider Setup</h2><p>Setup session could not be created. Reload this page.</p><p>Reason: ' + safeReason + '</p></body></html>';
 }
 
 function escapeHtml_(value) {
