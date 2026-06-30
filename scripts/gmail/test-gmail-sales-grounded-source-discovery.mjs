@@ -121,6 +121,59 @@ test('old P0.3.5 queue schema is detected as migration-required without losing p
   assert.equal(run.searchQueryCount, 10);
 });
 
+test('legacy candidate-token-only queue is replaced with canonical stable join keys and continues discovery', () => {
+  const env = createEnvironment({ sourceCount: 66 });
+  seedGroundingReviewAndQueue(env, 66, { skipQueue: true });
+  const queue = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue;
+  queue.rows = [OLD_REPLENISHMENT_HEADERS];
+  for (let index = 1; index <= 66; index += 1) {
+    queue.rows.push(OLD_REPLENISHMENT_HEADERS.map((header) => ({
+      candidateToken: `legacy-token-${index}`,
+      failureReasonCode: 'invalid_source_reference',
+      requiredEvidenceType: 'official_source_reference',
+      sourceReferencePresent: 'true',
+      officialDomainPresent: 'false',
+      eligibleForAutomatedReplenishment: 'true',
+      queuedAt: '2026-07-01T00:00:00.000Z',
+      status: 'queued'
+    }[header] || '')));
+  }
+  const before = env.context.inspectGmailSalesEvidenceReplenishmentQueueStatus();
+  assert.equal(before.queuePhysicalDataRowCount, 66);
+  assert.equal(before.queueParsedRowCount, 66);
+  assert.equal(before.queueEligibleStatusCount, 66);
+  assert.equal(before.queueRowsWithRawCandidateTokenCount, 66);
+  assert.equal(before.queueRowsWithStableJoinKeyCount, 0);
+  assert.equal(before.queueRowsWithResolvableCandidateTokenCount, 0);
+  assert.equal(before.queueRowsWithResolvableJoinKeyCount, 0);
+  assert.equal(before.queueRowsWithUnresolvableCandidateTokenCount, 66);
+  assert.equal(before.queueRowsRequiringCanonicalRebuildCount, 66);
+  assert.equal(before.queueRebuildEligibleCount, 66);
+  assert.equal(before.recommendedNextAction, 'repair_replenishment_queue');
+  const run = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(run.queueRepairRequired, true);
+  assert.equal(run.queueRepairExecuted, true);
+  assert.equal(run.queueRepairSucceeded, true);
+  assert.equal(run.queueRebuildExecuted, true);
+  assert.equal(run.canonicalQueueRowsBuiltCount, 66);
+  assert.equal(run.legacyQueueRowsReplacedCount, 66);
+  assert.equal(run.unresolvedLegacyQueueRowsCount, 0);
+  assert.equal(run.queuePhysicalDataRowCountAfter, 66);
+  assert.equal(run.queueRowsWithResolvableJoinKeyCountAfter, 66);
+  assert.equal(run.sourceJoinSucceededCount, 66);
+  assert.equal(run.publicBusinessIdentityPresentCount, 66);
+  assert.equal(run.eligibleDiscoveryTargetCount, 66);
+  assert.equal(run.candidatesAttemptedCount, 10);
+  assert.equal(run.searchQueryCount, 10);
+  assert.equal(run.sourceReferencesAppliedCount, 10);
+  assert.equal(run.googleSheetsUpdated, true);
+  const after = env.context.inspectGmailSalesEvidenceReplenishmentQueueStatus();
+  assert.equal(after.queueSchemaVersion, 'evidence-replenishment-v2');
+  assert.equal(after.queueMigrationRequired, false);
+  assert.equal(after.queueRowsWithResolvableJoinKeyCount, 56);
+  assert.equal(after.queuePhysicalDataRowCount, 66);
+});
+
 test('empty queue with 66 needs-more-evidence review rows is rebuilt once and does not return AI-ready', () => {
   const env = createEnvironment({ sourceCount: 66 });
   seedGroundingReviewAndQueue(env, 66, { skipQueue: true });
@@ -424,6 +477,9 @@ function seedGroundingReviewAndQueue(env, count, options = {}) {
       eligibleForAutomatedReplenishment: 'true',
       queuedAt: '2026-07-01T00:00:00.000Z',
       status: 'queued',
+      reviewId: reviewRow.reviewId,
+      leadIdHash: reviewRow.leadIdHash,
+      sourceRowKey: reviewRow.sourceRowKey,
       sourceRowKeyHash: env.context.hashValue_(String(reviewRow.sourceRowKey || '')),
       reviewIdHash: env.context.hashValue_(String(reviewRow.reviewId || '')),
       sourceRowDigest: reviewRow.sourceRowDigest,

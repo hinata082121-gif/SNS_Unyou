@@ -2,7 +2,7 @@
 
 Date: 2026-07-01
 
-This note documents P0.3.8, the repair for the evidence replenishment queue being read as empty before grounded source discovery.
+This note documents P0.3.8 and P0.3.9, the repairs for the evidence replenishment queue being read as empty or physically present but unjoinable before grounded source discovery.
 
 ## Problem
 
@@ -36,6 +36,17 @@ It reports only aggregate and non-identifying values:
 - recommended next action
 
 It does not output company names, emails, URLs, candidate tokens, source row keys, review IDs, lead hashes, or evidence text.
+
+P0.3.9 adds a second distinction: a raw `candidateToken` is not treated as a resolvable join key unless it maps uniquely to current Review data. Legacy rows that have only raw candidate tokens are considered functionally broken even when the queue has 66 physical rows.
+
+Additional aggregate diagnostics:
+
+- raw candidate token row count
+- stable join key row count
+- resolvable candidate token row count
+- resolvable join key row count
+- unresolvable candidate token row count
+- canonical rebuild required row count
 
 ## Sheet Resolution
 
@@ -94,13 +105,18 @@ Unknown statuses are retained but excluded as `unknown`.
 
 When the queue is missing, physically empty, or has no eligible rows while Review contains `needs_more_evidence` rows, grounded discovery rebuilds the queue automatically from Review and Source.
 
-Rebuild rows are deduplicated by:
+P0.3.9 also rebuilds when rows physically exist but have no resolvable stable join keys. In that case the repair replaces legacy token-only rows with canonical rows instead of appending duplicates.
+
+Rebuild rows are deduplicated by stable non-identifying keys only:
 
 1. source row key
 2. review ID
 3. lead ID hash
-4. candidate token
-5. source row digest
+4. source row digest
+
+`candidateToken` alone is not a stable dedupe key for rebuilt queue rows.
+
+Successful repair writes `queueSchemaVersion=evidence-replenishment-v2` and is idempotent. A later run should not append another 66 rows when the canonical rows already exist.
 
 The user does not need to re-enter or edit the 66 rows manually.
 

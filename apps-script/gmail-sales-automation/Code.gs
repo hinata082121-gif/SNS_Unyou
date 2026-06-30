@@ -4466,11 +4466,12 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
   const replenishmentSheet = resolved.sheet;
   const replenishmentData = replenishmentSheet ? readSheetObjects_(replenishmentSheet) : { headers: [], items: [] };
   const queueInspection = inspectGmailSalesEvidenceReplenishmentQueueSchema_(replenishmentSheet, replenishmentData);
+  const queueJoinDiagnostics = inspectEvidenceReplenishmentQueueJoinKeys_(replenishmentData, reviewData);
   const rebuild = buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, new Date().toISOString());
   const last = readGmailSalesGroundingLastRunSummary_();
   const collected = collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenishmentData, grounding);
   const eligible = collected.targets.length;
-  let recommendedNextAction = recommendGroundedSourceDiscoveryNextAction_(grounding, Object.assign({}, collected.stats, queueInspection, rebuild), last, eligible);
+  let recommendedNextAction = recommendGroundedSourceDiscoveryNextAction_(grounding, Object.assign({}, collected.stats, queueInspection, queueJoinDiagnostics, rebuild), last, eligible);
   const safeExclusionCounts = collected.stats.exclusionReasonCounts || {};
   const result = {
     event: 'gmail_sales_grounded_official_source_discovery_status',
@@ -4486,6 +4487,13 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     queueParsedRowCount: queueInspection.queueParsedRowCount,
     queueEligibleStatusCount: queueInspection.queueEligibleStatusCount,
     queueMigrationRequired: queueInspection.queueMigrationRequired,
+    queueRowsWithRawCandidateTokenCount: queueJoinDiagnostics.queueRowsWithRawCandidateTokenCount,
+    queueRowsWithStableJoinKeyCount: queueJoinDiagnostics.queueRowsWithStableJoinKeyCount,
+    queueRowsWithResolvableCandidateTokenCount: queueJoinDiagnostics.queueRowsWithResolvableCandidateTokenCount,
+    queueRowsWithResolvableJoinKeyCount: queueJoinDiagnostics.queueRowsWithResolvableJoinKeyCount,
+    queueRowsWithUnresolvableCandidateTokenCount: queueJoinDiagnostics.queueRowsWithUnresolvableCandidateTokenCount,
+    queueRowsRequiringCanonicalRebuildCount: queueJoinDiagnostics.queueRowsRequiringCanonicalRebuildCount,
+    queueRepairRequired: Boolean(queueInspection.queueMigrationRequired || queueJoinDiagnostics.queueRowsRequiringCanonicalRebuildCount > 0 || (queueInspection.queueParsedRowCount > 0 && queueJoinDiagnostics.queueRowsWithResolvableJoinKeyCount === 0 && rebuild.queueRebuildEligibleCount > 0)),
     reviewNeedsMoreEvidenceCount: rebuild.reviewNeedsMoreEvidenceCount,
     queueRebuildEligibleCount: rebuild.queueRebuildEligibleCount,
     replenishmentQueueCount: replenishmentData.items.length,
@@ -4576,10 +4584,18 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     const stats = emptyGroundedSourceDiscoveryStats_();
     Object.assign(stats, collected.stats);
     Object.assign(stats, queueReady.repair || {});
+    if (queueReady.repair && queueReady.repair.queueRowsWithResolvableJoinKeyCountAfter !== undefined) {
+      stats.queueRowsWithResolvableJoinKeyCount = queueReady.repair.queueRowsWithResolvableJoinKeyCountAfter;
+    }
     if (queueReady.inspection) {
       stats.queuePhysicalDataRowCount = queueReady.inspection.queuePhysicalDataRowCount;
       stats.queueParsedRowCount = queueReady.inspection.queueParsedRowCount;
       stats.queueEligibleStatusCount = queueReady.inspection.queueEligibleStatusCount;
+      stats.queueRowsWithRawCandidateTokenCount = queueReady.inspection.queueRowsWithRawCandidateTokenCount || stats.queueRowsWithRawCandidateTokenCount || 0;
+      stats.queueRowsWithStableJoinKeyCount = queueReady.inspection.queueRowsWithStableJoinKeyCount || stats.queueRowsWithStableJoinKeyCount || 0;
+      stats.queueRowsWithResolvableCandidateTokenCount = queueReady.inspection.queueRowsWithResolvableCandidateTokenCount || stats.queueRowsWithResolvableCandidateTokenCount || 0;
+      stats.queueRowsWithUnresolvableCandidateTokenCount = queueReady.inspection.queueRowsWithUnresolvableCandidateTokenCount || stats.queueRowsWithUnresolvableCandidateTokenCount || 0;
+      stats.queueRowsRequiringCanonicalRebuildCount = queueReady.inspection.queueRowsRequiringCanonicalRebuildCount || stats.queueRowsRequiringCanonicalRebuildCount || 0;
     }
     if (queueReady.rebuild) {
       stats.reviewNeedsMoreEvidenceCount = queueReady.rebuild.reviewNeedsMoreEvidenceCount;
@@ -4600,7 +4616,7 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
         groundingModel: grounding.model,
         groundingModelConfigured: Boolean(grounding.model),
         providerConfigurationValid: grounding.providerConfigurationValid,
-        googleSheetsUpdated: false,
+        googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted),
         scriptPropertiesUpdated: true,
         aiApiCalled: false
       }, stats));
@@ -4656,7 +4672,7 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       groundingModel: grounding.model,
       groundingModelConfigured: Boolean(grounding.model),
       providerConfigurationValid: grounding.providerConfigurationValid,
-      googleSheetsUpdated: stats.sourceReferencesAppliedCount > 0,
+      googleSheetsUpdated: Boolean(stats.sourceReferencesAppliedCount > 0 || stats.queueMigrationExecuted || stats.queueRebuildExecuted),
       scriptPropertiesUpdated: true,
       aiApiCalled: stats.searchQueryCount > 0
     }, stats));
@@ -5674,8 +5690,9 @@ function inspectGmailSalesEvidenceReplenishmentQueueStatus() {
   const resolved = context.spreadsheet ? resolveGmailSalesEvidenceReplenishmentQueueSheet_(context.spreadsheet) : { sheet: null, reasonCode: 'spreadsheet_missing' };
   const queueData = resolved.sheet ? readSheetObjects_(resolved.sheet) : { headers: [], items: [] };
   const inspection = inspectGmailSalesEvidenceReplenishmentQueueSchema_(resolved.sheet, queueData);
+  const joinDiagnostics = inspectEvidenceReplenishmentQueueJoinKeys_(queueData, reviewData);
   const rebuild = buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, new Date().toISOString());
-  const status = buildEvidenceReplenishmentQueueStatusResult_(resolved, inspection, queueData, rebuild, false);
+  const status = buildEvidenceReplenishmentQueueStatusResult_(resolved, Object.assign({}, inspection, joinDiagnostics), queueData, rebuild, false);
   logGmailSalesJsonResult_(status);
   return status;
 }
@@ -5746,6 +5763,12 @@ function inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, queueData) {
     queueRowsWithLeadIdHashCount: 0,
     queueRowsWithSourceRowDigestCount: 0,
     queueRowsWithAnyJoinKeyCount: 0,
+    queueRowsWithRawCandidateTokenCount: 0,
+    queueRowsWithStableJoinKeyCount: 0,
+    queueRowsWithResolvableCandidateTokenCount: 0,
+    queueRowsWithResolvableJoinKeyCount: 0,
+    queueRowsWithUnresolvableCandidateTokenCount: 0,
+    queueRowsRequiringCanonicalRebuildCount: 0,
     queueRowsMissingJoinKeyCount: 0,
     queueFailureReasonCounts: {},
     queueStatusCounts: {},
@@ -5767,11 +5790,13 @@ function inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, queueData) {
     if (normalized.searchEligibleStatus) result.queueEligibleStatusCount += 1;
     else result.queueIneligibleStatusCount += 1;
     if (normalized.candidateToken) result.queueRowsWithCandidateTokenCount += 1;
+    if (normalized.candidateToken) result.queueRowsWithRawCandidateTokenCount += 1;
     if (normalized.sourceRowKey) result.queueRowsWithSourceRowKeyCount += 1;
     if (normalized.reviewId) result.queueRowsWithReviewIdCount += 1;
     if (normalized.leadIdHash) result.queueRowsWithLeadIdHashCount += 1;
     if (normalized.sourceRowDigest) result.queueRowsWithSourceRowDigestCount += 1;
-    if (normalized.anyJoinKey) result.queueRowsWithAnyJoinKeyCount += 1;
+    if (normalized.stableJoinKeyPresent) result.queueRowsWithStableJoinKeyCount += 1;
+    if (normalized.stableJoinKeyPresent || normalized.candidateToken) result.queueRowsWithAnyJoinKeyCount += 1;
     else result.queueRowsMissingJoinKeyCount += 1;
     if (normalized.queueSchemaVersion) result.queueSchemaVersion = normalized.queueSchemaVersion;
   });
@@ -5803,9 +5828,42 @@ function normalizeGmailSalesEvidenceReplenishmentQueueRow_(row) {
     rawStatus,
     status: canonicalStatus,
     searchEligibleStatus: canonicalStatus === 'source_discovery_pending' || canonicalStatus === 'source_not_found' || canonicalStatus === 'ambiguous_identity' || canonicalStatus === 'deferred_budget' || canonicalStatus === 'deferred_runtime',
+    stableJoinKeyPresent: Boolean(reviewId || leadIdHash || sourceRowKey || sourceRowDigest),
     anyJoinKey: Boolean(candidateToken || reviewId || leadIdHash || sourceRowKey || sourceRowDigest),
     queueSchemaVersion: String(source.queueSchemaVersion || '').trim()
   });
+}
+
+function inspectEvidenceReplenishmentQueueJoinKeys_(queueData, reviewData) {
+  const reviewMaps = buildGroundedSourceDiscoveryReviewMaps_(reviewData || { items: [] });
+  const result = {
+    queueRowsWithRawCandidateTokenCount: 0,
+    queueRowsWithStableJoinKeyCount: 0,
+    queueRowsWithResolvableCandidateTokenCount: 0,
+    queueRowsWithResolvableJoinKeyCount: 0,
+    queueRowsWithUnresolvableCandidateTokenCount: 0,
+    queueRowsRequiringCanonicalRebuildCount: 0
+  };
+  (queueData.items || []).forEach((item) => {
+    const normalized = normalizeGmailSalesEvidenceReplenishmentQueueRow_(item.row || {});
+    if (!normalized.searchEligibleStatus) return;
+    if (normalized.candidateToken) result.queueRowsWithRawCandidateTokenCount += 1;
+    if (normalized.stableJoinKeyPresent) result.queueRowsWithStableJoinKeyCount += 1;
+    let resolvable = false;
+    if (normalized.sourceRowKey && reviewMaps.bySourceRowKey[normalized.sourceRowKey]) resolvable = true;
+    if (normalized.reviewId && reviewMaps.byReviewId[normalized.reviewId]) resolvable = true;
+    if (normalized.leadIdHash && reviewMaps.byLeadIdHash[normalized.leadIdHash]) resolvable = true;
+    if (normalized.sourceRowDigest && reviewMaps.bySourceDigest[normalized.sourceRowDigest]) resolvable = true;
+    if (normalized.candidateToken && reviewMaps.byCandidateToken[normalized.candidateToken]) {
+      result.queueRowsWithResolvableCandidateTokenCount += 1;
+      resolvable = true;
+    } else if (normalized.candidateToken) {
+      result.queueRowsWithUnresolvableCandidateTokenCount += 1;
+    }
+    if (resolvable) result.queueRowsWithResolvableJoinKeyCount += 1;
+    else result.queueRowsRequiringCanonicalRebuildCount += 1;
+  });
+  return result;
 }
 
 function buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, now) {
@@ -5813,8 +5871,8 @@ function buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, now) 
   const rows = [];
   let sourceNeedsMoreEvidenceCount = 0;
   let reviewNeedsMoreEvidenceCount = 0;
-  let sourceMissingBasisCount = 0;
-  const allowedReasons = ['evidence_payload_missing', 'insufficient_evidence', 'no_source_reference', 'no_official_domain', 'official_page_unreachable', 'no_business_contact_evidence', 'unsupported_page_type', 'public_business_identity_missing', 'source_not_found'];
+  const sourceMissingBasisCount = countGmailSalesSourceMissingBasis_(sourceData);
+  const allowedReasons = ['evidence_payload_missing', 'insufficient_evidence', 'no_source_reference', 'no_official_domain', 'invalid_source_reference', 'official_page_unreachable', 'no_business_contact_evidence', 'unsupported_page_type', 'public_business_identity_missing', 'source_not_found'];
   (reviewData.items || []).forEach((reviewItem) => {
     const review = reviewItem.row || {};
     if (String(review.reviewDecision || '').trim() !== 'needs_more_evidence') return;
@@ -5828,7 +5886,6 @@ function buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, now) 
     if (!sourceItem) return;
     const validation = validateSourceDiscoveryTargetEligibility_(sourceItem, reviewItem, { row: {} }, buildPublicBusinessIdentity_(sourceItem.row, review));
     if (!validation.ok && validation.reasonCode !== 'public_business_identity_missing') return;
-    if (validation.reasonCode === 'public_business_identity_missing') sourceMissingBasisCount += 1;
     const row = buildEvidenceReplenishmentQueueRow_(sourceItem, review, reason, now);
     row.status = 'source_discovery_pending';
     row.sourceRowKeyHash = hashValue_(String(review.sourceRowKey || ''));
@@ -5853,16 +5910,32 @@ function buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, now) 
   };
 }
 
-function upsertGmailSalesEvidenceReplenishmentQueueRows_(sheet, existingData, rows) {
-  if (!sheet) return { rowsWritten: 0, rowsUpserted: 0, rowsDeduplicated: 0 };
+function countGmailSalesSourceMissingBasis_(sourceData) {
+  let count = 0;
+  (sourceData.items || []).forEach((item) => {
+    const row = item.row || {};
+    const basis = normalizeContactBasisType_(getContactBasisValue_(row, 'contactBasisType'));
+    if (!basis) count += 1;
+  });
+  return count;
+}
+
+function upsertGmailSalesEvidenceReplenishmentQueueRows_(sheet, existingData, rows, options) {
+  if (!sheet) return { rowsWritten: 0, rowsUpserted: 0, rowsDeduplicated: 0, legacyRowsReplaced: 0 };
+  const settings = options || {};
   const byKey = {};
   const output = [];
-  (existingData.items || []).forEach((item) => {
-    const key = evidenceReplenishmentQueueDedupeKey_(item.row);
-    if (!key || byKey[key]) return;
-    byKey[key] = true;
-    output.push(item.row);
-  });
+  let legacyRowsReplaced = 0;
+  if (!settings.replaceExisting) {
+    (existingData.items || []).forEach((item) => {
+      const key = evidenceReplenishmentQueueDedupeKey_(item.row);
+      if (!key || byKey[key]) return;
+      byKey[key] = true;
+      output.push(item.row);
+    });
+  } else {
+    legacyRowsReplaced = (existingData.items || []).length;
+  }
   let upserted = 0;
   let deduped = 0;
   (rows || []).forEach((row) => {
@@ -5877,12 +5950,22 @@ function upsertGmailSalesEvidenceReplenishmentQueueRows_(sheet, existingData, ro
     upserted += 1;
   });
   writeObjectsToSheet_(sheet, GMAIL_EVIDENCE_REPLENISHMENT_HEADERS, output);
-  return { rowsWritten: output.length, rowsUpserted: upserted, rowsDeduplicated: deduped };
+  return { rowsWritten: output.length, rowsUpserted: upserted, rowsDeduplicated: deduped, legacyRowsReplaced };
 }
 
 function evidenceReplenishmentQueueDedupeKey_(row) {
   const normalized = normalizeGmailSalesEvidenceReplenishmentQueueRow_(row || {});
-  return normalized.sourceRowKey || normalized.reviewId || normalized.leadIdHash || normalized.candidateToken || normalized.sourceRowDigest || '';
+  return normalized.sourceRowKey || normalized.reviewId || normalized.leadIdHash || normalized.sourceRowDigest || '';
+}
+
+function migrateGmailSalesEvidenceReplenishmentRows_(data) {
+  return (data.items || []).map((item) => {
+    const row = Object.assign({}, item.row || {});
+    const normalized = normalizeGmailSalesEvidenceReplenishmentQueueRow_(row);
+    row.status = normalized.status === 'unknown' ? 'unknown' : normalized.status;
+    row.queueSchemaVersion = GMAIL_SALES_EVIDENCE_REPLENISHMENT_SCHEMA_VERSION;
+    return row;
+  });
 }
 
 function ensureGmailSalesEvidenceReplenishmentQueueReady_(context, sourceData, reviewData, options) {
@@ -5901,6 +5984,17 @@ function ensureGmailSalesEvidenceReplenishmentQueueReady_(context, sourceData, r
     queueRowsRebuilt: 0,
     queueRowsUpserted: 0,
     queueRowsDeduplicated: 0,
+    legacyQueueRowsReplacedCount: 0,
+    unresolvedLegacyQueueRowsCount: 0,
+    queueRowsWithResolvableJoinKeyCountBefore: 0,
+    queueRowsWithResolvableJoinKeyCountAfter: 0,
+    queueRowsRequiringCanonicalRebuildCount: 0,
+    canonicalQueueRowsBuiltCount: 0,
+    canonicalQueueRowsAppliedCount: 0,
+    queueRepairRequired: false,
+    queueRepairExecuted: false,
+    queueRepairSucceeded: false,
+    queueRepairFailureReason: '',
     queueRepairRollback: false,
     queueRepairReasonCodes: []
   };
@@ -5912,26 +6006,51 @@ function ensureGmailSalesEvidenceReplenishmentQueueReady_(context, sourceData, r
   if (!sheet) return { sheet: null, data: { headers: [], items: [] }, inspection: {}, repair };
   let data = readSheetObjects_(sheet);
   const inspectionBefore = inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data);
+  let joinBefore = inspectEvidenceReplenishmentQueueJoinKeys_(data, reviewData);
+  repair.queueRowsWithResolvableJoinKeyCountBefore = joinBefore.queueRowsWithResolvableJoinKeyCount;
+  repair.queueRowsRequiringCanonicalRebuildCount = joinBefore.queueRowsRequiringCanonicalRebuildCount;
   if (inspectionBefore.queueMigrationRequired) {
     ensureSheetHeaders_(sheet, GMAIL_EVIDENCE_REPLENISHMENT_HEADERS);
+    data = readSheetObjects_(sheet);
+    writeObjectsToSheet_(sheet, GMAIL_EVIDENCE_REPLENISHMENT_HEADERS, migrateGmailSalesEvidenceReplenishmentRows_(data));
     data = readSheetObjects_(sheet);
     repair.queueMigrationExecuted = true;
     repair.queueRowsMigrated = data.items.length;
     repair.queueRepairReasonCodes.push('schema_migrated');
   }
   const inspectionAfterMigration = inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data);
+  joinBefore = inspectEvidenceReplenishmentQueueJoinKeys_(data, reviewData);
+  repair.queueRowsWithResolvableJoinKeyCountBefore = joinBefore.queueRowsWithResolvableJoinKeyCount;
+  repair.queueRowsRequiringCanonicalRebuildCount = joinBefore.queueRowsRequiringCanonicalRebuildCount;
   const rebuild = buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, now);
-  if ((inspectionAfterMigration.queueParsedRowCount === 0 || inspectionAfterMigration.queueEligibleStatusCount === 0) && rebuild.queueRebuildEligibleCount > 0) {
-    const upsert = upsertGmailSalesEvidenceReplenishmentQueueRows_(sheet, data, rebuild.rows);
+  const functionalRebuildRequired = rebuild.queueRebuildEligibleCount > 0 && (
+    inspectionAfterMigration.queueParsedRowCount === 0 ||
+    inspectionAfterMigration.queueEligibleStatusCount === 0 ||
+    joinBefore.queueRowsWithResolvableJoinKeyCount === 0 ||
+    joinBefore.queueRowsRequiringCanonicalRebuildCount > 0
+  );
+  repair.queueRepairRequired = inspectionBefore.queueMigrationRequired || functionalRebuildRequired;
+  if (functionalRebuildRequired) {
+    const replaceExisting = joinBefore.queueRowsRequiringCanonicalRebuildCount > 0 || joinBefore.queueRowsWithResolvableJoinKeyCount === 0;
+    const upsert = upsertGmailSalesEvidenceReplenishmentQueueRows_(sheet, data, rebuild.rows, { replaceExisting });
     data = readSheetObjects_(sheet);
     repair.queueRebuildExecuted = true;
+    repair.queueRepairExecuted = true;
     repair.queueRowsRebuilt = rebuild.rows.length;
+    repair.canonicalQueueRowsBuiltCount = rebuild.rows.length;
+    repair.canonicalQueueRowsAppliedCount = upsert.rowsWritten;
     repair.queueRowsUpserted = upsert.rowsUpserted;
     repair.queueRowsDeduplicated = upsert.rowsDeduplicated;
+    repair.legacyQueueRowsReplacedCount = upsert.legacyRowsReplaced;
+    repair.unresolvedLegacyQueueRowsCount = Math.max(0, joinBefore.queueRowsRequiringCanonicalRebuildCount - rebuild.rows.length);
     repair.queueRepairReasonCodes.push('queue_rebuilt_from_review');
   }
+  const joinAfter = inspectEvidenceReplenishmentQueueJoinKeys_(data, reviewData);
+  repair.queueRowsWithResolvableJoinKeyCountAfter = joinAfter.queueRowsWithResolvableJoinKeyCount;
+  repair.queueRepairSucceeded = !repair.queueRepairRequired || repair.queueRowsWithResolvableJoinKeyCountAfter > 0 || rebuild.queueRebuildEligibleCount === 0;
+  if (repair.queueRepairRequired && !repair.queueRepairSucceeded) repair.queueRepairFailureReason = 'queue_repair_read_back_failed';
   repair.queuePhysicalDataRowCountAfter = sheet.getLastRow ? Math.max(0, sheet.getLastRow() - 1) : 0;
-  return { sheet, data, inspection: inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data), repair, rebuild };
+  return { sheet, data, inspection: Object.assign({}, inspectGmailSalesEvidenceReplenishmentQueueSchema_(sheet, data), joinAfter), repair, rebuild };
 }
 
 function buildEvidenceReplenishmentQueueStatusResult_(resolved, inspection, queueData, rebuild, writeMode) {
@@ -5946,6 +6065,7 @@ function buildEvidenceReplenishmentQueueStatusResult_(resolved, inspection, queu
     reviewNeedsMoreEvidenceCount: rebuild.reviewNeedsMoreEvidenceCount || 0,
     sourceMissingBasisCount: rebuild.sourceMissingBasisCount || 0,
     queueRebuildEligibleCount: rebuild.queueRebuildEligibleCount || 0,
+    queueRepairRequired: Boolean(inspection.queueMigrationRequired || inspection.queueRowsRequiringCanonicalRebuildCount > 0 || (inspection.queueParsedRowCount > 0 && inspection.queueRowsWithResolvableJoinKeyCount === 0 && rebuild.queueRebuildEligibleCount > 0)),
     recommendedNextAction,
     gmailSendExecuted: false,
     googleSheetsUpdated: false,
@@ -5957,6 +6077,8 @@ function buildEvidenceReplenishmentQueueStatusResult_(resolved, inspection, queu
 
 function recommendEvidenceReplenishmentQueueNextAction_(inspection, rebuild) {
   if (!inspection.queueSheetPresent || !inspection.queueHeaderValid || inspection.queueMigrationRequired) return 'repair_replenishment_queue';
+  if (Number(inspection.queueParsedRowCount || 0) > 0 && Number(inspection.queueRowsWithResolvableJoinKeyCount || 0) === 0 && Number(rebuild.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
+  if (Number(inspection.queueRowsRequiringCanonicalRebuildCount || 0) > 0 && Number(rebuild.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
   if (Number(rebuild.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(inspection.queueParsedRowCount || 0) === 0) return 'rebuild_replenishment_queue';
   if (Number(rebuild.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(inspection.queueEligibleStatusCount || 0) === 0) return 'rebuild_replenishment_queue';
   if (Number(inspection.queueEligibleStatusCount || 0) > 0) return 'run_source_discovery';
@@ -6241,7 +6363,8 @@ function validateSourceDiscoveryTargetEligibility_(sourceItem, reviewItem, queue
   const decision = String(review.reviewDecision || '').trim();
   const applyStatus = String(review.applyStatus || '').trim();
   if (['applied', 'applied_ai'].indexOf(applyStatus) !== -1 || decision === 'rejected') return { ok: false, reasonCode: 'applied_or_rejected' };
-  if (String(review.sourceReference || sourceRow.sourceReference || sourceRow.sourceUrl || '').trim()) return { ok: false, reasonCode: 'source_reference_already_present' };
+  const existingSourceReference = String(review.sourceReference || sourceRow.sourceReference || sourceRow.sourceUrl || '').trim();
+  if (existingSourceReference && validateOfficialEvidenceUrl_(existingSourceReference).ok) return { ok: false, reasonCode: 'source_reference_already_present' };
   if (hasAllowedGmailSalesContactBasis_(sourceRow)) return { ok: false, reasonCode: 'already_has_allowed_basis' };
   if (shouldSkipRecipient_(sourceRow)) return { ok: false, reasonCode: 'already_sent' };
   if (sourceRow.unsubscribe === true || String(sourceRow.unsubscribe || '').toLowerCase() === 'true') return { ok: false, reasonCode: 'suppressed' };
@@ -6467,6 +6590,8 @@ function updateGroundingQueueStatus_(sheet, target, replenishmentData, status, q
 function recommendGroundedSourceDiscoveryNextAction_(grounding, stats, last, eligible) {
   if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.model) return 'fix_grounding_configuration';
   if (!stats.queueSheetPresent || stats.queueMigrationRequired) return 'repair_replenishment_queue';
+  if (Number(stats.queueParsedRowCount || 0) > 0 && Number(stats.queueRowsWithResolvableJoinKeyCount || 0) === 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
+  if (Number(stats.queueRowsRequiringCanonicalRebuildCount || 0) > 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.replenishmentQueueCount || 0) === 0) return 'rebuild_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.queueEligibleStatusCount || 0) === 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'rebuild_replenishment_queue';
   if (Number(eligible || stats.eligibleDiscoveryTargetCount || 0) > 0) return 'run_source_discovery';
@@ -6515,6 +6640,20 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     queueRowsRebuilt: 0,
     queueRowsUpserted: 0,
     queueRowsDeduplicated: 0,
+    queueRowsWithRawCandidateTokenCount: 0,
+    queueRowsWithStableJoinKeyCount: 0,
+    queueRowsWithResolvableCandidateTokenCount: 0,
+    queueRowsWithResolvableJoinKeyCount: 0,
+    queueRowsWithUnresolvableCandidateTokenCount: 0,
+    queueRowsRequiringCanonicalRebuildCount: 0,
+    canonicalQueueRowsBuiltCount: 0,
+    canonicalQueueRowsAppliedCount: 0,
+    legacyQueueRowsReplacedCount: 0,
+    unresolvedLegacyQueueRowsCount: 0,
+    queueRepairRequired: false,
+    queueRepairExecuted: false,
+    queueRepairSucceeded: false,
+    queueRepairFailureReason: '',
     queueRepairRollback: false,
     queueRepairReasonCodes: [],
     reviewNeedsMoreEvidenceCount: 0,

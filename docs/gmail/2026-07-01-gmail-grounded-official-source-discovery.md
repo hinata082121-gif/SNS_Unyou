@@ -32,8 +32,8 @@ Join priority:
 1. `sourceRowKey`
 2. `reviewId`
 3. `leadIdHash`
-4. `candidateToken`
-5. `sourceRowDigest`
+4. `sourceRowDigest`
+5. `candidateToken`, only when it resolves uniquely to current Review data
 6. existing compatible unique keys if present
 
 Email address, business name, person name, and row number alone are not join keys.
@@ -68,6 +68,14 @@ Grounded discovery now repairs the evidence replenishment queue before attemptin
 - deduplicates rebuilt rows by non-identifying stable keys
 
 If no source reference has been applied and no evidence digest changed, `ready_for_ai_verification` is not returned.
+
+## P0.3.9 Legacy Token-Only Queue Repair
+
+Some legacy queues can contain 66 physical pending rows while still being unusable because every row has only a raw `candidateToken` and no stable key such as `sourceRowKey`, `reviewId`, `leadIdHash`, or `sourceRowDigest`.
+
+Grounded discovery now detects that state as `repair_replenishment_queue`, rebuilds canonical rows from Review `needs_more_evidence` rows, replaces the legacy token-only queue rows, and continues the same run into grounded source discovery when the repair reads back successfully.
+
+The run reports aggregate repair fields such as canonical rows built/applied, legacy rows replaced, resolvable join key counts before/after, and unresolved legacy row count. `googleSheetsUpdated=true` when the repair writes queue headers, schema, status, or canonical row data, even if no source reference has been applied yet.
 
 ## Public Functions
 
