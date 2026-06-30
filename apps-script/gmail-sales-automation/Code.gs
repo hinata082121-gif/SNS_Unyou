@@ -251,7 +251,15 @@ const GMAIL_EVIDENCE_REPLENISHMENT_HEADERS = [
   'officialDomainPresent',
   'eligibleForAutomatedReplenishment',
   'queuedAt',
-  'status'
+  'status',
+  'sourceRowKeyHash',
+  'reviewIdHash',
+  'sourceRowDigest',
+  'publicBusinessIdentityPresent',
+  'publicBusinessIdentityDigest',
+  'identityJoinStatus',
+  'identityJoinReasonCode',
+  'lastDiscoveryEligibilityCheckedAt'
 ];
 const GMAIL_SHEET_SYNC_OUTBOX_HEADERS = [
   'prospectId',
@@ -2824,6 +2832,7 @@ function runGmailSalesAiVerificationPhase_() {
   if (queue.status === 'blocked') return queue;
   const discovery = runGmailSalesGroundedOfficialSourceDiscoveryOnce();
   if (discovery.status === 'blocked') return discovery;
+  if (Number(discovery.sourceReferencesAppliedCount || 0) === 0 && Number(discovery.candidatesAttemptedCount || 0) === 0) return discovery;
   const enrichment = runGmailSalesOfficialEvidenceEnrichmentOnce();
   if (enrichment.status === 'blocked') return enrichment;
   return runGmailSalesAiContactBasisVerificationOnce();
@@ -4457,13 +4466,10 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
   const replenishmentSheet = context.spreadsheet ? context.spreadsheet.getSheetByName(GMAIL_SALES_EVIDENCE_REPLENISHMENT_TAB_DEFAULT) : null;
   const replenishmentData = replenishmentSheet ? readSheetObjects_(replenishmentSheet) : { items: [] };
   const last = readGmailSalesGroundingLastRunSummary_();
-  const eligible = collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenishmentData, grounding).targets.length;
-  let recommendedNextAction = 'blocked';
-  if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.model) recommendedNextAction = 'fix_grounding_configuration';
-  else if (eligible > 0) recommendedNextAction = 'run_source_discovery';
-  else if (Number(last.sourceReferencesAppliedCount || 0) > 0) recommendedNextAction = 'run_evidence_enrichment';
-  else if (replenishmentData.items.length > 0) recommendedNextAction = 'replenish_with_new_candidates';
-  else recommendedNextAction = 'ready_for_ai_verification';
+  const collected = collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenishmentData, grounding);
+  const eligible = collected.targets.length;
+  let recommendedNextAction = recommendGroundedSourceDiscoveryNextAction_(grounding, collected.stats, last, eligible);
+  const safeExclusionCounts = collected.stats.exclusionReasonCounts || {};
   const result = {
     event: 'gmail_sales_grounded_official_source_discovery_status',
     mode: 'read_only',
@@ -4471,7 +4477,31 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     groundingModelConfigured: Boolean(grounding.model),
     providerConfigurationValid: grounding.providerConfigurationValid,
     replenishmentQueueCount: replenishmentData.items.length,
+    queueRowsWithJoinKeyCount: collected.stats.queueRowsWithJoinKeyCount,
+    sourceJoinSucceededCount: collected.stats.sourceJoinSucceededCount,
+    sourceJoinFailedCount: collected.stats.sourceJoinFailedCount,
+    reviewJoinSucceededCount: collected.stats.reviewJoinSucceededCount,
+    reviewJoinFailedCount: collected.stats.reviewJoinFailedCount,
+    sourceDigestMatchedCount: collected.stats.sourceDigestMatchedCount,
+    sourceDigestMismatchCount: collected.stats.sourceDigestMismatchCount,
+    publicBusinessIdentityPresentCount: collected.stats.publicBusinessIdentityPresentCount,
+    publicBusinessIdentityMissingCount: collected.stats.publicBusinessIdentityMissingCount,
+    publicBusinessNamePresentCount: collected.stats.publicBusinessNamePresentCount,
+    publicBrandNamePresentCount: collected.stats.publicBrandNamePresentCount,
+    publicServiceNamePresentCount: collected.stats.publicServiceNamePresentCount,
+    publicDomainHintPresentCount: collected.stats.publicDomainHintPresentCount,
     eligibleDiscoveryTargetCount: eligible,
+    excludedAppliedCount: Number(safeExclusionCounts.applied_or_rejected || 0),
+    excludedSuppressedCount: Number(safeExclusionCounts.suppressed || 0),
+    excludedDoNotContactCount: Number(safeExclusionCounts.do_not_contact || 0),
+    excludedAlreadySentCount: Number(safeExclusionCounts.already_sent || 0),
+    excludedDeliveryUnknownCount: Number(safeExclusionCounts.delivery_unknown || 0),
+    excludedGuessedContactCount: Number(safeExclusionCounts.guessed_contact || 0),
+    excludedPrivateContactCount: Number(safeExclusionCounts.private_personal_contact || 0),
+    excludedStaleCount: collected.stats.excludedStaleCount,
+    excludedMissingIdentityCount: collected.stats.excludedMissingIdentityCount,
+    excludedJoinFailureCount: collected.stats.excludedJoinFailureCount,
+    exclusionReasonCounts: safeExclusionCounts,
     lastRunCompletedAt: last.completedAt || '',
     candidatesAttemptedCount: Number(last.candidatesAttemptedCount || 0),
     searchQueryCount: Number(last.searchQueryCount || 0),
@@ -4526,16 +4556,33 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     ensureSheetHeaders_(context.sourceSheet, GMAIL_CONTACT_BASIS_COLUMNS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
     ensureSheetHeaders_(context.reviewSheet, GMAIL_CONTACT_BASIS_REVIEW_HEADERS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
     const replenishmentSheet = context.spreadsheet.getSheetByName(GMAIL_SALES_EVIDENCE_REPLENISHMENT_TAB_DEFAULT);
+    if (replenishmentSheet) ensureSheetHeaders_(replenishmentSheet, GMAIL_EVIDENCE_REPLENISHMENT_HEADERS);
     const replenishmentData = replenishmentSheet ? readSheetObjects_(replenishmentSheet) : { headers: [], items: [] };
     const sourceData = readSheetObjects_(context.sourceSheet);
     const reviewData = readSheetObjects_(context.reviewSheet);
     const collected = collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenishmentData, grounding);
     const stats = emptyGroundedSourceDiscoveryStats_();
+    Object.assign(stats, collected.stats);
     const now = new Date().toISOString();
     const sourceSnapshots = [];
     const reviewSnapshots = [];
     const queueSnapshots = [];
     const targets = collected.targets.slice(0, grounding.maxCandidatesPerRun);
+    if (targets.length === 0) {
+      stats.completedAt = now;
+      stats.runId = 'grounding-' + hashValue_(now + '|0|' + stats.replenishmentQueueCount + '|' + stats.eligibleDiscoveryTargetCount);
+      stats.recommendedNextAction = recommendGroundedSourceDiscoveryNextAction_(grounding, stats, {}, 0);
+      persistGroundedDiscoverySummary_(stats);
+      return buildGmailSalesGroundingResult_('pass', Object.assign({
+        groundingEnabled: grounding.enabled,
+        groundingModel: grounding.model,
+        groundingModelConfigured: Boolean(grounding.model),
+        providerConfigurationValid: grounding.providerConfigurationValid,
+        googleSheetsUpdated: false,
+        scriptPropertiesUpdated: true,
+        aiApiCalled: false
+      }, stats));
+    }
     targets.forEach((target) => {
       if (stats.searchQueryCount >= grounding.maxSearchQueriesPerDay || estimateGmailSalesAiCostYen_({ provider: 'gemini', maxDailyCostYen: grounding.maxDailyCostYen }, stats.searchQueryCount + 1) > grounding.maxDailyCostYen) {
         stats.deferredBudgetCount += 1;
@@ -4580,7 +4627,7 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     stats.estimatedCostYen = estimateGmailSalesAiCostYen_({ provider: 'gemini', maxDailyCostYen: grounding.maxDailyCostYen }, stats.searchQueryCount);
     stats.completedAt = now;
     stats.runId = 'grounding-' + hashValue_(now + '|' + stats.candidatesAttemptedCount + '|' + stats.sourceReferencesAppliedCount);
-    stats.recommendedNextAction = stats.sourceReferencesAppliedCount > 0 ? 'run_evidence_enrichment' : 'replenish_with_new_candidates';
+    stats.recommendedNextAction = stats.sourceReferencesAppliedCount > 0 ? 'run_evidence_enrichment' : recommendGroundedSourceDiscoveryNextAction_(grounding, stats, {}, collected.targets.length);
     persistGroundedDiscoverySummary_(stats);
     return buildGmailSalesGroundingResult_('pass', Object.assign({
       groundingEnabled: grounding.enabled,
@@ -5619,6 +5666,25 @@ function getGmailSalesGroundingConfig_(aiConfig) {
 
 function emptyGroundedSourceDiscoveryStats_() {
   return {
+    replenishmentQueueCount: 0,
+    queueRowsWithJoinKeyCount: 0,
+    sourceJoinSucceededCount: 0,
+    sourceJoinFailedCount: 0,
+    reviewJoinSucceededCount: 0,
+    reviewJoinFailedCount: 0,
+    sourceDigestMatchedCount: 0,
+    sourceDigestMismatchCount: 0,
+    publicBusinessIdentityPresentCount: 0,
+    publicBusinessIdentityMissingCount: 0,
+    publicBusinessNamePresentCount: 0,
+    publicBrandNamePresentCount: 0,
+    publicServiceNamePresentCount: 0,
+    publicDomainHintPresentCount: 0,
+    eligibleDiscoveryTargetCount: 0,
+    excludedStaleCount: 0,
+    excludedMissingIdentityCount: 0,
+    excludedJoinFailureCount: 0,
+    exclusionReasonCounts: {},
     candidatesAttemptedCount: 0,
     searchQueryCount: 0,
     searchRequestSuccessCount: 0,
@@ -5641,45 +5707,235 @@ function emptyGroundedSourceDiscoveryStats_() {
 }
 
 function collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, replenishmentData, grounding) {
-  const sourceByKey = {};
-  (sourceData.items || []).forEach((item) => {
-    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
-  });
-  const replenishmentTokens = {};
-  (replenishmentData.items || []).forEach((item) => {
-    const row = item.row || {};
-    const reason = String(row.failureReasonCode || '').trim();
-    if (['no_source_reference', 'no_official_domain', 'evidence_payload_missing', 'insufficient_evidence'].indexOf(reason) !== -1) {
-      replenishmentTokens[String(row.candidateToken || '').trim()] = item;
-    }
-  });
+  const stats = emptyGroundedSourceDiscoveryStats_();
+  const sourceMaps = buildGroundedSourceDiscoverySourceMaps_(sourceData);
+  const reviewMaps = buildGroundedSourceDiscoveryReviewMaps_(reviewData);
+  const queueItems = (replenishmentData.items || []).filter((item) => isGroundedSourceDiscoveryQueueReason_(item.row));
+  stats.replenishmentQueueCount = queueItems.length;
   const targets = [];
-  (reviewData.items || []).forEach((reviewItem) => {
-    const review = reviewItem.row || {};
-    const sourceItem = sourceByKey[String(review.sourceRowKey || '').trim()];
-    if (!sourceItem) return;
-    const token = buildGroundingCandidateToken_(review);
-    const inQueue = Object.keys(replenishmentTokens).length === 0 || Boolean(replenishmentTokens[token]);
-    if (!inQueue) return;
-    if (!isGroundedSourceDiscoveryEligible_(review, sourceItem.row)) return;
-    targets.push({ sourceItem, reviewItem, queueItem: replenishmentTokens[token] || null, candidateToken: token });
+  queueItems.forEach((queueItem) => {
+    const joined = joinReplenishmentQueueRowToReview_(queueItem, reviewMaps);
+    if (joined.hasJoinKey) stats.queueRowsWithJoinKeyCount += 1;
+    if (!joined.reviewItem) {
+      stats.reviewJoinFailedCount += 1;
+      stats.excludedJoinFailureCount += 1;
+      incrementCount_(stats.exclusionReasonCounts, joined.reasonCode || 'review_join_failed');
+      return;
+    }
+    stats.reviewJoinSucceededCount += 1;
+    const sourceJoined = joinReplenishmentQueueRowToSource_(queueItem, joined.reviewItem, sourceMaps);
+    if (!sourceJoined.sourceItem) {
+      stats.sourceJoinFailedCount += 1;
+      stats.excludedJoinFailureCount += 1;
+      incrementCount_(stats.exclusionReasonCounts, sourceJoined.reasonCode || 'source_join_failed');
+      return;
+    }
+    stats.sourceJoinSucceededCount += 1;
+    const identity = buildPublicBusinessIdentity_(sourceJoined.sourceItem.row, joined.reviewItem.row);
+    const validation = validateSourceDiscoveryTargetEligibility_(sourceJoined.sourceItem, joined.reviewItem, queueItem, identity);
+    if (validation.sourceDigestMatched) stats.sourceDigestMatchedCount += 1;
+    if (validation.sourceDigestMismatch) stats.sourceDigestMismatchCount += 1;
+    if (identity.publicBusinessName) stats.publicBusinessNamePresentCount += 1;
+    if (identity.publicBrandName) stats.publicBrandNamePresentCount += 1;
+    if (identity.publicServiceName) stats.publicServiceNamePresentCount += 1;
+    if (identity.publicDomainHint) stats.publicDomainHintPresentCount += 1;
+    if (identity.identityPresent) stats.publicBusinessIdentityPresentCount += 1;
+    else stats.publicBusinessIdentityMissingCount += 1;
+    if (!validation.ok) {
+      if (validation.reasonCode === 'public_business_identity_missing') {
+        stats.excludedMissingIdentityCount += 1;
+      }
+      if (validation.stale) stats.excludedStaleCount += 1;
+      incrementCount_(stats.exclusionReasonCounts, validation.reasonCode);
+      return;
+    }
+    const token = String((queueItem.row || {}).candidateToken || '').trim() || buildGroundingCandidateToken_(joined.reviewItem.row);
+    targets.push({
+      sourceItem: sourceJoined.sourceItem,
+      reviewItem: joined.reviewItem,
+      queueItem,
+      candidateToken: token,
+      failureReasonCode: String((queueItem.row || {}).failureReasonCode || ''),
+      publicBusinessIdentity: identity,
+      publicBusinessIdentityDigest: identity.publicBusinessIdentityDigest
+    });
   });
-  return { targets };
+  stats.eligibleDiscoveryTargetCount = targets.length;
+  return { targets, stats };
 }
 
-function isGroundedSourceDiscoveryEligible_(review, sourceRow) {
+function isGroundedSourceDiscoveryQueueReason_(row) {
+  const reason = String((row || {}).failureReasonCode || '').trim();
+  return ['no_source_reference', 'no_official_domain', 'evidence_payload_missing', 'insufficient_evidence'].indexOf(reason) !== -1;
+}
+
+function buildGroundedSourceDiscoverySourceMaps_(sourceData) {
+  const sourceByKey = {};
+  const sourceByDigest = {};
+  (sourceData.items || []).forEach((item) => {
+    const sourceRowKey = buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex);
+    sourceByKey[sourceRowKey] = item;
+    const queue = buildContactBasisReviewQueueRow_({ row: item.row, rowIndex: item.rowIndex }, new Date().toISOString());
+    if (queue.include && queue.row.sourceRowDigest) sourceByDigest[String(queue.row.sourceRowDigest)] = item;
+  });
+  return { sourceByKey, sourceByDigest };
+}
+
+function buildGroundedSourceDiscoveryReviewMaps_(reviewData) {
+  const byCandidateToken = {};
+  const byReviewId = {};
+  const byLeadIdHash = {};
+  const bySourceRowKey = {};
+  const bySourceDigest = {};
+  (reviewData.items || []).forEach((item) => {
+    const row = item.row || {};
+    const token = buildGroundingCandidateToken_(row);
+    if (token) byCandidateToken[token] = item;
+    if (String(row.reviewId || '').trim()) byReviewId[String(row.reviewId).trim()] = item;
+    if (String(row.leadIdHash || '').trim()) byLeadIdHash[String(row.leadIdHash).trim()] = item;
+    if (String(row.sourceRowKey || '').trim()) bySourceRowKey[String(row.sourceRowKey).trim()] = item;
+    if (String(row.sourceRowDigest || '').trim()) bySourceDigest[String(row.sourceRowDigest).trim()] = item;
+  });
+  return { byCandidateToken, byReviewId, byLeadIdHash, bySourceRowKey, bySourceDigest };
+}
+
+function joinReplenishmentQueueRowToReview_(queueItem, reviewMaps) {
+  const row = queueItem.row || {};
+  const candidateToken = String(row.candidateToken || '').trim();
+  if (candidateToken && reviewMaps.byCandidateToken[candidateToken]) return { reviewItem: reviewMaps.byCandidateToken[candidateToken], hasJoinKey: true, joinKey: 'candidateToken' };
+  const reviewId = String(row.reviewId || '').trim();
+  if (reviewId && reviewMaps.byReviewId[reviewId]) return { reviewItem: reviewMaps.byReviewId[reviewId], hasJoinKey: true, joinKey: 'reviewId' };
+  const leadIdHash = String(row.leadIdHash || '').trim();
+  if (leadIdHash && reviewMaps.byLeadIdHash[leadIdHash]) return { reviewItem: reviewMaps.byLeadIdHash[leadIdHash], hasJoinKey: true, joinKey: 'leadIdHash' };
+  const sourceRowKey = String(row.sourceRowKey || '').trim();
+  if (sourceRowKey && reviewMaps.bySourceRowKey[sourceRowKey]) return { reviewItem: reviewMaps.bySourceRowKey[sourceRowKey], hasJoinKey: true, joinKey: 'sourceRowKey' };
+  const sourceRowDigest = String(row.sourceRowDigest || '').trim();
+  if (sourceRowDigest && reviewMaps.bySourceDigest[sourceRowDigest]) return { reviewItem: reviewMaps.bySourceDigest[sourceRowDigest], hasJoinKey: true, joinKey: 'sourceRowDigest' };
+  return {
+    reviewItem: null,
+    hasJoinKey: Boolean(candidateToken || reviewId || leadIdHash || sourceRowKey || sourceRowDigest),
+    reasonCode: candidateToken || reviewId || leadIdHash || sourceRowKey || sourceRowDigest ? 'review_row_missing' : 'queue_join_key_missing'
+  };
+}
+
+function joinReplenishmentQueueRowToSource_(queueItem, reviewItem, sourceMaps) {
+  const queueRow = queueItem.row || {};
+  const review = reviewItem.row || {};
+  const sourceRowKey = String(review.sourceRowKey || queueRow.sourceRowKey || '').trim();
+  if (sourceRowKey && sourceMaps.sourceByKey[sourceRowKey]) return { sourceItem: sourceMaps.sourceByKey[sourceRowKey], joinKey: 'sourceRowKey' };
+  const digest = String(review.sourceRowDigest || queueRow.sourceRowDigest || '').trim();
+  if (digest && sourceMaps.sourceByDigest[digest]) return { sourceItem: sourceMaps.sourceByDigest[digest], joinKey: 'sourceRowDigest' };
+  return { sourceItem: null, reasonCode: 'source_row_missing' };
+}
+
+function resolvePublicBusinessIdentityFields_() {
+  return {
+    publicBusinessName: ['publicBusinessName', 'businessName', 'companyName', 'company', 'organizationName', 'organization', 'corporateName', 'targetCompany', 'leadCompany', 'sourceCompany', 'publicOrganizationName', 'operatorName', 'accountName', 'siteTitle', 'name', '会社名', '法人名', '企業名', '事業者名', '運営会社', '店舗名', '団体名'],
+    publicBrandName: ['publicBrandName', 'brandName', 'brand', 'ブランド名'],
+    publicServiceName: ['publicServiceName', 'serviceName', 'service', 'サービス名'],
+    publicIndustry: ['businessType', 'industry', 'category', '業種', 'カテゴリ'],
+    publicCountry: ['country', '国'],
+    publicRegion: ['region', 'prefecture', 'area', '都道府県', '地域'],
+    publicCity: ['city', '市区町村'],
+    publicDomainHint: ['domain', 'officialDomain', 'websiteDomain', 'publicDomain', 'domainHint']
+  };
+}
+
+function buildPublicBusinessIdentity_(sourceRow, reviewRow) {
+  const aliases = resolvePublicBusinessIdentityFields_();
+  const source = sourceRow || {};
+  const review = reviewRow || {};
+  const result = {
+    publicBusinessName: firstPublicIdentityValue_(source, review, aliases.publicBusinessName),
+    publicBrandName: firstPublicIdentityValue_(source, review, aliases.publicBrandName),
+    publicServiceName: firstPublicIdentityValue_(source, review, aliases.publicServiceName),
+    publicIndustry: firstPublicIdentityValue_(source, review, aliases.publicIndustry),
+    publicCountry: firstPublicIdentityValue_(source, review, aliases.publicCountry),
+    publicRegion: firstPublicIdentityValue_(source, review, aliases.publicRegion),
+    publicCity: firstPublicIdentityValue_(source, review, aliases.publicCity),
+    publicDomainHint: firstPublicDomainHintValue_(source, review, aliases.publicDomainHint),
+    identitySourceFields: []
+  };
+  Object.keys(aliases).forEach((field) => {
+    if (field === 'publicDomainHint') return;
+    const found = firstPublicIdentityFieldName_(source, review, aliases[field]);
+    if (found && result[field]) result.identitySourceFields.push(found);
+  });
+  result.identityPresent = Boolean(result.publicBusinessName || result.publicBrandName || result.publicServiceName);
+  result.publicBusinessIdentityDigest = result.identityPresent ? hashValue_([
+    result.publicBusinessName,
+    result.publicBrandName,
+    result.publicServiceName,
+    result.publicIndustry,
+    result.publicCountry,
+    result.publicRegion,
+    result.publicCity,
+    result.publicDomainHint
+  ].join('|')) : '';
+  return result;
+}
+
+function firstPublicIdentityValue_(sourceRow, reviewRow, aliases) {
+  for (let index = 0; index < aliases.length; index += 1) {
+    const key = aliases[index];
+    const value = String(sourceRow[key] || reviewRow[key] || '').trim();
+    if (isAllowedPublicBusinessIdentityValue_(value)) return value;
+  }
+  return '';
+}
+
+function firstPublicIdentityFieldName_(sourceRow, reviewRow, aliases) {
+  for (let index = 0; index < aliases.length; index += 1) {
+    const key = aliases[index];
+    const value = String(sourceRow[key] || reviewRow[key] || '').trim();
+    if (isAllowedPublicBusinessIdentityValue_(value)) return key;
+  }
+  return '';
+}
+
+function firstPublicDomainHintValue_(sourceRow, reviewRow, aliases) {
+  for (let index = 0; index < aliases.length; index += 1) {
+    const key = aliases[index];
+    const value = String(sourceRow[key] || reviewRow[key] || '').trim();
+    if (!value) continue;
+    if (value.indexOf('@') !== -1) continue;
+    if (/^https?:\/\//i.test(value)) continue;
+    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)) return value.toLowerCase();
+  }
+  return '';
+}
+
+function isAllowedPublicBusinessIdentityValue_(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (text.indexOf('@') !== -1) return false;
+  if (/https?:\/\//i.test(text)) return false;
+  if (/\d{2,4}[-\s]?\d{2,4}[-\s]?\d{3,4}/.test(text)) return false;
+  if (/^[a-z0-9._%+-]+$/i.test(text)) return false;
+  return true;
+}
+
+function validateSourceDiscoveryTargetEligibility_(sourceItem, reviewItem, queueItem, identity) {
+  const sourceRow = sourceItem.row || {};
+  const review = reviewItem.row || {};
   const decision = String(review.reviewDecision || '').trim();
   const applyStatus = String(review.applyStatus || '').trim();
-  if (['applied', 'applied_ai'].indexOf(applyStatus) !== -1 || decision === 'rejected') return false;
-  if (String(review.sourceReference || sourceRow.sourceReference || sourceRow.sourceUrl || '').trim()) return false;
-  if (hasAllowedGmailSalesContactBasis_(sourceRow)) return false;
-  if (shouldSkipRecipient_(sourceRow)) return false;
-  if (sourceRow.unsubscribe === true || String(sourceRow.unsubscribe || '').toLowerCase() === 'true') return false;
-  if (sourceRow.doNotContact === true || String(sourceRow.doNotContact || '').toLowerCase() === 'true') return false;
-  if (String(sourceRow.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown) return false;
-  if (isLikelyPersonalEmail_(sourceRow.email || sourceRow.contactEmail || '')) return false;
-  const queue = buildContactBasisReviewQueueRow_({ row: sourceRow, rowIndex: 0 }, new Date().toISOString());
-  return queue.include && String(queue.row.sourceRowDigest || '') === String(review.sourceRowDigest || '').trim();
+  if (['applied', 'applied_ai'].indexOf(applyStatus) !== -1 || decision === 'rejected') return { ok: false, reasonCode: 'applied_or_rejected' };
+  if (String(review.sourceReference || sourceRow.sourceReference || sourceRow.sourceUrl || '').trim()) return { ok: false, reasonCode: 'source_reference_already_present' };
+  if (hasAllowedGmailSalesContactBasis_(sourceRow)) return { ok: false, reasonCode: 'already_has_allowed_basis' };
+  if (shouldSkipRecipient_(sourceRow)) return { ok: false, reasonCode: 'already_sent' };
+  if (sourceRow.unsubscribe === true || String(sourceRow.unsubscribe || '').toLowerCase() === 'true') return { ok: false, reasonCode: 'suppressed' };
+  if (sourceRow.doNotContact === true || String(sourceRow.doNotContact || '').toLowerCase() === 'true') return { ok: false, reasonCode: 'do_not_contact' };
+  if (String(sourceRow.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown) return { ok: false, reasonCode: 'delivery_unknown' };
+  if (isLikelyPersonalEmail_(sourceRow.email || sourceRow.contactEmail || '')) return { ok: false, reasonCode: 'private_personal_contact' };
+  const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+  if (!queue.include) return { ok: false, reasonCode: queue.reason || 'source_no_longer_reviewable', stale: true };
+  if (String(queue.row.suggestionReasonCode || '') === 'guessed_contact') return { ok: false, reasonCode: 'guessed_contact' };
+  if (String(queue.row.suggestionReasonCode || '') === 'private_personal_contact') return { ok: false, reasonCode: 'private_personal_contact' };
+  const digestMatch = String(queue.row.sourceRowDigest || '') === String(review.sourceRowDigest || '').trim();
+  if (!digestMatch) return { ok: false, reasonCode: 'source_digest_mismatch', stale: true, sourceDigestMismatch: true };
+  if (!identity || !identity.identityPresent) return { ok: false, reasonCode: 'public_business_identity_missing', sourceDigestMatched: true };
+  return { ok: true, reasonCode: '', sourceDigestMatched: true };
 }
 
 function buildGroundingCandidateToken_(reviewRow) {
@@ -5688,15 +5944,18 @@ function buildGroundingCandidateToken_(reviewRow) {
 
 function buildGroundedOfficialSourceSearchPrompt_(target) {
   const row = target.sourceItem.row || {};
-  const publicName = String(row.name || row.businessName || row['店舗名'] || '').trim();
-  const businessType = String(row.businessType || row.category || row.publicSource || '').trim();
-  const area = String(row.area || row.prefecture || row.city || '').trim();
+  const identity = target.publicBusinessIdentity || buildPublicBusinessIdentity_(row, target.reviewItem.row || {});
+  const area = [identity.publicRegion, identity.publicCity].filter(Boolean).join(' ');
   return JSON.stringify({
     task: 'find_official_business_source_url',
     candidateToken: target.candidateToken,
-    publicBusinessName: publicName,
-    publicBusinessType: businessType,
+    publicBusinessName: identity.publicBusinessName,
+    publicBrandName: identity.publicBrandName,
+    publicServiceName: identity.publicServiceName,
+    publicBusinessType: identity.publicIndustry,
+    publicCountry: identity.publicCountry,
     publicArea: area,
+    publicDomainHint: identity.publicDomainHint,
     sourceType: String(row.sourceType || row.publicSource || ''),
     instructions: [
       'Use Google Search grounding citations only.',
@@ -5813,7 +6072,8 @@ function groundedRejectedDomainCategory_(host) {
 }
 
 function selectVerifiedGroundedOfficialSource_(target, citations, grounding) {
-  const candidateName = normalizeTextForComparison_(target.sourceItem.row.name || target.sourceItem.row['店舗名'] || '');
+  const identity = target.publicBusinessIdentity || buildPublicBusinessIdentity_(target.sourceItem.row || {}, target.reviewItem.row || {});
+  const candidateName = normalizeTextForComparison_(identity.publicBusinessName || identity.publicBrandName || identity.publicServiceName || '');
   for (let index = 0; index < citations.length; index += 1) {
     const citation = citations[index];
     if (citation.candidateToken !== target.candidateToken) return { ok: false, status: 'ambiguous' };
@@ -5870,9 +6130,29 @@ function writeGroundingAuditFields_(sheet, headers, rowIndex, verified, now) {
 function updateGroundingQueueStatus_(sheet, target, replenishmentData, status, queueSnapshots) {
   if (!sheet || !target.queueItem || !replenishmentData || !replenishmentData.headers) return;
   const rowIndex = target.queueItem.rowIndex;
-  if (queueSnapshots) queueSnapshots.push(snapshotFields_(sheet, replenishmentData.headers, rowIndex, ['status']));
+  const auditFields = ['status', 'sourceRowKeyHash', 'reviewIdHash', 'sourceRowDigest', 'publicBusinessIdentityPresent', 'publicBusinessIdentityDigest', 'identityJoinStatus', 'identityJoinReasonCode', 'lastDiscoveryEligibilityCheckedAt'];
+  if (queueSnapshots) queueSnapshots.push(snapshotFields_(sheet, replenishmentData.headers, rowIndex, auditFields));
   setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'status', status);
+  setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'sourceRowKeyHash', hashValue_(String((target.reviewItem.row || {}).sourceRowKey || '')));
+  setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'reviewIdHash', hashValue_(String((target.reviewItem.row || {}).reviewId || '')));
+  setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'sourceRowDigest', String((target.reviewItem.row || {}).sourceRowDigest || ''));
+  setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'publicBusinessIdentityPresent', Boolean(target.publicBusinessIdentity && target.publicBusinessIdentity.identityPresent));
+  setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'publicBusinessIdentityDigest', String(target.publicBusinessIdentityDigest || ''));
+  setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'identityJoinStatus', 'joined');
+  setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'identityJoinReasonCode', status);
+  setCellByHeader_(sheet, replenishmentData.headers, rowIndex, 'lastDiscoveryEligibilityCheckedAt', new Date().toISOString());
   target.queueItem.row.status = status;
+}
+
+function recommendGroundedSourceDiscoveryNextAction_(grounding, stats, last, eligible) {
+  if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.model) return 'fix_grounding_configuration';
+  if (Number(eligible || stats.eligibleDiscoveryTargetCount || 0) > 0) return 'run_source_discovery';
+  if (Number(last && last.sourceReferencesAppliedCount || 0) > 0) return 'run_evidence_enrichment';
+  if (Number(stats.sourceDigestMismatchCount || 0) > 0 && Number(stats.sourceDigestMismatchCount || 0) >= Number(stats.sourceDigestMatchedCount || 0)) return 'refresh_review_queue';
+  if (Number(stats.replenishmentQueueCount || 0) > 0 && (Number(stats.reviewJoinFailedCount || 0) + Number(stats.sourceJoinFailedCount || 0)) > (Number(stats.reviewJoinSucceededCount || 0) + Number(stats.sourceJoinSucceededCount || 0))) return 'repair_source_identity_join';
+  if (Number(stats.replenishmentQueueCount || 0) > 0 && Number(stats.publicBusinessIdentityPresentCount || 0) === 0) return 'replenish_with_new_candidates';
+  if (Number(stats.replenishmentQueueCount || 0) > 0 && Number(stats.publicBusinessIdentityMissingCount || 0) > Number(stats.publicBusinessIdentityPresentCount || 0)) return 'replenish_with_new_candidates';
+  return 'ready_for_ai_verification';
 }
 
 function persistGroundedDiscoverySummary_(stats) {
@@ -5899,6 +6179,25 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     groundingModel: '',
     groundingModelConfigured: false,
     providerConfigurationValid: false,
+    replenishmentQueueCount: 0,
+    queueRowsWithJoinKeyCount: 0,
+    sourceJoinSucceededCount: 0,
+    sourceJoinFailedCount: 0,
+    reviewJoinSucceededCount: 0,
+    reviewJoinFailedCount: 0,
+    sourceDigestMatchedCount: 0,
+    sourceDigestMismatchCount: 0,
+    publicBusinessIdentityPresentCount: 0,
+    publicBusinessIdentityMissingCount: 0,
+    publicBusinessNamePresentCount: 0,
+    publicBrandNamePresentCount: 0,
+    publicServiceNamePresentCount: 0,
+    publicDomainHintPresentCount: 0,
+    eligibleDiscoveryTargetCount: 0,
+    excludedStaleCount: 0,
+    excludedMissingIdentityCount: 0,
+    excludedJoinFailureCount: 0,
+    exclusionReasonCounts: {},
     candidatesAttemptedCount: 0,
     searchQueryCount: 0,
     searchRequestSuccessCount: 0,

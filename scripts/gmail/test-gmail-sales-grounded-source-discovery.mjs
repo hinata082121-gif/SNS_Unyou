@@ -10,7 +10,8 @@ const SOURCE_HEADERS = [
   'subject', 'body', 'status', 'sendDate', 'dedupeKey', 'sentStatus', 'replyStatus', 'unsubscribe',
   'doNotContact', 'sendState', 'notes', 'existingRelationshipEvidence', 'explicitOptInEvidence',
   'businessContactEvidence', 'contactBasisType', 'contactBasisRecordedAt', 'sourceReferenceHash',
-  'optOutAvailable', 'lastVerifiedAt', 'suppressionCheckedAt', 'historyCheckedAt'
+  'optOutAvailable', 'lastVerifiedAt', 'suppressionCheckedAt', 'historyCheckedAt',
+  'companyName', 'brandName', 'serviceName', '会社名', 'ブランド名', 'サービス名', 'personName', 'domain'
 ];
 
 const REVIEW_HEADERS = [
@@ -25,7 +26,7 @@ const REVIEW_HEADERS = [
 const REPLENISHMENT_HEADERS = [
   'candidateToken', 'failureReasonCode', 'requiredEvidenceType', 'existingSourceType',
   'sourceReferencePresent', 'officialDomainPresent', 'eligibleForAutomatedReplenishment',
-  'queuedAt', 'status'
+  'queuedAt', 'status', 'reviewId', 'leadIdHash', 'sourceRowKey', 'sourceRowDigest'
 ];
 
 const tests = [];
@@ -41,6 +42,12 @@ test('grounded source discovery applies verified citation sources with one Gemin
   assert.equal(result.searchRequestSuccessCount, 10);
   assert.equal(result.verifiedOfficialSourceCount, 10);
   assert.equal(result.sourceReferencesAppliedCount, 10);
+  assert.equal(result.replenishmentQueueCount, 12);
+  assert.equal(result.queueRowsWithJoinKeyCount, 12);
+  assert.equal(result.sourceJoinSucceededCount, 12);
+  assert.equal(result.reviewJoinSucceededCount, 12);
+  assert.equal(result.publicBusinessIdentityPresentCount, 12);
+  assert.equal(result.eligibleDiscoveryTargetCount, 12);
   assert.equal(result.googleSheetsUpdated, true);
   assert.equal(result.scriptPropertiesUpdated, true);
   assert.equal(env.fetchCalls.length, 10);
@@ -56,13 +63,106 @@ test('grounded source discovery applies verified citation sources with one Gemin
     assert.equal(payload.input.includes('@example.invalid'), false);
     assert.equal(payload.input.includes('Subject'), false);
     assert.equal(payload.input.includes('Body'), false);
+    assert.equal(payload.input.includes('Person'), false);
+    assert.equal(payload.input.includes('Business'), true);
   });
   assert.equal(readCell(env.workbook.sheets.Gmail_Evidence_Replenishment_Queue, 2, 'status'), 'source_discovered');
   assert.equal(Boolean(readCell(env.workbook.sheets['Gmail営業候補プール'], 2, 'sourceReference')), true);
   assert.equal(readCell(env.workbook.sheets.Gmail_Contact_Basis_Review, 2, 'sourceDiscoveryStatus'), 'verified');
   const status = env.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
   assert.equal(status.sourceReferencesAppliedCount, 10);
+  assert.equal(status.sourceJoinSucceededCount, 12);
+  assert.equal(status.publicBusinessIdentityPresentCount, 12);
+  assert.equal(status.eligibleDiscoveryTargetCount, 2);
   assert.equal(status.recommendedNextAction, 'run_source_discovery');
+  assert.equal(env.logs.some((line) => line.includes('Business 1')), false);
+});
+
+test('runtime join handles 66 non-identifying queue rows without storing business identity in the queue', () => {
+  const env = createEnvironment({ sourceCount: 66 });
+  seedGroundingReviewAndQueue(env, 66);
+  const status = env.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
+  assert.equal(status.replenishmentQueueCount, 66);
+  assert.equal(status.queueRowsWithJoinKeyCount, 66);
+  assert.equal(status.sourceJoinSucceededCount, 66);
+  assert.equal(status.reviewJoinSucceededCount, 66);
+  assert.equal(status.publicBusinessIdentityPresentCount, 66);
+  assert.equal(status.eligibleDiscoveryTargetCount, 66);
+  assert.equal(status.recommendedNextAction, 'run_source_discovery');
+  assert.equal(JSON.stringify(status).includes('Business 1'), false);
+  const queueHeaders = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue.rows[0];
+  assert.equal(queueHeaders.includes('companyName'), false);
+  assert.equal(queueHeaders.includes('email'), false);
+});
+
+test('source join supports reviewId leadIdHash sourceRowKey and sourceRowDigest fallbacks', () => {
+  const env = createEnvironment({ sourceCount: 4 });
+  seedGroundingReviewAndQueue(env, 4);
+  const queueSheet = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue;
+  const reviewSheet = env.workbook.sheets.Gmail_Contact_Basis_Review;
+  writeCell(queueSheet, 2, 'candidateToken', '');
+  writeCell(queueSheet, 2, 'reviewId', readCell(reviewSheet, 2, 'reviewId'));
+  writeCell(queueSheet, 3, 'candidateToken', '');
+  writeCell(queueSheet, 3, 'leadIdHash', readCell(reviewSheet, 3, 'leadIdHash'));
+  writeCell(queueSheet, 4, 'candidateToken', '');
+  writeCell(queueSheet, 4, 'sourceRowKey', readCell(reviewSheet, 4, 'sourceRowKey'));
+  writeCell(queueSheet, 5, 'candidateToken', '');
+  writeCell(queueSheet, 5, 'sourceRowDigest', readCell(reviewSheet, 5, 'sourceRowDigest'));
+  const status = env.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
+  assert.equal(status.reviewJoinSucceededCount, 4);
+  assert.equal(status.sourceJoinSucceededCount, 4);
+  assert.equal(status.eligibleDiscoveryTargetCount, 4);
+});
+
+test('identity resolver supports English and Japanese public identity aliases without using email or person fields', () => {
+  const env = createEnvironment({ sourceCount: 6 });
+  setSource(env, 2, { name: '', companyName: 'Company Alias' });
+  setSource(env, 3, { name: '', brandName: 'Brand Alias' });
+  setSource(env, 4, { name: '', serviceName: 'Service Alias' });
+  setSource(env, 5, { name: '', 会社名: 'Japanese Company Alias' });
+  setSource(env, 6, { name: '', ブランド名: 'Japanese Brand Alias' });
+  setSource(env, 7, { name: '', サービス名: 'Japanese Service Alias', personName: 'Person Name', email: 'localpart@example.invalid' });
+  seedGroundingReviewAndQueue(env, 6);
+  const status = env.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
+  assert.equal(status.publicBusinessIdentityPresentCount, 6);
+  assert.equal(status.publicBusinessNamePresentCount, 2);
+  assert.equal(status.publicBrandNamePresentCount, 2);
+  assert.equal(status.publicServiceNamePresentCount, 2);
+  const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  const prompts = env.fetchCalls.map((call) => JSON.parse(JSON.parse(call.options.payload).input));
+  assert.equal(prompts.some((prompt) => prompt.publicBusinessName === 'Company Alias'), true);
+  assert.equal(prompts.some((prompt) => prompt.publicBrandName === 'Brand Alias'), true);
+  assert.equal(prompts.some((prompt) => prompt.publicServiceName === 'Service Alias'), true);
+  assert.equal(env.fetchCalls.some((call) => JSON.parse(call.options.payload).input.includes('Person Name')), false);
+  assert.equal(env.fetchCalls.some((call) => JSON.parse(call.options.payload).input.includes('localpart')), false);
+  assert.equal(result.sourceReferencesAppliedCount, 6);
+});
+
+test('missing identity and join failure produce actionable diagnostics without Gemini requests', () => {
+  const missingIdentity = createEnvironment({ sourceCount: 1 });
+  setSource(missingIdentity, 2, { name: '', companyName: '', brandName: '', serviceName: '', 会社名: '', ブランド名: '', サービス名: '', email: 'only-email@example.invalid' });
+  seedGroundingReviewAndQueue(missingIdentity, 1);
+  const missingResult = missingIdentity.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(missingResult.searchQueryCount, 0);
+  assert.equal(missingIdentity.fetchCalls.length, 0);
+  assert.equal(missingResult.publicBusinessIdentityMissingCount, 1);
+  assert.equal(missingResult.exclusionReasonCounts.public_business_identity_missing, 1);
+  assert.equal(missingResult.recommendedNextAction, 'replenish_with_new_candidates');
+
+  const joinFailed = createEnvironment({ sourceCount: 1 });
+  joinFailed.workbook.sheets.Gmail_Evidence_Replenishment_Queue.rows.push(REPLENISHMENT_HEADERS.map((header) => ({
+    candidateToken: 'missing-token',
+    failureReasonCode: 'no_source_reference',
+    requiredEvidenceType: 'official_source_reference',
+    eligibleForAutomatedReplenishment: 'true',
+    status: 'queued'
+  }[header] || '')));
+  const joinStatus = joinFailed.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
+  assert.equal(joinStatus.replenishmentQueueCount, 1);
+  assert.equal(joinStatus.reviewJoinFailedCount, 1);
+  assert.equal(joinStatus.excludedJoinFailureCount, 1);
+  assert.equal(joinStatus.recommendedNextAction, 'repair_source_identity_join');
+  assert.equal(joinFailed.fetchCalls.length, 0);
 });
 
 test('grounding is fail-closed when Gemini configuration is not valid', () => {
@@ -131,11 +231,23 @@ test('production AI verification phase runs grounded discovery before enrichment
   const env = createEnvironment({ sourceCount: 1 });
   let order = [];
   env.context.refreshGmailSalesContactBasisReviewQueueOnce = () => { order.push('refresh'); return { status: 'pass' }; };
-  env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce = () => { order.push('grounding'); return { status: 'pass' }; };
+  env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce = () => { order.push('grounding'); return { status: 'pass', sourceReferencesAppliedCount: 1, candidatesAttemptedCount: 1 }; };
   env.context.runGmailSalesOfficialEvidenceEnrichmentOnce = () => { order.push('enrichment'); return { status: 'pass' }; };
   env.context.runGmailSalesAiContactBasisVerificationOnce = () => { order.push('verification'); return { status: 'pass' }; };
   env.context.runGmailSalesAiVerificationPhase_();
   assert.deepEqual(order, ['refresh', 'grounding', 'enrichment', 'verification']);
+});
+
+test('production AI verification phase stops when source discovery has no targets and no applied sources', () => {
+  const env = createEnvironment({ sourceCount: 1 });
+  let order = [];
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce = () => { order.push('refresh'); return { status: 'pass' }; };
+  env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce = () => { order.push('grounding'); return { status: 'pass', sourceReferencesAppliedCount: 0, candidatesAttemptedCount: 0 }; };
+  env.context.runGmailSalesOfficialEvidenceEnrichmentOnce = () => { order.push('enrichment'); return { status: 'pass' }; };
+  env.context.runGmailSalesAiContactBasisVerificationOnce = () => { order.push('verification'); return { status: 'pass' }; };
+  const result = env.context.runGmailSalesAiVerificationPhase_();
+  assert.deepEqual(order, ['refresh', 'grounding']);
+  assert.equal(result.sourceReferencesAppliedCount, 0);
 });
 
 function createEnvironment(options = {}) {
@@ -354,8 +466,20 @@ function buildSourceRow(index) {
     body: `Body ${index}`,
     status: 'ready',
     dedupeKey: `dedupe-${index}`,
-    optOutAvailable: 'true'
+    optOutAvailable: 'true',
+    companyName: '',
+    brandName: '',
+    serviceName: '',
+    会社名: '',
+    ブランド名: '',
+    サービス名: '',
+    personName: `Person ${index}`,
+    domain: ''
   };
+}
+
+function setSource(env, rowIndex, values) {
+  Object.keys(values).forEach((key) => writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, key, values[key]));
 }
 
 function rowFromSheet(sheet, rowIndex) {
@@ -367,6 +491,16 @@ function rowFromSheet(sheet, rowIndex) {
 function readCell(sheet, rowIndex, header) {
   const index = sheet.rows[0].indexOf(header);
   return index === -1 ? '' : sheet.rows[rowIndex - 1][index] || '';
+}
+
+function writeCell(sheet, rowIndex, header, value) {
+  let index = sheet.rows[0].indexOf(header);
+  if (index === -1) {
+    sheet.rows[0].push(header);
+    index = sheet.rows[0].length - 1;
+  }
+  if (!sheet.rows[rowIndex - 1]) sheet.rows[rowIndex - 1] = [];
+  sheet.rows[rowIndex - 1][index] = value;
 }
 
 class MockSheet {

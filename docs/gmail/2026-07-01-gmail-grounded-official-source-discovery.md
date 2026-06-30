@@ -10,6 +10,52 @@ Official evidence enrichment cannot run when a candidate has no source reference
 
 It does not change send authority, send limits, manifest/state gates, suppression checks, history checks, or the `MailApp.sendEmail` call site.
 
+## P0.3.7 Identity Join Repair
+
+The first production diagnostic showed `replenishmentQueueCount=66` but `eligibleDiscoveryTargetCount=0`. Gemini provider configuration was valid, and no Gemini request was attempted. The failure was before API dispatch: the replenishment queue was intentionally non-identifying, while grounded search needs a public business, brand, or service identity.
+
+The repair keeps the queue non-identifying and resolves identity at runtime:
+
+1. read replenishment queue rows
+2. join to review rows by non-content identifiers
+3. join to source rows from the review row
+4. verify source digest still matches
+5. extract public business identity from source/review aliases
+6. build the search payload only for eligible rows
+
+The queue, inspector, logs, and last-run summary do not store raw business names, emails, phone numbers, URLs, prompts, or source row contents.
+
+## Runtime Join Keys
+
+Join priority:
+
+1. `sourceRowKey`
+2. `reviewId`
+3. `leadIdHash`
+4. `candidateToken`
+5. `sourceRowDigest`
+6. existing compatible unique keys if present
+
+Email address, business name, person name, and row number alone are not join keys.
+
+## Public Identity Resolver
+
+The resolver accepts existing source/review aliases for public identity:
+
+- business/company/organization/corporate/operator/account/site-title names
+- brand names
+- service names
+- Japanese company, brand, service, store, and organization headers
+
+At least one of public business name, public brand name, or public service name is required. Industry, location, and domain hint may enrich the prompt but cannot make a row eligible by themselves.
+
+Diagnostics distinguish join failures from true identity absence:
+
+- `repair_source_identity_join` when review/source joins fail
+- `refresh_review_queue` when source digests are stale
+- `replenish_with_new_candidates` only when joins succeed but public identity is genuinely absent
+- `run_source_discovery` when eligible targets exist
+
 ## Public Functions
 
 - `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`
@@ -63,8 +109,10 @@ If grounded discovery is blocked by missing provider configuration, the phase st
 3. Confirm safe rest.
 4. Confirm Gemini provider configuration.
 5. Run `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`.
-6. If eligible targets exist, run `runGmailSalesGroundedOfficialSourceDiscoveryOnce` once.
-7. Re-run the inspector.
-8. Continue to official evidence enrichment only when the next action allows it.
+6. Confirm `sourceJoinSucceededCount`, `publicBusinessIdentityPresentCount`, and `eligibleDiscoveryTargetCount`.
+7. If `recommendedNextAction=run_source_discovery`, run `runGmailSalesGroundedOfficialSourceDiscoveryOnce` once.
+8. Re-run the inspector.
+9. Continue to official evidence enrichment only when `sourceReferencesAppliedCount` is greater than zero.
+10. Continue to AI contact-basis verification only after evidence enrichment changes evidence digests.
 
 Do not run the send authority as part of this repair step.
