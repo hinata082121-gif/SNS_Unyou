@@ -26,7 +26,15 @@ const REVIEW_HEADERS = [
 const REPLENISHMENT_HEADERS = [
   'candidateToken', 'failureReasonCode', 'requiredEvidenceType', 'existingSourceType',
   'sourceReferencePresent', 'officialDomainPresent', 'eligibleForAutomatedReplenishment',
-  'queuedAt', 'status', 'reviewId', 'leadIdHash', 'sourceRowKey', 'sourceRowDigest'
+  'queuedAt', 'status', 'reviewId', 'leadIdHash', 'sourceRowKey', 'sourceRowDigest',
+  'sourceRowKeyHash', 'reviewIdHash', 'publicBusinessIdentityPresent', 'publicBusinessIdentityDigest',
+  'identityJoinStatus', 'identityJoinReasonCode', 'lastDiscoveryEligibilityCheckedAt', 'queueSchemaVersion'
+];
+
+const OLD_REPLENISHMENT_HEADERS = [
+  'candidateToken', 'failureReasonCode', 'requiredEvidenceType', 'existingSourceType',
+  'sourceReferencePresent', 'officialDomainPresent', 'eligibleForAutomatedReplenishment',
+  'queuedAt', 'status'
 ];
 
 const tests = [];
@@ -71,8 +79,8 @@ test('grounded source discovery applies verified citation sources with one Gemin
   assert.equal(readCell(env.workbook.sheets.Gmail_Contact_Basis_Review, 2, 'sourceDiscoveryStatus'), 'verified');
   const status = env.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
   assert.equal(status.sourceReferencesAppliedCount, 10);
-  assert.equal(status.sourceJoinSucceededCount, 12);
-  assert.equal(status.publicBusinessIdentityPresentCount, 12);
+  assert.equal(status.sourceJoinSucceededCount, 2);
+  assert.equal(status.publicBusinessIdentityPresentCount, 2);
   assert.equal(status.eligibleDiscoveryTargetCount, 2);
   assert.equal(status.recommendedNextAction, 'run_source_discovery');
   assert.equal(env.logs.some((line) => line.includes('Business 1')), false);
@@ -93,6 +101,79 @@ test('runtime join handles 66 non-identifying queue rows without storing busines
   const queueHeaders = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue.rows[0];
   assert.equal(queueHeaders.includes('companyName'), false);
   assert.equal(queueHeaders.includes('email'), false);
+});
+
+test('old P0.3.5 queue schema is detected as migration-required without losing physical rows', () => {
+  const env = createEnvironment({ sourceCount: 66 });
+  env.workbook.sheets.Gmail_Evidence_Replenishment_Queue.rows = [OLD_REPLENISHMENT_HEADERS];
+  seedGroundingReviewAndQueue(env, 66, { preserveHeaders: true });
+  const status = env.context.inspectGmailSalesEvidenceReplenishmentQueueStatus();
+  assert.equal(status.queueSheetPresent, true);
+  assert.equal(status.queuePhysicalDataRowCount, 66);
+  assert.equal(status.queueParsedRowCount, 66);
+  assert.equal(status.queueMigrationRequired, true);
+  assert.equal(status.recommendedNextAction, 'repair_replenishment_queue');
+  const run = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(run.queueMigrationExecuted, true);
+  assert.equal(run.queueRowsMigrated, 66);
+  assert.equal(run.queuePhysicalDataRowCountBefore, 66);
+  assert.equal(run.queuePhysicalDataRowCountAfter, 66);
+  assert.equal(run.searchQueryCount, 10);
+});
+
+test('empty queue with 66 needs-more-evidence review rows is rebuilt once and does not return AI-ready', () => {
+  const env = createEnvironment({ sourceCount: 66 });
+  seedGroundingReviewAndQueue(env, 66, { skipQueue: true });
+  const before = env.context.inspectGmailSalesEvidenceReplenishmentQueueStatus();
+  assert.equal(before.queueParsedRowCount, 0);
+  assert.equal(before.reviewNeedsMoreEvidenceCount, 66);
+  assert.equal(before.queueRebuildEligibleCount, 66);
+  assert.equal(before.recommendedNextAction, 'rebuild_replenishment_queue');
+  const run = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(run.queueRebuildExecuted, true);
+  assert.equal(run.queueRowsRebuilt, 66);
+  assert.equal(run.queueRowsUpserted, 66);
+  assert.equal(run.queueRowsDeduplicated, 0);
+  assert.equal(run.queuePhysicalDataRowCountBefore, 0);
+  assert.equal(run.queuePhysicalDataRowCountAfter, 66);
+  assert.notEqual(run.recommendedNextAction, 'ready_for_ai_verification');
+  assert.equal(run.searchQueryCount, 10);
+  const second = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(second.queueRowsUpserted, 0);
+  assert.equal(second.queueRowsDeduplicated >= 0, true);
+});
+
+test('queue status normalization excludes terminal and unknown rows safely', () => {
+  const env = createEnvironment({ sourceCount: 8 });
+  seedGroundingReviewAndQueue(env, 8);
+  const queue = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue;
+  ['', 'queued', 'evidence_missing', 'source_missing', 'needs_source', 'completed', 'applied', 'mystery'].forEach((status, index) => {
+    writeCell(queue, 2 + index, 'status', status);
+  });
+  const status = env.context.inspectGmailSalesEvidenceReplenishmentQueueStatus();
+  assert.equal(status.queueEligibleStatusCount, 5);
+  assert.equal(status.queueIneligibleStatusCount, 3);
+  assert.equal(status.queueStatusCounts.source_discovery_pending, 5);
+  assert.equal(status.queueStatusCounts.completed, 1);
+  assert.equal(status.queueStatusCounts.applied, 1);
+  assert.equal(status.queueStatusCounts.unknown, 1);
+});
+
+test('queue sheet resolver handles alias and normalized names but rejects unrelated sheets', () => {
+  const env = createEnvironment({ sourceCount: 1 });
+  seedGroundingReviewAndQueue(env, 1);
+  const original = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue;
+  delete env.workbook.sheets.Gmail_Evidence_Replenishment_Queue;
+  original.name = ' Gmail Evidence Replenishment Queue ';
+  env.workbook.sheets[original.name] = original;
+  const status = env.context.inspectGmailSalesEvidenceReplenishmentQueueStatus();
+  assert.equal(status.queueSheetPresent, true);
+  assert.equal(status.queueParsedRowCount, 1);
+  env.workbook.sheets.Unrelated = new MockSheet('gmail_evidence_replenishment_queue_copy', [['foo', 'bar'], ['x', 'y']]);
+  env.workbook.sheets.Unrelated.env = env;
+  const run = env.context.inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
+  assert.equal(run.queueSheetPresent, true);
+  assert.equal(run.queueParsedRowCount, 1);
 });
 
 test('source join supports reviewId leadIdHash sourceRowKey and sourceRowDigest fallbacks', () => {
@@ -232,7 +313,7 @@ test('production AI verification phase runs grounded discovery before enrichment
   let order = [];
   env.context.refreshGmailSalesContactBasisReviewQueueOnce = () => { order.push('refresh'); return { status: 'pass' }; };
   env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce = () => { order.push('grounding'); return { status: 'pass', sourceReferencesAppliedCount: 1, candidatesAttemptedCount: 1 }; };
-  env.context.runGmailSalesOfficialEvidenceEnrichmentOnce = () => { order.push('enrichment'); return { status: 'pass' }; };
+  env.context.runGmailSalesOfficialEvidenceEnrichmentOnce = () => { order.push('enrichment'); return { status: 'pass', evidenceDigestChangedCount: 1, aiReevaluationEligibleCount: 1 }; };
   env.context.runGmailSalesAiContactBasisVerificationOnce = () => { order.push('verification'); return { status: 'pass' }; };
   env.context.runGmailSalesAiVerificationPhase_();
   assert.deepEqual(order, ['refresh', 'grounding', 'enrichment', 'verification']);
@@ -248,6 +329,18 @@ test('production AI verification phase stops when source discovery has no target
   const result = env.context.runGmailSalesAiVerificationPhase_();
   assert.deepEqual(order, ['refresh', 'grounding']);
   assert.equal(result.sourceReferencesAppliedCount, 0);
+});
+
+test('production AI verification phase stops when enrichment has no evidence changes', () => {
+  const env = createEnvironment({ sourceCount: 1 });
+  let order = [];
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce = () => { order.push('refresh'); return { status: 'pass' }; };
+  env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce = () => { order.push('grounding'); return { status: 'pass', sourceReferencesAppliedCount: 1 }; };
+  env.context.runGmailSalesOfficialEvidenceEnrichmentOnce = () => { order.push('enrichment'); return { status: 'pass', evidenceDigestChangedCount: 0, aiReevaluationEligibleCount: 0 }; };
+  env.context.runGmailSalesAiContactBasisVerificationOnce = () => { order.push('verification'); return { status: 'pass' }; };
+  const result = env.context.runGmailSalesAiVerificationPhase_();
+  assert.deepEqual(order, ['refresh', 'grounding', 'enrichment']);
+  assert.equal(result.evidenceDigestChangedCount, 0);
 });
 
 function createEnvironment(options = {}) {
@@ -303,10 +396,11 @@ function createEnvironment(options = {}) {
   return env;
 }
 
-function seedGroundingReviewAndQueue(env, count) {
+function seedGroundingReviewAndQueue(env, count, options = {}) {
   const sourceSheet = env.workbook.sheets['Gmail営業候補プール'];
   const reviewSheet = env.workbook.sheets.Gmail_Contact_Basis_Review;
   const queueSheet = env.workbook.sheets.Gmail_Evidence_Replenishment_Queue;
+  const queueHeaders = options.preserveHeaders ? queueSheet.rows[0] : REPLENISHMENT_HEADERS;
   for (let rowIndex = 2; rowIndex < 2 + count; rowIndex += 1) {
     const sourceRow = rowFromSheet(sourceSheet, rowIndex);
     const queue = env.context.buildContactBasisReviewQueueRow_({ row: sourceRow, rowIndex }, '2026-07-01T00:00:00.000Z');
@@ -318,8 +412,9 @@ function seedGroundingReviewAndQueue(env, count) {
       evidenceNotes: 'needs official source'
     });
     reviewSheet.rows.push(REVIEW_HEADERS.map((header) => reviewRow[header] || ''));
+    if (options.skipQueue) continue;
     const token = env.context.buildGroundingCandidateToken_(reviewRow);
-    queueSheet.rows.push(REPLENISHMENT_HEADERS.map((header) => ({
+    queueSheet.rows.push(queueHeaders.map((header) => ({
       candidateToken: token,
       failureReasonCode: 'no_source_reference',
       requiredEvidenceType: 'official_source_reference',
@@ -328,7 +423,16 @@ function seedGroundingReviewAndQueue(env, count) {
       officialDomainPresent: 'false',
       eligibleForAutomatedReplenishment: 'true',
       queuedAt: '2026-07-01T00:00:00.000Z',
-      status: 'queued'
+      status: 'queued',
+      sourceRowKeyHash: env.context.hashValue_(String(reviewRow.sourceRowKey || '')),
+      reviewIdHash: env.context.hashValue_(String(reviewRow.reviewId || '')),
+      sourceRowDigest: reviewRow.sourceRowDigest,
+      publicBusinessIdentityPresent: true,
+      publicBusinessIdentityDigest: 'digest',
+      identityJoinStatus: 'queued',
+      identityJoinReasonCode: 'no_source_reference',
+      lastDiscoveryEligibilityCheckedAt: '',
+      queueSchemaVersion: 'evidence-replenishment-v2'
     }[header] || '')));
   }
 }

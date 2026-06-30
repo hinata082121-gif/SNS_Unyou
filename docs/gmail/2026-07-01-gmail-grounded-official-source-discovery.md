@@ -56,6 +56,19 @@ Diagnostics distinguish join failures from true identity absence:
 - `replenish_with_new_candidates` only when joins succeed but public identity is genuinely absent
 - `run_source_discovery` when eligible targets exist
 
+## P0.3.8 Queue Repair
+
+Grounded discovery now repairs the evidence replenishment queue before attempting Gemini search:
+
+- resolves canonical and legacy queue sheet names
+- distinguishes physical queue rows from eligible discovery rows
+- migrates old P0.3.5 headers without deleting rows
+- normalizes legacy pending statuses
+- rebuilds the queue from Review and Source when the queue is empty but Review still has `needs_more_evidence` rows
+- deduplicates rebuilt rows by non-identifying stable keys
+
+If no source reference has been applied and no evidence digest changed, `ready_for_ai_verification` is not returned.
+
 ## Public Functions
 
 - `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`
@@ -109,10 +122,11 @@ If grounded discovery is blocked by missing provider configuration, the phase st
 3. Confirm safe rest.
 4. Confirm Gemini provider configuration.
 5. Run `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`.
-6. Confirm `sourceJoinSucceededCount`, `publicBusinessIdentityPresentCount`, and `eligibleDiscoveryTargetCount`.
-7. If `recommendedNextAction=run_source_discovery`, run `runGmailSalesGroundedOfficialSourceDiscoveryOnce` once.
-8. Re-run the inspector.
-9. Continue to official evidence enrichment only when `sourceReferencesAppliedCount` is greater than zero.
-10. Continue to AI contact-basis verification only after evidence enrichment changes evidence digests.
+6. Run `inspectGmailSalesEvidenceReplenishmentQueueStatus` if queue count, schema, or rebuild state is unclear.
+7. Confirm `sourceJoinSucceededCount`, `publicBusinessIdentityPresentCount`, and `eligibleDiscoveryTargetCount`.
+8. If `recommendedNextAction=run_source_discovery` or `rebuild_replenishment_queue`, run `runGmailSalesGroundedOfficialSourceDiscoveryOnce` once.
+9. Re-run the inspector.
+10. Continue to official evidence enrichment only when `sourceReferencesAppliedCount` is greater than zero.
+11. Continue to AI contact-basis verification only after evidence enrichment changes evidence digests.
 
 Do not run the send authority as part of this repair step.

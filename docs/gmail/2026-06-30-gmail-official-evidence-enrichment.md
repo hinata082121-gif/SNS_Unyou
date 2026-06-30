@@ -123,6 +123,8 @@ That discovery step uses Gemini Google Search grounding, accepts only citation-d
 
 After grounded discovery applies new source references, run this enrichment function to fetch the newly verified official pages and rebuild evidence packages for AI verification.
 
+If the replenishment queue is missing or reads as empty while Review still has `needs_more_evidence` rows, use `inspectGmailSalesEvidenceReplenishmentQueueStatus` first. Grounded discovery can migrate or rebuild the non-identifying queue automatically; do not ask the user to re-enter the 66 rows manually.
+
 ## Production Steps
 
 1. Replace Apps Script `Code.gs` with the latest local version.
@@ -130,12 +132,13 @@ After grounded discovery applies new source references, run this enrichment func
 3. Run `setGmailSalesSafeRestPropertiesOnce`.
 4. Run `inspectGmailSalesAiProviderConfiguration`.
 5. Confirm `configurationValid=true`.
-6. Run `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`.
-7. If eligible source-missing targets exist, run `runGmailSalesGroundedOfficialSourceDiscoveryOnce` once.
-8. Run `runGmailSalesOfficialEvidenceEnrichmentOnce` once.
-9. Run `inspectGmailSalesAiContactBasisStatus`.
-10. Confirm `evidenceDigestChangedCount` and `aiReevaluationEligibleCount`.
-11. Run `runGmailSalesAiContactBasisVerificationOnce` once.
-12. Run the contact-basis status, review queue, coverage, and deployment readiness inspectors.
+6. Run `inspectGmailSalesEvidenceReplenishmentQueueStatus`.
+7. Run `inspectGmailSalesGroundedOfficialSourceDiscoveryStatus`.
+8. If eligible source-missing targets exist or queue rebuild is required, run `runGmailSalesGroundedOfficialSourceDiscoveryOnce` once.
+9. Run `runGmailSalesOfficialEvidenceEnrichmentOnce` once only if source references were applied.
+10. Run `inspectGmailSalesAiContactBasisStatus`.
+11. Confirm `evidenceDigestChangedCount` and `aiReevaluationEligibleCount`.
+12. Run `runGmailSalesAiContactBasisVerificationOnce` once only if evidence changed.
+13. Run the contact-basis status, review queue, coverage, and deployment readiness inspectors.
 
 Do not directly run the send authority during this repair.
