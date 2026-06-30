@@ -102,3 +102,96 @@ Manual bulk approvals with identical approval metadata are still blocked. AI-app
 10. Let `runGmailSalesProductionControlLoop` handle the normal next phase.
 
 Do not manually execute Gmail send functions as part of this setup.
+
+## P0.3.1 Review Schema Repair
+
+The production failure on 2026-06-30 was caused by a data validation rule being present on the header row of `Gmail_Contact_Basis_Review`.
+
+Failing cell:
+
+- `Q1`
+
+Failing column:
+
+- `approvedBasisType`
+
+The dropdown on `Q2` and below is normal. The header cell `Q1` must contain the literal header `approvedBasisType`, so row 1 must not have a data validation rule. The same rule applies to the other review dropdown columns:
+
+- `P1` must be `reviewDecision` with no validation.
+- `Q1` must be `approvedBasisType` with no validation.
+- `S1` must be `optOutAvailable` with no validation.
+- `applyStatus` header cell must have no validation.
+- `P2` and below keep the review-decision dropdown.
+- `Q2` and below keep the approved-basis dropdown.
+- `S2` and below keep the `TRUE/FALSE` dropdown.
+- `applyStatus` data rows keep the apply-status dropdown.
+
+`ensureSheetHeaders_` now clears data validations only from row 1 before writing headers. It does not clear contents, formats, filters, frozen rows, data-row validations, or source candidates.
+
+## Suspicious Bulk Approval Recovery
+
+The review sheet may contain rows left by a previous manual bulk operation:
+
+- `reviewDecision=approved`
+- `approvedBasisType=existing_relationship`
+- `optOutAvailable=TRUE`
+- `reviewerLabel=operator_reviewed`
+- `applyStatus=skipped_invalid`
+- `applyErrorCode=suspicious_bulk_approval_pattern`
+- `appliedAt` empty
+
+`installGmailSalesAiVerificationConfigurationOnce` now repairs only rows that match the suspicious-bulk state and are still unapplied in the source sheet. Those rows are reset to AI-eligible pending state without requiring humans to edit every row manually.
+
+Reset fields:
+
+- `reviewDecision=pending`
+- `approvedBasisType` blank
+- `evidenceNotes` blank
+- `optOutAvailable` blank
+- `reviewerLabel` blank
+- `reviewedAt` blank
+- `applyStatus=pending`
+- `applyErrorCode` blank
+- `appliedAt` blank
+
+Preserved fields include the review id, source row key, lead id hash, source digest, source references, evidence fields, suggestion fields, priority, and queue timestamp.
+
+Protected rows are not reset:
+
+- `applyStatus=applied`
+- `applyStatus=applied_ai`
+- `reviewDecision=rejected`
+- valid `needs_more_evidence`
+- `aiAutoApproved=true`
+- rows with a unique AI evidence digest
+- source digest mismatches
+- missing source rows
+- rows already reflected into source contact-basis fields
+
+Before resetting rows, the installer creates an internal backup sheet with reset metadata. If read-back validation fails, the installer rolls the review rows back and blocks AI verification.
+
+## Inspector Sequence
+
+After deploying this repair:
+
+1. Run `setGmailSalesSafeRestPropertiesOnce`.
+2. Run `installGmailSalesAiVerificationConfigurationOnce`.
+3. Confirm `status=pass`.
+4. Confirm `headerValidationCountAfterRepair=0`.
+5. Confirm `suspiciousBulkRowsReset` matches the suspicious unapplied rows.
+6. Confirm `aiEligibleRowsAfterReset` is greater than zero.
+7. Run `inspectGmailSalesContactBasisReviewSchema`.
+8. Confirm `schemaValid=true`.
+9. Confirm `headerValidationCount=0`.
+10. Confirm `dataRowValidationConfigured=true`.
+11. Run `inspectGmailSalesAiContactBasisStatus`.
+12. Confirm `reviewHeaderValid=true`.
+13. Confirm `aiConfigurationInstalled=true`.
+14. Configure the provider, model, and API key manually in Script Properties.
+15. Set `GMAIL_SALES_AI_ENABLED=true`.
+16. Run `inspectGmailSalesAiContactBasisStatus` again.
+17. Confirm AI enabled/provider/model/API key presence.
+18. Run `runGmailSalesAiContactBasisVerificationOnce` once.
+19. Run the coverage and deployment readiness inspectors.
+
+Do not ask operators to manually edit the affected rows. Do not directly run send authority functions during this repair.

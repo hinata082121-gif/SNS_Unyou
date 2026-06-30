@@ -98,6 +98,25 @@ test('configuration installer writes only safe defaults and AI audit headers', (
   assert.equal(env.draftCreateCount, 0);
 });
 
+test('configuration installer repairs header row validation and keeps data row dropdowns', () => {
+  const env = createEnvironment({ sourceCount: 68, reviewSheet: true, corruptHeaderValidation: true });
+  const result = env.context.installGmailSalesAiVerificationConfigurationOnce();
+  const reviewSheet = env.workbook.sheets.Gmail_Contact_Basis_Review;
+  assert.equal(result.status, 'pass');
+  assert.equal(result.headerValidationRepairRequired, true);
+  assert.equal(result.headerValidationCountAfterRepair, 0);
+  assert.equal(result.dataRowValidationApplied, true);
+  assert.equal(countHeaderValidations(reviewSheet), 0);
+  assert.equal(hasValidation(reviewSheet, 2, 'reviewDecision'), true);
+  assert.equal(hasValidation(reviewSheet, 2, 'approvedBasisType'), true);
+  assert.equal(hasValidation(reviewSheet, 2, 'optOutAvailable'), true);
+  assert.equal(hasValidation(reviewSheet, 2, 'applyStatus'), true);
+  assert.doesNotThrow(() => writeCell(reviewSheet, 2, 'approvedBasisType', 'existing_relationship'));
+  assert.throws(() => writeCell(reviewSheet, 2, 'approvedBasisType', 'invalid_basis'));
+  assert.doesNotThrow(() => writeCell(reviewSheet, 2, 'optOutAvailable', 'TRUE'));
+  assert.throws(() => writeCell(reviewSheet, 2, 'optOutAvailable', 'YES'));
+});
+
 test('status inspector remains read only', () => {
   const env = createEnvironment({ sourceCount: 68, reviewSheet: true });
   env.context.installGmailSalesAiVerificationConfigurationOnce();
@@ -107,6 +126,20 @@ test('status inspector remains read only', () => {
   assert.equal(status.sourceCandidateCount, 68);
   assert.equal(status.gmailSendExecuted, false);
   assert.equal(env.sheetWriteCount + env.propertyWriteCount + env.triggerWriteCount, beforeWrites);
+});
+
+test('review schema inspector reports header and data validation health', () => {
+  const env = createEnvironment({ sourceCount: 3, reviewSheet: true, corruptHeaderValidation: true });
+  env.context.installGmailSalesAiVerificationConfigurationOnce();
+  const result = env.context.inspectGmailSalesContactBasisReviewSchema();
+  assert.equal(result.schemaValid, true);
+  assert.equal(result.headerValidationCount, 0);
+  assert.equal(result.dataRowValidationConfigured, true);
+  assert.equal(result.reviewDecisionHeaderValid, true);
+  assert.equal(result.approvedBasisHeaderValid, true);
+  assert.equal(result.optOutHeaderValid, true);
+  assert.equal(result.applyStatusHeaderValid, true);
+  assert.equal(env.logs.some((line) => line.includes('gmail_sales_contact_basis_review_schema')), true);
 });
 
 test('AI disabled blocks verification without writes', () => {
@@ -149,6 +182,81 @@ test('mock provider can approve business contact exception with unique evidence 
   assert.equal(result.uniqueEvidenceDigestCount, 30);
   assert.equal(readSource(env, 2, 'contactBasisType'), 'valid_business_contact_exception');
   assert.equal(readSource(env, 2, 'aiAutoApproved'), 'true');
+});
+
+test('installer resets suspicious bulk skipped rows back to AI eligible pending', () => {
+  const env = suspiciousBulkEnvironment(68);
+  const before = snapshotReviewRow(env, 2);
+  const result = env.context.installGmailSalesAiVerificationConfigurationOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.suspiciousBulkRowsDetected, 68);
+  assert.equal(result.suspiciousBulkRowsReset, 68);
+  assert.equal(result.backupCreated, true);
+  assert.equal(result.rollbackExecuted, false);
+  assert.equal(result.aiEligibleRowsAfterReset, 68);
+  assert.equal(readReview(env, 2, 'reviewDecision'), 'pending');
+  assert.equal(readReview(env, 2, 'approvedBasisType'), '');
+  assert.equal(readReview(env, 2, 'evidenceNotes'), '');
+  assert.equal(readReview(env, 2, 'reviewerLabel'), '');
+  assert.equal(readReview(env, 2, 'reviewedAt'), '');
+  assert.equal(readReview(env, 2, 'applyStatus'), 'pending');
+  assert.equal(readReview(env, 2, 'applyErrorCode'), '');
+  assert.equal(readReview(env, 2, 'appliedAt'), '');
+  assert.equal(readReview(env, 2, 'reviewId'), before.reviewId);
+  assert.equal(readReview(env, 2, 'sourceRowKey'), before.sourceRowKey);
+  assert.equal(readReview(env, 2, 'leadIdHash'), before.leadIdHash);
+  assert.equal(readReview(env, 2, 'sourceRowDigest'), before.sourceRowDigest);
+  assert.equal(readReview(env, 2, 'priorityRank'), before.priorityRank);
+  assert.equal(readSource(env, 2, 'contactBasisType'), '');
+});
+
+test('suspicious bulk reset protects applied ai rejected stale and source-applied rows', () => {
+  const env = suspiciousBulkEnvironment(8);
+  writeReview(env, 2, 'applyStatus', 'applied');
+  writeReview(env, 3, 'applyStatus', 'applied_ai');
+  writeReview(env, 3, 'reviewDecision', 'approved_ai');
+  writeReview(env, 3, 'aiAutoApproved', 'true');
+  writeReview(env, 4, 'reviewDecision', 'rejected');
+  writeReview(env, 5, 'reviewDecision', 'needs_more_evidence');
+  writeReview(env, 6, 'sourceRowDigest', 'stale-digest');
+  markSourceForReviewRowAsApplied(env, 7);
+  const result = env.context.installGmailSalesAiVerificationConfigurationOnce();
+  assert.equal(result.suspiciousBulkRowsReset, 2);
+  assert.equal(result.suspiciousBulkRowsStale, 1);
+  assert.equal(readReview(env, 2, 'applyStatus'), 'applied');
+  assert.equal(readReview(env, 3, 'applyStatus'), 'applied_ai');
+  assert.equal(readReview(env, 4, 'reviewDecision'), 'rejected');
+  assert.equal(readReview(env, 5, 'reviewDecision'), 'needs_more_evidence');
+  assert.equal(readReview(env, 6, 'sourceRowDigest'), 'stale-digest');
+  assert.equal(readReview(env, 7, 'applyStatus'), 'skipped_invalid');
+  assert.equal(readReview(env, 8, 'reviewDecision'), 'pending');
+  assert.equal(readReview(env, 9, 'reviewDecision'), 'pending');
+});
+
+test('installer is idempotent and does not overwrite AI secrets', () => {
+  const env = suspiciousBulkEnvironment(5);
+  env.props.GMAIL_SALES_AI_API_KEY = 'mock-redacted-token';
+  const first = env.context.installGmailSalesAiVerificationConfigurationOnce();
+  const sheetCount = Object.keys(env.workbook.sheets).length;
+  const headers = env.workbook.sheets.Gmail_Contact_Basis_Review.rows[0].slice();
+  const second = env.context.installGmailSalesAiVerificationConfigurationOnce();
+  assert.equal(first.suspiciousBulkRowsReset, 5);
+  assert.equal(second.suspiciousBulkRowsReset, 0);
+  assert.equal(second.aiColumnsAddedCount, 0);
+  assert.equal(Object.keys(env.workbook.sheets).length, sheetCount);
+  assert.deepEqual(env.workbook.sheets.Gmail_Contact_Basis_Review.rows[0], headers);
+  assert.equal(env.props.GMAIL_SALES_AI_API_KEY, 'mock-redacted-token');
+});
+
+test('suspicious bulk reset rolls back when read back fails', () => {
+  const env = suspiciousBulkEnvironment(3);
+  env.corruptReviewResetOnce = true;
+  const result = env.context.installGmailSalesAiVerificationConfigurationOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.rollbackExecuted, true);
+  assert.equal(readReview(env, 2, 'reviewDecision'), 'approved');
+  assert.equal(readReview(env, 2, 'applyStatus'), 'skipped_invalid');
+  assert.equal(readReview(env, 2, 'applyErrorCode'), 'suspicious_bulk_approval_pattern');
 });
 
 test('mock provider does not auto approve unless explicitly enabled', () => {
@@ -285,6 +393,17 @@ function createEnvironment(options = {}) {
     corruptBasisWriteOnce: false
   };
   Object.values(sheets).forEach((sheet) => { sheet.env = env; });
+  if (options.corruptHeaderValidation && sheets.Gmail_Contact_Basis_Review) {
+    const sheet = sheets.Gmail_Contact_Basis_Review;
+    const basisRule = { values: ['existing_relationship', 'explicit_opt_in', 'valid_business_contact_exception', 'manual_legal_reviewed'] };
+    const decisionRule = { values: ['pending', 'approved', 'approved_ai', 'rejected', 'needs_more_evidence'] };
+    const booleanRule = { values: ['TRUE', 'FALSE'] };
+    const statusRule = { values: ['pending', 'applied', 'applied_ai', 'skipped_invalid', 'skipped_stale_source', 'rejected', 'needs_more_evidence', 'rollback', 'error'] };
+    setValidation(sheet, 1, 'reviewDecision', decisionRule);
+    setValidation(sheet, 1, 'approvedBasisType', basisRule);
+    setValidation(sheet, 1, 'optOutAvailable', booleanRule);
+    setValidation(sheet, 1, 'applyStatus', statusRule);
+  }
   env.context = buildContext(env);
   vm.createContext(env.context);
   vm.runInContext(code, env.context, { filename: 'Code.gs' });
@@ -341,9 +460,12 @@ function buildContext(env) {
       openById: () => env.workbook,
       flush: () => {},
       newDataValidation: () => ({
-        requireValueInList() { return this; },
+        requireValueInList(values) {
+          this.values = values;
+          return this;
+        },
         setAllowInvalid() { return this; },
-        build() { return {}; }
+        build() { return { values: (this.values || []).map(String) }; }
       })
     },
     ScriptApp: {
@@ -408,6 +530,34 @@ function setSource(env, rowIndex, values) {
   Object.keys(values).forEach((key) => writeSource(env, rowIndex, key, values[key]));
 }
 
+function suspiciousBulkEnvironment(count) {
+  const env = createEnvironment({ sourceCount: count, reviewSheet: false });
+  env.context.installGmailSalesContactBasisReviewWorkflowOnce();
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  for (let index = 2; index < 2 + count; index += 1) {
+    writeReview(env, index, 'reviewDecision', 'approved');
+    writeReview(env, index, 'approvedBasisType', 'existing_relationship');
+    writeReview(env, index, 'evidenceNotes', 'same manual pattern');
+    writeReview(env, index, 'optOutAvailable', 'TRUE');
+    writeReview(env, index, 'reviewerLabel', 'operator_reviewed');
+    writeReview(env, index, 'reviewedAt', '2026-06-30T00:00:00.000Z');
+    writeReview(env, index, 'applyStatus', 'skipped_invalid');
+    writeReview(env, index, 'applyErrorCode', 'suspicious_bulk_approval_pattern');
+    writeReview(env, index, 'appliedAt', '');
+  }
+  return env;
+}
+
+function snapshotReviewRow(env, rowIndex) {
+  return {
+    reviewId: readReview(env, rowIndex, 'reviewId'),
+    sourceRowKey: readReview(env, rowIndex, 'sourceRowKey'),
+    leadIdHash: readReview(env, rowIndex, 'leadIdHash'),
+    sourceRowDigest: readReview(env, rowIndex, 'sourceRowDigest'),
+    priorityRank: readReview(env, rowIndex, 'priorityRank')
+  };
+}
+
 function rowFromSource(env, rowIndex) {
   const sheet = env.workbook.sheets['Gmail営業候補プール'];
   return Object.fromEntries(sheet.rows[0].map((header, index) => [header, sheet.rows[rowIndex - 1][index] || '']));
@@ -421,6 +571,32 @@ function writeSource(env, rowIndex, header, value) {
   writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, header, value);
 }
 
+function readReview(env, rowIndex, header) {
+  return readCell(env.workbook.sheets.Gmail_Contact_Basis_Review, rowIndex, header);
+}
+
+function writeReview(env, rowIndex, header, value) {
+  writeCell(env.workbook.sheets.Gmail_Contact_Basis_Review, rowIndex, header, value);
+}
+
+function markSourceForReviewRowAsApplied(env, reviewRowIndex) {
+  const sourceRowKey = readReview(env, reviewRowIndex, 'sourceRowKey');
+  for (let rowIndex = 2; rowIndex <= env.workbook.sheets['Gmail営業候補プール'].getLastRow(); rowIndex += 1) {
+    const row = rowFromSource(env, rowIndex);
+    if (env.context.buildGmailSalesContactSourceRowKey_(row, rowIndex) === sourceRowKey) {
+      writeSource(env, rowIndex, 'contactBasisType', 'existing_relationship');
+      writeSource(env, rowIndex, 'contactBasisRecordedAt', '2026-06-30T00:00:00.000Z');
+      writeSource(env, rowIndex, 'sourceReferenceHash', 'hash');
+      writeSource(env, rowIndex, 'optOutAvailable', 'true');
+      writeSource(env, rowIndex, 'lastVerifiedAt', '2026-06-30T00:00:00.000Z');
+      writeSource(env, rowIndex, 'suppressionCheckedAt', '2026-06-30T00:00:00.000Z');
+      writeSource(env, rowIndex, 'historyCheckedAt', '2026-06-30T00:00:00.000Z');
+      return;
+    }
+  }
+  throw new Error('source row not found for review row');
+}
+
 function readCell(sheet, rowIndex, header) {
   const index = sheet.rows[0].indexOf(header);
   return index === -1 ? '' : sheet.rows[rowIndex - 1][index] || '';
@@ -430,6 +606,7 @@ function writeCell(sheet, rowIndex, header, value) {
   const index = sheet.rows[0].indexOf(header);
   if (index === -1) throw new Error(`missing header ${header}`);
   if (!sheet.rows[rowIndex - 1]) sheet.rows[rowIndex - 1] = [];
+  validateCellValue(sheet, rowIndex, index + 1, value);
   sheet.rows[rowIndex - 1][index] = value;
 }
 
@@ -437,14 +614,39 @@ function headerIncludes(sheet, headers) {
   return headers.every((header) => sheet.rows[0].includes(header));
 }
 
+function setValidation(sheet, rowIndex, header, rule) {
+  const index = sheet.rows[0].indexOf(header);
+  if (index === -1) throw new Error(`missing header ${header}`);
+  sheet.validations[`${rowIndex}:${index + 1}`] = rule;
+}
+
+function hasValidation(sheet, rowIndex, header) {
+  const index = sheet.rows[0].indexOf(header);
+  return Boolean(sheet.validations[`${rowIndex}:${index + 1}`]);
+}
+
+function countHeaderValidations(sheet) {
+  return Object.keys(sheet.validations).filter((key) => key.startsWith('1:')).length;
+}
+
+function validateCellValue(sheet, rowIndex, columnIndex, value) {
+  const rule = sheet.validations[`${rowIndex}:${columnIndex}`];
+  if (!rule || value === '') return;
+  if (rule.values && rule.values.indexOf(String(value)) === -1) {
+    throw new Error(`validation rejected ${value}`);
+  }
+}
+
 class MockSheet {
   constructor(name, rows) {
     this.name = name;
     this.rows = rows.map((row) => row.slice());
+    this.validations = {};
   }
   getName() { return this.name; }
   getLastRow() { return this.rows.length; }
   getLastColumn() { return this.rows.reduce((max, row) => Math.max(max, row.length), 0); }
+  getMaxRows() { return Math.max(this.rows.length, 200); }
   getDataRange() { return new MockRange(this, 1, 1, this.getLastRow(), this.getLastColumn()); }
   getRange(row, column, numRows = 1, numColumns = 1) { return new MockRange(this, row, column, numRows, numColumns); }
   setFrozenRows() {}
@@ -488,9 +690,31 @@ class MockRange {
       this.sheet.rows[rowIndex][columnIndex] = 'corrupted';
       return;
     }
+    if (this.sheet.env?.corruptReviewResetOnce && this.sheet.name === 'Gmail_Contact_Basis_Review' && header === 'reviewDecision' && value === 'pending') {
+      this.sheet.env.corruptReviewResetOnce = false;
+      this.sheet.rows[rowIndex][columnIndex] = 'approved';
+      return;
+    }
+    validateCellValue(this.sheet, rowIndex + 1, columnIndex + 1, value);
     this.sheet.rows[rowIndex][columnIndex] = value;
   }
-  setDataValidation() {}
+  setDataValidation(rule) {
+    if (this.sheet.env) this.sheet.env.sheetWriteCount += 1;
+    for (let r = 0; r < this.numRows; r += 1) {
+      for (let c = 0; c < this.numColumns; c += 1) {
+        const key = `${this.row + r}:${this.column + c}`;
+        if (rule) this.sheet.validations[key] = rule;
+        else delete this.sheet.validations[key];
+      }
+    }
+  }
+  clearDataValidations() {
+    if (this.sheet.env) this.sheet.env.sheetWriteCount += 1;
+    this.setDataValidation(null);
+  }
+  getDataValidations() {
+    return Array.from({ length: this.numRows }, (_, r) => Array.from({ length: this.numColumns }, (_, c) => this.sheet.validations[`${this.row + r}:${this.column + c}`] || null));
+  }
   createFilter() {}
 }
 
@@ -506,7 +730,7 @@ for (const [name, fn] of tests) {
 console.log(JSON.stringify({
   aiContactBasisTestPassed: true,
   scenarioCount: tests.length,
-  coveredRequirementCount: 46,
+  coveredRequirementCount: 63,
   mockSourceCandidateCount: 68,
   deterministicApprovedCount: 2,
   aiEvaluatedCount: 30,

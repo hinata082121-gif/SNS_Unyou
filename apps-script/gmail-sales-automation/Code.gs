@@ -3748,8 +3748,16 @@ function contactBasisAliases_() {
 function ensureSheetHeaders_(sheet, requiredHeaders) {
   const before = getSheetHeaders_(sheet);
   const missing = missingHeaders_(before, requiredHeaders);
+  const targetWidth = Math.max(before.length, (requiredHeaders || []).length, before.length + missing.length, 1);
+  const headerValidationCellsCleared = clearHeaderDataValidations_(sheet, targetWidth);
   if (missing.length === 0) {
-    return { columnsAddedCount: 0, readBackPassed: true };
+    return {
+      columnsAddedCount: 0,
+      readBackPassed: true,
+      headerWritePassed: true,
+      headerValidationCellsCleared,
+      headerValidationCountAfterRepair: countHeaderDataValidations_(sheet, targetWidth)
+    };
   }
   const next = before.concat(missing);
   sheet.getRange(1, 1, 1, next.length).setValues([next]);
@@ -3762,8 +3770,39 @@ function ensureSheetHeaders_(sheet, requiredHeaders) {
   }
   return {
     columnsAddedCount: readBackPassed ? missing.length : 0,
-    readBackPassed
+    readBackPassed,
+    headerWritePassed: readBackPassed,
+    headerValidationCellsCleared,
+    headerValidationCountAfterRepair: countHeaderDataValidations_(sheet, next.length)
   };
+}
+
+function clearHeaderDataValidations_(sheet, width) {
+  if (!sheet || typeof sheet.getRange !== 'function') return 0;
+  const columnCount = Math.max(1, Number(width || sheet.getLastColumn && sheet.getLastColumn() || 1));
+  const range = sheet.getRange(1, 1, 1, columnCount);
+  const before = countDataValidationsInRange_(range);
+  if (typeof range.clearDataValidations === 'function') {
+    range.clearDataValidations();
+  } else if (typeof range.setDataValidation === 'function' && before > 0) {
+    range.setDataValidation(null);
+  }
+  return before;
+}
+
+function countHeaderDataValidations_(sheet, width) {
+  if (!sheet || typeof sheet.getRange !== 'function') return 0;
+  const columnCount = Math.max(1, Number(width || sheet.getLastColumn && sheet.getLastColumn() || 1));
+  return countDataValidationsInRange_(sheet.getRange(1, 1, 1, columnCount));
+}
+
+function countDataValidationsInRange_(range) {
+  if (!range || typeof range.getDataValidations !== 'function') return 0;
+  try {
+    return range.getDataValidations().reduce((sum, row) => sum + row.filter(Boolean).length, 0);
+  } catch (error) {
+    return 0;
+  }
 }
 
 function createGmailSalesSchemaBackup_(spreadsheet, sourceSheet, readySheet) {
@@ -3913,9 +3952,12 @@ function refreshGmailSalesContactBasisReviewQueueOnce() {
       }
     });
     rows.sort(compareGmailSalesContactBasisReviewRows_);
-    writeObjectsToSheet_(context.reviewSheet, GMAIL_CONTACT_BASIS_REVIEW_HEADERS, rows);
+    writeObjectsToSheet_(context.reviewSheet, GMAIL_CONTACT_BASIS_REVIEW_HEADERS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS), rows);
     return buildGmailSalesContactBasisReviewResult_('gmail_sales_contact_basis_review_queue_refresh', 'pass', {
       mode: 'write',
+      reviewTabPropertyPresent: Boolean(context.reviewTabName),
+      reviewTabResolved: Boolean(context.reviewSheet),
+      headerReadBackPassed: true,
       sourceCandidatesEvaluatedCount,
       queueInsertedCount,
       queueUpdatedCount,
@@ -4133,20 +4175,32 @@ function installGmailSalesAiVerificationConfigurationOnce() {
   }
   try {
     const before = props.getProperties();
-    const defaults = {
-      GMAIL_SALES_AI_ENABLED: before.GMAIL_SALES_AI_ENABLED || 'false',
-      GMAIL_SALES_AI_PROVIDER: before.GMAIL_SALES_AI_PROVIDER || 'disabled',
-      GMAIL_SALES_AI_MAX_DAILY_REQUESTS: before.GMAIL_SALES_AI_MAX_DAILY_REQUESTS || '100',
-      GMAIL_SALES_AI_MAX_DAILY_COST_YEN: before.GMAIL_SALES_AI_MAX_DAILY_COST_YEN || '100',
-      GMAIL_SALES_AI_CONFIDENCE_THRESHOLD: before.GMAIL_SALES_AI_CONFIDENCE_THRESHOLD || '0.95',
-      GMAIL_SALES_AI_POLICY_VERSION: before.GMAIL_SALES_AI_POLICY_VERSION || GMAIL_SALES_AI_DEFAULT_POLICY_VERSION,
-      GMAIL_SALES_AI_DATA_MINIMIZATION_MODE: before.GMAIL_SALES_AI_DATA_MINIMIZATION_MODE || 'strict'
+    const defaultValues = {
+      GMAIL_SALES_AI_ENABLED: 'false',
+      GMAIL_SALES_AI_PROVIDER: 'disabled',
+      GMAIL_SALES_AI_MAX_DAILY_REQUESTS: '100',
+      GMAIL_SALES_AI_MAX_DAILY_COST_YEN: '100',
+      GMAIL_SALES_AI_CONFIDENCE_THRESHOLD: '0.95',
+      GMAIL_SALES_AI_POLICY_VERSION: GMAIL_SALES_AI_DEFAULT_POLICY_VERSION,
+      GMAIL_SALES_AI_DATA_MINIMIZATION_MODE: 'strict'
     };
-    props.setProperties(defaults, false);
+    const defaults = {};
+    let propertiesAddedCount = 0;
+    Object.keys(defaultValues).forEach((key) => {
+      if (before[key] === undefined || before[key] === '') {
+        defaults[key] = defaultValues[key];
+        propertiesAddedCount += 1;
+      }
+    });
+    if (propertiesAddedCount > 0) props.setProperties(defaults, false);
     const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
     let sourceColumnsAddedCount = 0;
     let reviewColumnsAddedCount = 0;
     let headerReadBackPassed = true;
+    let headerValidationCellsCleared = 0;
+    let headerValidationCountAfterRepair = 0;
+    let dataRowValidationApplied = false;
+    let suspiciousRepair = emptySuspiciousBulkRepairResult_();
     if (context.sourceSheet) {
       const sourceMigration = ensureSheetHeaders_(context.sourceSheet, GMAIL_CONTACT_BASIS_COLUMNS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
       sourceColumnsAddedCount = sourceMigration.columnsAddedCount;
@@ -4156,11 +4210,23 @@ function installGmailSalesAiVerificationConfigurationOnce() {
       const reviewMigration = ensureSheetHeaders_(context.reviewSheet, GMAIL_CONTACT_BASIS_REVIEW_HEADERS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
       reviewColumnsAddedCount = reviewMigration.columnsAddedCount;
       headerReadBackPassed = headerReadBackPassed && reviewMigration.readBackPassed;
+      headerValidationCellsCleared += Number(reviewMigration.headerValidationCellsCleared || 0);
+      configureGmailSalesReviewDataValidation_(context.reviewSheet);
+      dataRowValidationApplied = reviewDataRowValidationConfigured_(context.reviewSheet);
+      headerValidationCountAfterRepair = countHeaderDataValidations_(context.reviewSheet, getSheetHeaders_(context.reviewSheet).length || 1);
+      suspiciousRepair = repairSuspiciousBulkApprovalRowsForAi_(context);
     }
     const config = getGmailSalesAiConfig_();
-    return buildGmailSalesAiContactBasisResult_('gmail_sales_ai_contact_basis_configuration_install', headerReadBackPassed ? 'pass' : 'blocked', {
-      blockedReason: headerReadBackPassed ? '' : 'header_read_back_failed',
+    const schema = buildGmailSalesContactBasisReviewSchemaInspection_(context);
+    const propertyReadBackPassed = Object.keys(defaults).every((key) => String(props.getProperty(key) || '') === String(defaults[key]));
+    const installPassed = headerReadBackPassed && headerValidationCountAfterRepair === 0 && dataRowValidationApplied && !suspiciousRepair.rollbackExecuted && propertyReadBackPassed && schema.schemaValid;
+    return buildGmailSalesAiContactBasisResult_('gmail_sales_ai_contact_basis_configuration_install', installPassed ? 'pass' : 'blocked', {
+      blockedReason: installPassed ? '' : (suspiciousRepair.blockedReason || (!headerReadBackPassed ? 'header_read_back_failed' : (!dataRowValidationApplied ? 'data_row_validation_missing' : (!propertyReadBackPassed ? 'property_read_back_failed' : 'schema_invalid')))),
       mode: 'write',
+      reviewTabResolved: Boolean(context.reviewSheet),
+      headerValidationRepairRequired: headerValidationCellsCleared > 0,
+      headerValidationCellsCleared,
+      headerWritePassed: headerReadBackPassed,
       aiProvider: config.provider,
       aiEnabled: config.enabled,
       confidenceThreshold: config.confidenceThreshold,
@@ -4168,9 +4234,23 @@ function installGmailSalesAiVerificationConfigurationOnce() {
       promptVersion: GMAIL_SALES_AI_PROMPT_VERSION,
       sourceAiAuditColumnsAddedCount: sourceColumnsAddedCount,
       reviewAiAuditColumnsAddedCount: reviewColumnsAddedCount,
+      aiColumnsAddedCount: sourceColumnsAddedCount + reviewColumnsAddedCount,
       headerReadBackPassed,
-      scriptPropertiesUpdated: true,
-      googleSheetsUpdated: sourceColumnsAddedCount + reviewColumnsAddedCount > 0
+      dataRowValidationApplied,
+      headerValidationCountAfterRepair,
+      suspiciousBulkRowsDetected: suspiciousRepair.detectedCount,
+      suspiciousBulkRowsReset: suspiciousRepair.resetCount,
+      suspiciousBulkRowsSkipped: suspiciousRepair.skippedCount,
+      suspiciousBulkRowsStale: suspiciousRepair.staleCount,
+      backupCreated: suspiciousRepair.backupCreated,
+      rollbackExecuted: suspiciousRepair.rollbackExecuted,
+      aiEligibleRowsAfterReset: suspiciousRepair.aiEligibleRowsAfterReset,
+      propertiesAddedCount,
+      propertiesUpdatedCount: 0,
+      configurationInstalled: installPassed,
+      sourceCandidatesUpdated: false,
+      scriptPropertiesUpdated: propertiesAddedCount > 0,
+      googleSheetsUpdated: sourceColumnsAddedCount + reviewColumnsAddedCount > 0 || headerValidationCellsCleared > 0 || suspiciousRepair.resetCount > 0
     });
   } finally {
     lock.releaseLock();
@@ -4389,6 +4469,145 @@ function runGmailSalesAiContactBasisVerificationOnce() {
   }
 }
 
+function emptySuspiciousBulkRepairResult_() {
+  return {
+    detectedCount: 0,
+    resetCount: 0,
+    skippedCount: 0,
+    staleCount: 0,
+    backupCreated: false,
+    rollbackExecuted: false,
+    aiEligibleRowsAfterReset: 0,
+    blockedReason: ''
+  };
+}
+
+function repairSuspiciousBulkApprovalRowsForAi_(context) {
+  const result = emptySuspiciousBulkRepairResult_();
+  if (!context || !context.reviewSheet || !context.sourceSheet) return result;
+  const reviewData = readSheetObjects_(context.reviewSheet);
+  const sourceData = readSheetObjects_(context.sourceSheet);
+  const sourceByKey = {};
+  sourceData.items.forEach((item) => {
+    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+  });
+  const targets = [];
+  reviewData.items.forEach((item) => {
+    const validation = isSuspiciousBulkApprovalResetCandidate_(item.row, sourceByKey);
+    if (validation.ok) {
+      targets.push(item);
+      result.detectedCount += 1;
+    } else if (validation.stale) {
+      result.staleCount += 1;
+    } else if (validation.looksSuspicious) {
+      result.skippedCount += 1;
+    }
+  });
+  if (targets.length === 0) {
+    result.aiEligibleRowsAfterReset = countAiEligibleReviewRows_(reviewData.items, sourceByKey);
+    return result;
+  }
+  const resetFields = ['reviewDecision', 'approvedBasisType', 'evidenceNotes', 'optOutAvailable', 'reviewerLabel', 'reviewedAt', 'applyStatus', 'applyErrorCode', 'appliedAt'];
+  const preservedFields = ['reviewId', 'sourceRowKey', 'leadIdHash', 'sourceRowDigest', 'sourceType', 'sourceReference', 'sourceReferenceHash', 'existingRelationshipEvidence', 'explicitOptInEvidence', 'businessContactEvidence', 'existingContactBasisType', 'suggestedBasisType', 'suggestionReasonCode', 'priorityRank', 'priorityReasonCode', 'lastQueueSyncedAt'];
+  const snapshots = targets.map((item) => ({
+    rowIndex: item.rowIndex,
+    resetValues: resetFields.map((field) => getCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, field)),
+    preservedValues: preservedFields.map((field) => getCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, field))
+  }));
+  result.backupCreated = createGmailSalesSuspiciousBulkResetBackup_(context, targets, reviewData.headers, resetFields);
+  targets.forEach((item) => {
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'reviewDecision', 'pending');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'approvedBasisType', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'evidenceNotes', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'optOutAvailable', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'reviewerLabel', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'reviewedAt', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'applyStatus', 'pending');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'applyErrorCode', '');
+    setCellByHeader_(context.reviewSheet, reviewData.headers, item.rowIndex, 'appliedAt', '');
+  });
+  SpreadsheetApp.flush();
+  const readBackPassed = snapshots.every((snapshot) => {
+    const resetOk = String(getCellByHeader_(context.reviewSheet, reviewData.headers, snapshot.rowIndex, 'reviewDecision') || '') === 'pending' &&
+      String(getCellByHeader_(context.reviewSheet, reviewData.headers, snapshot.rowIndex, 'applyStatus') || '') === 'pending' &&
+      !String(getCellByHeader_(context.reviewSheet, reviewData.headers, snapshot.rowIndex, 'approvedBasisType') || '') &&
+      !String(getCellByHeader_(context.reviewSheet, reviewData.headers, snapshot.rowIndex, 'applyErrorCode') || '');
+    const preservedOk = preservedFields.every((field, index) => String(getCellByHeader_(context.reviewSheet, reviewData.headers, snapshot.rowIndex, field) || '') === String(snapshot.preservedValues[index] || ''));
+    return resetOk && preservedOk;
+  });
+  if (!readBackPassed) {
+    snapshots.forEach((snapshot) => {
+      resetFields.forEach((field, index) => {
+        setCellByHeader_(context.reviewSheet, reviewData.headers, snapshot.rowIndex, field, snapshot.resetValues[index]);
+      });
+      preservedFields.forEach((field, index) => {
+        setCellByHeader_(context.reviewSheet, reviewData.headers, snapshot.rowIndex, field, snapshot.preservedValues[index]);
+      });
+    });
+    result.rollbackExecuted = true;
+    result.blockedReason = 'suspicious_bulk_reset_read_back_failed';
+    result.aiEligibleRowsAfterReset = 0;
+    return result;
+  }
+  result.resetCount = targets.length;
+  const afterData = readSheetObjects_(context.reviewSheet);
+  result.aiEligibleRowsAfterReset = countAiEligibleReviewRows_(afterData.items, sourceByKey);
+  return result;
+}
+
+function createGmailSalesSuspiciousBulkResetBackup_(context, targets, headers, resetFields) {
+  if (!context.spreadsheet || typeof context.spreadsheet.insertSheet !== 'function') return false;
+  const name = '_gmail_ai_bulk_reset_backup_' + new Date().getTime();
+  const backup = context.spreadsheet.insertSheet(name);
+  const backupHeaders = ['backupTimestamp', 'operationId', 'rowIndex', 'sourceRowKey', 'sourceRowDigest'].concat(resetFields);
+  const timestamp = new Date().toISOString();
+  const operationId = 'ai-bulk-reset-' + hashValue_(timestamp + '|' + targets.length);
+  const rows = [backupHeaders].concat(targets.map((item) => {
+    const row = item.row || {};
+    return [timestamp, operationId, item.rowIndex, row.sourceRowKey || '', row.sourceRowDigest || ''].concat(resetFields.map((field) => row[field] === undefined ? '' : row[field]));
+  }));
+  backup.getRange(1, 1, rows.length, backupHeaders.length).setValues(rows);
+  return true;
+}
+
+function isSuspiciousBulkApprovalResetCandidate_(row, sourceByKey) {
+  const decision = String(row.reviewDecision || '').trim();
+  const applyStatus = String(row.applyStatus || '').trim();
+  const errorCode = String(row.applyErrorCode || '').trim();
+  const looksSuspicious = decision === 'approved' && applyStatus === 'skipped_invalid' && errorCode === 'suspicious_bulk_approval_pattern';
+  if (!looksSuspicious) return { ok: false, looksSuspicious: false, stale: false, reason: 'not_suspicious_bulk' };
+  if (String(row.appliedAt || '').trim()) return { ok: false, looksSuspicious, stale: false, reason: 'already_applied_at_present' };
+  if (String(row.aiAutoApproved || '').toLowerCase() === 'true' || applyStatus === 'applied_ai') return { ok: false, looksSuspicious, stale: false, reason: 'ai_approved_protected' };
+  if (['applied', 'applied_ai'].indexOf(applyStatus) !== -1) return { ok: false, looksSuspicious, stale: false, reason: 'applied_protected' };
+  const reviewer = String(row.reviewerLabel || '').trim();
+  if (reviewer && ['operator_reviewed', 'human_reviewed', 'manual_reviewed'].indexOf(reviewer) === -1) return { ok: false, looksSuspicious, stale: false, reason: 'reviewer_not_resettable' };
+  const sourceItem = sourceByKey[String(row.sourceRowKey || '').trim()];
+  if (!sourceItem) return { ok: false, looksSuspicious, stale: true, reason: 'source_row_missing' };
+  if (hasAllowedGmailSalesContactBasis_(sourceItem.row)) return { ok: false, looksSuspicious, stale: false, reason: 'source_already_has_basis' };
+  if (String(getContactBasisValue_(sourceItem.row, 'contactBasisRecordedAt') || '').trim()) return { ok: false, looksSuspicious, stale: false, reason: 'source_basis_recorded' };
+  if (String(sourceItem.row.aiVerificationStatus || '').trim() === 'applied') return { ok: false, looksSuspicious, stale: false, reason: 'source_ai_applied' };
+  const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+  if (!queue.include || String(queue.row.sourceRowDigest || '') !== String(row.sourceRowDigest || '').trim()) {
+    return { ok: false, looksSuspicious, stale: true, reason: 'source_digest_mismatch' };
+  }
+  return { ok: true, looksSuspicious, stale: false, reason: '' };
+}
+
+function isAiEligibleReviewQueueRow_(row, sourceByKey) {
+  const decision = String(row.reviewDecision || '').trim();
+  const applyStatus = String(row.applyStatus || '').trim();
+  if (['pending', 'needs_more_evidence'].indexOf(decision) === -1) return false;
+  if (['applied', 'applied_ai'].indexOf(applyStatus) !== -1) return false;
+  const sourceItem = sourceByKey[String(row.sourceRowKey || '').trim()];
+  if (!sourceItem) return false;
+  const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+  return queue.include && String(queue.row.sourceRowDigest || '') === String(row.sourceRowDigest || '').trim();
+}
+
+function countAiEligibleReviewRows_(items, sourceByKey) {
+  return (items || []).filter((item) => isAiEligibleReviewQueueRow_(item.row || {}, sourceByKey)).length;
+}
+
 function getGmailSalesAiConfig_() {
   const props = PropertiesService.getScriptProperties();
   const provider = String(props.getProperty('GMAIL_SALES_AI_PROVIDER') || 'disabled').trim().toLowerCase();
@@ -4410,6 +4629,7 @@ function getGmailSalesAiConfig_() {
 }
 
 function buildGmailSalesAiContactBasisStatus_(context, config, sourceData, reviewData) {
+  const schema = buildGmailSalesContactBasisReviewSchemaInspection_(context);
   const statusCounts = {};
   const basisCounts = {};
   let pendingCount = 0;
@@ -4450,6 +4670,13 @@ function buildGmailSalesAiContactBasisStatus_(context, config, sourceData, revie
     needsMoreEvidenceCount,
     reviewDecisionCounts: statusCounts,
     contactBasisCounts: basisCounts,
+    reviewHeaderValid: schema.schemaValid,
+    reviewHeaderValidationCount: schema.headerValidationCount,
+    reviewDataValidationConfigured: schema.dataRowValidationConfigured,
+    aiConfigurationInstalled: schema.requiredHeadersPresent,
+    suspiciousBulkRowsRemaining: schema.suspiciousBulkRowsRemaining,
+    aiEligibleQueueCount: schema.pendingAiEligibleCount,
+    blockedReasons: schema.blockedReasons,
     expectedAiAuditColumnCount: GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS.length,
     gmailSendExecuted: false,
     googleSheetsUpdated: false,
@@ -4766,7 +4993,7 @@ function upsertGmailSalesAiReviewRow_(sheet, headers, update, reviewById) {
     row.reviewDecision = 'approved_ai';
     row.approvedBasisType = update.approvedBasisType;
     row.evidenceNotes = 'ai_verified_contact_basis';
-    row.optOutAvailable = 'true';
+    row.optOutAvailable = 'TRUE';
     row.reviewerLabel = 'ai_policy_engine';
     row.reviewedAt = update.now;
     row.applyStatus = 'applied_ai';
@@ -4873,7 +5100,7 @@ function configureGmailSalesReviewSheetPresentation_(sheet) {
 function configureGmailSalesReviewDataValidation_(sheet) {
   if (!sheet || typeof SpreadsheetApp.newDataValidation !== 'function') return false;
   const headers = getSheetHeaders_(sheet);
-  const rowCount = Math.max(1, sheet.getLastRow() - 1);
+  const rowCount = Math.max(1, (typeof sheet.getMaxRows === 'function' ? sheet.getMaxRows() : Math.max(sheet.getLastRow(), 2)) - 1);
   const validations = [
     { header: 'reviewDecision', values: GMAIL_CONTACT_BASIS_REVIEW_DECISIONS },
     { header: 'approvedBasisType', values: GMAIL_CONTACT_BASIS_ALLOWED_TYPES },
@@ -4891,6 +5118,79 @@ function configureGmailSalesReviewDataValidation_(sheet) {
     }
   });
   return true;
+}
+
+function reviewDataRowValidationConfigured_(sheet) {
+  if (!sheet) return false;
+  const headers = getSheetHeaders_(sheet);
+  const required = ['reviewDecision', 'approvedBasisType', 'optOutAvailable', 'applyStatus'];
+  return required.every((header) => {
+    const index = headers.indexOf(header);
+    if (index === -1) return false;
+    return countDataValidationsInRange_(sheet.getRange(2, index + 1, 1, 1)) > 0;
+  });
+}
+
+function buildGmailSalesContactBasisReviewSchemaInspection_(context) {
+  const result = {
+    event: 'gmail_sales_contact_basis_review_schema',
+    mode: 'read_only',
+    reviewTabPresent: Boolean(context.reviewTabPresent),
+    reviewTabAccessible: Boolean(context.reviewTabAccessible),
+    headerColumnCount: 0,
+    requiredHeadersPresent: false,
+    headerReadBackPassed: false,
+    headerValidationCount: 0,
+    dataRowValidationConfigured: false,
+    reviewDecisionHeaderValid: false,
+    approvedBasisHeaderValid: false,
+    optOutHeaderValid: false,
+    applyStatusHeaderValid: false,
+    suspiciousBulkRowsRemaining: 0,
+    pendingAiEligibleCount: 0,
+    schemaValid: false,
+    blockedReasons: [],
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false
+  };
+  if (!context.reviewSheet) {
+    result.blockedReasons.push('review_sheet_missing');
+    return result;
+  }
+  const headers = getSheetHeaders_(context.reviewSheet);
+  result.headerColumnCount = headers.length;
+  result.requiredHeadersPresent = missingHeaders_(headers, GMAIL_CONTACT_BASIS_REVIEW_HEADERS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS)).length === 0;
+  result.headerReadBackPassed = result.requiredHeadersPresent;
+  result.headerValidationCount = countHeaderDataValidations_(context.reviewSheet, headers.length || 1);
+  result.dataRowValidationConfigured = reviewDataRowValidationConfigured_(context.reviewSheet);
+  result.reviewDecisionHeaderValid = headers.indexOf('reviewDecision') !== -1;
+  result.approvedBasisHeaderValid = headers.indexOf('approvedBasisType') !== -1;
+  result.optOutHeaderValid = headers.indexOf('optOutAvailable') !== -1;
+  result.applyStatusHeaderValid = headers.indexOf('applyStatus') !== -1;
+  const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { items: [] };
+  const sourceByKey = {};
+  sourceData.items.forEach((item) => {
+    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+  });
+  const reviewData = readSheetObjects_(context.reviewSheet);
+  reviewData.items.forEach((item) => {
+    const row = item.row || {};
+    if (isSuspiciousBulkApprovalResetCandidate_(row, sourceByKey).ok) result.suspiciousBulkRowsRemaining += 1;
+    if (isAiEligibleReviewQueueRow_(row, sourceByKey)) result.pendingAiEligibleCount += 1;
+  });
+  if (!result.requiredHeadersPresent) result.blockedReasons.push('required_headers_missing');
+  if (result.headerValidationCount > 0) result.blockedReasons.push('header_validation_present');
+  if (!result.dataRowValidationConfigured) result.blockedReasons.push('data_row_validation_missing');
+  result.schemaValid = result.blockedReasons.length === 0;
+  return result;
+}
+
+function inspectGmailSalesContactBasisReviewSchema() {
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const result = buildGmailSalesContactBasisReviewSchemaInspection_(context);
+  logGmailSalesJsonResult_(result);
+  return result;
 }
 
 function buildContactBasisReviewQueueRow_(item, now) {
@@ -5050,7 +5350,7 @@ function buildGmailSalesSourceReferenceHash_(sourceType, sourceReference) {
 }
 
 function preserveGmailSalesReviewDecisionFields_(next, existing, newDigest) {
-  const preserved = ['reviewDecision', 'approvedBasisType', 'evidenceNotes', 'optOutAvailable', 'reviewerLabel', 'reviewedAt'];
+  const preserved = ['reviewDecision', 'approvedBasisType', 'evidenceNotes', 'optOutAvailable', 'reviewerLabel', 'reviewedAt'].concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS);
   preserved.forEach((field) => {
     if (existing[field] !== undefined && existing[field] !== '') next[field] = existing[field];
   });
