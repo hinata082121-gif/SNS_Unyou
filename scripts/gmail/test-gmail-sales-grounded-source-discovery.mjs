@@ -59,7 +59,7 @@ test('grounded source discovery applies verified citation sources with one Gemin
   assert.equal(result.googleSheetsUpdated, true);
   assert.equal(result.scriptPropertiesUpdated, true);
   assert.equal(env.fetchCalls.length, 10);
-  assert.equal(env.propertyWriteCount, 1);
+  assert.equal(env.propertyWriteCount, 2);
   assert.equal(env.mailSendCount, 0);
   assert.equal(env.draftCreateCount, 0);
   assert.equal(env.triggerWriteCount, 0);
@@ -360,45 +360,44 @@ test('grounding is fail-closed when Gemini configuration is not valid', () => {
   assert.equal(env.propertyWriteCount, 0);
 });
 
-test('grounded discovery is blocked until response contract probe is valid', () => {
+test('grounded discovery continues through model failover path when response contract probe is missing', () => {
   const env = createEnvironment({ sourceCount: 1, contractProbeValid: false });
   seedGroundingReviewAndQueue(env, 1);
   const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.blockedReason, 'grounding_contract_probe_required');
-  assert.equal(result.recommendedNextAction, 'run_grounding_contract_probe');
-  assert.equal(result.candidatesAttemptedCount, 0);
-  assert.equal(result.searchQueryCount, 0);
-  assert.equal(result.aiApiCalled, false);
-  assert.equal(env.fetchCalls.length, 0);
+  assert.equal(result.status, 'pass');
+  assert.equal(result.groundingContractProbeMissingOrInvalid, true);
+  assert.equal(result.candidatesAttemptedCount, 1);
+  assert.equal(result.searchQueryCount, 1);
+  assert.equal(result.sourceReferencesAppliedCount, 1);
+  assert.equal(env.fetchCalls.length, 1);
 });
 
-test('grounded discovery is blocked until citation acceptance probe is valid', () => {
+test('grounded discovery continues through model failover path when citation acceptance probe is missing', () => {
   const env = createEnvironment({ sourceCount: 1, citationProbeValid: false });
   seedGroundingReviewAndQueue(env, 1);
   const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.blockedReason, 'citation_acceptance_probe_required');
-  assert.equal(result.recommendedNextAction, 'run_citation_acceptance_probe');
-  assert.equal(result.candidatesAttemptedCount, 0);
-  assert.equal(result.searchQueryCount, 0);
-  assert.equal(result.aiApiCalled, false);
-  assert.equal(env.fetchCalls.length, 0);
+  assert.equal(result.status, 'pass');
+  assert.equal(result.citationAcceptanceProbeMissingOrInvalid, true);
+  assert.equal(result.candidatesAttemptedCount, 1);
+  assert.equal(result.searchQueryCount, 1);
+  assert.equal(result.sourceReferencesAppliedCount, 1);
+  assert.equal(env.fetchCalls.length, 1);
 });
 
-test('provider non-2xx response is classified without normal response parsing', () => {
+test('provider non-2xx response is classified without normal response parsing or source-not-found', () => {
   const env = createEnvironment({ sourceCount: 1, fetchStatusCode: 429 });
   seedGroundingReviewAndQueue(env, 1);
   const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
-  assert.equal(result.status, 'pass');
-  assert.equal(result.providerHttpErrorCount, 1);
-  assert.equal(result.providerErrorCategoryCounts.rate_limited, 1);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'all_grounding_models_unavailable');
+  assert.equal(result.providerHttpErrorCount, 4);
+  assert.equal(result.providerErrorCategoryCounts.rate_limited, 4);
   assert.equal(result.groundingResponseJsonParsedCount, 0);
   assert.equal(result.sourceNotFoundCount, 0);
   assert.equal(result.blockedSourceCount, 1);
   const queueRow = rowFromSheet(env.workbook.sheets.Gmail_Evidence_Replenishment_Queue, 2);
-  assert.equal(queueRow.status, 'grounding_provider_error');
-  assert.equal(env.context.normalizeGmailSalesEvidenceReplenishmentQueueRow_(queueRow).status, 'grounding_provider_error');
+  assert.equal(queueRow.status, 'grounding_provider_error_retryable');
+  assert.equal(env.context.normalizeGmailSalesEvidenceReplenishmentQueueRow_(queueRow).status, 'grounding_provider_error_retryable');
 });
 
 test('citation safety rejected status is recognized and not search-eligible by default', () => {
@@ -515,6 +514,7 @@ function createEnvironment(options = {}) {
       GMAIL_SALES_AI_MODEL: 'gemini-mock',
       GMAIL_SALES_AI_API_KEY: options.aiEnabled === false ? '' : 'mock-redacted-token',
       GMAIL_SALES_GROUNDING_MODEL: 'gemini-mock-grounded',
+      GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON: JSON.stringify(['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']),
       GMAIL_SALES_GROUNDING_MAX_CANDIDATES_PER_RUN: '10',
       GMAIL_SALES_GROUNDING_MAX_SEARCH_QUERIES_PER_DAY: '30',
       GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY: '30',

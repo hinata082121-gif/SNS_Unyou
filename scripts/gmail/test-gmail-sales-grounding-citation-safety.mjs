@@ -63,9 +63,12 @@ function createContext(responseFactory, options = {}) {
     UrlFetchApp: {
       fetch: (url, request = {}) => {
         env.fetchCalls.push({ url: String(url), request });
+        const payload = JSON.parse(String(request.payload || '{}'));
+        const produced = responseFactory(payload, env.fetchCalls.length);
         return {
-          getResponseCode: () => options.statusCode || 200,
-          getContentText: () => JSON.stringify(responseFactory())
+          getResponseCode: () => produced.statusCode || options.statusCode || 200,
+          getHeaders: () => produced.headers || {},
+          getContentText: () => JSON.stringify(produced.body || produced)
         };
       }
     }
@@ -175,6 +178,49 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
   assert.equal(env.draftCreateCount, 0);
   assert.equal(env.triggerWriteCount, 0);
   assert.equal(env.propertyWriteCount, 1);
+}
+
+{
+  const { env, context } = createContext((payload) => {
+    if (payload.model === 'gemini-3.5-flash') return { statusCode: 500, body: { error: { status: 'UNAVAILABLE' } } };
+    return { body: citationSteps([annotation(safePrimary)]) };
+  });
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']);
+  const result = context.testGmailSalesGroundingModelFailoverOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.selectedModel, 'gemini-2.5-flash');
+  assert.equal(result.failoverExecuted, true);
+  assert.equal(result.responseContractValid, true);
+  assert.equal(result.citationAcceptanceValid, true);
+  assert.equal(env.fetchCalls.length, 3);
+  assert.equal(env.fetchCalls.every((call) => JSON.parse(call.request.payload).store === false), true);
+  assert.equal(env.fetchCalls.every((call) => Object.prototype.hasOwnProperty.call(JSON.parse(call.request.payload), 'previous_interaction_id') === false), true);
+  assert.equal(env.fetchCalls.every((call) => call.request.headers['x-goog-api-key'] === env.props.GMAIL_SALES_AI_API_KEY), true);
+}
+
+{
+  const { env, context } = createContext((payload) => {
+    if (payload.model === 'gemini-3.5-flash') return { statusCode: 429, body: { error: { status: 'RESOURCE_EXHAUSTED' } } };
+    if (payload.model === 'gemini-2.5-flash') return { statusCode: 503, body: { error: { status: 'UNAVAILABLE' } } };
+    if (payload.model === 'gemini-2.5-flash-lite') return { statusCode: 500, body: { error: { status: 'UNAVAILABLE' } } };
+    return { body: citationSteps([annotation(safePrimary)]) };
+  });
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']);
+  const result = context.testGmailSalesGroundingModelFailoverOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.selectedModel, 'gemini-2.0-flash');
+  assert.equal(result.failoverExecuted, true);
+  assert.equal(result.modelsAttemptedCount, 6);
+}
+
+{
+  const { env, context } = createContext(() => ({ statusCode: 503, body: { error: { status: 'UNAVAILABLE' } } }));
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']);
+  const result = context.testGmailSalesGroundingModelFailoverOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.modelSuccessCount, 0);
+  assert.equal(result.modelsAttemptedCount, 8);
+  assert.equal(result.allModelsUnavailable, true);
 }
 
 console.log(JSON.stringify({

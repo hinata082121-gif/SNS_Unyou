@@ -216,6 +216,8 @@ const GMAIL_SALES_GROUNDING_VERSION_DEFAULT = 'official-source-discovery-v1';
 const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v3';
 const GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION = 'gemini-interactions-google-search-v2';
 const GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION = 'grounding-citation-safety-v2';
+const GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY = 'GMAIL_SALES_GROUNDING_MODEL_HEALTH_JSON';
+const GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE = ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
 const GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS = [
   'aiVerificationStatus',
   'aiProvider',
@@ -3280,6 +3282,54 @@ function inspectGmailSalesCurrentOperationalStatus() {
   });
 }
 
+function inspectGmailSalesTomorrowEmergencyReadiness() {
+  const targetDate = '2026-07-02';
+  const readiness = inspectGmailSalesDailyReadiness_({ targetDate });
+  const groundingStatus = inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
+  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const sendAuthorityCallSiteCount = typeof runGmailSalesDailyAutomationTrigger === 'function' ? 1 : 0;
+  const currentApprovedEligibleCount = Number(readiness.selectedCount || 0);
+  const zeroSendRiskReasons = [];
+  if (currentApprovedEligibleCount === 0 && Number(groundingStatus.finalDiscoveryEligibleCount || 0) === 0) zeroSendRiskReasons.push('no_current_approved_or_discovery_eligible_candidate');
+  if (sendAuthorityCallSiteCount !== 1) zeroSendRiskReasons.push('send_authority_invalid');
+  if (triggerHealth.status !== 'pass') zeroSendRiskReasons.push('scheduler_not_ready');
+  if (readiness.suppressedCount > 0) zeroSendRiskReasons.push('suppression_match');
+  if (readiness.duplicateCount > 0) zeroSendRiskReasons.push('duplicate_candidate');
+  if (readiness.invalidEmailCount > 0) zeroSendRiskReasons.push('invalid_email');
+  const availableGroundingModelCount = Number(groundingStatus.availableGroundingModelCount || 0);
+  const status = currentApprovedEligibleCount >= 30 ? 'ready_for_full_target' : (currentApprovedEligibleCount >= 1 ? 'ready_for_degraded_nonzero_operation' : (Number(groundingStatus.finalDiscoveryEligibleCount || 0) > 0 ? 'continue_emergency_preparation' : 'blocked_no_legally_eligible_candidate'));
+  const result = {
+    event: 'gmail_sales_2026_07_02_emergency_readiness',
+    mode: 'read_only',
+    targetBusinessDate: targetDate,
+    targetSendCount: 30,
+    minimumOperationalSendCount: 1,
+    currentApprovedEligibleCount,
+    currentSourceDiscoveryEligibleCount: Number(groundingStatus.finalDiscoveryEligibleCount || 0),
+    currentEvidenceEnrichmentEligibleCount: Number(groundingStatus.sourceReferencesAppliedCount || 0),
+    currentAiVerificationEligibleCount: Number(groundingStatus.sourceReferencesAppliedCount || 0),
+    currentSendManifestEligibleCount: Number(readiness.manifestCandidateCount || 0),
+    availableGroundingModelCount,
+    allGroundingModelsUnavailable: availableGroundingModelCount === 0,
+    schedulerInstalled: triggerHealth.controlLoopTriggerExists === true,
+    schedulerEnabled: triggerHealth.status === 'pass',
+    sendAuthorityCallSiteCount,
+    autoSendEnabled: getConfig_().autoSendEnabled,
+    liveSendEnabled: getConfig_().liveSendEnabled,
+    suppressionCoverageValid: Number(readiness.suppressedCount || 0) === 0,
+    contactBasisCoverageValid: currentApprovedEligibleCount > 0,
+    zeroSendRisk: zeroSendRiskReasons.length > 0 && currentApprovedEligibleCount === 0,
+    zeroSendRiskReasons,
+    readinessStatus: status,
+    recommendedNextAction: status === 'continue_emergency_preparation' ? 'run_grounded_source_discovery_with_failover' : (status.indexOf('ready_') === 0 ? 'wait_for_control_loop_enable_window' : 'replenish_legally_eligible_candidates'),
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  };
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
 function recommendGmailSalesNextAction_(readiness, config) {
   const phase = getGmailSalesProductionPhase_();
   if (!getGmailSalesOperationalDayPolicy_(config.currentJstDate).isOperationalDay) return 'wait_for_control_loop';
@@ -4563,6 +4613,15 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     businessInquiryEvidenceCount: Number(last.businessInquiryEvidenceCount || 0),
     solicitationRestrictedCount: Number(last.solicitationRestrictedCount || 0),
     sourceReferencesAppliedCount: Number(last.sourceReferencesAppliedCount || 0),
+    configuredGroundingModelCount: (grounding.modelCascade || []).length,
+    availableGroundingModelCount: (grounding.modelCascade || []).filter((model) => !isGroundingModelInCooldown_(model, readGmailSalesGroundingModelHealthState_(), new Date().toISOString())).length,
+    selectedHealthyModel: String(last.selectedHealthyModel || ''),
+    modelsAttemptedCount: Number(last.modelsAttemptedCount || 0),
+    failoverCandidateCount: Number(last.failoverCandidateCount || 0),
+    allModelsFailedCandidateCount: Number(last.allModelsFailedCandidateCount || 0),
+    candidateSuccessCount: Number(last.candidateSuccessCount || 0),
+    candidateRetryableFailureCount: Number(last.candidateRetryableFailureCount || 0),
+    candidatePermanentFailureCount: Number(last.candidatePermanentFailureCount || 0),
     groundingParserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
     groundingRequestContractVersion: GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION,
     citationSafetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
@@ -4665,6 +4724,10 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     Object.assign(stats, collected.stats);
     const promptUsage = getGmailSalesGroundingPromptRequestUsage_();
     Object.assign(stats, promptUsage);
+    stats.configuredGroundingModelCount = (grounding.modelCascade || []).length;
+    const modelHealth = readGmailSalesGroundingModelHealthState_();
+    stats.availableGroundingModelCount = (grounding.modelCascade || []).filter((model) => !isGroundingModelInCooldown_(model, modelHealth, new Date().toISOString())).length;
+    stats.allGroundingModelsUnavailable = stats.availableGroundingModelCount === 0;
     Object.assign(stats, queueReady.repair || {});
     if (queueReady.repair && queueReady.repair.queueRowsWithResolvableJoinKeyCountAfter !== undefined) {
       stats.queueRowsWithResolvableJoinKeyCount = queueReady.repair.queueRowsWithResolvableJoinKeyCountAfter;
@@ -4702,35 +4765,13 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     }
     const contractProbe = readGmailSalesGroundingContractProbeSummary_();
     if (!contractProbe.responseContractValid) {
-      stats.completedAt = now;
-      stats.recommendedNextAction = 'run_grounding_contract_probe';
-      persistGroundedDiscoverySummary_(stats);
-      return buildGmailSalesGroundingResult_('blocked', Object.assign({
-        blockedReason: 'grounding_contract_probe_required',
-        groundingEnabled: grounding.enabled,
-        groundingModel: grounding.model,
-        groundingModelConfigured: Boolean(grounding.model),
-        providerConfigurationValid: grounding.providerConfigurationValid,
-        googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted || stats.queueRepairRollback),
-        scriptPropertiesUpdated: true,
-        aiApiCalled: false
-      }, stats));
+      stats.groundingContractProbeMissingOrInvalid = true;
+      stats.recommendedNextAction = 'run_grounding_model_failover_probe';
     }
     const citationProbe = readGmailSalesGroundingCitationAcceptanceProbeSummary_();
     if (!citationProbe.citationAcceptanceValid) {
-      stats.completedAt = now;
-      stats.recommendedNextAction = 'run_citation_acceptance_probe';
-      persistGroundedDiscoverySummary_(stats);
-      return buildGmailSalesGroundingResult_('blocked', Object.assign({
-        blockedReason: 'citation_acceptance_probe_required',
-        groundingEnabled: grounding.enabled,
-        groundingModel: grounding.model,
-        groundingModelConfigured: Boolean(grounding.model),
-        providerConfigurationValid: grounding.providerConfigurationValid,
-        googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted || stats.queueRepairRollback),
-        scriptPropertiesUpdated: true,
-        aiApiCalled: false
-      }, stats));
+      stats.citationAcceptanceProbeMissingOrInvalid = true;
+      stats.recommendedNextAction = 'run_grounding_model_failover_probe';
     }
     const sourceSnapshots = [];
     const reviewSnapshots = [];
@@ -4775,45 +4816,47 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       }
       stats.candidatesAttemptedCount += 1;
       const prompt = buildGroundedOfficialSourceSearchPrompt_(target);
-      const search = callGeminiGroundedSearch_(grounding, prompt);
-      stats.searchQueryCount += 1;
-      stats.groundingHttpRequestCount += 1;
-      if (search.ok) stats.searchRequestSuccessCount += 1;
-      else stats.searchRequestFailureCount += 1;
-      if (search.ok) stats.groundingHttpSuccessCount += 1;
-      else stats.groundingHttpFailureCount += 1;
-      if (!search.ok) {
-        stats.providerHttpErrorCount += 1;
-        incrementCount_(stats.providerErrorCategoryCounts, classifyGroundingProviderError_(search.statusCode, search.errorCode));
+      const failover = callGeminiGroundedSearchWithFailover_(grounding, prompt, target, { now, health: modelHealth });
+      stats.modelsAttemptedCount += failover.modelsAttemptedCount;
+      if (failover.failoverExecuted) stats.failoverCandidateCount += 1;
+      if (failover.selectedModel && !stats.selectedHealthyModel && failover.ok) stats.selectedHealthyModel = failover.selectedModel;
+      failover.attempts.forEach((attempt) => {
+        if (attempt.skipped) return;
+        stats.searchQueryCount += 1;
+        stats.groundingHttpRequestCount += 1;
+        incrementCount_(stats.modelAttemptCounts, attempt.model);
+        incrementCount_(stats.modelRequestCounts, attempt.model);
+        if (attempt.ok) stats.groundingHttpSuccessCount += 1;
+        else stats.groundingHttpFailureCount += 1;
+        if (attempt.ok) stats.searchRequestSuccessCount += 1;
+        else stats.searchRequestFailureCount += 1;
+      });
+      Object.keys(failover.providerErrorCategoryCounts || {}).forEach((category) => {
+        stats.providerErrorCategoryCounts[category] = (stats.providerErrorCategoryCounts[category] || 0) + failover.providerErrorCategoryCounts[category];
+        stats.providerHttpErrorCount += failover.providerErrorCategoryCounts[category];
+      });
+      const parsedGrounding = failover.parsedGrounding;
+      if (parsedGrounding) accumulateGroundingParserStats_(stats, parsedGrounding);
+      if (!failover.ok) {
+        if (failover.status === 'citation_safety_rejected') {
+          stats.citationsRejectedBySafetyCandidateCount += 1;
+          stats.candidatePermanentFailureCount += 1;
+          stats.blockedSourceCount += 1;
+          updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'citation_safety_rejected', queueSnapshots);
+          return;
+        }
+        if (failover.status === 'citation_identity_rejected') {
+          stats.citationsRejectedByIdentityCandidateCount += 1;
+          stats.candidatePermanentFailureCount += 1;
+          stats.ambiguousIdentityCount += 1;
+          updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'citation_identity_rejected', queueSnapshots);
+          return;
+        }
+        if (failover.status === 'grounding_all_models_unavailable') stats.allModelsFailedCandidateCount += 1;
+        if (isRetryableGroundingProviderCategory_(failover.failureCategory)) stats.candidateRetryableFailureCount += 1;
+        else stats.candidatePermanentFailureCount += 1;
         stats.blockedSourceCount += 1;
-        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_provider_error', queueSnapshots);
-        return;
-      }
-      const parsedGrounding = parseGeminiGroundingInteractionResponse_(search.response, target);
-      accumulateGroundingParserStats_(stats, parsedGrounding);
-      if (parsedGrounding.responseJsonParseFailure) {
-        stats.blockedSourceCount += 1;
-        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_response_parse_error', queueSnapshots);
-        return;
-      }
-      if (parsedGrounding.groundingToolNotInvoked) {
-        stats.groundingToolNotInvokedCount += 1;
-        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_tool_not_invoked', queueSnapshots);
-        return;
-      }
-      if (parsedGrounding.groundingModelOutputMissing) {
-        stats.groundingModelOutputMissingCount += 1;
-        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_model_output_missing', queueSnapshots);
-        return;
-      }
-      if (parsedGrounding.groundingAnnotationMissing) {
-        stats.groundingAnnotationMissingCount += 1;
-        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_annotations_missing', queueSnapshots);
-        return;
-      }
-      if (parsedGrounding.groundingCalledWithoutCitation) {
-        stats.groundingCalledWithoutCitationCount += 1;
-        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'grounding_called_without_citation', queueSnapshots);
+        updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, failover.status || 'grounding_provider_error_retryable', queueSnapshots);
         return;
       }
       if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlSafetyRejectedCount > 0) {
@@ -4840,6 +4883,7 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       }
       const applied = applyVerifiedSourceReference_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, now, sourceSnapshots, reviewSnapshots, queueSnapshots);
       if (applied.ok) {
+        stats.candidateSuccessCount += 1;
         stats.verifiedOfficialSourceCount += 1;
         stats.sourceReferencesAppliedCount += 1;
         if (verified.contactPageDiscovered) stats.contactPageDiscoveredCount += 1;
@@ -4862,8 +4906,12 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     stats.completedAt = now;
     stats.runId = 'grounding-' + hashValue_(now + '|' + stats.candidatesAttemptedCount + '|' + stats.sourceReferencesAppliedCount);
     stats.recommendedNextAction = stats.sourceReferencesAppliedCount > 0 ? 'run_evidence_enrichment' : recommendGroundedSourceDiscoveryNextAction_(grounding, stats, {}, collected.targets.length);
+    persistGmailSalesGroundingModelHealthState_(modelHealth);
     persistGroundedDiscoverySummary_(stats);
+    const runStatus = stats.sourceReferencesAppliedCount > 0 && (stats.candidateRetryableFailureCount > 0 || stats.candidatePermanentFailureCount > 0) ? 'partial_success' : (stats.sourceReferencesAppliedCount > 0 ? 'pass' : (stats.candidateRetryableFailureCount > 0 || stats.allModelsFailedCandidateCount > 0 ? 'blocked' : 'pass'));
     return buildGmailSalesGroundingResult_('pass', Object.assign({
+      status: runStatus,
+      blockedReason: runStatus === 'blocked' ? 'all_grounding_models_unavailable' : '',
       groundingEnabled: grounding.enabled,
       groundingModel: grounding.model,
       groundingModelConfigured: Boolean(grounding.model),
@@ -6023,6 +6071,8 @@ function normalizeGmailSalesEvidenceReplenishmentQueueRow_(row) {
     'citation_identity_rejected',
     'citation_parse_failed',
     'grounding_provider_error',
+    'grounding_provider_error_retryable',
+    'grounding_all_models_unavailable',
     'provider_error',
     'grounding_response_parse_error',
     'grounding_tool_not_invoked',
@@ -6333,9 +6383,11 @@ function getGmailSalesGroundingConfig_(aiConfig) {
   const model = String(props.getProperty('GMAIL_SALES_GROUNDING_MODEL') || 'gemini-2.5-flash-lite').trim();
   const providerConfigurationValid = aiConfig.enabled === true && aiConfig.provider === 'gemini' && Boolean(aiConfig.model) && aiConfig.apiKeyConfigured === true;
   const promptRequestLimit = Math.max(1, Math.min(30, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY') || props.getProperty('GMAIL_SALES_GROUNDING_MAX_SEARCH_QUERIES_PER_DAY') || '30')));
+  const modelCascade = parseGmailSalesGroundingModelCascade_(props.getProperty('GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON'), model);
   return {
     enabled,
     model,
+    modelCascade,
     providerConfigurationValid,
     apiKey: aiConfig.apiKey,
     maxCandidatesPerRun: Math.max(1, Math.min(10, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_CANDIDATES_PER_RUN') || '10'))),
@@ -6346,6 +6398,72 @@ function getGmailSalesGroundingConfig_(aiConfig) {
     maxResultsPerCandidate: Math.max(1, Math.min(5, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_RESULTS_PER_CANDIDATE') || '5'))),
     version: String(props.getProperty('GMAIL_SALES_GROUNDING_VERSION') || GMAIL_SALES_GROUNDING_VERSION_DEFAULT)
   };
+}
+
+function parseGmailSalesGroundingModelCascade_(jsonValue, fallbackModel) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(String(jsonValue || ''));
+  } catch (error) {
+    parsed = null;
+  }
+  const models = (Array.isArray(parsed) ? parsed : GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE).concat([fallbackModel || '']);
+  const seen = {};
+  return models.map((model) => String(model || '').trim()).filter((model) => {
+    if (!model || seen[model]) return false;
+    seen[model] = true;
+    return true;
+  }).slice(0, 4);
+}
+
+function readGmailSalesGroundingModelHealthState_() {
+  try {
+    const parsed = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY) || '{}')) || {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function persistGmailSalesGroundingModelHealthState_(health) {
+  PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY, JSON.stringify(health || {}));
+}
+
+function isGroundingModelInCooldown_(model, health, now) {
+  const entry = health && health[model] || {};
+  const until = String(entry.cooldownUntil || '');
+  return Boolean(until && until > now);
+}
+
+function updateGroundingModelHealthEntry_(health, model, status, category, now) {
+  const entry = Object.assign({}, health[model] || {});
+  if (status === 'success') {
+    entry.lastSuccessAt = now;
+    entry.consecutiveFailureCount = 0;
+    entry.cooldownUntil = '';
+    entry.responseContractValid = true;
+    entry.citationAcceptanceValid = true;
+  } else {
+    entry.lastFailureAt = now;
+    entry.lastFailureCategory = category || 'unknown_provider_error';
+    entry.consecutiveFailureCount = Number(entry.consecutiveFailureCount || 0) + 1;
+    entry.cooldownUntil = getGroundingModelCooldownUntil_(category, now);
+    entry.responseContractValid = false;
+    entry.citationAcceptanceValid = false;
+  }
+  entry.parserVersion = GMAIL_SALES_GROUNDING_PARSER_VERSION;
+  entry.validatorVersion = GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION;
+  health[model] = entry;
+}
+
+function getGroundingModelCooldownUntil_(category, now) {
+  const base = new Date(now).getTime();
+  if (!Number.isFinite(base)) return '';
+  let minutes = 0;
+  if (category === 'rate_limited') minutes = 5;
+  if (category === 'server_error' || category === 'temporary_unavailable' || category === 'timeout' || category === 'model_capacity_error') minutes = 10;
+  if (category === 'authentication_error' || category === 'permission_error' || category === 'api_key_blocked') minutes = 1440;
+  return minutes > 0 ? new Date(base + minutes * 60000).toISOString() : '';
 }
 
 function isIsoTimestampToday_(value) {
@@ -6430,6 +6548,19 @@ function emptyGroundedSourceDiscoveryStats_() {
     candidateDiscoveryRequestCountToday: 0,
     remainingGroundingPromptRequestCountToday: 0,
     maxCandidatesFromRemainingPromptRequests: 0,
+    configuredGroundingModelCount: 0,
+    availableGroundingModelCount: 0,
+    allGroundingModelsUnavailable: false,
+    selectedHealthyModel: '',
+    modelsAttemptedCount: 0,
+    modelAttemptCounts: {},
+    modelRequestCounts: {},
+    modelExecutedQueryCounts: {},
+    failoverCandidateCount: 0,
+    allModelsFailedCandidateCount: 0,
+    candidateSuccessCount: 0,
+    candidateRetryableFailureCount: 0,
+    candidatePermanentFailureCount: 0,
     groundingParserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
     groundingRequestContractVersion: GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION,
     citationSafetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
@@ -6843,10 +6974,12 @@ function callGeminiGroundedSearch_(grounding, prompt) {
     return {
       ok: statusCode >= 200 && statusCode < 300,
       statusCode,
+      headers: typeof response.getHeaders === 'function' ? response.getHeaders() || {} : {},
+      model: grounding.model,
       response
     };
   } catch (error) {
-    return { ok: false, statusCode: 0, response: null, errorCode: safeErrorCode_(error) };
+    return { ok: false, statusCode: 0, response: null, model: grounding.model, errorCode: safeErrorCode_(error) };
   }
 }
 
@@ -6860,6 +6993,92 @@ function classifyGroundingProviderError_(statusCode, errorCode) {
   if (code >= 500) return 'server_error';
   if (String(errorCode || '').trim()) return 'transport_error';
   return 'unknown_provider_error';
+}
+
+function isRetryableGroundingProviderCategory_(category) {
+  return ['rate_limited', 'server_error', 'timeout', 'temporary_unavailable', 'model_capacity_error', 'unsupported_response_shape', 'grounding_tool_not_invoked', 'grounding_model_output_missing', 'grounding_annotations_missing', 'grounding_called_without_citation', 'grounding_response_parse_error', 'citation_acceptance_contract_invalid', 'grounding_response_contract_invalid'].indexOf(category) !== -1;
+}
+
+function isNonRetryableGroundingProviderCategory_(category) {
+  return ['authentication_error', 'permission_error', 'api_key_blocked', 'bad_request'].indexOf(category) !== -1;
+}
+
+function classifyGroundingParsedAttempt_(parsedGrounding) {
+  if (!parsedGrounding) return { ok: false, category: 'unsupported_response_shape', retryable: true, status: 'grounding_response_shape_unsupported' };
+  if (parsedGrounding.responseJsonParseFailure) return { ok: false, category: 'grounding_response_parse_error', retryable: true, status: 'grounding_response_parse_error' };
+  if (parsedGrounding.groundingToolNotInvoked) return { ok: false, category: 'grounding_tool_not_invoked', retryable: true, status: 'grounding_tool_not_invoked' };
+  if (parsedGrounding.groundingModelOutputMissing) return { ok: false, category: 'grounding_model_output_missing', retryable: true, status: 'grounding_model_output_missing' };
+  if (parsedGrounding.groundingAnnotationMissing) return { ok: false, category: 'grounding_annotations_missing', retryable: true, status: 'grounding_annotations_missing' };
+  if (parsedGrounding.groundingCalledWithoutCitation) return { ok: false, category: 'grounding_called_without_citation', retryable: true, status: 'grounding_called_without_citation' };
+  if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlSafetyRejectedCount > 0) return { ok: false, category: 'citation_safety_rejected', retryable: false, status: 'citation_safety_rejected' };
+  if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlIdentityRejectedCount > 0) return { ok: false, category: 'citation_identity_rejected', retryable: false, status: 'citation_identity_rejected' };
+  if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0) return { ok: false, category: 'citation_acceptance_contract_invalid', retryable: true, status: 'citation_parse_failed' };
+  return { ok: true, category: '', retryable: false, status: 'verified_candidate_citations' };
+}
+
+function callGeminiGroundedSearchWithFailover_(grounding, prompt, target, options) {
+  const settings = options || {};
+  const now = settings.now || new Date().toISOString();
+  const health = settings.health || readGmailSalesGroundingModelHealthState_();
+  const cascade = (grounding.modelCascade || []).slice(0, 4);
+  const result = {
+    ok: false,
+    selectedModel: '',
+    search: null,
+    parsedGrounding: null,
+    status: 'grounding_all_models_unavailable',
+    failureCategory: 'all_grounding_models_unavailable',
+    attempts: [],
+    modelsAttemptedCount: 0,
+    failoverExecuted: false,
+    allModelsUnavailable: false,
+    providerErrorCategoryCounts: {},
+    health
+  };
+  for (let modelIndex = 0; modelIndex < cascade.length; modelIndex += 1) {
+    const model = cascade[modelIndex];
+    if (isGroundingModelInCooldown_(model, health, now)) {
+      result.attempts.push({ model, skipped: true, category: 'model_cooldown' });
+      continue;
+    }
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      result.modelsAttemptedCount += 1;
+      result.selectedModel = model;
+      const search = callGeminiGroundedSearch_(Object.assign({}, grounding, { model }), prompt);
+      result.attempts.push({ model, attempt, statusCode: search.statusCode || 0, ok: search.ok });
+      if (!search.ok) {
+        const category = classifyGroundingProviderError_(search.statusCode, search.errorCode);
+        incrementCount_(result.providerErrorCategoryCounts, category);
+        updateGroundingModelHealthEntry_(health, model, 'failure', category, now);
+        result.failureCategory = category;
+        result.status = category === 'rate_limited' ? 'grounding_provider_error_retryable' : 'grounding_provider_error';
+        if (isNonRetryableGroundingProviderCategory_(category)) return result;
+        if (category === 'server_error' && attempt < 2) continue;
+        result.failoverExecuted = modelIndex < cascade.length - 1;
+        break;
+      }
+      const parsedGrounding = parseGeminiGroundingInteractionResponse_(search.response, target);
+      const parsed = classifyGroundingParsedAttempt_(parsedGrounding);
+      if (parsed.ok) {
+        updateGroundingModelHealthEntry_(health, model, 'success', '', now);
+        result.ok = true;
+        result.search = search;
+        result.parsedGrounding = parsedGrounding;
+        result.status = 'verified_official_source';
+        result.failureCategory = '';
+        return result;
+      }
+      updateGroundingModelHealthEntry_(health, model, 'failure', parsed.category, now);
+      result.parsedGrounding = parsedGrounding;
+      result.failureCategory = parsed.category;
+      result.status = parsed.status;
+      if (!parsed.retryable) return result;
+      result.failoverExecuted = modelIndex < cascade.length - 1;
+      break;
+    }
+  }
+  result.allModelsUnavailable = !result.ok && result.modelsAttemptedCount === 0;
+  return result;
 }
 
 function parseGeminiGroundingCitations_(searchResult, target) {
@@ -7271,9 +7490,9 @@ function recommendGroundedSourceDiscoveryNextAction_(grounding, stats, last, eli
   if (Number(stats.queueRowsRequiringCanonicalRebuildCount || 0) > 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.replenishmentQueuePhysicalCount || stats.replenishmentQueueCount || 0) === 0) return 'rebuild_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.queueEligibleStatusCount || 0) === 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'rebuild_replenishment_queue';
-  if (!Boolean((readGmailSalesGroundingContractProbeSummary_() || {}).responseContractValid)) return 'run_grounding_contract_probe';
-  if (!Boolean((readGmailSalesGroundingCitationAcceptanceProbeSummary_() || {}).citationAcceptanceValid)) return 'run_citation_acceptance_probe';
   if (Number(eligible || stats.eligibleDiscoveryTargetCount || 0) > 0) return 'run_source_discovery';
+  if (!Boolean((readGmailSalesGroundingContractProbeSummary_() || {}).responseContractValid)) return 'run_grounding_model_failover_probe';
+  if (!Boolean((readGmailSalesGroundingCitationAcceptanceProbeSummary_() || {}).citationAcceptanceValid)) return 'run_grounding_model_failover_probe';
   if (Number(last && last.sourceReferencesAppliedCount || 0) > 0) return 'run_evidence_enrichment';
   if (Number(stats.sourceDigestMismatchCount || 0) > 0 && Number(stats.sourceDigestMismatchCount || 0) >= Number(stats.sourceDigestMatchedCount || 0)) return 'refresh_review_queue';
   const physicalQueueCount = Number(stats.replenishmentQueuePhysicalCount || stats.queuePhysicalRowCount || stats.replenishmentQueueCount || 0);
@@ -7428,6 +7647,89 @@ function testGmailSalesGroundingCitationAcceptanceContractOnce() {
   });
   PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_PROPERTY, JSON.stringify(result));
   return result;
+}
+
+function testGmailSalesGroundingModelFailoverOnce() {
+  const aiConfig = getGmailSalesAiConfig_();
+  const grounding = getGmailSalesGroundingConfig_(aiConfig);
+  if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.modelCascade.length) {
+    return buildGmailSalesGroundingModelFailoverProbeResult_('blocked', {
+      blockedReason: 'grounding_configuration_invalid',
+      modelsConfiguredCount: grounding.modelCascade.length,
+      allModelsUnavailable: true
+    });
+  }
+  const prompt = [
+    'Use Google Search to identify the official website for OpenAI.',
+    'Support the official-site claim with inline source citations.',
+    'Do not include private, candidate, contact, or user-provided data.'
+  ].join('\n');
+  const health = readGmailSalesGroundingModelHealthState_();
+  const target = { candidateToken: 'model-failover-probe' };
+  const failover = callGeminiGroundedSearchWithFailover_(grounding, prompt, target, { now: new Date().toISOString(), health });
+  persistGmailSalesGroundingModelHealthState_(health);
+  const parsed = failover.parsedGrounding || {};
+  const providerErrorCategoryCounts = failover.providerErrorCategoryCounts || {};
+  const responseContractValid = Boolean(
+    failover.ok &&
+    parsed.responseJsonParsed &&
+    parsed.googleSearchCallStepCount >= 1 &&
+    parsed.modelOutputStepCount >= 1 &&
+    parsed.urlCitationAnnotationCount >= 1
+  );
+  const citationAcceptanceValid = Boolean(
+    responseContractValid &&
+    parsed.citationUrlSafetyAcceptedCount >= 1 &&
+    parsed.citationUrlFinalAcceptedCount >= 1
+  );
+  const result = buildGmailSalesGroundingModelFailoverProbeResult_(failover.ok ? 'pass' : 'blocked', {
+    blockedReason: failover.ok ? '' : failover.failureCategory,
+    modelsConfiguredCount: grounding.modelCascade.length,
+    modelsAttemptedCount: failover.modelsAttemptedCount,
+    modelSuccessCount: failover.ok ? 1 : 0,
+    modelFailureCount: Math.max(0, failover.modelsAttemptedCount - (failover.ok ? 1 : 0)),
+    selectedModel: failover.ok ? failover.selectedModel : '',
+    providerErrorCategoryCounts,
+    responseContractValid,
+    citationAcceptanceValid,
+    citationUrlSafetyAcceptedCount: Number(parsed.citationUrlSafetyAcceptedCount || 0),
+    citationUrlFinalAcceptedCount: Number(parsed.citationUrlFinalAcceptedCount || 0),
+    failoverExecuted: failover.failoverExecuted,
+    allModelsUnavailable: failover.allModelsUnavailable || !failover.ok,
+    recommendedNextAction: failover.ok ? 'run_source_discovery' : 'repair_grounding_provider_or_wait_for_cooldown',
+    completedAt: new Date().toISOString()
+  });
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function buildGmailSalesGroundingModelFailoverProbeResult_(status, overrides) {
+  return Object.assign({
+    event: 'gmail_sales_grounding_model_failover_probe',
+    mode: 'write',
+    status,
+    blockedReason: '',
+    modelsConfiguredCount: 0,
+    modelsAttemptedCount: 0,
+    modelSuccessCount: 0,
+    modelFailureCount: 0,
+    selectedModel: '',
+    providerErrorCategoryCounts: {},
+    responseContractValid: false,
+    citationAcceptanceValid: false,
+    citationUrlSafetyAcceptedCount: 0,
+    citationUrlFinalAcceptedCount: 0,
+    failoverExecuted: false,
+    allModelsUnavailable: false,
+    recommendedNextAction: '',
+    storeDisabled: true,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    candidateRowsUpdated: false,
+    triggerChanged: false,
+    completedAt: ''
+  }, overrides || {});
 }
 
 function buildGmailSalesGroundingCitationAcceptanceProbeResult_(status, overrides) {
@@ -7592,6 +7894,19 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     candidateDiscoveryRequestCountToday: 0,
     remainingGroundingPromptRequestCountToday: 0,
     maxCandidatesFromRemainingPromptRequests: 0,
+    configuredGroundingModelCount: 0,
+    availableGroundingModelCount: 0,
+    allGroundingModelsUnavailable: false,
+    selectedHealthyModel: '',
+    modelsAttemptedCount: 0,
+    modelAttemptCounts: {},
+    modelRequestCounts: {},
+    modelExecutedQueryCounts: {},
+    failoverCandidateCount: 0,
+    allModelsFailedCandidateCount: 0,
+    candidateSuccessCount: 0,
+    candidateRetryableFailureCount: 0,
+    candidatePermanentFailureCount: 0,
     groundingParserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
     groundingRequestContractVersion: GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION,
     citationSafetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
