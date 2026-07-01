@@ -514,7 +514,7 @@ function createEnvironment(options = {}) {
       GMAIL_SALES_AI_MODEL: 'gemini-mock',
       GMAIL_SALES_AI_API_KEY: options.aiEnabled === false ? '' : 'mock-redacted-token',
       GMAIL_SALES_GROUNDING_MODEL: 'gemini-mock-grounded',
-      GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON: JSON.stringify(['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']),
+      GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON: JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']),
       GMAIL_SALES_GROUNDING_MAX_CANDIDATES_PER_RUN: '10',
       GMAIL_SALES_GROUNDING_MAX_SEARCH_QUERIES_PER_DAY: '30',
       GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY: '30',

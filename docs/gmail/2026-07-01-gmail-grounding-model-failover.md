@@ -12,9 +12,9 @@ Default cascade:
 
 ```text
 gemini-3.5-flash
+gemini-3.1-flash-lite
 gemini-2.5-flash
 gemini-2.5-flash-lite
-gemini-2.0-flash
 ```
 
 The legacy single model property remains as a fallback input, but discovery uses the cascade first.
@@ -28,6 +28,7 @@ The legacy single model property remains as a fallback input, but discovery uses
 - Citation safety and identity rejections remain non-bypassable and are not converted to source-not-found.
 - Non-2xx provider responses are not parsed as normal responses.
 - Model health state stores only non-secret metadata such as failure category, timestamps, cooldown, parser version, and validator version.
+- Shutdown `gemini-2.0-*` models are excluded before API requests.
 - A new read/write probe function validates the cascade without candidate data:
   - `testGmailSalesGroundingModelFailoverOnce`
 

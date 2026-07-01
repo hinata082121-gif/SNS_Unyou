@@ -217,7 +217,8 @@ const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v3';
 const GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION = 'gemini-interactions-google-search-v2';
 const GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION = 'grounding-citation-safety-v2';
 const GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY = 'GMAIL_SALES_GROUNDING_MODEL_HEALTH_JSON';
-const GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE = ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+const GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const GMAIL_SALES_GROUNDING_SHUTDOWN_MODEL_PREFIXES = ['gemini-2.0-'];
 const GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS = [
   'aiVerificationStatus',
   'aiProvider',
@@ -3309,6 +3310,12 @@ function inspectGmailSalesTomorrowEmergencyReadiness() {
     currentEvidenceEnrichmentEligibleCount: Number(groundingStatus.sourceReferencesAppliedCount || 0),
     currentAiVerificationEligibleCount: Number(groundingStatus.sourceReferencesAppliedCount || 0),
     currentSendManifestEligibleCount: Number(readiness.manifestCandidateCount || 0),
+    configuredModelCascade: groundingStatus.configuredModelCascade || [],
+    activeModelCascade: groundingStatus.activeModelCascade || [],
+    configuredModelCount: Number(groundingStatus.configuredModelCount || 0),
+    activeModelCount: Number(groundingStatus.activeModelCount || 0),
+    shutdownModelExcludedCount: Number(groundingStatus.shutdownModelExcludedCount || 0),
+    modelConfigurationValid: Boolean(groundingStatus.modelConfigurationValid),
     availableGroundingModelCount,
     allGroundingModelsUnavailable: availableGroundingModelCount === 0,
     schedulerInstalled: triggerHealth.controlLoopTriggerExists === true,
@@ -4613,7 +4620,15 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     businessInquiryEvidenceCount: Number(last.businessInquiryEvidenceCount || 0),
     solicitationRestrictedCount: Number(last.solicitationRestrictedCount || 0),
     sourceReferencesAppliedCount: Number(last.sourceReferencesAppliedCount || 0),
-    configuredGroundingModelCount: (grounding.modelCascade || []).length,
+    configuredModelCascade: grounding.configuredModelCascade || [],
+    activeModelCascade: grounding.activeModelCascade || grounding.modelCascade || [],
+    configuredModelCount: Number(grounding.configuredModelCount || 0),
+    activeModelCount: Number(grounding.activeModelCount || 0),
+    shutdownModelExcludedCount: Number(grounding.shutdownModelExcludedCount || 0),
+    malformedModelExcludedCount: Number(grounding.malformedModelExcludedCount || 0),
+    duplicateModelExcludedCount: Number(grounding.duplicateModelExcludedCount || 0),
+    modelConfigurationValid: Boolean(grounding.modelConfigurationValid),
+    configuredGroundingModelCount: Number(grounding.activeModelCount || 0),
     availableGroundingModelCount: (grounding.modelCascade || []).filter((model) => !isGroundingModelInCooldown_(model, readGmailSalesGroundingModelHealthState_(), new Date().toISOString())).length,
     selectedHealthyModel: String(last.selectedHealthyModel || ''),
     modelsAttemptedCount: Number(last.modelsAttemptedCount || 0),
@@ -4710,6 +4725,26 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
         providerConfigurationValid: grounding.providerConfigurationValid
       });
     }
+    if (!grounding.modelConfigurationValid || Number(grounding.activeModelCount || 0) === 0) {
+      return buildGmailSalesGroundingResult_('blocked', {
+        blockedReason: 'no_active_grounding_model',
+        groundingEnabled: grounding.enabled,
+        groundingModelConfigured: Boolean(grounding.model),
+        providerConfigurationValid: grounding.providerConfigurationValid,
+        configuredModelCascade: grounding.configuredModelCascade || [],
+        activeModelCascade: [],
+        configuredModelCount: Number(grounding.configuredModelCount || 0),
+        activeModelCount: 0,
+        shutdownModelExcludedCount: Number(grounding.shutdownModelExcludedCount || 0),
+        malformedModelExcludedCount: Number(grounding.malformedModelExcludedCount || 0),
+        duplicateModelExcludedCount: Number(grounding.duplicateModelExcludedCount || 0),
+        modelConfigurationValid: false,
+        candidatesAttemptedCount: 0,
+        searchQueryCount: 0,
+        groundingHttpRequestCount: 0,
+        aiApiCalled: false
+      });
+    }
     const context = getGmailSalesContactBasisReviewContext_();
     if (!context.ok) return buildGmailSalesGroundingResult_('blocked', { blockedReason: context.blockedReason });
     ensureSheetHeaders_(context.sourceSheet, GMAIL_CONTACT_BASIS_COLUMNS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
@@ -4724,6 +4759,14 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     Object.assign(stats, collected.stats);
     const promptUsage = getGmailSalesGroundingPromptRequestUsage_();
     Object.assign(stats, promptUsage);
+    stats.configuredModelCascade = grounding.configuredModelCascade || [];
+    stats.activeModelCascade = grounding.activeModelCascade || grounding.modelCascade || [];
+    stats.configuredModelCount = Number(grounding.configuredModelCount || 0);
+    stats.activeModelCount = Number(grounding.activeModelCount || 0);
+    stats.shutdownModelExcludedCount = Number(grounding.shutdownModelExcludedCount || 0);
+    stats.malformedModelExcludedCount = Number(grounding.malformedModelExcludedCount || 0);
+    stats.duplicateModelExcludedCount = Number(grounding.duplicateModelExcludedCount || 0);
+    stats.modelConfigurationValid = Boolean(grounding.modelConfigurationValid);
     stats.configuredGroundingModelCount = (grounding.modelCascade || []).length;
     const modelHealth = readGmailSalesGroundingModelHealthState_();
     stats.availableGroundingModelCount = (grounding.modelCascade || []).filter((model) => !isGroundingModelInCooldown_(model, modelHealth, new Date().toISOString())).length;
@@ -6383,11 +6426,20 @@ function getGmailSalesGroundingConfig_(aiConfig) {
   const model = String(props.getProperty('GMAIL_SALES_GROUNDING_MODEL') || 'gemini-2.5-flash-lite').trim();
   const providerConfigurationValid = aiConfig.enabled === true && aiConfig.provider === 'gemini' && Boolean(aiConfig.model) && aiConfig.apiKeyConfigured === true;
   const promptRequestLimit = Math.max(1, Math.min(30, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY') || props.getProperty('GMAIL_SALES_GROUNDING_MAX_SEARCH_QUERIES_PER_DAY') || '30')));
-  const modelCascade = parseGmailSalesGroundingModelCascade_(props.getProperty('GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON'), model);
+  const modelCascadeSummary = normalizeGmailSalesGroundingModelCascade_(props.getProperty('GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON'), model);
   return {
     enabled,
     model,
-    modelCascade,
+    modelCascade: modelCascadeSummary.activeModelCascade,
+    configuredModelCascade: modelCascadeSummary.configuredModelCascade,
+    activeModelCascade: modelCascadeSummary.activeModelCascade,
+    configuredModelCount: modelCascadeSummary.configuredModelCount,
+    activeModelCount: modelCascadeSummary.activeModelCount,
+    shutdownModelExcludedCount: modelCascadeSummary.shutdownModelExcludedCount,
+    malformedModelExcludedCount: modelCascadeSummary.malformedModelExcludedCount,
+    duplicateModelExcludedCount: modelCascadeSummary.duplicateModelExcludedCount,
+    modelConfigurationValid: modelCascadeSummary.modelConfigurationValid,
+    modelValidationDetails: modelCascadeSummary.modelValidationDetails,
     providerConfigurationValid,
     apiKey: aiConfig.apiKey,
     maxCandidatesPerRun: Math.max(1, Math.min(10, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_CANDIDATES_PER_RUN') || '10'))),
@@ -6400,26 +6452,103 @@ function getGmailSalesGroundingConfig_(aiConfig) {
   };
 }
 
-function parseGmailSalesGroundingModelCascade_(jsonValue, fallbackModel) {
+function normalizeGmailSalesGroundingModelCascade_(jsonValue, fallbackModel) {
   let parsed = null;
   try {
     parsed = JSON.parse(String(jsonValue || ''));
   } catch (error) {
     parsed = null;
   }
-  const models = (Array.isArray(parsed) ? parsed : GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE).concat([fallbackModel || '']);
+  const parsedModels = Array.isArray(parsed) ? parsed.map((model) => String(model || '').trim()).filter(Boolean) : [];
+  const parsedContainsShutdown = parsedModels.some((model) => isGmailSalesGroundingModelPermanentlyUnavailable_(model));
+  const fromProperty = Array.isArray(parsed)
+    ? (parsedContainsShutdown ? GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE.concat(parsedModels) : parsedModels)
+    : GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE;
+  const models = fromProperty.concat([fallbackModel || '']);
   const seen = {};
-  return models.map((model) => String(model || '').trim()).filter((model) => {
-    if (!model || seen[model]) return false;
+  const summary = {
+    configuredModelCascade: [],
+    activeModelCascade: [],
+    configuredModelCount: 0,
+    activeModelCount: 0,
+    shutdownModelExcludedCount: 0,
+    malformedModelExcludedCount: 0,
+    duplicateModelExcludedCount: 0,
+    modelConfigurationValid: false,
+    modelValidationDetails: []
+  };
+  models.map((model) => String(model || '').trim()).forEach((model) => {
+    if (!model) return;
+    summary.configuredModelCascade.push(model);
+    summary.configuredModelCount += 1;
+    const validation = validateGmailSalesGroundingModelId_(model);
+    if (seen[model]) {
+      summary.duplicateModelExcludedCount += 1;
+      summary.modelValidationDetails.push({ model, status: 'duplicate' });
+      return;
+    }
     seen[model] = true;
-    return true;
-  }).slice(0, 4);
+    if (validation.status === 'malformed_model_id') {
+      summary.malformedModelExcludedCount += 1;
+      summary.modelValidationDetails.push(validation);
+      return;
+    }
+    if (validation.status === 'shutdown_model') {
+      summary.shutdownModelExcludedCount += 1;
+      summary.modelValidationDetails.push(validation);
+      return;
+    }
+    summary.modelValidationDetails.push(validation);
+    summary.activeModelCascade.push(model);
+  });
+  summary.activeModelCascade = summary.activeModelCascade.slice(0, 4);
+  summary.activeModelCount = summary.activeModelCascade.length;
+  summary.modelConfigurationValid = summary.activeModelCount > 0;
+  return summary;
+}
+
+function parseGmailSalesGroundingModelCascade_(jsonValue, fallbackModel) {
+  return normalizeGmailSalesGroundingModelCascade_(jsonValue, fallbackModel).activeModelCascade;
+}
+
+function validateGmailSalesGroundingModelId_(model) {
+  const value = String(model || '').trim();
+  if (!/^gemini-[a-z0-9.-]+$/i.test(value)) return { model: value, status: 'malformed_model_id' };
+  if (isGmailSalesGroundingModelPermanentlyUnavailable_(value)) return { model: value, status: 'shutdown_model', permanentUnavailable: true, eligibleForFailover: false };
+  return { model: value, status: 'active_configured', permanentUnavailable: false, eligibleForFailover: true };
+}
+
+function isGmailSalesGroundingModelPermanentlyUnavailable_(model) {
+  const value = String(model || '').trim().toLowerCase();
+  return GMAIL_SALES_GROUNDING_SHUTDOWN_MODEL_PREFIXES.some((prefix) => value.indexOf(prefix) === 0);
 }
 
 function readGmailSalesGroundingModelHealthState_() {
   try {
     const parsed = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY) || '{}')) || {};
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    const health = parsed && typeof parsed === 'object' ? parsed : {};
+    Object.keys(health).forEach((model) => {
+      if (isGmailSalesGroundingModelPermanentlyUnavailable_(model)) {
+        health[model] = Object.assign({}, health[model] || {}, {
+          status: 'shutdown',
+          eligibleForFailover: false,
+          permanentUnavailable: true,
+          cooldownUntil: ''
+        });
+      }
+    });
+    GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE.forEach((model) => {
+      if (!health[model]) {
+        health[model] = {
+          status: 'unknown',
+          eligibleForFailover: true,
+          permanentUnavailable: false,
+          parserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
+          validatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION
+        };
+      }
+    });
+    return health;
   } catch (error) {
     return {};
   }
@@ -6548,6 +6677,14 @@ function emptyGroundedSourceDiscoveryStats_() {
     candidateDiscoveryRequestCountToday: 0,
     remainingGroundingPromptRequestCountToday: 0,
     maxCandidatesFromRemainingPromptRequests: 0,
+    configuredModelCascade: [],
+    activeModelCascade: [],
+    configuredModelCount: 0,
+    activeModelCount: 0,
+    shutdownModelExcludedCount: 0,
+    malformedModelExcludedCount: 0,
+    duplicateModelExcludedCount: 0,
+    modelConfigurationValid: false,
     configuredGroundingModelCount: 0,
     availableGroundingModelCount: 0,
     allGroundingModelsUnavailable: false,
@@ -7654,9 +7791,18 @@ function testGmailSalesGroundingModelFailoverOnce() {
   const grounding = getGmailSalesGroundingConfig_(aiConfig);
   if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.modelCascade.length) {
     return buildGmailSalesGroundingModelFailoverProbeResult_('blocked', {
-      blockedReason: 'grounding_configuration_invalid',
-      modelsConfiguredCount: grounding.modelCascade.length,
-      allModelsUnavailable: true
+      blockedReason: grounding.modelCascade.length ? 'grounding_configuration_invalid' : 'no_active_grounding_model',
+      configuredModelCascade: grounding.configuredModelCascade || [],
+      activeModelCascade: grounding.activeModelCascade || [],
+      configuredModelCount: Number(grounding.configuredModelCount || 0),
+      activeModelCount: Number(grounding.activeModelCount || 0),
+      shutdownModelExcludedCount: Number(grounding.shutdownModelExcludedCount || 0),
+      malformedModelExcludedCount: Number(grounding.malformedModelExcludedCount || 0),
+      duplicateModelExcludedCount: Number(grounding.duplicateModelExcludedCount || 0),
+      modelConfigurationValid: Boolean(grounding.modelConfigurationValid),
+      modelsConfiguredCount: Number(grounding.activeModelCount || 0),
+      allModelsUnavailable: true,
+      recommendedNextAction: 'repair_grounding_model_cascade'
     });
   }
   const prompt = [
@@ -7684,6 +7830,14 @@ function testGmailSalesGroundingModelFailoverOnce() {
   );
   const result = buildGmailSalesGroundingModelFailoverProbeResult_(failover.ok ? 'pass' : 'blocked', {
     blockedReason: failover.ok ? '' : failover.failureCategory,
+    configuredModelCascade: grounding.configuredModelCascade || [],
+    activeModelCascade: grounding.activeModelCascade || grounding.modelCascade || [],
+    configuredModelCount: Number(grounding.configuredModelCount || 0),
+    activeModelCount: Number(grounding.activeModelCount || 0),
+    shutdownModelExcludedCount: Number(grounding.shutdownModelExcludedCount || 0),
+    malformedModelExcludedCount: Number(grounding.malformedModelExcludedCount || 0),
+    duplicateModelExcludedCount: Number(grounding.duplicateModelExcludedCount || 0),
+    modelConfigurationValid: Boolean(grounding.modelConfigurationValid),
     modelsConfiguredCount: grounding.modelCascade.length,
     modelsAttemptedCount: failover.modelsAttemptedCount,
     modelSuccessCount: failover.ok ? 1 : 0,
@@ -7709,6 +7863,14 @@ function buildGmailSalesGroundingModelFailoverProbeResult_(status, overrides) {
     mode: 'write',
     status,
     blockedReason: '',
+    configuredModelCascade: [],
+    activeModelCascade: [],
+    configuredModelCount: 0,
+    activeModelCount: 0,
+    shutdownModelExcludedCount: 0,
+    malformedModelExcludedCount: 0,
+    duplicateModelExcludedCount: 0,
+    modelConfigurationValid: false,
     modelsConfiguredCount: 0,
     modelsAttemptedCount: 0,
     modelSuccessCount: 0,
@@ -7894,6 +8056,14 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     candidateDiscoveryRequestCountToday: 0,
     remainingGroundingPromptRequestCountToday: 0,
     maxCandidatesFromRemainingPromptRequests: 0,
+    configuredModelCascade: [],
+    activeModelCascade: [],
+    configuredModelCount: 0,
+    activeModelCount: 0,
+    shutdownModelExcludedCount: 0,
+    malformedModelExcludedCount: 0,
+    duplicateModelExcludedCount: 0,
+    modelConfigurationValid: false,
     configuredGroundingModelCount: 0,
     availableGroundingModelCount: 0,
     allGroundingModelsUnavailable: false,

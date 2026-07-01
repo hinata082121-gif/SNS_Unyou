@@ -165,6 +165,27 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
 }
 
 {
+  const { context } = createContext(() => citationSteps([annotation(safePrimary)]));
+  const normalized = context.normalizeGmailSalesGroundingModelCascade_('', 'gemini-2.5-flash-lite');
+  assert.equal(JSON.stringify(normalized.activeModelCascade), JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']));
+  assert.equal(normalized.activeModelCount, 4);
+  assert.equal(normalized.activeModelCascade.includes('gemini-2.0-flash'), false);
+  assert.equal(context.isGmailSalesGroundingModelPermanentlyUnavailable_('gemini-2.0-flash'), true);
+  assert.equal(context.isGmailSalesGroundingModelPermanentlyUnavailable_('gemini-2.0-flash-001'), true);
+  assert.equal(context.isGmailSalesGroundingModelPermanentlyUnavailable_('gemini-2.0-flash-exp'), true);
+}
+
+{
+  const { context } = createContext(() => citationSteps([annotation(safePrimary)]));
+  const normalized = context.normalizeGmailSalesGroundingModelCascade_(JSON.stringify(['gemini-2.0-flash', 'bad model', 'gemini-3.1-flash-lite', 'gemini-3.1-flash-lite']), 'gemini-2.5-flash-lite');
+  assert.equal(JSON.stringify(normalized.activeModelCascade), JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']));
+  assert.equal(normalized.shutdownModelExcludedCount, 1);
+  assert.equal(normalized.malformedModelExcludedCount, 1);
+  assert.equal(normalized.duplicateModelExcludedCount >= 2, true);
+  assert.equal(normalized.modelConfigurationValid, true);
+}
+
+{
   const { env, context } = createContext(() => citationSteps([annotation(safePrimary)]));
   const result = context.testGmailSalesGroundingCitationAcceptanceContractOnce();
   assert.equal(result.status, 'pass');
@@ -185,10 +206,10 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
     if (payload.model === 'gemini-3.5-flash') return { statusCode: 500, body: { error: { status: 'UNAVAILABLE' } } };
     return { body: citationSteps([annotation(safePrimary)]) };
   });
-  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']);
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
   const result = context.testGmailSalesGroundingModelFailoverOnce();
   assert.equal(result.status, 'pass');
-  assert.equal(result.selectedModel, 'gemini-2.5-flash');
+  assert.equal(result.selectedModel, 'gemini-3.1-flash-lite');
   assert.equal(result.failoverExecuted, true);
   assert.equal(result.responseContractValid, true);
   assert.equal(result.citationAcceptanceValid, true);
@@ -201,26 +222,48 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
 {
   const { env, context } = createContext((payload) => {
     if (payload.model === 'gemini-3.5-flash') return { statusCode: 429, body: { error: { status: 'RESOURCE_EXHAUSTED' } } };
-    if (payload.model === 'gemini-2.5-flash') return { statusCode: 503, body: { error: { status: 'UNAVAILABLE' } } };
-    if (payload.model === 'gemini-2.5-flash-lite') return { statusCode: 500, body: { error: { status: 'UNAVAILABLE' } } };
+    if (payload.model === 'gemini-3.1-flash-lite') return { statusCode: 503, body: { error: { status: 'UNAVAILABLE' } } };
+    if (payload.model === 'gemini-2.5-flash') return { statusCode: 500, body: { error: { status: 'UNAVAILABLE' } } };
     return { body: citationSteps([annotation(safePrimary)]) };
   });
-  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']);
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
   const result = context.testGmailSalesGroundingModelFailoverOnce();
   assert.equal(result.status, 'pass');
-  assert.equal(result.selectedModel, 'gemini-2.0-flash');
+  assert.equal(result.selectedModel, 'gemini-2.5-flash-lite');
   assert.equal(result.failoverExecuted, true);
   assert.equal(result.modelsAttemptedCount, 6);
 }
 
 {
   const { env, context } = createContext(() => ({ statusCode: 503, body: { error: { status: 'UNAVAILABLE' } } }));
-  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash']);
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
   const result = context.testGmailSalesGroundingModelFailoverOnce();
   assert.equal(result.status, 'blocked');
   assert.equal(result.modelSuccessCount, 0);
   assert.equal(result.modelsAttemptedCount, 8);
   assert.equal(result.allModelsUnavailable, true);
+}
+
+{
+  const { env, context } = createContext((payload) => {
+    if (payload.model === 'gemini-3.5-flash') return { statusCode: 404, body: { error: { status: 'NOT_FOUND' } } };
+    return { body: citationSteps([annotation(safePrimary)]) };
+  });
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+  const result = context.testGmailSalesGroundingModelFailoverOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.selectedModel, 'gemini-3.1-flash-lite');
+  assert.equal(result.providerErrorCategoryCounts.model_not_found, 1);
+}
+
+{
+  const { env, context } = createContext(() => ({ body: citationSteps([annotation(safePrimary)]) }));
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-2.0-flash-exp']);
+  const result = context.testGmailSalesGroundingModelFailoverOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.activeModelCascade.includes('gemini-2.0-flash'), false);
+  assert.equal(result.shutdownModelExcludedCount, 3);
+  assert.equal(env.fetchCalls.some((call) => JSON.parse(call.request.payload).model.indexOf('gemini-2.0-') === 0), false);
 }
 
 console.log(JSON.stringify({
