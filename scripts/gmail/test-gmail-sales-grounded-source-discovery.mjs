@@ -373,6 +373,45 @@ test('grounded discovery is blocked until response contract probe is valid', () 
   assert.equal(env.fetchCalls.length, 0);
 });
 
+test('grounded discovery is blocked until citation acceptance probe is valid', () => {
+  const env = createEnvironment({ sourceCount: 1, citationProbeValid: false });
+  seedGroundingReviewAndQueue(env, 1);
+  const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'citation_acceptance_probe_required');
+  assert.equal(result.recommendedNextAction, 'run_citation_acceptance_probe');
+  assert.equal(result.candidatesAttemptedCount, 0);
+  assert.equal(result.searchQueryCount, 0);
+  assert.equal(result.aiApiCalled, false);
+  assert.equal(env.fetchCalls.length, 0);
+});
+
+test('provider non-2xx response is classified without normal response parsing', () => {
+  const env = createEnvironment({ sourceCount: 1, fetchStatusCode: 429 });
+  seedGroundingReviewAndQueue(env, 1);
+  const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.providerHttpErrorCount, 1);
+  assert.equal(result.providerErrorCategoryCounts.rate_limited, 1);
+  assert.equal(result.groundingResponseJsonParsedCount, 0);
+  assert.equal(result.sourceNotFoundCount, 0);
+  assert.equal(result.blockedSourceCount, 1);
+  const queueRow = rowFromSheet(env.workbook.sheets.Gmail_Evidence_Replenishment_Queue, 2);
+  assert.equal(queueRow.status, 'grounding_provider_error');
+  assert.equal(env.context.normalizeGmailSalesEvidenceReplenishmentQueueRow_(queueRow).status, 'grounding_provider_error');
+});
+
+test('citation safety rejected status is recognized and not search-eligible by default', () => {
+  const env = createEnvironment({ sourceCount: 0 });
+  const normalized = env.context.normalizeGmailSalesEvidenceReplenishmentQueueRow_({
+    status: 'citation_safety_rejected',
+    failureReasonCode: 'no_source_reference',
+    candidateToken: 'token'
+  });
+  assert.equal(normalized.status, 'citation_safety_rejected');
+  assert.equal(normalized.searchEligibleStatus, false);
+});
+
 test('citation selection requires grounded citation URL, official confidence, identity match, and safe domain', () => {
   const env = createEnvironment({ sourceCount: 0 });
   const target = buildSelectionTarget(env, 'token');
@@ -478,8 +517,10 @@ function createEnvironment(options = {}) {
       GMAIL_SALES_GROUNDING_MODEL: 'gemini-mock-grounded',
       GMAIL_SALES_GROUNDING_MAX_CANDIDATES_PER_RUN: '10',
       GMAIL_SALES_GROUNDING_MAX_SEARCH_QUERIES_PER_DAY: '30',
+      GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY: '30',
       GMAIL_SALES_GROUNDING_MAX_DAILY_COST_YEN: '100',
-      GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_JSON: options.contractProbeValid === false ? '' : JSON.stringify({ responseContractValid: true, completedAt: '2026-07-01T00:00:00.000Z' })
+      GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_JSON: options.contractProbeValid === false ? '' : JSON.stringify({ responseContractValid: true, httpRequestExecuted: true, completedAt: '2026-07-01T00:00:00.000Z' }),
+      GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_JSON: options.citationProbeValid === false ? '' : JSON.stringify({ citationAcceptanceValid: true, httpRequestExecuted: true, completedAt: '2026-07-01T00:00:00.000Z' })
     },
     workbook: {
       sheets: {
@@ -499,6 +540,7 @@ function createEnvironment(options = {}) {
     },
     logs: [],
     fetchCalls: [],
+    fetchStatusCode: options.fetchStatusCode || 200,
     sheetWriteCount: 0,
     propertyWriteCount: 0,
     triggerWriteCount: 0,
@@ -651,7 +693,7 @@ function buildContext(env) {
         const token = /Candidate token for traceability:\s*([a-f0-9]+)/.exec(prompt)?.[1] || 'mock-token';
         const citationText = 'The official website was verified. Contact and business inquiry information is available.';
         return {
-          getResponseCode: () => 200,
+          getResponseCode: () => env.fetchStatusCode,
           getContentText: () => JSON.stringify({
             steps: [
               { type: 'google_search_call', arguments: { queries: ['redacted public business official website'] } },
