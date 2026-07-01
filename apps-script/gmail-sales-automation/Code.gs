@@ -212,6 +212,7 @@ const GMAIL_SALES_EVIDENCE_REPLENISHMENT_SCHEMA_VERSION = 'evidence-replenishmen
 const GMAIL_SALES_GROUNDING_LAST_RUN_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_LAST_RUN_SUMMARY_JSON';
 const GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_JSON';
 const GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_JSON';
+const GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_PROPERTY = 'GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_JSON';
 const GMAIL_SALES_GROUNDING_VERSION_DEFAULT = 'official-source-discovery-v1';
 const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v3';
 const GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION = 'gemini-interactions-google-search-v2';
@@ -3286,6 +3287,7 @@ function inspectGmailSalesCurrentOperationalStatus() {
 function inspectGmailSalesTomorrowEmergencyReadiness() {
   const targetDate = '2026-07-02';
   const readiness = inspectGmailSalesDailyReadiness_({ targetDate });
+  const basisCoverage = inspectGmailSalesContactBasisCoverage_({});
   const groundingStatus = inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
   const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
   const sendAuthorityCallSiteCount = typeof runGmailSalesDailyAutomationTrigger === 'function' ? 1 : 0;
@@ -3298,6 +3300,13 @@ function inspectGmailSalesTomorrowEmergencyReadiness() {
   if (readiness.duplicateCount > 0) zeroSendRiskReasons.push('duplicate_candidate');
   if (readiness.invalidEmailCount > 0) zeroSendRiskReasons.push('invalid_email');
   const availableGroundingModelCount = Number(groundingStatus.availableGroundingModelCount || 0);
+  const groundingPreparationBlocked = Boolean(
+    groundingStatus.lastContractProbeValid === false ||
+    groundingStatus.lastCitationAcceptanceProbeValid === false ||
+    Number(groundingStatus.remainingGroundingPromptRequestCountToday || 0) < 1 ||
+    groundingStatus.modelConfigurationValid === false ||
+    groundingStatus.providerConfigurationValid === false
+  );
   const status = currentApprovedEligibleCount >= 30 ? 'ready_for_full_target' : (currentApprovedEligibleCount >= 1 ? 'ready_for_degraded_nonzero_operation' : (Number(groundingStatus.finalDiscoveryEligibleCount || 0) > 0 ? 'continue_emergency_preparation' : 'blocked_no_legally_eligible_candidate'));
   const result = {
     event: 'gmail_sales_2026_07_02_emergency_readiness',
@@ -3310,6 +3319,13 @@ function inspectGmailSalesTomorrowEmergencyReadiness() {
     currentEvidenceEnrichmentEligibleCount: Number(groundingStatus.sourceReferencesAppliedCount || 0),
     currentAiVerificationEligibleCount: Number(groundingStatus.sourceReferencesAppliedCount || 0),
     currentSendManifestEligibleCount: Number(readiness.manifestCandidateCount || 0),
+    existingApprovedBasisCount: Number(basisCoverage.approvedBasisCount || 0),
+    existingRelationshipEligibleCount: Number(basisCoverage.existingRelationshipCount || 0),
+    explicitOptInEligibleCount: Number(basisCoverage.explicitOptInCount || 0),
+    validBusinessContactExceptionEligibleCount: Number(basisCoverage.validBusinessContactExceptionCount || 0),
+    approvedCandidateAvailabilityStatus: currentApprovedEligibleCount >= 30 ? 'target_30_available' : (currentApprovedEligibleCount >= 1 ? 'minimum_1_available' : 'none_available'),
+    groundingPreparationBlocked,
+    groundingPreparationBlockedOnly: groundingPreparationBlocked && currentApprovedEligibleCount > 0,
     configuredModelCascade: groundingStatus.configuredModelCascade || [],
     activeModelCascade: groundingStatus.activeModelCascade || [],
     configuredModelCount: Number(groundingStatus.configuredModelCount || 0),
@@ -6508,7 +6524,7 @@ function normalizeGmailSalesGroundingModelCascade_(jsonValue, fallbackModel) {
   const fromProperty = Array.isArray(parsed)
     ? (parsedContainsShutdown ? GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE.concat(parsedModels) : parsedModels)
     : GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE;
-  const models = fromProperty.concat([fallbackModel || '']);
+  const models = fromProperty.length > 0 ? fromProperty : [fallbackModel || ''];
   const seen = {};
   const summary = {
     configuredModelCascade: [],
@@ -6553,6 +6569,43 @@ function normalizeGmailSalesGroundingModelCascade_(jsonValue, fallbackModel) {
 
 function parseGmailSalesGroundingModelCascade_(jsonValue, fallbackModel) {
   return normalizeGmailSalesGroundingModelCascade_(jsonValue, fallbackModel).activeModelCascade;
+}
+
+function normalizeGmailSalesGroundingModelCascadePropertyOnce() {
+  const props = PropertiesService.getScriptProperties();
+  const aiConfig = getGmailSalesAiConfig_();
+  const fallbackModel = String(props.getProperty('GMAIL_SALES_GROUNDING_MODEL') || aiConfig.model || 'gemini-2.5-flash-lite').trim();
+  const before = normalizeGmailSalesGroundingModelCascade_(props.getProperty('GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON'), fallbackModel);
+  const canonical = before.activeModelCascade.slice(0, 4);
+  const canonicalJson = JSON.stringify(canonical);
+  const alreadyCanonical = String(props.getProperty('GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON') || '') === canonicalJson;
+  if (!alreadyCanonical) props.setProperty('GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON', canonicalJson);
+  const after = normalizeGmailSalesGroundingModelCascade_(props.getProperty('GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON'), fallbackModel);
+  const result = {
+    event: 'gmail_sales_grounding_model_cascade_property_normalized',
+    mode: 'write',
+    status: after.modelConfigurationValid ? 'pass' : 'blocked',
+    configuredModelCountBefore: before.configuredModelCount,
+    activeModelCountBefore: before.activeModelCount,
+    duplicateModelExcludedCountBefore: before.duplicateModelExcludedCount,
+    shutdownModelExcludedCountBefore: before.shutdownModelExcludedCount,
+    malformedModelExcludedCountBefore: before.malformedModelExcludedCount,
+    configuredModelCount: after.configuredModelCount,
+    activeModelCount: after.activeModelCount,
+    duplicateModelExcludedCount: after.duplicateModelExcludedCount,
+    shutdownModelExcludedCount: after.shutdownModelExcludedCount,
+    malformedModelExcludedCount: after.malformedModelExcludedCount,
+    canonicalModelCount: canonical.length,
+    propertyUpdated: !alreadyCanonical,
+    idempotent: alreadyCanonical,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    scriptPropertiesUpdated: !alreadyCanonical
+  };
+  logGmailSalesJsonResult_(result);
+  return result;
 }
 
 function validateGmailSalesGroundingModelId_(model) {
@@ -6651,7 +6704,11 @@ function getGmailSalesGroundingPromptRequestUsage_() {
   const last = readGmailSalesGroundingLastRunSummary_();
   const contract = readGmailSalesGroundingContractProbeSummary_();
   const citation = readGmailSalesGroundingCitationAcceptanceProbeSummary_();
-  const candidateDiscoveryRequestCountToday = isIsoTimestampToday_(last.completedAt) ? Number(last.candidateDiscoveryPromptRequestCount || last.groundingHttpRequestCount || last.searchQueryCount || 0) : 0;
+  const usage = getGmailSalesGroundingUsageForJstDate_(Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const candidateDiscoveryRequestCountToday = Math.max(
+    isIsoTimestampToday_(last.completedAt) ? Number(last.candidateDiscoveryPromptRequestCount || last.groundingHttpRequestCount || last.searchQueryCount || 0) : 0,
+    Number(usage.candidateDiscoveryPromptRequestCount || 0)
+  );
   const responseContractProbeRequestCountToday = isIsoTimestampToday_(contract.completedAt) && contract.httpRequestExecuted ? 1 : 0;
   const citationAcceptanceProbeRequestCountToday = isIsoTimestampToday_(citation.completedAt) && citation.httpRequestExecuted ? 1 : 0;
   const manualCount = Math.max(0, Number(props.getProperty('GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY') || '0'));
@@ -6666,6 +6723,115 @@ function getGmailSalesGroundingPromptRequestUsage_() {
     remainingGroundingPromptRequestCountToday: remaining,
     maxCandidatesFromRemainingPromptRequests: remaining
   };
+}
+
+function readGmailSalesGroundingUsageAccounting_() {
+  try {
+    const parsed = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_PROPERTY) || '{}')) || {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function getGmailSalesGroundingUsageForJstDate_(dateText) {
+  const targetDate = normalizeDateText_(dateText || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const usage = readGmailSalesGroundingUsageAccounting_();
+  const entry = usage[targetDate] || {};
+  return {
+    jstDate: targetDate,
+    groundingPromptRequestCountToday: Number(entry.groundingPromptRequestCountToday || 0),
+    probeRequestCount: Number(entry.probeRequestCount || 0),
+    candidateDiscoveryPromptRequestCount: Number(entry.candidateDiscoveryPromptRequestCount || 0),
+    retryPromptRequestCount: Number(entry.retryPromptRequestCount || 0),
+    failoverPromptRequestCount: Number(entry.failoverPromptRequestCount || 0),
+    groundingHttpRequestCount: Number(entry.groundingHttpRequestCount || 0),
+    googleSearchExecutedQueryCount: Number(entry.googleSearchExecutedQueryCount || 0),
+    modelRequestCounts: entry.modelRequestCounts || {},
+    closedBudget: entry.closedBudget === true,
+    repairedAt: String(entry.repairedAt || '')
+  };
+}
+
+function reconcileGmailSalesGroundingUsageOnce_() {
+  return repairGmailSalesGroundingUsageAccountingOnce();
+}
+
+function repairGmailSalesGroundingUsageAccountingOnce() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return {
+      event: 'gmail_sales_grounding_usage_accounting_repair',
+      status: 'blocked',
+      blockedReason: 'lock_unavailable',
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      triggerChanged: false,
+      aiApiCalled: false,
+      scriptPropertiesUpdated: false
+    };
+  }
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const targetDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
+    const last = readGmailSalesGroundingLastRunSummary_();
+    const contract = readGmailSalesGroundingContractProbeSummary_();
+    const citation = readGmailSalesGroundingCitationAcceptanceProbeSummary_();
+    const candidateCount = isIsoTimestampToday_(last.completedAt)
+      ? Number(last.candidateDiscoveryPromptRequestCount || last.groundingHttpRequestCount || last.searchQueryCount || 0)
+      : 0;
+    const responseProbeCount = isIsoTimestampToday_(contract.completedAt) && contract.httpRequestExecuted ? 1 : 0;
+    const citationProbeCount = isIsoTimestampToday_(citation.completedAt) && citation.httpRequestExecuted ? 1 : 0;
+    const probeCount = responseProbeCount + citationProbeCount;
+    const retryCount = isIsoTimestampToday_(last.completedAt) ? Number(last.retryPromptRequestCount || 0) : 0;
+    const failoverCount = isIsoTimestampToday_(last.completedAt) ? Number(last.failoverPromptRequestCount || 0) : 0;
+    const total = candidateCount + probeCount;
+    const previousManual = Math.max(0, Number(props.getProperty('GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY') || '0'));
+    const repairedTotal = Math.max(previousManual, total);
+    const usage = readGmailSalesGroundingUsageAccounting_();
+    const existing = usage[targetDate] || {};
+    const entry = Object.assign({}, existing, {
+      jstDate: targetDate,
+      repairedAt: new Date().toISOString(),
+      groundingPromptRequestCountToday: Math.max(Number(existing.groundingPromptRequestCountToday || 0), repairedTotal),
+      probeRequestCount: Math.max(Number(existing.probeRequestCount || 0), probeCount),
+      responseContractProbeRequestCount: Math.max(Number(existing.responseContractProbeRequestCount || 0), responseProbeCount),
+      citationAcceptanceProbeRequestCount: Math.max(Number(existing.citationAcceptanceProbeRequestCount || 0), citationProbeCount),
+      candidateDiscoveryPromptRequestCount: Math.max(Number(existing.candidateDiscoveryPromptRequestCount || 0), candidateCount),
+      retryPromptRequestCount: Math.max(Number(existing.retryPromptRequestCount || 0), retryCount),
+      failoverPromptRequestCount: Math.max(Number(existing.failoverPromptRequestCount || 0), failoverCount),
+      groundingHttpRequestCount: Math.max(Number(existing.groundingHttpRequestCount || 0), candidateCount),
+      googleSearchExecutedQueryCount: Math.max(Number(existing.googleSearchExecutedQueryCount || 0), isIsoTimestampToday_(last.completedAt) ? Number(last.googleSearchExecutedQueryCount || 0) : 0),
+      modelRequestCounts: last.modelRequestCounts || existing.modelRequestCounts || {},
+      closedBudget: false
+    });
+    usage[targetDate] = entry;
+    props.setProperty(GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_PROPERTY, JSON.stringify(usage));
+    props.setProperty('GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY', String(entry.groundingPromptRequestCountToday));
+    const result = {
+      event: 'gmail_sales_grounding_usage_accounting_repair',
+      mode: 'write',
+      status: 'pass',
+      targetJstDate: targetDate,
+      previousManualPromptRequestCount: previousManual,
+      repairedPromptRequestCount: entry.groundingPromptRequestCountToday,
+      probeRequestCount: entry.probeRequestCount,
+      candidateDiscoveryPromptRequestCount: entry.candidateDiscoveryPromptRequestCount,
+      retryPromptRequestCount: entry.retryPromptRequestCount,
+      failoverPromptRequestCount: entry.failoverPromptRequestCount,
+      groundingHttpRequestCount: entry.groundingHttpRequestCount,
+      idempotent: previousManual >= repairedTotal && Number(existing.groundingPromptRequestCountToday || 0) >= repairedTotal,
+      gmailSendExecuted: false,
+      googleSheetsUpdated: false,
+      triggerChanged: false,
+      aiApiCalled: false,
+      scriptPropertiesUpdated: true
+    };
+    logGmailSalesJsonResult_(result);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function emptyGroundedSourceDiscoveryStats_() {
@@ -7632,15 +7798,15 @@ function normalizeGroundingCitationUrl_(url) {
 function parseGroundingCitationUrlAppsScriptSafe_(value) {
   if (typeof value !== 'string') return { ok: false, reasonCode: 'non_string_url' };
   const raw = value.trim();
-  if (!raw) return { ok: false, reasonCode: 'missing_url' };
-  if (/[\u0000-\u001F\u007F]/.test(raw)) return { ok: false, reasonCode: 'control_character_in_url' };
+  if (!raw) return { ok: false, reasonCode: 'empty_url' };
+  if (/[\u0000-\u001F\u007F]/.test(raw)) return { ok: false, reasonCode: 'control_character' };
   if (/%(?![0-9A-Fa-f]{2})/.test(raw)) return { ok: false, reasonCode: 'malformed_percent_encoding' };
   return parseHttpsUrlComponentsWithoutBrowserApi_(raw);
 }
 
 function parseHttpsUrlComponentsWithoutBrowserApi_(raw) {
   const schemeMatch = String(raw || '').match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\//);
-  if (!schemeMatch) return { ok: false, reasonCode: 'missing_scheme' };
+  if (!schemeMatch) return { ok: false, reasonCode: 'malformed_scheme' };
   const scheme = schemeMatch[1].toLowerCase();
   if (scheme !== 'https') return { ok: false, reasonCode: 'unsupported_scheme' };
   let rest = raw.slice(schemeMatch[0].length);
@@ -7649,7 +7815,7 @@ function parseHttpsUrlComponentsWithoutBrowserApi_(raw) {
   const firstPathIndex = firstIndexOfAny_(rest, ['/', '?']);
   const authority = firstPathIndex === -1 ? rest : rest.slice(0, firstPathIndex);
   let pathAndQuery = firstPathIndex === -1 ? '' : rest.slice(firstPathIndex);
-  if (!authority) return { ok: false, reasonCode: 'missing_hostname' };
+  if (!authority) return { ok: false, reasonCode: 'malformed_authority' };
   if (authority.indexOf('@') !== -1) return { ok: false, reasonCode: 'credential_in_url' };
   let host = authority;
   let port = '';

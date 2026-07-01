@@ -181,7 +181,7 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
   assert.equal(JSON.stringify(normalized.activeModelCascade), JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']));
   assert.equal(normalized.shutdownModelExcludedCount, 1);
   assert.equal(normalized.malformedModelExcludedCount, 1);
-  assert.equal(normalized.duplicateModelExcludedCount >= 2, true);
+  assert.equal(normalized.duplicateModelExcludedCount >= 1, true);
   assert.equal(normalized.modelConfigurationValid, true);
 }
 

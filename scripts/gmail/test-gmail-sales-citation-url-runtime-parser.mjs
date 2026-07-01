@@ -128,6 +128,35 @@ for (const exposeUrl of [true, false]) {
 }
 
 {
+  const { context, env } = createContext({ exposeUrl: false });
+  env.props.GMAIL_SALES_AI_ENABLED = 'true';
+  env.props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+  env.props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+  env.props.GMAIL_SALES_AI_API_KEY = 'redacted-token';
+  env.props.GMAIL_SALES_GROUNDING_MODEL = 'gemini-2.5-flash-lite';
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify([
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash-lite'
+  ]);
+  const result = context.normalizeGmailSalesGroundingModelCascadePropertyOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.configuredModelCount, 4);
+  assert.equal(result.activeModelCount, 4);
+  assert.equal(result.duplicateModelExcludedCount, 0);
+  assert.equal(result.propertyUpdated, true);
+  const second = context.normalizeGmailSalesGroundingModelCascadePropertyOnce();
+  assert.equal(second.idempotent, true);
+  assert.equal(second.propertyUpdated, false);
+  assert.equal(env.fetchCount, 0);
+  assert.equal(env.mailSendCount, 0);
+  assert.equal(env.sheetWriteCount, 0);
+  assert.equal(env.triggerWriteCount, 0);
+}
+
+{
   const { context } = createContext({ exposeUrl: false });
   const response = {
     steps: [{
@@ -166,6 +195,31 @@ for (const exposeUrl of [true, false]) {
   assert.equal(failover.failoverExecuted, false);
   assert.equal(failover.uniqueModelsAttemptedCount, 1);
   assert.equal(env.fetchCount, 1);
+  assert.equal(env.mailSendCount, 0);
+  assert.equal(env.sheetWriteCount, 0);
+  assert.equal(env.triggerWriteCount, 0);
+}
+
+{
+  const { context, env } = createContext({ exposeUrl: false });
+  const now = new Date().toISOString();
+  env.props.GMAIL_SALES_GROUNDING_LAST_RUN_SUMMARY_JSON = JSON.stringify({
+    completedAt: now,
+    candidateDiscoveryPromptRequestCount: 20,
+    groundingHttpRequestCount: 20,
+    retryPromptRequestCount: 0,
+    failoverPromptRequestCount: 10,
+    googleSearchExecutedQueryCount: 20,
+    modelRequestCounts: { 'gemini-2.5-flash': 10, 'gemini-2.5-flash-lite': 10 }
+  });
+  env.props.GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_JSON = JSON.stringify({ completedAt: now, httpRequestExecuted: true });
+  env.props.GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_JSON = JSON.stringify({ completedAt: now, httpRequestExecuted: true });
+  const result = context.repairGmailSalesGroundingUsageAccountingOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.candidateDiscoveryPromptRequestCount, 20);
+  assert.equal(result.probeRequestCount, 2);
+  assert.equal(result.repairedPromptRequestCount, 22);
+  assert.equal(env.fetchCount, 0);
   assert.equal(env.mailSendCount, 0);
   assert.equal(env.sheetWriteCount, 0);
   assert.equal(env.triggerWriteCount, 0);
