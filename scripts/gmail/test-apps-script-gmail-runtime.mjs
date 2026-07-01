@@ -1288,6 +1288,7 @@ const scenarios = [
     env.props.ALLOWED_SEND_END_MINUTE = '0';
   }, (env, result) => {
     assert.equal(result.sendWindowConfigured, true);
+    env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
     const health = env.context.runGmailSalesDailyAutomationHealthCheck();
     assert.equal(health.status, 'pass');
     assert.equal(health.sendWindowConfigured, true);
@@ -1358,6 +1359,7 @@ const scenarios = [
   }],
   ['daily automation health ignores legacy allowed send window overrides', (env) => {
     env.entry = 'dailyHealth';
+    env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
     env.props.ALLOWED_SEND_START_HOUR = '0';
     env.props.ALLOWED_SEND_START_MINUTE = '0';
     env.props.ALLOWED_SEND_END_HOUR = '0';
@@ -1384,6 +1386,7 @@ const scenarios = [
   }],
   ['daily automation health passes with configured versions and window', (env) => {
     env.entry = 'dailyHealth';
+    env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   }, (env, result) => {
     assert.equal(result.status, 'pass');
     assert.equal(result.automationVersionMatch, true);
@@ -1398,10 +1401,10 @@ const scenarios = [
   }],
   ['daily automation health passes with one installed normal trigger', (env) => {
     env.entry = 'dailyHealth';
-    env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+    env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   }, (env, result) => {
     assert.equal(result.status, 'pass');
-    assert.equal(result.normalTriggerCount, 1);
+    assert.equal(result.controlLoopTriggerCount, 1);
     assert.equal(result.triggerScheduleConfigured, true);
     assertDiagnosticReadOnly(env);
   }],
@@ -1604,28 +1607,49 @@ const scenarios = [
     assert.equal(env.triggerWriteCount, 0);
     assert.equal(env.sheetWriteCount > 0, true);
   }],
-  ['prepareDailyPipeline blocks source below thirty without sending', (env) => {
+  ['prepareDailyPipeline prepares degraded nonzero source below thirty', (env) => {
     env.entry = 'dailyPreparePipeline';
     installDailyPipelineSourceState(env, { sourceCount: 29 });
   }, (env, result) => {
-    assert.equal(result.status, 'blocked');
-    assert.equal(result.blockedReason, 'operational_candidates_not_ready');
-    assert.equal(result.operationalCandidateReady, false);
-    assert.equal(result.sheetSynced, false);
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.selectedCount, 29);
+    assert.equal(result.manifestCandidateCount, 29);
+    assert.equal(result.degradedOperation, true);
+    assert.equal(result.shortfallCount, 1);
+    assert.equal(result.sheetSynced, true);
+    assert.equal(result.readyForScheduledSend, true);
+    const manifest = JSON.parse(env.props.APPROVED_SEND_MANIFEST_JSON);
+    assert.equal(manifest.candidateCount, 29);
+    assert.equal(manifest.maxSendCount, 29);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
     assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
   }],
-  ['prepareDailyPipeline excludes unknown contact basis before selection', (env) => {
+  ['prepareDailyPipeline excludes unknown contact basis and prepares degraded nonzero batch', (env) => {
     env.entry = 'dailyPreparePipeline';
     installDailyPipelineSourceState(env, { sourceCount: 30 });
     const sourceSheet = env.workbook.sheets['Gmail営業候補プール'];
     const basisColumn = sourceSheet.rows[0].indexOf('contactBasisType');
     sourceSheet.rows[1][basisColumn] = 'unknown';
   }, (env, result) => {
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.selectedCount, 29);
+    assert.equal(result.manifestCandidateCount, 29);
+    assert.equal(result.degradedOperation, true);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['prepareDailyPipeline blocks when approved eligible count is zero', (env) => {
+    env.entry = 'dailyPreparePipeline';
+    installDailyPipelineSourceState(env, { sourceCount: 30 });
+    const sourceSheet = env.workbook.sheets['Gmail営業候補プール'];
+    const basisColumn = sourceSheet.rows[0].indexOf('contactBasisType');
+    for (let index = 1; index < sourceSheet.rows.length; index += 1) {
+      sourceSheet.rows[index][basisColumn] = 'unknown';
+    }
+  }, (env, result) => {
     assert.equal(result.status, 'blocked');
-    assert.equal(result.blockedReason, 'operational_candidates_not_ready');
-    assert.equal(result.operationalCandidateReady, false);
+    assert.equal(result.blockedReason, 'no_approved_eligible_candidate');
+    assert.equal(result.sheetSynced, false);
     assert.equal(env.mailSendCount, 0);
   }],
   ['daily E2E pipeline prepares, enables, sends thirty, audits, and safe rests', (env) => {
@@ -1845,6 +1869,41 @@ const scenarios = [
     assert.equal(result.oldSendTriggerAbsent, true);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.triggerWriteCount > 0, true);
+  }],
+  ['production control loop installer alias is idempotent and does not install direct send trigger', (env) => {
+    env.entry = 'productionControlLoopInstallAlias';
+  }, (env, result) => {
+    assert.equal(result.controlLoopTriggerExists, true);
+    assert.equal(result.oldSendTriggerAbsent, true);
+    assert.equal(env.triggerCreations.length, 1);
+    assert.equal(env.triggerCreations[0].handler, 'runGmailSalesProductionControlLoop');
+    assert.equal(env.triggerCreations[0].minuteInterval, 30);
+    assert.equal(env.mailSendCount, 0);
+  }],
+  ['production scheduler inspector reports installed controller without writes', (env) => {
+    env.entry = 'productionSchedulerStatus';
+    env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
+  }, (env, result) => {
+    assert.equal(result.schedulerInstalled, true);
+    assert.equal(result.schedulerEnabled, true);
+    assert.equal(result.controllerTriggerCount, 1);
+    assert.equal(result.sendAuthorityTriggerCount, 0);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['tomorrow emergency readiness treats stale one-candidate manifest as zero eligible', (env) => {
+    env.entry = 'tomorrowEmergencyReadiness';
+    installStaleOneCandidateManifestReadinessState(env);
+  }, (env, result) => {
+    assert.equal(result.targetBusinessDate, '2026-07-02');
+    assert.equal(result.currentApprovedEligibleCount, 0);
+    assert.equal(result.currentSendManifestEligibleCount, 0);
+    assert.equal(result.zeroSendRisk, true);
+    assert.equal(result.zeroSendRiskReasons.includes('no_approved_eligible_candidate'), true);
+    assert.equal(result.zeroSendRiskReasons.includes('scheduler_not_installed'), true);
+    assert.equal(result.zeroSendRiskReasons.includes('contact_basis_coverage_invalid'), true);
+    assert.equal(result.zeroSendRiskReasons.includes('target_manifest_invalid'), true);
+    assert.equal(result.zeroSendRiskReasons.includes('preflight_failed'), true);
+    assertDiagnosticReadOnly(env);
   }],
   ['daily enable when ready sets three flags without sending', (env) => {
     env.entry = 'dailyEnableWhenReady';
@@ -2498,6 +2557,9 @@ function runEntry(env) {
   if (env.entry === 'dailyEnableWhenReady') return env.context.enableGmailSalesNormalAutomationWhenReadyOnce();
   if (env.entry === 'weeklyReport') return env.context.runGmailSalesWeeklyReportAndOptimization();
   if (env.entry === 'productionTriggerInstall') return env.context.installGmailSalesProductionTriggersOnce();
+  if (env.entry === 'productionControlLoopInstallAlias') return env.context.installGmailSalesProductionControlLoopTriggerOnce();
+  if (env.entry === 'productionSchedulerStatus') return env.context.inspectGmailSalesProductionSchedulerStatus();
+  if (env.entry === 'tomorrowEmergencyReadiness') return env.context.inspectGmailSalesTomorrowEmergencyReadiness();
   if (env.entry === 'legacyScheduledDailySend') return env.context.runScheduledDailySend();
   if (env.entry === 'dailyAutomationTrigger') return env.context.runGmailSalesDailyAutomationTrigger();
   if (env.entry === 'sameDayPrepare20260624') return env.context.prepareGmailSalesSameDay20260624Once();
@@ -2872,7 +2934,7 @@ function installDailyActivationReadyState(env) {
   env.props.AUTO_SEND_ENABLED = 'false';
   env.props.LIVE_SEND_ENABLED = 'false';
   env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
-  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
     targetDate: config.currentJstDate,
     mode: 'normal_daily',
@@ -2899,7 +2961,7 @@ function installDailyCatchUpReadyState(env) {
   env.props.AUTO_SEND_ENABLED = 'false';
   env.props.LIVE_SEND_ENABLED = 'false';
   env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
-  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   env.rows = Array.from({ length: 30 }, (_, index) => Object.assign({}, buildRow(index + 1), {
     sendDate: targetDate,
     sendBatchId: batchId
@@ -2941,7 +3003,7 @@ function installSameDayPrepareInputState(env) {
   env.props.AUTO_SEND_ENABLED = 'false';
   env.props.LIVE_SEND_ENABLED = 'false';
   env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
-  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   env.rows = Array.from({ length: 30 }, (_, index) => Object.assign({}, buildRow(index + 1), {
     sendDate: targetDate,
     sendBatchId: batchId
@@ -2981,7 +3043,7 @@ function installNormalDailyReadyState(env, options = {}) {
   env.props.ALLOWED_SEND_START_MINUTE = '45';
   env.props.ALLOWED_SEND_END_HOUR = '12';
   env.props.ALLOWED_SEND_END_MINUTE = '45';
-  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   env.rows = Array.from({ length: 30 }, (_, index) => Object.assign({}, buildRow(index + 1), {
     sendDate: targetDate,
     sendBatchId: batchId,
@@ -3020,6 +3082,70 @@ function installNormalDailyReadyState(env, options = {}) {
   });
 }
 
+function installStaleOneCandidateManifestReadinessState(env) {
+  const targetDate = '2026-07-02';
+  const staleDate = '2026-07-01';
+  env.nowIso = `${targetDate}T03:00:00.000Z`;
+  env.props.SEND_DATE = targetDate;
+  env.props.SEND_BATCH_ID = `gmail-sales-${targetDate}`;
+  env.props.SEND_DATE_OVERRIDE = 'true';
+  env.props.SEND_BATCH_ID_OVERRIDE = 'true';
+  env.props.GMAIL_SEND_MAX_SEND_COUNT = '30';
+  env.props.DAILY_SEND_LIMIT = '30';
+  env.props.AUTOMATION_MASTER_ENABLED = 'false';
+  env.props.AUTO_SEND_ENABLED = 'false';
+  env.props.LIVE_SEND_ENABLED = 'false';
+  env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
+  env.props.GMAIL_DAILY_SOURCE_TAB_NAME = 'Gmail営業候補プール';
+  env.triggers = [];
+  env.rows = [];
+  env.workbook.sheets.sales.rows = [HEADERS];
+  env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
+    SOURCE_HEADERS,
+    ...Array.from({ length: 30 }, (_, index) => sourceRowToCells(Object.assign({}, buildSourceOutboxRow(index + 1), {
+      contactBasisType: 'unknown',
+      lastCheckedAt: targetDate
+    })))
+  ]);
+  env.workbook.sheets['Gmail営業候補プール'].env = env;
+  env.manifest = {
+    schemaVersion: 1,
+    mode: 'normal_daily',
+    sourceType: 'normal_daily',
+    targetDate: staleDate,
+    batchId: `gmail-sales-${staleDate}`,
+    candidateCount: 1,
+    maxSendCount: 1,
+    expectedCandidateCount: 1,
+    approvalStatus: 'approved',
+    approvalType: 'automatic_strict_gate',
+    targetAutoApproved: true,
+    humanReviewCompleted: false,
+    humanReviewedCount: 0,
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    candidateDigests: ['stale_fixture_digest'],
+    sourceOutboxIdentity: {
+      targetDate: staleDate,
+      sendBatchId: `gmail-sales-${staleDate}`,
+      candidateContentHash: 'stale_fixture_hash'
+    }
+  };
+  env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
+  env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
+    targetDate: staleDate,
+    mode: 'normal_daily',
+    sendBatchId: `gmail-sales-${staleDate}`,
+    expectedCandidateCount: 1,
+    actualCandidateCount: 1,
+    sheetSynced: true,
+    state: 'sheet_synced',
+    sendAttemptCount: 0,
+    actualSendCount: 0,
+    resultUnknown: false,
+    automationVersion: 'normal-daily-v1'
+  });
+}
+
 function installDailyPipelineSourceState(env, options = {}) {
   const targetDate = options.targetDate || '2026-06-30';
   const sourceCount = options.sourceCount || 45;
@@ -3040,7 +3166,7 @@ function installDailyPipelineSourceState(env, options = {}) {
   env.props.ALLOWED_SEND_START_MINUTE = '45';
   env.props.ALLOWED_SEND_END_HOUR = '12';
   env.props.ALLOWED_SEND_END_MINUTE = '45';
-  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   env.rows = [];
   env.workbook.sheets.sales.rows = [HEADERS];
   env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
@@ -3098,7 +3224,7 @@ function installSameDayEmergencyReadyState(env) {
   env.props.AUTO_SEND_ENABLED = 'false';
   env.props.LIVE_SEND_ENABLED = 'false';
   env.props.GMAIL_AUTOMATION_SHARED_SECRET = 'test-secret';
-  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   env.rows = Array.from({ length: 30 }, (_, index) => Object.assign({}, buildRow(index + 1), {
     sendDate: targetDate,
     sendBatchId: batchId
@@ -3139,7 +3265,7 @@ function installDailyFutureArmReadyState(env) {
   env.props.GMAIL_SALES_SEND_WINDOW_END = '12:45';
   env.props.ALLOWED_SEND_END_HOUR = '12';
   env.props.ALLOWED_SEND_END_MINUTE = '45';
-  env.triggers = [{ handler: 'runGmailSalesDailyAutomationTrigger' }];
+  env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
     OUTBOX_HEADERS,
     ...Array.from({ length: 45 }, (_, index) => outboxRowToCells(buildSourceOutboxRow(index + 1)))

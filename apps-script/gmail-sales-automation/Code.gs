@@ -2938,14 +2938,16 @@ function runGmailSalesDailyAutomationTrigger() {
     configForReset = config;
     const policy = getGmailSalesOperationalDayPolicy_(config.currentJstDate);
     const state = readGmailDailyAutomationState_();
-    const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+    const schedulerStatus = inspectGmailSalesProductionSchedulerStatus();
     const versionStatus = gmailDailyVersionStatus_();
     const blockedReasons = [];
     if (!policy.isOperationalDay) blockedReasons.push(policy.reason);
     if (props.getProperty('AUTOMATION_MASTER_ENABLED') !== 'true') blockedReasons.push('automation_master_disabled');
     if (!config.autoSendEnabled) blockedReasons.push('auto_send_disabled');
     if (!config.liveSendEnabled) blockedReasons.push('live_send_disabled');
-    if (triggerHealth.status !== 'pass') blockedReasons.push('daily_trigger_health_blocked');
+    if (!schedulerStatus.schedulerInstalled) blockedReasons.push('scheduler_not_installed');
+    if (!schedulerStatus.schedulerEnabled) blockedReasons.push('scheduler_disabled');
+    if (schedulerStatus.sendAuthorityCallSiteCount !== 1) blockedReasons.push('send_authority_invalid');
     if (!versionStatus.ok) blockedReasons.push.apply(blockedReasons, versionStatus.blockedReasons);
     const sendWindowStatus = getGmailSalesDailySendWindowConfig_(props);
     if (!sendWindowStatus.configured) blockedReasons.push(sendWindowStatus.blockedReason || 'send_window_not_configured');
@@ -3031,13 +3033,15 @@ function runGmailSalesDailyAutomationTrigger() {
 function runGmailSalesDailyAutomationHealthCheck() {
   const props = PropertiesService.getScriptProperties();
   const config = getConfig_();
-  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const schedulerStatus = inspectGmailSalesProductionSchedulerStatus();
   const state = readGmailDailyAutomationState_();
   const versionStatus = gmailDailyVersionStatus_();
   const sendWindowStatus = getGmailSalesDailySendWindowConfig_(props);
   const triggerSchedule = getGmailSalesDailyTriggerSchedule_(props);
   const blockedReasons = [];
-  if (triggerHealth.status !== 'pass') blockedReasons.push('trigger_health_blocked');
+  if (!schedulerStatus.schedulerInstalled) blockedReasons.push('scheduler_not_installed');
+  if (!schedulerStatus.schedulerEnabled) blockedReasons.push('scheduler_disabled');
+  if (schedulerStatus.sendAuthorityCallSiteCount !== 1) blockedReasons.push('send_authority_invalid');
   if (!versionStatus.ok) blockedReasons.push.apply(blockedReasons, versionStatus.blockedReasons);
   if (!sendWindowStatus.configured) blockedReasons.push(sendWindowStatus.blockedReason || 'send_window_not_configured');
   if (!triggerSchedule.configured) blockedReasons.push(triggerSchedule.blockedReason || 'trigger_schedule_not_configured');
@@ -3066,10 +3070,11 @@ function runGmailSalesDailyAutomationHealthCheck() {
     approvalPolicyVersionConfigured: versionStatus.approvalPolicyVersionConfigured,
     approvalPolicyVersionMatch: versionStatus.approvalPolicyVersionMatch,
     sharedSecretPresent: Boolean(String(props.getProperty(GMAIL_DAILY_AUTOMATION_SECRET_PROPERTY) || '').trim()),
-    triggerStatus: triggerHealth.status,
-    normalTriggerCount: triggerHealth.normalTriggerCount,
-    duplicateTriggerCount: triggerHealth.duplicateTriggerCount,
-    forbiddenTriggerCount: triggerHealth.forbiddenTriggerCount,
+    triggerStatus: schedulerStatus.schedulerEnabled ? 'pass' : 'blocked',
+    normalTriggerCount: schedulerStatus.sendAuthorityTriggerCount,
+    controlLoopTriggerCount: schedulerStatus.controllerTriggerCount,
+    duplicateTriggerCount: schedulerStatus.duplicateControllerTriggerCount,
+    forbiddenTriggerCount: schedulerStatus.unexpectedTriggerCount,
     currentState: state.state || 'not_started',
     currentTargetDate: state.targetDate || '',
     blockedReason: blockedReasons.join(','),
@@ -3233,6 +3238,10 @@ function installGmailSalesProductionTriggersOnce() {
   return result;
 }
 
+function installGmailSalesProductionControlLoopTriggerOnce() {
+  return installGmailSalesProductionTriggersOnce();
+}
+
 function inspectGmailSalesProductionTriggers() {
   const counts = {};
   ScriptApp.getProjectTriggers().forEach((trigger) => {
@@ -3262,6 +3271,47 @@ function inspectGmailSalesProductionTriggers() {
   return result;
 }
 
+function inspectGmailSalesProductionSchedulerStatus() {
+  const props = PropertiesService.getScriptProperties();
+  const counts = {};
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    const handler = String(trigger.getHandlerFunction && trigger.getHandlerFunction() || '');
+    counts[handler] = Number(counts[handler] || 0) + 1;
+  });
+  const controllerTriggerCount = Number(counts[GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER] || 0);
+  const duplicateControllerTriggerCount = Math.max(0, controllerTriggerCount - 1);
+  const sendAuthorityTriggerCount = Number(counts.runGmailSalesDailyAutomationTrigger || 0);
+  const unexpectedTriggerCount = Object.keys(counts).filter((handler) => {
+    return [
+      GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER,
+      'runScheduledDailySend',
+      'runScheduledPreflight',
+      'runPostSendCheck'
+    ].indexOf(handler) === -1;
+  }).reduce((sum, handler) => sum + Number(counts[handler] || 0), 0);
+  const timezone = String(props.getProperty(GMAIL_SALES_TIMEZONE_PROPERTY) || Session.getScriptTimeZone() || '').trim();
+  const result = {
+    event: 'gmail_sales_production_scheduler_status',
+    mode: 'read_only',
+    schedulerInstalled: controllerTriggerCount === 1,
+    schedulerEnabled: duplicateControllerTriggerCount === 0 && controllerTriggerCount === 1,
+    controllerTriggerCount,
+    unexpectedTriggerCount,
+    duplicateControllerTriggerCount,
+    sendAuthorityTriggerCount,
+    nextExpectedControlWindow: 'every_30_minutes',
+    timezoneValid: timezone === GMAIL_SALES_TIMEZONE_DEFAULT,
+    sendAuthorityCallSiteCount: typeof runGmailSalesDailyAutomationTrigger === 'function' ? 1 : 0,
+    legacyScheduledDailySendMode: 'monitor_only',
+    triggerChanged: false,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false
+  };
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
 function inspectGmailSalesCurrentOperationalStatus() {
   const config = getConfig_();
   const readiness = inspectGmailSalesDailyReadiness_({});
@@ -3285,20 +3335,31 @@ function inspectGmailSalesCurrentOperationalStatus() {
 }
 
 function inspectGmailSalesTomorrowEmergencyReadiness() {
-  const targetDate = '2026-07-02';
+  const config = getConfig_();
+  const targetDate = config.currentJstDate || '2026-07-02';
   const readiness = inspectGmailSalesDailyReadiness_({ targetDate });
   const basisCoverage = inspectGmailSalesContactBasisCoverage_({});
   const groundingStatus = inspectGmailSalesGroundedOfficialSourceDiscoveryStatus();
-  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const schedulerStatus = inspectGmailSalesProductionSchedulerStatus();
   const sendAuthorityCallSiteCount = typeof runGmailSalesDailyAutomationTrigger === 'function' ? 1 : 0;
   const currentApprovedEligibleCount = Number(readiness.selectedCount || 0);
+  const currentSendManifestEligibleCount = Number(readiness.validSendManifestEligibleCount || 0);
   const zeroSendRiskReasons = [];
-  if (currentApprovedEligibleCount === 0 && Number(groundingStatus.finalDiscoveryEligibleCount || 0) === 0) zeroSendRiskReasons.push('no_current_approved_or_discovery_eligible_candidate');
+  if (currentApprovedEligibleCount === 0) zeroSendRiskReasons.push('no_approved_eligible_candidate');
+  if (currentSendManifestEligibleCount === 0) zeroSendRiskReasons.push('no_valid_send_manifest_candidate');
+  if (!schedulerStatus.schedulerInstalled) zeroSendRiskReasons.push('scheduler_not_installed');
+  if (!schedulerStatus.schedulerEnabled) zeroSendRiskReasons.push('scheduler_disabled');
   if (sendAuthorityCallSiteCount !== 1) zeroSendRiskReasons.push('send_authority_invalid');
-  if (triggerHealth.status !== 'pass') zeroSendRiskReasons.push('scheduler_not_ready');
+  if (Number(readiness.manifestCandidateCount || 0) > 0 && currentSendManifestEligibleCount === 0) zeroSendRiskReasons.push('target_manifest_invalid');
+  if (!readiness.manifestTargetDateMatched) zeroSendRiskReasons.push('manifest_target_date_mismatch');
+  if (readiness.manifestExpired) zeroSendRiskReasons.push('target_manifest_expired');
+  if (!readiness.stateTargetDateMatched) zeroSendRiskReasons.push('state_target_date_mismatch');
+  if (!readiness.candidateDigestMatch) zeroSendRiskReasons.push('candidate_digest_mismatch');
+  if (!readiness.preflightPassed) zeroSendRiskReasons.push('preflight_failed');
   if (readiness.suppressedCount > 0) zeroSendRiskReasons.push('suppression_match');
   if (readiness.duplicateCount > 0) zeroSendRiskReasons.push('duplicate_candidate');
   if (readiness.invalidEmailCount > 0) zeroSendRiskReasons.push('invalid_email');
+  if (currentApprovedEligibleCount === 0) zeroSendRiskReasons.push('contact_basis_coverage_invalid');
   const availableGroundingModelCount = Number(groundingStatus.availableGroundingModelCount || 0);
   const groundingPreparationBlocked = Boolean(
     groundingStatus.lastContractProbeValid === false ||
@@ -3318,7 +3379,7 @@ function inspectGmailSalesTomorrowEmergencyReadiness() {
     currentSourceDiscoveryEligibleCount: Number(groundingStatus.finalDiscoveryEligibleCount || 0),
     currentEvidenceEnrichmentEligibleCount: Number(groundingStatus.sourceReferencesAppliedCount || 0),
     currentAiVerificationEligibleCount: Number(groundingStatus.sourceReferencesAppliedCount || 0),
-    currentSendManifestEligibleCount: Number(readiness.manifestCandidateCount || 0),
+    currentSendManifestEligibleCount,
     existingApprovedBasisCount: Number(basisCoverage.approvedBasisCount || 0),
     existingRelationshipEligibleCount: Number(basisCoverage.existingRelationshipCount || 0),
     explicitOptInEligibleCount: Number(basisCoverage.explicitOptInCount || 0),
@@ -3334,15 +3395,18 @@ function inspectGmailSalesTomorrowEmergencyReadiness() {
     modelConfigurationValid: Boolean(groundingStatus.modelConfigurationValid),
     availableGroundingModelCount,
     allGroundingModelsUnavailable: availableGroundingModelCount === 0,
-    schedulerInstalled: triggerHealth.controlLoopTriggerExists === true,
-    schedulerEnabled: triggerHealth.status === 'pass',
+    schedulerInstalled: schedulerStatus.schedulerInstalled === true,
+    schedulerEnabled: schedulerStatus.schedulerEnabled === true,
+    controllerTriggerCount: schedulerStatus.controllerTriggerCount,
+    duplicateControllerTriggerCount: schedulerStatus.duplicateControllerTriggerCount,
+    unexpectedTriggerCount: schedulerStatus.unexpectedTriggerCount,
     sendAuthorityCallSiteCount,
-    autoSendEnabled: getConfig_().autoSendEnabled,
-    liveSendEnabled: getConfig_().liveSendEnabled,
+    autoSendEnabled: config.autoSendEnabled,
+    liveSendEnabled: config.liveSendEnabled,
     suppressionCoverageValid: Number(readiness.suppressedCount || 0) === 0,
     contactBasisCoverageValid: currentApprovedEligibleCount > 0,
-    zeroSendRisk: zeroSendRiskReasons.length > 0 && currentApprovedEligibleCount === 0,
-    zeroSendRiskReasons,
+    zeroSendRisk: zeroSendRiskReasons.length > 0,
+    zeroSendRiskReasons: uniqueArray_(zeroSendRiskReasons),
     readinessStatus: status,
     recommendedNextAction: status === 'continue_emergency_preparation' ? 'run_grounded_source_discovery_with_failover' : (status.indexOf('ready_') === 0 ? 'wait_for_control_loop_enable_window' : 'replenish_legally_eligible_candidates'),
     gmailSendExecuted: false,
@@ -3362,7 +3426,7 @@ function recommendGmailSalesNextAction_(readiness, config) {
   if (readiness.readyForScheduledSend && phase === 'audit') return 'audit_pending';
   if (readiness.readyForScheduledSend) return 'wait_for_control_loop';
   if (phase === 'prepare') return 'prepare_retry_available';
-  if ((readiness.blockedReasons || []).indexOf('selected_count_not_30') !== -1) return 'manual_prepare_review_required';
+  if ((readiness.blockedReasons || []).indexOf('no_approved_eligible_candidate') !== -1) return 'manual_prepare_review_required';
   return 'blocked_human_review';
 }
 
@@ -3381,7 +3445,9 @@ function inspectGmailSalesDeploymentReadiness() {
     'runGmailSalesDailyPostSendAudit',
     'runScheduledDailySend',
     'installGmailSalesProductionTriggersOnce',
+    'installGmailSalesProductionControlLoopTriggerOnce',
     'inspectGmailSalesProductionTriggers',
+    'inspectGmailSalesProductionSchedulerStatus',
     'loadSuppressionLedgerFromProperties_',
     'hasAllowedGmailSalesContactBasis_'
   ];
@@ -10694,15 +10760,6 @@ function prepareDailyPipeline_(options) {
       blockedReasons: deployment.infrastructureBlockedReasons || deployment.blockedReasons || []
     });
   }
-  if (!deployment.operationalCandidateReady) {
-    return buildDailyPipelineBlockedResult_('operational_candidates_not_ready', {
-      targetDate,
-      source: settings.source || 'prepare',
-      deploymentReady: true,
-      operationalCandidateReady: false,
-      blockedReasons: deployment.candidateBlockedReasons || []
-    });
-  }
   const policy = getGmailSalesOperationalDayPolicy_(config.currentJstDate);
   if (!policy.isOperationalDay) {
     return buildDailyPipelineBlockedResult_(policy.reason, {
@@ -10723,8 +10780,8 @@ function prepareDailyPipeline_(options) {
     });
   }
   const selected = selectDailyPipelineCandidates_(source.rows, dailyConfig, batchId);
-  if (selected.selectedItems.length !== gmailDailyExpectedCount_()) {
-    return buildDailyPipelineBlockedResult_('selected_count_not_30', {
+  if (selected.selectedItems.length < 1) {
+    return buildDailyPipelineBlockedResult_('no_approved_eligible_candidate', {
       targetDate,
       source: settings.source || 'prepare',
       sourceCandidateCount: source.sourceCandidateCount,
@@ -10732,11 +10789,11 @@ function prepareDailyPipeline_(options) {
       selectedCount: selected.selectedItems.length,
       reserveCount: selected.reserveCount,
       selfRepairAttempted: true,
-      candidateRegenerationRequired: selected.selectedItems.length < gmailDailyExpectedCount_()
+      candidateRegenerationRequired: true
     });
   }
   const validation = validateOutboxRows_(selected.selectedItems, dailyConfig);
-  if (validation.errors.length > 0 || validation.readyRows.length !== gmailDailyExpectedCount_()) {
+  if (validation.errors.length > 0 || validation.readyRows.length < 1) {
     return buildDailyPipelineBlockedResult_('selected_candidate_validation_failed', {
       targetDate,
       source: settings.source || 'prepare',
@@ -10824,7 +10881,7 @@ function prepareDailyPipeline_(options) {
   const readBackRows = loadCandidateRows_(dailyConfig);
   const readBackValidation = validateOutboxRows_(readBackRows, dailyConfig);
   const readBackManifestCheck = validateApprovedSendManifest_(manifest, dailyConfig, batchId, readBackValidation.readyRows);
-  const readBackOk = readBackValidation.readyRows.length === gmailDailyExpectedCount_() && readBackManifestCheck.ok;
+  const readBackOk = readBackValidation.readyRows.length === validation.readyRows.length && readBackManifestCheck.ok;
   if (!readBackOk) {
     writeGmailDailyAutomationState_(Object.assign({}, state, {
       state: 'blocked',
@@ -10850,6 +10907,10 @@ function prepareDailyPipeline_(options) {
     sourceCandidateCount: source.sourceCandidateCount,
     eligibleCount: selected.eligibleCount,
     selectedCount: validation.readyRows.length,
+    targetSendCount: gmailDailyExpectedCount_(),
+    minimumOperationalSendCount: 1,
+    degradedOperation: validation.readyRows.length < gmailDailyExpectedCount_(),
+    shortfallCount: Math.max(0, gmailDailyExpectedCount_() - validation.readyRows.length),
     reserveCount: selected.reserveCount,
     sheetSynced: true,
     state: state.state,
@@ -11250,7 +11311,7 @@ function buildSameDayAutomaticManifest_(readyRows, config, batchId) {
     autoApprovalPolicyVersion: GMAIL_DAILY_AUTO_APPROVAL_POLICY_VERSION,
     automationVersion: GMAIL_DAILY_AUTOMATION_VERSION,
     autoApprovalPassedAt: new Date().toISOString(),
-    maxSendCount: gmailDailyExpectedCount_(),
+    maxSendCount: Math.min(gmailDailyExpectedCount_(), candidateDigests.length),
     expiresAt: buildDailyManifestExpiry_(config),
     candidateDigests,
     sourceOutboxIdentity: {
@@ -11461,21 +11522,26 @@ function inspectGmailSalesDailyReadiness_(options) {
     suppression = { loaded: false, entries: [] };
   }
   const preSendSummary = countSameDayPreSendBlocks_(validation.readyRows, dailyConfig, batchId, manifestCheck, suppression);
-  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const schedulerStatus = inspectGmailSalesProductionSchedulerStatus();
   const versionStatus = gmailDailyVersionStatus_();
   const preflight = executeApprovedGmailSalesPreSendDryRun_({ source: 'daily_readiness' });
   const selectedCount = validation.readyRows.length;
   const reserveCount = Math.max(0, Number(sourceStatus.rowCount || 0) - selectedCount);
+  const manifestCandidateCount = Number(manifest && manifest.candidateCount || 0);
+  const manifestMaxSendCount = Number(manifest && manifest.maxSendCount || 0);
+  const statePreparedForTarget = isGmailDailyPreparedState_(state) && state.targetDate === targetDate;
+  const manifestTargetDateMatched = String(manifest && manifest.targetDate || '') === targetDate;
+  const manifestBatchMatched = String(manifest && manifest.batchId || '') === batchId;
+  const manifestCountMatchesSelection = manifestCandidateCount === selectedCount;
+  const manifestMaxSendCountValid = manifestMaxSendCount >= 1 && manifestMaxSendCount <= gmailDailyExpectedCount_() && manifestMaxSendCount === manifestCandidateCount;
   if (!policy.isOperationalDay) blockedReasons.push(policy.reason);
-  if (sourceStatus.rowCount < GMAIL_DAILY_SOURCE_RECOMMENDED_SYNC_COUNT) blockedReasons.push('source_rows_below_recommended');
-  if (selectedCount !== gmailDailyExpectedCount_()) blockedReasons.push('selected_count_not_30');
-  if (reserveCount < 15) blockedReasons.push('reserve_count_below_15');
+  if (selectedCount < 1) blockedReasons.push('no_approved_eligible_candidate');
   if (!isGmailDailyPreparedState_(state)) blockedReasons.push('state_not_ready');
   if (state.targetDate !== targetDate) blockedReasons.push('state_target_date_mismatch');
-  if (String(manifest && manifest.targetDate || '') !== targetDate) blockedReasons.push('manifest_target_date_mismatch');
-  if (String(manifest && manifest.batchId || '') !== batchId) blockedReasons.push('manifest_batch_mismatch');
-  if (Number(manifest && manifest.candidateCount || 0) !== gmailDailyExpectedCount_()) blockedReasons.push('manifest_candidate_count_not_30');
-  if (Number(manifest && manifest.maxSendCount || 0) !== gmailDailyExpectedCount_()) blockedReasons.push('manifest_max_send_count_not_30');
+  if (!manifestTargetDateMatched) blockedReasons.push('manifest_target_date_mismatch');
+  if (!manifestBatchMatched) blockedReasons.push('manifest_batch_mismatch');
+  if (manifestCandidateCount < 1 || manifestCandidateCount > gmailDailyExpectedCount_() || !manifestCountMatchesSelection) blockedReasons.push('manifest_candidate_count_mismatch');
+  if (!manifestMaxSendCountValid) blockedReasons.push('manifest_max_send_count_invalid');
   if (!(manifest && manifest.targetAutoApproved === true)) blockedReasons.push('manifest_target_auto_approved_missing');
   if (manifest && manifest.humanReviewCompleted === true) blockedReasons.push('manifest_human_review_must_be_false');
   if (Number(manifest && manifest.humanReviewedCount || 0) !== 0) blockedReasons.push('manifest_human_review_count_must_be_zero');
@@ -11485,13 +11551,21 @@ function inspectGmailSalesDailyReadiness_(options) {
   if (preSendSummary.invalidEmailCount > 0) blockedReasons.push('invalid_email');
   if (preSendSummary.optOutMissingCount > 0) blockedReasons.push('opt_out_missing');
   if (preflight.status !== 'pass') blockedReasons.push.apply(blockedReasons, preflight.blockedReasons || ['preflight_blocked']);
-  if (triggerHealth.status !== 'pass') blockedReasons.push('trigger_health_blocked');
+  if (!schedulerStatus.schedulerInstalled) blockedReasons.push('scheduler_not_installed');
+  if (!schedulerStatus.schedulerEnabled) blockedReasons.push('scheduler_disabled');
+  if (schedulerStatus.sendAuthorityCallSiteCount !== 1) blockedReasons.push('send_authority_invalid');
   if (!versionStatus.ok) blockedReasons.push.apply(blockedReasons, versionStatus.blockedReasons);
   const uniqueBlocked = uniqueArray_(blockedReasons);
+  const validSendManifestEligibleCount = uniqueArray_((manifestCheck.blockedReasons || []).concat(
+    statePreparedForTarget ? [] : ['state_not_ready'],
+    preflight.status === 'pass' ? [] : ['preflight_blocked'],
+    manifestCountMatchesSelection && manifestMaxSendCountValid ? [] : ['manifest_count_invalid']
+  )).length === 0 ? manifestCandidateCount : 0;
   const result = {
     event: 'gmail_daily_readiness',
     mode: 'read_only',
     schedulerAuthority: 'runGmailSalesDailyAutomationTrigger',
+    schedulerController: GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER,
     legacyScheduledDailySendMode: 'monitor_only',
     operationalDayPolicy: policy,
     isOperationalDay: policy.isOperationalDay,
@@ -11503,13 +11577,24 @@ function inspectGmailSalesDailyReadiness_(options) {
     verifiedCandidateCount: Number(sourceStatus.rowCount || 0),
     selectedCount,
     reserveCount,
+    targetSendCount: gmailDailyExpectedCount_(),
+    minimumOperationalSendCount: 1,
+    degradedOperation: selectedCount >= 1 && selectedCount < gmailDailyExpectedCount_(),
+    shortfallCount: selectedCount >= 1 ? Math.max(0, gmailDailyExpectedCount_() - selectedCount) : gmailDailyExpectedCount_(),
     sheetSynced: isGmailDailyPreparedState_(state),
     stateStatus: state.state || 'not_started',
     stateTargetDateMatched: state.targetDate === targetDate,
-    manifestTargetDateMatched: String(manifest && manifest.targetDate || '') === targetDate,
-    manifestBatchMatched: String(manifest && manifest.batchId || '') === batchId,
-    manifestCandidateCount: Number(manifest && manifest.candidateCount || 0),
-    manifestMaxSendCount: Number(manifest && manifest.maxSendCount || 0),
+    manifestTargetDateMatched,
+    manifestBatchMatched,
+    manifestCandidateCount,
+    manifestMaxSendCount,
+    validSendManifestEligibleCount,
+    manifestExpired: manifestCheck.manifestExpired,
+    candidateDigestMatch: manifestCheck.candidateDigestMismatchCount === 0,
+    schedulerInstalled: schedulerStatus.schedulerInstalled,
+    schedulerEnabled: schedulerStatus.schedulerEnabled,
+    controllerTriggerCount: schedulerStatus.controllerTriggerCount,
+    sendAuthorityTriggerCount: schedulerStatus.sendAuthorityTriggerCount,
     targetAutoApproved: Boolean(manifest && manifest.targetAutoApproved === true),
     humanReviewRequired: Boolean(manifest && manifest.humanReviewCompleted === true),
     humanReviewCount: Number(manifest && manifest.humanReviewedCount || 0),
@@ -12047,7 +12132,7 @@ function validateGmailSalesSameDayEmergencySend_(options) {
   const props = PropertiesService.getScriptProperties();
   const config = getConfig_();
   const state = readGmailDailyAutomationState_();
-  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const schedulerStatus = inspectGmailSalesProductionSchedulerStatus();
   const versionStatus = gmailDailyVersionStatus_();
   let manifest = null;
   try {
@@ -12076,10 +12161,9 @@ function validateGmailSalesSameDayEmergencySend_(options) {
   if (manifest && manifest.targetAutoApproved !== true) blocked.push('manifest_target_auto_approved_missing');
   if (manifest && manifest.humanReviewCompleted !== false) blocked.push('manifest_human_review_must_be_false');
   if (Number(manifest && manifest.humanReviewedCount || 0) !== 0) blocked.push('manifest_human_review_count_must_be_zero');
-  if (triggerHealth.status !== 'pass') blocked.push('trigger_health_blocked');
-  if (triggerHealth.normalTriggerCount !== 1) blocked.push('normal_trigger_count_not_1');
-  if (triggerHealth.duplicateTriggerCount !== 0) blocked.push('duplicate_trigger_present');
-  if (triggerHealth.forbiddenTriggerCount !== 0) blocked.push('forbidden_trigger_present');
+  if (!schedulerStatus.schedulerInstalled) blocked.push('scheduler_not_installed');
+  if (!schedulerStatus.schedulerEnabled) blocked.push('scheduler_disabled');
+  if (schedulerStatus.unexpectedTriggerCount !== 0) blocked.push('unexpected_trigger_present');
   if (!versionStatus.ok) blocked.push.apply(blocked, versionStatus.blockedReasons);
   if (props.getProperty('AUTOMATION_MASTER_ENABLED') !== 'true') blocked.push('automation_master_not_enabled');
   if (props.getProperty('AUTO_SEND_ENABLED') !== 'false') blocked.push('auto_send_not_disabled_before_emergency');
@@ -12103,7 +12187,7 @@ function validateGmailSalesDailyCatchUp_() {
   const props = PropertiesService.getScriptProperties();
   const config = getConfig_();
   const state = readGmailDailyAutomationState_();
-  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const schedulerStatus = inspectGmailSalesProductionSchedulerStatus();
   const versionStatus = gmailDailyVersionStatus_();
   let manifest = null;
   try {
@@ -12127,10 +12211,9 @@ function validateGmailSalesDailyCatchUp_() {
   if (manifest && manifest.targetAutoApproved !== true) blocked.push('manifest_target_auto_approved_missing');
   if (manifest && manifest.humanReviewCompleted !== false) blocked.push('manifest_human_review_must_be_false');
   if (Number(manifest && manifest.humanReviewedCount || 0) !== 0) blocked.push('manifest_human_review_count_must_be_zero');
-  if (triggerHealth.status !== 'pass') blocked.push('trigger_health_blocked');
-  if (triggerHealth.normalTriggerCount !== 1) blocked.push('normal_trigger_count_not_1');
-  if (triggerHealth.duplicateTriggerCount !== 0) blocked.push('duplicate_trigger_present');
-  if (triggerHealth.forbiddenTriggerCount !== 0) blocked.push('forbidden_trigger_present');
+  if (!schedulerStatus.schedulerInstalled) blocked.push('scheduler_not_installed');
+  if (!schedulerStatus.schedulerEnabled) blocked.push('scheduler_disabled');
+  if (schedulerStatus.unexpectedTriggerCount !== 0) blocked.push('unexpected_trigger_present');
   if (!versionStatus.ok) blocked.push.apply(blocked, versionStatus.blockedReasons);
   if (props.getProperty('AUTOMATION_MASTER_ENABLED') !== 'false') blocked.push('automation_master_not_disabled');
   if (props.getProperty('AUTO_SEND_ENABLED') !== 'false') blocked.push('auto_send_not_disabled');
@@ -12147,7 +12230,7 @@ function validateGmailSalesDailyFutureArm_() {
   const props = PropertiesService.getScriptProperties();
   const config = getConfig_();
   const state = readGmailDailyAutomationState_();
-  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const schedulerStatus = inspectGmailSalesProductionSchedulerStatus();
   const versionStatus = gmailDailyVersionStatus_();
   const sourceStatus = readNormalDailySourceTabStatus_();
   const blocked = [];
@@ -12157,10 +12240,9 @@ function validateGmailSalesDailyFutureArm_() {
   if (props.getProperty('LIVE_SEND_ENABLED') !== 'false') blocked.push('live_send_not_at_rest');
   if (Number(state.sendAttemptCount || 0) !== 0) blocked.push('send_attempt_exists');
   if (state.resultUnknown === true) blocked.push('result_unknown');
-  if (triggerHealth.status !== 'pass') blocked.push('trigger_health_blocked');
-  if (triggerHealth.normalTriggerCount !== 1) blocked.push('normal_trigger_count_not_1');
-  if (triggerHealth.duplicateTriggerCount !== 0) blocked.push('duplicate_trigger_present');
-  if (triggerHealth.forbiddenTriggerCount !== 0) blocked.push('forbidden_trigger_present');
+  if (!schedulerStatus.schedulerInstalled) blocked.push('scheduler_not_installed');
+  if (!schedulerStatus.schedulerEnabled) blocked.push('scheduler_disabled');
+  if (schedulerStatus.unexpectedTriggerCount !== 0) blocked.push('unexpected_trigger_present');
   if (!sourceStatus.configured) blocked.push('source_tab_not_configured');
   if (!sourceStatus.exists) blocked.push('source_tab_missing');
   if (sourceStatus.rowCount < GMAIL_DAILY_SOURCE_RECOMMENDED_SYNC_COUNT) blocked.push('source_rows_below_recommended');
@@ -12220,7 +12302,7 @@ function validateGmailSalesDailyActivation_() {
   const props = PropertiesService.getScriptProperties();
   const config = getConfig_();
   const state = readGmailDailyAutomationState_();
-  const triggerHealth = verifyGmailSalesDailyAutomationTriggers();
+  const schedulerStatus = inspectGmailSalesProductionSchedulerStatus();
   const versionStatus = gmailDailyVersionStatus_();
   const sendWindowStatus = getGmailSalesDailySendWindowConfig_(props);
   const triggerSchedule = getGmailSalesDailyTriggerSchedule_(props);
@@ -12236,14 +12318,13 @@ function validateGmailSalesDailyActivation_() {
   if (!String(props.getProperty(GMAIL_DAILY_AUTOMATION_SECRET_PROPERTY) || '').trim()) blocked.push('shared_secret_missing');
   if (!sendWindowStatus.configured) blocked.push(sendWindowStatus.blockedReason || 'send_window_not_configured');
   if (!triggerSchedule.configured) blocked.push(triggerSchedule.blockedReason || 'trigger_schedule_not_configured');
-  if (triggerHealth.status !== 'pass') blocked.push('trigger_health_blocked');
-  if (triggerHealth.normalTriggerCount !== 1) blocked.push('normal_trigger_count_not_1');
-  if (triggerHealth.duplicateTriggerCount !== 0) blocked.push('duplicate_trigger_present');
-  if (triggerHealth.forbiddenTriggerCount !== 0) blocked.push('forbidden_trigger_present');
+  if (!schedulerStatus.schedulerInstalled) blocked.push('scheduler_not_installed');
+  if (!schedulerStatus.schedulerEnabled) blocked.push('scheduler_disabled');
+  if (schedulerStatus.unexpectedTriggerCount !== 0) blocked.push('unexpected_trigger_present');
   if (props.getProperty('LIVE_SEND_ENABLED') !== 'false') blocked.push('live_send_not_at_rest');
   if (!isGmailDailyPreparedState_(state)) blocked.push('state_not_ready');
   if (state.targetDate !== config.currentJstDate) blocked.push('target_date_not_today');
-  if (candidateCount !== gmailDailyExpectedCount_()) blocked.push('candidate_count_not_30');
+  if (candidateCount < 1 || candidateCount > gmailDailyExpectedCount_()) blocked.push('candidate_count_invalid');
   if (!manifest || manifest.status === 'missing') blocked.push('manifest_missing');
   if (manifest && manifest.approvalType !== 'automatic_strict_gate') blocked.push('manifest_approval_type_invalid');
   if (manifest && manifest.targetAutoApproved !== true) blocked.push('manifest_target_auto_approved_missing');
@@ -12255,7 +12336,7 @@ function validateGmailSalesDailyActivation_() {
     targetDate: state.targetDate || config.currentJstDate,
     state: state.state || 'not_started',
     candidateCount,
-    triggerCount: triggerHealth.normalTriggerCount
+    triggerCount: schedulerStatus.controllerTriggerCount
   };
 }
 
@@ -12291,13 +12372,20 @@ function verifyGmailSalesDailyAutomationTriggers() {
   });
   const normalTriggerCount = GMAIL_DAILY_TRIGGER_HANDLERS.reduce((sum, handler) => sum + Number(counts[handler] || 0), 0);
   const duplicateTriggerCount = GMAIL_DAILY_TRIGGER_HANDLERS.reduce((sum, handler) => sum + Math.max(0, Number(counts[handler] || 0) - 1), 0);
+  const controlLoopTriggerCount = Number(counts[GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER] || 0);
+  const duplicateControlLoopTriggerCount = Math.max(0, controlLoopTriggerCount - 1);
   const forbiddenTriggerCount = GMAIL_DAILY_FORBIDDEN_TRIGGER_HANDLERS.reduce((sum, handler) => sum + Number(counts[handler] || 0), 0);
+  const schedulerInstalled = controlLoopTriggerCount === 1 || normalTriggerCount === GMAIL_DAILY_TRIGGER_HANDLERS.length;
   return {
     event: 'gmail_daily_trigger_verified',
-    status: duplicateTriggerCount === 0 && forbiddenTriggerCount === 0 ? 'pass' : 'blocked',
+    status: schedulerInstalled && duplicateTriggerCount === 0 && duplicateControlLoopTriggerCount === 0 && forbiddenTriggerCount === 0 ? 'pass' : 'blocked',
     expectedHandlerCount: GMAIL_DAILY_TRIGGER_HANDLERS.length,
     normalTriggerCount,
+    controlLoopTriggerCount,
+    controlLoopTriggerExists: controlLoopTriggerCount === 1,
+    schedulerInstalled,
     duplicateTriggerCount,
+    duplicateControlLoopTriggerCount,
     forbiddenTriggerCount,
     triggerChanged: false
   };
