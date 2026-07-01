@@ -92,6 +92,24 @@ test('grounded source discovery applies verified citation sources with one Gemin
   assert.equal(env.logs.some((line) => line.includes('Business 1')), false);
 });
 
+test('single candidate grounded source discovery attempts at most one candidate', () => {
+  const env = createEnvironment({ sourceCount: 12 });
+  seedGroundingReviewAndQueue(env, 12);
+  const result = env.context.runGmailSalesGroundedOfficialSourceDiscoverySingleCandidateOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.singleCandidateDiscovery, true);
+  assert.equal(result.singleCandidateMaxCandidates, 1);
+  assert.equal(result.candidatesAttemptedCount, 1);
+  assert.equal(result.searchQueryCount, 1);
+  assert.equal(result.groundingHttpRequestCount, 1);
+  assert.equal(result.sourceReferencesAppliedCount, 1);
+  assert.equal(env.fetchCalls.length, 1);
+  assert.equal(env.mailSendCount, 0);
+  assert.equal(env.draftCreateCount, 0);
+  assert.equal(env.triggerWriteCount, 0);
+  assert.equal(env.logs.some((line) => line.includes('Business 1')), false);
+});
+
 test('runtime join handles 66 non-identifying queue rows without storing business identity in the queue', () => {
   const env = createEnvironment({ sourceCount: 66 });
   seedGroundingReviewAndQueue(env, 66);
@@ -375,19 +393,18 @@ test('grounded discovery is hard-gated when response contract probe is missing',
   assert.equal(env.fetchCalls.length, 0);
 });
 
-test('grounded discovery is hard-gated when citation acceptance probe is missing', () => {
+test('grounded discovery is not hard-gated only by missing live citation acceptance probe', () => {
   const env = createEnvironment({ sourceCount: 1, citationProbeValid: false });
   seedGroundingReviewAndQueue(env, 1);
   const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.blockedReason, 'citation_acceptance_probe_invalid');
-  assert.equal(result.citationAcceptanceProbeMissingOrInvalid, true);
-  assert.equal(result.candidatesAttemptedCount, 0);
-  assert.equal(result.searchQueryCount, 0);
-  assert.equal(result.groundingHttpRequestCount, 0);
-  assert.equal(result.sourceReferencesAppliedCount, 0);
-  assert.equal(result.aiApiCalled, false);
-  assert.equal(env.fetchCalls.length, 0);
+  assert.equal(result.status, 'pass');
+  assert.equal(result.localCitationSafetyContractValid, true);
+  assert.equal(result.liveProviderProbeLastSucceeded, false);
+  assert.equal(result.candidatesAttemptedCount, 1);
+  assert.equal(result.searchQueryCount, 1);
+  assert.equal(result.groundingHttpRequestCount, 1);
+  assert.equal(result.sourceReferencesAppliedCount, 1);
+  assert.equal(env.fetchCalls.length, 1);
 });
 
 test('provider non-2xx response is classified without normal response parsing or source-not-found', () => {

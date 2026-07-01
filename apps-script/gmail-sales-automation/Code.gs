@@ -212,6 +212,7 @@ const GMAIL_SALES_EVIDENCE_REPLENISHMENT_SCHEMA_VERSION = 'evidence-replenishmen
 const GMAIL_SALES_GROUNDING_LAST_RUN_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_LAST_RUN_SUMMARY_JSON';
 const GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_JSON';
 const GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_JSON';
+const GMAIL_SALES_CITATION_SAFETY_RUNTIME_CONTRACT_SUMMARY_PROPERTY = 'GMAIL_SALES_CITATION_SAFETY_RUNTIME_CONTRACT_SUMMARY_JSON';
 const GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_PROPERTY = 'GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_JSON';
 const GMAIL_SALES_GROUNDING_VERSION_DEFAULT = 'official-source-discovery-v1';
 const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v3';
@@ -3282,14 +3283,7 @@ function inspectGmailSalesProductionSchedulerStatus() {
   const controllerTriggerCount = Number(counts[GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER] || 0);
   const duplicateControllerTriggerCount = Math.max(0, controllerTriggerCount - 1);
   const sendAuthorityTriggerCount = Number(counts.runGmailSalesDailyAutomationTrigger || 0);
-  const unexpectedTriggerCount = Object.keys(counts).filter((handler) => {
-    return [
-      GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER,
-      'runScheduledDailySend',
-      'runScheduledPreflight',
-      'runPostSendCheck'
-    ].indexOf(handler) === -1;
-  }).reduce((sum, handler) => sum + Number(counts[handler] || 0), 0);
+  const triggerClassification = classifyGmailSalesProductionSchedulerTriggers_(counts);
   const timezone = String(props.getProperty(GMAIL_SALES_TIMEZONE_PROPERTY) || Session.getScriptTimeZone() || '').trim();
   const result = {
     event: 'gmail_sales_production_scheduler_status',
@@ -3297,9 +3291,15 @@ function inspectGmailSalesProductionSchedulerStatus() {
     schedulerInstalled: controllerTriggerCount === 1,
     schedulerEnabled: duplicateControllerTriggerCount === 0 && controllerTriggerCount === 1,
     controllerTriggerCount,
-    unexpectedTriggerCount,
+    unexpectedTriggerCount: triggerClassification.unexpectedTriggerCount,
     duplicateControllerTriggerCount,
     sendAuthorityTriggerCount,
+    triggerHandlerCounts: counts,
+    allowedMonitorTriggerCount: triggerClassification.allowedMonitorTriggerCount,
+    legacyMonitorTriggerCount: triggerClassification.legacyMonitorTriggerCount,
+    unrelatedTriggerCount: triggerClassification.unrelatedTriggerCount,
+    riskyUnexpectedTriggerCount: triggerClassification.riskyUnexpectedTriggerCount,
+    unexpectedTriggerCategoryCounts: triggerClassification.unexpectedTriggerCategoryCounts,
     nextExpectedControlWindow: 'every_30_minutes',
     timezoneValid: timezone === GMAIL_SALES_TIMEZONE_DEFAULT,
     sendAuthorityCallSiteCount: typeof runGmailSalesDailyAutomationTrigger === 'function' ? 1 : 0,
@@ -3311,6 +3311,61 @@ function inspectGmailSalesProductionSchedulerStatus() {
   };
   logGmailSalesJsonResult_(result);
   return result;
+}
+
+function classifyGmailSalesProductionSchedulerTriggers_(counts) {
+  const allowed = {};
+  [GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER, 'runScheduledDailySend', 'runScheduledPreflight', 'runPostSendCheck'].forEach((handler) => {
+    allowed[handler] = true;
+  });
+  const legacyMonitor = { runScheduledDailySend: true, runScheduledPreflight: true, runPostSendCheck: true };
+  const deprecatedSend = {};
+  GMAIL_DAILY_FORBIDDEN_TRIGGER_HANDLERS.forEach((handler) => {
+    deprecatedSend[handler] = true;
+  });
+  [
+    'runDailyGmailSalesSend',
+    'dailySalesEmailJob',
+    'runGmailSalesSameDaySend20260624Once'
+  ].forEach((handler) => {
+    deprecatedSend[handler] = true;
+  });
+  const summary = {
+    unexpectedTriggerCount: 0,
+    allowedMonitorTriggerCount: 0,
+    legacyMonitorTriggerCount: 0,
+    unrelatedTriggerCount: 0,
+    riskyUnexpectedTriggerCount: 0,
+    unexpectedTriggerCategoryCounts: {}
+  };
+  Object.keys(counts || {}).forEach((handler) => {
+    const count = Number(counts[handler] || 0);
+    if (handler === GMAIL_SALES_PRODUCTION_CONTROL_LOOP_HANDLER) {
+      if (count > 1) {
+        summary.unexpectedTriggerCount += count - 1;
+        summary.riskyUnexpectedTriggerCount += count - 1;
+        incrementCount_(summary.unexpectedTriggerCategoryCounts, 'duplicate_controller');
+      }
+      return;
+    }
+    if (legacyMonitor[handler]) {
+      summary.allowedMonitorTriggerCount += count;
+      summary.legacyMonitorTriggerCount += count;
+      return;
+    }
+    if (deprecatedSend[handler] || handler === 'runGmailSalesDailyAutomationTrigger') {
+      summary.unexpectedTriggerCount += count;
+      summary.riskyUnexpectedTriggerCount += count;
+      incrementCount_(summary.unexpectedTriggerCategoryCounts, 'direct_or_deprecated_send_authority');
+      return;
+    }
+    if (!allowed[handler]) {
+      summary.unexpectedTriggerCount += count;
+      summary.unrelatedTriggerCount += count;
+      incrementCount_(summary.unexpectedTriggerCategoryCounts, 'unrelated_or_user_trigger');
+    }
+  });
+  return summary;
 }
 
 function inspectGmailSalesCurrentOperationalStatus() {
@@ -4800,6 +4855,15 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
 }
 
 function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
+  return runGmailSalesGroundedOfficialSourceDiscoveryInternal_({});
+}
+
+function runGmailSalesGroundedOfficialSourceDiscoverySingleCandidateOnce() {
+  return runGmailSalesGroundedOfficialSourceDiscoveryInternal_({ maxCandidates: 1, singleCandidateProbe: true });
+}
+
+function runGmailSalesGroundedOfficialSourceDiscoveryInternal_(options) {
+  const runOptions = options || {};
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
     return buildGmailSalesGroundingResult_('blocked', { blockedReason: 'safe_rest_required' });
@@ -4904,26 +4968,33 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       stats.recommendedNextAction = 'run_grounding_model_failover_probe';
     }
     const citationProbe = readGmailSalesGroundingCitationAcceptanceProbeSummary_();
-    if (!citationProbe.citationAcceptanceValid) {
-      stats.citationAcceptanceProbeMissingOrInvalid = true;
-      stats.recommendedNextAction = 'run_grounding_model_failover_probe';
-    }
     const parserProbe = inspectGmailSalesCitationUrlParserRuntimeCompatibility_();
     stats.citationUrlParserRuntimeCompatible = parserProbe.runtimeParserCompatible;
+    const localCitationContract = inspectGmailSalesCitationSafetyRuntimeContract_();
+    stats.localCitationSafetyContractValid = Boolean(localCitationContract.localCitationContractValid);
+    stats.liveProviderProbeLastSucceeded = Boolean(citationProbe.citationAcceptanceValid);
+    stats.liveProviderProbeLastFailureCategory = String(citationProbe.providerErrorCategory || citationProbe.blockedReason || '');
+    stats.liveProviderProbeLastSelectedModel = String(citationProbe.selectedModel || citationProbe.groundingModel || '');
     if (!parserProbe.runtimeParserCompatible) {
       stats.citationUrlParserRuntimeInvalid = true;
       stats.recommendedNextAction = 'run_citation_url_parser_runtime_probe';
     }
+    if (!localCitationContract.localCitationContractValid) {
+      stats.localCitationSafetyContractInvalid = true;
+      stats.recommendedNextAction = 'fix_local_citation_safety_validator';
+    }
     const hardGateReason = !contractProbe.responseContractValid ? 'response_contract_probe_invalid'
-      : (!citationProbe.citationAcceptanceValid ? 'citation_acceptance_probe_invalid'
-        : (!parserProbe.runtimeParserCompatible ? 'citation_url_parser_runtime_invalid'
-          : (stats.remainingGroundingPromptRequestCountToday < 1 ? 'grounding_budget_exceeded' : '')));
+      : (!parserProbe.runtimeParserCompatible ? 'citation_url_parser_runtime_invalid'
+        : (!localCitationContract.localCitationContractValid ? 'local_citation_safety_contract_invalid'
+          : (stats.availableGroundingModelCount < 1 ? 'all_grounding_models_temporarily_unavailable'
+            : (stats.remainingGroundingPromptRequestCountToday < 1 ? 'grounding_budget_exceeded' : ''))));
     if (hardGateReason) {
       stats.completedAt = now;
       stats.runId = 'grounding-' + hashValue_(now + '|hard-gate|' + hardGateReason + '|' + stats.eligibleDiscoveryTargetCount);
       stats.recommendedNextAction = hardGateReason === 'response_contract_probe_invalid' ? 'run_grounding_model_failover_probe'
-        : (hardGateReason === 'citation_acceptance_probe_invalid' ? (Number(citationProbe.citationUrlSafetyRejectedCount || 0) > 0 ? 'fix_citation_safety_validator' : 'run_citation_acceptance_probe')
-          : (hardGateReason === 'citation_url_parser_runtime_invalid' ? 'fix_citation_url_parser' : 'run_source_discovery'));
+        : (hardGateReason === 'local_citation_safety_contract_invalid' ? 'fix_local_citation_safety_validator'
+          : (hardGateReason === 'citation_url_parser_runtime_invalid' ? 'fix_citation_url_parser'
+            : (hardGateReason === 'all_grounding_models_temporarily_unavailable' ? 'wait_for_all_provider_models_cooldown' : 'run_source_discovery')));
       persistGroundedDiscoverySummary_(stats);
       return buildGmailSalesGroundingResult_('blocked', Object.assign({
         blockedReason: hardGateReason,
@@ -4943,8 +5014,13 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
     const sourceSnapshots = [];
     const reviewSnapshots = [];
     const queueSnapshots = [];
-    const maxPromptCandidates = Math.min(grounding.maxCandidatesPerRun, stats.remainingGroundingPromptRequestCountToday);
+    const requestedMaxCandidates = runOptions.maxCandidates ? Math.max(1, Number(runOptions.maxCandidates || 1)) : grounding.maxCandidatesPerRun;
+    const maxPromptCandidates = Math.min(requestedMaxCandidates, grounding.maxCandidatesPerRun, stats.remainingGroundingPromptRequestCountToday);
     const targets = collected.targets.slice(0, maxPromptCandidates);
+    if (runOptions.singleCandidateProbe) {
+      stats.singleCandidateDiscovery = true;
+      stats.singleCandidateMaxCandidates = 1;
+    }
     if (stats.eligibilitySnapshotInvariantFailed) {
       stats.completedAt = now;
       stats.runId = 'grounding-' + hashValue_(now + '|invariant|' + stats.replenishmentQueuePhysicalCount + '|' + stats.queueCandidateTokenResolvedCount);
@@ -7439,12 +7515,17 @@ function callGeminiGroundedSearch_(grounding, prompt) {
 
 function classifyGroundingProviderError_(statusCode, errorCode) {
   const code = Number(statusCode || 0);
+  const normalizedError = String(errorCode || '').toLowerCase();
   if (code === 400) return 'bad_request';
   if (code === 401) return 'authentication_error';
   if (code === 403) return 'permission_error';
   if (code === 404) return 'model_not_found';
-  if (code === 408 || code === 429) return 'rate_limited';
+  if (code === 408) return 'timeout';
+  if (code === 429) return 'rate_limited';
   if (code >= 500) return 'server_error';
+  if (normalizedError.indexOf('timeout') !== -1 || normalizedError.indexOf('timed') !== -1) return 'timeout';
+  if (normalizedError.indexOf('capacity') !== -1) return 'model_capacity_error';
+  if (normalizedError.indexOf('unavailable') !== -1) return 'temporary_unavailable';
   if (String(errorCode || '').trim()) return 'transport_error';
   return 'unknown_provider_error';
 }
@@ -8277,11 +8358,48 @@ function readGmailSalesGroundingCitationAcceptanceProbeSummary_() {
 
 function inspectGmailSalesGroundingCitationAcceptanceProbeStatus() {
   const summary = readGmailSalesGroundingCitationAcceptanceProbeSummary_();
+  const parser = inspectGmailSalesCitationUrlParserRuntimeCompatibility_();
+  const localContract = inspectGmailSalesCitationSafetyRuntimeContract_();
+  const responseContract = readGmailSalesGroundingContractProbeSummary_();
+  const aiConfig = getGmailSalesAiConfig_();
+  const grounding = getGmailSalesGroundingConfig_(aiConfig);
+  const health = readGmailSalesGroundingModelHealthState_();
+  const now = new Date().toISOString();
+  const availableModelCount = (grounding.modelCascade || []).filter((model) => !isGroundingModelInCooldown_(model, health, now)).length;
+  const allModelsUnavailable = Number(grounding.activeModelCount || 0) > 0 && availableModelCount === 0;
+  const responseParserContractValid = Boolean(responseContract.responseContractValid);
+  const candidateDiscoveryAllowed = Boolean(
+    parser.runtimeParserCompatible &&
+    localContract.localCitationContractValid &&
+    responseParserContractValid &&
+    grounding.providerConfigurationValid &&
+    Number(grounding.activeModelCount || 0) >= 1 &&
+    availableModelCount >= 1
+  );
+  let recommendedNextAction = 'run_single_candidate_source_discovery';
+  if (!parser.runtimeParserCompatible) recommendedNextAction = 'run_citation_url_parser_runtime_probe';
+  else if (!localContract.localCitationContractValid) recommendedNextAction = 'fix_local_citation_safety_validator';
+  else if (!responseParserContractValid) recommendedNextAction = 'run_grounding_model_failover_probe';
+  else if (!grounding.providerConfigurationValid) recommendedNextAction = 'repair_grounding_authentication';
+  else if (Number(grounding.activeModelCount || 0) < 1) recommendedNextAction = 'repair_grounding_model_cascade';
+  else if (allModelsUnavailable) recommendedNextAction = 'wait_for_all_provider_models_cooldown';
   const result = {
     event: 'gmail_sales_grounding_citation_acceptance_probe_status',
     mode: 'read_only',
+    runtimeParserValid: Boolean(parser.runtimeParserCompatible),
+    localCitationSafetyContractValid: Boolean(localContract.localCitationContractValid),
+    responseParserContractValid,
+    lastLiveProbeCompletedAt: String(summary.completedAt || ''),
+    lastLiveProbeHttpSuccess: Boolean(summary.httpSuccess),
+    lastLiveProbeFailureCategory: String(summary.providerErrorCategory || summary.blockedReason || ''),
+    lastLiveProbeSelectedModel: String(summary.selectedModel || summary.groundingModel || ''),
     lastProbeCompletedAt: String(summary.completedAt || ''),
     lastProbeValid: Boolean(summary.citationAcceptanceValid),
+    configuredModelCount: Number(grounding.configuredModelCount || summary.configuredModelCount || 0),
+    activeModelCount: Number(grounding.activeModelCount || summary.activeModelCount || 0),
+    availableModelCount,
+    allModelsUnavailable,
+    candidateDiscoveryAllowed,
     safetyValidatorVersion: String(summary.safetyValidatorVersion || GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION),
     probeScenarioVersion: String(summary.probeScenarioVersion || GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SCENARIO_VERSION),
     urlCitationAnnotationCount: Number(summary.urlCitationAnnotationCount || 0),
@@ -8291,7 +8409,7 @@ function inspectGmailSalesGroundingCitationAcceptanceProbeStatus() {
     citationUrlSafetyRejectionReasonCounts: summary.citationUrlSafetyRejectionReasonCounts || {},
     citationUrlIdentityValidationAttemptCount: Number(summary.citationUrlIdentityValidationAttemptCount || 0),
     citationUrlFinalAcceptedCount: Number(summary.citationUrlFinalAcceptedCount || 0),
-    recommendedNextAction: summary.citationAcceptanceValid ? 'run_source_discovery' : 'run_citation_acceptance_probe',
+    recommendedNextAction,
     gmailSendExecuted: false,
     googleSheetsUpdated: false,
     triggerChanged: false,
@@ -8364,6 +8482,114 @@ function testGmailSalesCitationUrlParserRuntimeCompatibilityOnce() {
   return result;
 }
 
+function inspectGmailSalesCitationSafetyRuntimeContract_() {
+  const parser = inspectGmailSalesCitationUrlParserRuntimeCompatibility_();
+  const result = {
+    event: 'gmail_sales_citation_safety_runtime_contract',
+    mode: 'read_only',
+    status: 'blocked',
+    fixtureCount: 0,
+    syntaxValidCount: 0,
+    syntaxInvalidCount: 0,
+    safetyValidationAttemptCount: 0,
+    safetyAcceptedCount: 0,
+    safetyRejectedCount: 0,
+    safetyRejectionReasonCounts: {},
+    safetyRejectionReasonCountTotal: 0,
+    safetyInvariantValid: false,
+    identityValidationAttemptCount: 0,
+    identityAcceptedCount: 0,
+    identityRejectedCount: 0,
+    finalAcceptedCount: 0,
+    parserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
+    safetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    runtimeParserCompatible: Boolean(parser.runtimeParserCompatible),
+    localCitationContractValid: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false
+  };
+  const safetyFixtures = [
+    { value: 'https://example.com/', accepted: true },
+    { value: 'https://example.com/contact?utm_source=contract', accepted: true },
+    { value: 'https://www.example.co.jp/company', accepted: true },
+    { value: 'https://developers.google.com/search/docs', accepted: true, category: 'official_documentation' },
+    { value: 'https://docs.github.com/en/apps', accepted: true, category: 'official_documentation' },
+    { value: 'http://example.com/', accepted: false, reasonCode: 'unsupported_scheme' },
+    { value: 'https://user:pass@example.com/', accepted: false, reasonCode: 'credential_in_url' },
+    { value: 'https://localhost/private', accepted: false, reasonCode: 'localhost' },
+    { value: 'https://127.0.0.1/private', accepted: false, reasonCode: 'private_ip' },
+    { value: 'https://bit.ly/example', accepted: false, reasonCode: 'url_shortener' },
+    { value: 'https://facebook.com/example', accepted: false, reasonCode: 'social_network' },
+    { value: 'https://yelp.com/biz/example', accepted: false, reasonCode: 'business_directory' },
+    { value: 'https://google.com/maps/place/example', accepted: false, reasonCode: 'map_listing' },
+    { value: 'https://indeed.com/jobs/example', accepted: false, reasonCode: 'job_site' },
+    { value: 'https://reviews.io/company/example', accepted: false, reasonCode: 'review_site' },
+    { value: 'https://amazon.com/shop/example', accepted: false, reasonCode: 'marketplace' },
+    { value: 'https://prtimes.jp/main/html/example', accepted: false, reasonCode: 'press_release_distribution' },
+    { value: 'https://www.google.com/search?q=example', accepted: false, reasonCode: 'unrelated_google_service' },
+    { value: 'https://accounts.google.com/signin', accepted: false, reasonCode: 'unrelated_google_service' },
+    { value: 'not a url', accepted: false, reasonCode: 'malformed_scheme' }
+  ];
+  safetyFixtures.forEach((fixture) => {
+    result.fixtureCount += 1;
+    const parsed = normalizeGroundingCitationUrl_(fixture.value);
+    if (parsed.ok) result.syntaxValidCount += 1;
+    else result.syntaxInvalidCount += 1;
+    const safety = classifyGroundingCitationUrlSafety_(fixture.value);
+    result.safetyValidationAttemptCount += 1;
+    if (safety.ok) result.safetyAcceptedCount += 1;
+    else {
+      result.safetyRejectedCount += 1;
+      incrementCount_(result.safetyRejectionReasonCounts, safety.reasonCode || 'unknown_safety_rejection');
+    }
+    if (Boolean(safety.ok) !== Boolean(fixture.accepted)) incrementCount_(result.safetyRejectionReasonCounts, 'fixture_expectation_mismatch');
+    if (!fixture.accepted && fixture.reasonCode && String(safety.reasonCode || '') !== fixture.reasonCode) incrementCount_(result.safetyRejectionReasonCounts, 'fixture_reason_mismatch');
+    if (fixture.category && String(safety.normalizedCategory || '') !== fixture.category) incrementCount_(result.safetyRejectionReasonCounts, 'fixture_category_mismatch');
+  });
+  [
+    { safety: classifyGroundingCitationUrlSafety_('https://developers.google.com/search/docs'), target: { expectedOfficialCitationHosts: ['developers.google.com'] }, accepted: true },
+    { safety: classifyGroundingCitationUrlSafety_('https://example.com/'), target: { expectedOfficialCitationHosts: ['developers.google.com'] }, accepted: false },
+    { safety: classifyGroundingCitationUrlSafety_('https://cloud.google.com/docs'), target: { expectedOfficialCitationHosts: ['developers.google.com'] }, accepted: false }
+  ].forEach((fixture) => {
+    result.identityValidationAttemptCount += 1;
+    const identity = validateGroundingCitationIdentityForTarget_(fixture.safety, fixture.target);
+    if (identity.accepted) {
+      result.identityAcceptedCount += 1;
+      result.finalAcceptedCount += 1;
+    } else {
+      result.identityRejectedCount += 1;
+    }
+    if (Boolean(identity.accepted) !== Boolean(fixture.accepted)) incrementCount_(result.safetyRejectionReasonCounts, 'identity_fixture_expectation_mismatch');
+  });
+  result.safetyRejectionReasonCountTotal = Object.keys(result.safetyRejectionReasonCounts).reduce((sum, key) => sum + Number(result.safetyRejectionReasonCounts[key] || 0), 0);
+  result.safetyInvariantValid =
+    result.safetyRejectedCount === result.safetyRejectionReasonCountTotal &&
+    result.safetyValidationAttemptCount === result.safetyAcceptedCount + result.safetyRejectedCount &&
+    !Boolean(result.safetyRejectionReasonCounts.fixture_expectation_mismatch) &&
+    !Boolean(result.safetyRejectionReasonCounts.fixture_reason_mismatch) &&
+    !Boolean(result.safetyRejectionReasonCounts.fixture_category_mismatch) &&
+    !Boolean(result.safetyRejectionReasonCounts.identity_fixture_expectation_mismatch);
+  result.localCitationContractValid = Boolean(
+    result.runtimeParserCompatible &&
+    result.safetyAcceptedCount >= 1 &&
+    result.identityAcceptedCount >= 1 &&
+    result.finalAcceptedCount >= 1 &&
+    result.safetyInvariantValid
+  );
+  result.status = result.localCitationContractValid ? 'pass' : 'blocked';
+  return result;
+}
+
+function testGmailSalesCitationSafetyRuntimeContractOnce() {
+  const result = inspectGmailSalesCitationSafetyRuntimeContract_();
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
 function testGmailSalesGroundingResponseContractOnce() {
   const aiConfig = getGmailSalesAiConfig_();
   const grounding = getGmailSalesGroundingConfig_(aiConfig);
@@ -8414,11 +8640,13 @@ function testGmailSalesGroundingResponseContractOnce() {
 function testGmailSalesGroundingCitationAcceptanceContractOnce() {
   const aiConfig = getGmailSalesAiConfig_();
   const grounding = getGmailSalesGroundingConfig_(aiConfig);
-  if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.model) {
+  if (!grounding.providerConfigurationValid || !grounding.enabled || !grounding.modelCascade.length) {
     return buildGmailSalesGroundingCitationAcceptanceProbeResult_('blocked', {
-      blockedReason: 'grounding_configuration_invalid',
+      blockedReason: grounding.modelCascade.length ? 'grounding_configuration_invalid' : 'no_active_grounding_model',
       providerConfigurationValid: grounding.providerConfigurationValid,
-      groundingModel: grounding.model
+      groundingModel: grounding.model,
+      configuredModelCount: Number(grounding.configuredModelCount || 0),
+      activeModelCount: Number(grounding.activeModelCount || 0)
     });
   }
   const prompt = [
@@ -8429,28 +8657,17 @@ function testGmailSalesGroundingCitationAcceptanceContractOnce() {
     'Do not include candidate data, sales data, email addresses, personal names, or user-provided private data.',
     'Probe scenario: official public developer documentation only.'
   ].join('\n');
-  const search = callGeminiGroundedSearch_(grounding, prompt);
   const target = {
     candidateToken: 'citation-acceptance-probe',
     expectedOfficialCitationHosts: ['developers.google.com', 'cloud.google.com', 'firebase.google.com']
   };
-  if (!search.ok) {
-    const result = buildGmailSalesGroundingCitationAcceptanceProbeResult_('blocked', {
-      blockedReason: 'grounding_provider_error',
-      providerConfigurationValid: grounding.providerConfigurationValid,
-      groundingModel: grounding.model,
-      httpRequestExecuted: true,
-      httpSuccess: false,
-      providerErrorCategory: classifyGroundingProviderError_(search.statusCode, search.errorCode),
-      completedAt: new Date().toISOString()
-    });
-    PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_PROPERTY, JSON.stringify(result));
-    return result;
-  }
-  const parsed = parseGeminiGroundingInteractionResponse_(search.response, target);
+  const health = readGmailSalesGroundingModelHealthState_();
+  const failover = callGeminiGroundedSearchWithFailover_(grounding, prompt, target, { now: new Date().toISOString(), health });
+  persistGmailSalesGroundingModelHealthState_(health);
+  const parsed = failover.parsedGrounding || {};
   const reasonTotal = Number(parsed.citationUrlSafetyRejectionReasonCountTotal || 0);
   const citationAcceptanceValid = Boolean(
-    search.ok &&
+    failover.ok &&
     parsed.responseJsonParsed &&
     parsed.googleSearchCallStepCount >= 1 &&
     parsed.googleSearchResultStepCount >= 1 &&
@@ -8464,13 +8681,37 @@ function testGmailSalesGroundingCitationAcceptanceContractOnce() {
     reasonTotal === Number(parsed.citationUrlSafetyRejectedCount || 0) &&
     !Boolean((parsed.citationUrlSafetyRejectionReasonCounts || {}).unknown_safety_rejection)
   );
+  const responseContractValid = Boolean(
+    failover.ok &&
+    parsed.responseJsonParsed &&
+    parsed.googleSearchCallStepCount >= 1 &&
+    parsed.googleSearchResultStepCount >= 1 &&
+    parsed.urlCitationAnnotationCount >= 1
+  );
+  const allProviderModelsUnavailable = Boolean(failover.allProviderModelsUnavailable && !failover.localValidationBlocked && !failover.ok);
+  const blockedReason = citationAcceptanceValid ? ''
+    : (allProviderModelsUnavailable ? 'all_grounding_models_temporarily_unavailable'
+      : (failover.localValidationBlocked ? (failover.failureCategory || 'local_citation_validation_failed')
+        : (failover.failureCategory || 'citation_acceptance_contract_invalid')));
   const result = buildGmailSalesGroundingCitationAcceptanceProbeResult_(citationAcceptanceValid ? 'pass' : 'blocked', {
-    blockedReason: citationAcceptanceValid ? '' : 'citation_acceptance_contract_invalid',
+    blockedReason,
     providerConfigurationValid: grounding.providerConfigurationValid,
-    groundingModel: grounding.model,
-    httpRequestExecuted: true,
-    httpSuccess: search.ok,
+    groundingModel: failover.selectedModel || grounding.model,
+    configuredModelCount: Number(grounding.configuredModelCount || 0),
+    activeModelCount: Number(grounding.activeModelCount || 0),
+    modelsAttemptedCount: failover.modelsAttemptedCount,
+    uniqueModelsAttemptedCount: failover.uniqueModelsAttemptedCount,
+    failoverExecuted: failover.failoverExecuted,
+    failoverSucceeded: failover.failoverSucceeded,
+    selectedModel: failover.ok ? failover.selectedModel : '',
+    providerErrorCategoryCounts: failover.providerErrorCategoryCounts || {},
+    allProviderModelsUnavailable,
+    localValidationBlocked: Boolean(failover.localValidationBlocked),
+    httpRequestExecuted: Number(failover.modelsAttemptedCount || 0) > 0,
+    httpSuccess: failover.ok,
+    providerErrorCategory: failover.failureCategory || '',
     responseJsonParsed: parsed.responseJsonParsed,
+    responseContractValid,
     googleSearchCallStepCount: parsed.googleSearchCallStepCount,
     googleSearchExecutedQueryCount: parsed.googleSearchExecutedQueryCount,
     googleSearchResultStepCount: parsed.googleSearchResultStepCount,
@@ -8637,10 +8878,21 @@ function buildGmailSalesGroundingCitationAcceptanceProbeResult_(status, override
     blockedReason: '',
     providerConfigurationValid: false,
     groundingModel: '',
+    configuredModelCount: 0,
+    activeModelCount: 0,
+    modelsAttemptedCount: 0,
+    uniqueModelsAttemptedCount: 0,
+    failoverExecuted: false,
+    failoverSucceeded: false,
+    selectedModel: '',
+    providerErrorCategoryCounts: {},
+    allProviderModelsUnavailable: false,
+    localValidationBlocked: false,
     httpRequestExecuted: false,
     httpSuccess: false,
     providerErrorCategory: '',
     responseJsonParsed: false,
+    responseContractValid: false,
     googleSearchCallStepCount: 0,
     googleSearchExecutedQueryCount: 0,
     googleSearchResultStepCount: 0,
@@ -12360,7 +12612,7 @@ function validateGmailSalesSameDayEmergencySend_(options) {
   if (Number(manifest && manifest.humanReviewedCount || 0) !== 0) blocked.push('manifest_human_review_count_must_be_zero');
   if (!schedulerStatus.schedulerInstalled) blocked.push('scheduler_not_installed');
   if (!schedulerStatus.schedulerEnabled) blocked.push('scheduler_disabled');
-  if (schedulerStatus.unexpectedTriggerCount !== 0) blocked.push('unexpected_trigger_present');
+  if (Number(schedulerStatus.riskyUnexpectedTriggerCount || 0) !== 0) blocked.push('risky_unexpected_trigger_present');
   if (!versionStatus.ok) blocked.push.apply(blocked, versionStatus.blockedReasons);
   if (props.getProperty('AUTOMATION_MASTER_ENABLED') !== 'true') blocked.push('automation_master_not_enabled');
   if (props.getProperty('AUTO_SEND_ENABLED') !== 'false') blocked.push('auto_send_not_disabled_before_emergency');
@@ -12410,7 +12662,7 @@ function validateGmailSalesDailyCatchUp_() {
   if (Number(manifest && manifest.humanReviewedCount || 0) !== 0) blocked.push('manifest_human_review_count_must_be_zero');
   if (!schedulerStatus.schedulerInstalled) blocked.push('scheduler_not_installed');
   if (!schedulerStatus.schedulerEnabled) blocked.push('scheduler_disabled');
-  if (schedulerStatus.unexpectedTriggerCount !== 0) blocked.push('unexpected_trigger_present');
+  if (Number(schedulerStatus.riskyUnexpectedTriggerCount || 0) !== 0) blocked.push('risky_unexpected_trigger_present');
   if (!versionStatus.ok) blocked.push.apply(blocked, versionStatus.blockedReasons);
   if (props.getProperty('AUTOMATION_MASTER_ENABLED') !== 'false') blocked.push('automation_master_not_disabled');
   if (props.getProperty('AUTO_SEND_ENABLED') !== 'false') blocked.push('auto_send_not_disabled');
@@ -12439,7 +12691,7 @@ function validateGmailSalesDailyFutureArm_() {
   if (state.resultUnknown === true) blocked.push('result_unknown');
   if (!schedulerStatus.schedulerInstalled) blocked.push('scheduler_not_installed');
   if (!schedulerStatus.schedulerEnabled) blocked.push('scheduler_disabled');
-  if (schedulerStatus.unexpectedTriggerCount !== 0) blocked.push('unexpected_trigger_present');
+  if (Number(schedulerStatus.riskyUnexpectedTriggerCount || 0) !== 0) blocked.push('risky_unexpected_trigger_present');
   if (!sourceStatus.configured) blocked.push('source_tab_not_configured');
   if (!sourceStatus.exists) blocked.push('source_tab_missing');
   if (sourceStatus.rowCount < GMAIL_DAILY_SOURCE_RECOMMENDED_SYNC_COUNT) blocked.push('source_rows_below_recommended');
@@ -12517,7 +12769,7 @@ function validateGmailSalesDailyActivation_() {
   if (!triggerSchedule.configured) blocked.push(triggerSchedule.blockedReason || 'trigger_schedule_not_configured');
   if (!schedulerStatus.schedulerInstalled) blocked.push('scheduler_not_installed');
   if (!schedulerStatus.schedulerEnabled) blocked.push('scheduler_disabled');
-  if (schedulerStatus.unexpectedTriggerCount !== 0) blocked.push('unexpected_trigger_present');
+  if (Number(schedulerStatus.riskyUnexpectedTriggerCount || 0) !== 0) blocked.push('risky_unexpected_trigger_present');
   if (props.getProperty('LIVE_SEND_ENABLED') !== 'false') blocked.push('live_send_not_at_rest');
   if (!isGmailDailyPreparedState_(state)) blocked.push('state_not_ready');
   if (state.targetDate !== config.currentJstDate) blocked.push('target_date_not_today');

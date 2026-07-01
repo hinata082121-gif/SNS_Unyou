@@ -194,11 +194,24 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
 
 {
   const { env, context } = createContext(() => citationSteps([annotation(officialDocs)]));
+  const localContract = context.testGmailSalesCitationSafetyRuntimeContractOnce();
+  assert.equal(localContract.status, 'pass');
+  assert.equal(localContract.localCitationContractValid, true);
+  assert.equal(localContract.aiApiCalled, false);
+  assert.equal(localContract.urlFetchExecuted, false);
+  assert.equal(localContract.scriptPropertiesUpdated, false);
+  assert.equal(localContract.safetyAcceptedCount >= 1, true);
+  assert.equal(localContract.identityAcceptedCount >= 1, true);
+  assert.equal(localContract.finalAcceptedCount >= 1, true);
+  assert.equal(localContract.safetyInvariantValid, true);
+  assert.equal(env.fetchCalls.length, 0);
+  assert.equal(env.propertyWriteCount, 0);
   const result = context.testGmailSalesGroundingCitationAcceptanceContractOnce();
   assert.equal(result.status, 'pass');
   assert.equal(result.httpRequestExecuted, true);
   assert.equal(result.httpSuccess, true);
   assert.equal(result.citationAcceptanceValid, true);
+  assert.equal(result.responseContractValid, true);
   assert.equal(result.citationUrlFinalAcceptedCount, 1);
   assert.equal(result.citationUrlSafetyInvariantValid, true);
   assert.equal(result.citationUrlSafetyRejectionReasonCountTotal, 0);
@@ -209,14 +222,48 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
   assert.equal(env.mailSendCount, 0);
   assert.equal(env.draftCreateCount, 0);
   assert.equal(env.triggerWriteCount, 0);
-  assert.equal(env.propertyWriteCount, 1);
+  assert.equal(env.propertyWriteCount, 2);
   const propertyWritesBeforeInspect = env.propertyWriteCount;
   const inspected = context.inspectGmailSalesGroundingCitationAcceptanceProbeStatus();
   assert.equal(inspected.lastProbeValid, true);
+  assert.equal(inspected.runtimeParserValid, true);
+  assert.equal(inspected.localCitationSafetyContractValid, true);
   assert.equal(inspected.citationUrlSafetyAcceptedCount, 1);
   assert.equal(inspected.citationUrlFinalAcceptedCount, 1);
   assert.equal(inspected.aiApiCalled, false);
   assert.equal(env.propertyWriteCount, propertyWritesBeforeInspect);
+}
+
+{
+  const { env, context } = createContext((payload) => {
+    if (payload.model === 'gemini-3.5-flash') return { statusCode: 429, body: { error: { status: 'RESOURCE_EXHAUSTED' } } };
+    return { body: citationSteps([annotation(officialDocs)]) };
+  });
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+  const result = context.testGmailSalesGroundingCitationAcceptanceContractOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.failoverExecuted, true);
+  assert.equal(result.failoverSucceeded, true);
+  assert.equal(result.selectedModel, 'gemini-3.1-flash-lite');
+  assert.equal(result.providerErrorCategoryCounts.rate_limited, 1);
+  assert.equal(result.citationAcceptanceValid, true);
+  assert.equal(env.fetchCalls.length, 2);
+}
+
+{
+  const { env, context } = createContext(() => ({ statusCode: 503, body: { error: { status: 'UNAVAILABLE' } } }));
+  env.props.GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON = JSON.stringify(['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+  const before = context.testGmailSalesCitationSafetyRuntimeContractOnce();
+  const result = context.testGmailSalesGroundingCitationAcceptanceContractOnce();
+  const inspected = context.inspectGmailSalesGroundingCitationAcceptanceProbeStatus();
+  assert.equal(before.localCitationContractValid, true);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'all_grounding_models_temporarily_unavailable');
+  assert.equal(result.allProviderModelsUnavailable, true);
+  assert.equal(result.citationAcceptanceValid, false);
+  assert.equal(inspected.localCitationSafetyContractValid, true);
+  assert.notEqual(inspected.recommendedNextAction, 'fix_citation_safety_validator');
+  assert.equal(env.fetchCalls.length, 8);
 }
 
 {

@@ -1888,6 +1888,32 @@ const scenarios = [
     assert.equal(result.schedulerEnabled, true);
     assert.equal(result.controllerTriggerCount, 1);
     assert.equal(result.sendAuthorityTriggerCount, 0);
+    assert.equal(result.riskyUnexpectedTriggerCount, 0);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['production scheduler inspector classifies unrelated trigger without writes', (env) => {
+    env.entry = 'productionSchedulerStatus';
+    env.triggers = [
+      { handler: 'runGmailSalesProductionControlLoop' },
+      { handler: 'runUserOwnedMaintenanceJob' }
+    ];
+  }, (env, result) => {
+    assert.equal(result.schedulerInstalled, true);
+    assert.equal(result.unrelatedTriggerCount, 1);
+    assert.equal(result.riskyUnexpectedTriggerCount, 0);
+    assert.equal(result.unexpectedTriggerCategoryCounts.unrelated_or_user_trigger, 1);
+    assertDiagnosticReadOnly(env);
+  }],
+  ['production scheduler inspector classifies direct send trigger as risky', (env) => {
+    env.entry = 'productionSchedulerStatus';
+    env.triggers = [
+      { handler: 'runGmailSalesProductionControlLoop' },
+      { handler: 'runGmailSalesDailyAutomationTrigger' }
+    ];
+  }, (env, result) => {
+    assert.equal(result.sendAuthorityTriggerCount, 1);
+    assert.equal(result.riskyUnexpectedTriggerCount, 1);
+    assert.equal(result.unexpectedTriggerCategoryCounts.direct_or_deprecated_send_authority, 1);
     assertDiagnosticReadOnly(env);
   }],
   ['tomorrow emergency readiness treats stale one-candidate manifest as zero eligible', (env) => {
