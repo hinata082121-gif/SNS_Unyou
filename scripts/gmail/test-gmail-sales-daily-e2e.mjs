@@ -9,8 +9,9 @@ const codeSource = readFileSync(codePath, 'utf8');
 
 const requiredScenarioNames = [
   'daily E2E pipeline prepares, enables, sends thirty, audits, and safe rests',
-  'prepareDailyPipeline blocks source below thirty without sending',
-  'prepareDailyPipeline excludes unknown contact basis before selection',
+  'prepareDailyPipeline prepares degraded nonzero source below thirty',
+  'prepareDailyPipeline excludes unknown contact basis and prepares degraded nonzero batch',
+  'prepareDailyPipeline blocks when approved eligible count is zero',
   'manifest candidateCount mismatch blocks send',
   'MailApp exception leaves DELIVERY_UNKNOWN and rerun does not resend',
   'existing DELIVERY_UNKNOWN blocks MailApp',

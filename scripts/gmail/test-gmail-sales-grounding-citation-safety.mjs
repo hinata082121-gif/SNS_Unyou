@@ -107,6 +107,7 @@ function annotation(url, overrides = {}) {
 const safePrimary = 'https://www.example.com/contact?utm_source=test#fragment';
 const safeSecond = 'https://sub.example.co.jp//about?x=1';
 const safeThird = 'https://xn--eckwd4c7c.example/contact';
+const officialDocs = 'https://developers.google.com/search/docs/fundamentals/creating-helpful-content';
 const annotations = [
   annotation(safePrimary),
   annotation(safeSecond),
@@ -162,6 +163,12 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
   assert.equal(context.classifyGroundingProviderError_(429, ''), 'rate_limited');
   assert.equal(context.classifyGroundingProviderError_(500, ''), 'server_error');
   assert.equal(context.classifyGroundingProviderError_(401, ''), 'authentication_error');
+  assert.equal(context.classifyGroundingCitationUrlSafety_(officialDocs).accepted, true);
+  assert.equal(context.classifyGroundingCitationUrlSafety_(officialDocs).reasonCode, 'accepted_official_documentation');
+  assert.equal(context.classifyGroundingCitationUrlSafety_('https://www.google.com/search?q=example').reasonCode, 'unrelated_google_service');
+  assert.equal(context.classifyGroundingCitationUrlSafety_('https://google.com/url?q=https%3A%2F%2Fexample.com').reasonCode, 'unsupported_google_redirect');
+  assert.equal(context.classifyGroundingCitationUrlSafety_('https://google.com/maps/place/example').reasonCode, 'map_listing');
+  assert.equal(context.classifyGroundingCitationUrlSafety_('https://news.google.com/articles/redacted').reasonCode, 'unrelated_google_service');
 }
 
 {
@@ -186,19 +193,57 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
 }
 
 {
-  const { env, context } = createContext(() => citationSteps([annotation(safePrimary)]));
+  const { env, context } = createContext(() => citationSteps([annotation(officialDocs)]));
   const result = context.testGmailSalesGroundingCitationAcceptanceContractOnce();
   assert.equal(result.status, 'pass');
   assert.equal(result.httpRequestExecuted, true);
   assert.equal(result.httpSuccess, true);
   assert.equal(result.citationAcceptanceValid, true);
   assert.equal(result.citationUrlFinalAcceptedCount, 1);
+  assert.equal(result.citationUrlSafetyInvariantValid, true);
+  assert.equal(result.citationUrlSafetyRejectionReasonCountTotal, 0);
+  assert.equal(result.citationUrlOfficialDocumentationCandidateCount, 1);
+  assert.equal(result.probeScenarioVersion, 'citation-acceptance-official-docs-v2');
   assert.equal(env.fetchCalls.length, 1);
   assert.equal(env.sheetWriteCount, 0);
   assert.equal(env.mailSendCount, 0);
   assert.equal(env.draftCreateCount, 0);
   assert.equal(env.triggerWriteCount, 0);
   assert.equal(env.propertyWriteCount, 1);
+  const propertyWritesBeforeInspect = env.propertyWriteCount;
+  const inspected = context.inspectGmailSalesGroundingCitationAcceptanceProbeStatus();
+  assert.equal(inspected.lastProbeValid, true);
+  assert.equal(inspected.citationUrlSafetyAcceptedCount, 1);
+  assert.equal(inspected.citationUrlFinalAcceptedCount, 1);
+  assert.equal(inspected.aiApiCalled, false);
+  assert.equal(env.propertyWriteCount, propertyWritesBeforeInspect);
+}
+
+{
+  const { env, context } = createContext(() => citationSteps([annotation(safePrimary)]));
+  context.classifyGroundingCitationUrlSafety_ = () => ({ ok: false });
+  const result = context.testGmailSalesGroundingCitationAcceptanceContractOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.citationAcceptanceValid, false);
+  assert.equal(result.citationUrlSafetyRejectedCount, 1);
+  assert.equal(result.citationUrlSafetyRejectionReasonCounts.unknown_safety_rejection, 1);
+  assert.equal(result.citationUrlSafetyRejectionReasonCountTotal, 1);
+  assert.equal(env.mailSendCount, 0);
+}
+
+{
+  const { env, context } = createContext(() => citationSteps([annotation(safePrimary)]));
+  const result = context.testGmailSalesGroundingCitationAcceptanceContractOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.citationAcceptanceValid, false);
+  assert.equal(result.citationUrlSafetyAcceptedCount, 1);
+  assert.equal(result.citationUrlIdentityValidationAttemptCount, 1);
+  assert.equal(result.citationUrlIdentityAcceptedCount, 0);
+  assert.equal(result.citationUrlIdentityRejectedCount, 1);
+  assert.equal(result.citationUrlFinalAcceptedCount, 0);
+  assert.equal(result.citationUrlSafetyRejectionReasonCountTotal, 0);
+  assert.equal(env.fetchCalls.length, 1);
+  assert.equal(env.mailSendCount, 0);
 }
 
 {

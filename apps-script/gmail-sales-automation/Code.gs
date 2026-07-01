@@ -216,7 +216,8 @@ const GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_PROPERTY = 'GMAIL_SALES_GROUNDING_U
 const GMAIL_SALES_GROUNDING_VERSION_DEFAULT = 'official-source-discovery-v1';
 const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v3';
 const GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION = 'gemini-interactions-google-search-v2';
-const GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION = 'grounding-citation-safety-v2';
+const GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION = 'grounding-citation-safety-v3';
+const GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SCENARIO_VERSION = 'citation-acceptance-official-docs-v2';
 const GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY = 'GMAIL_SALES_GROUNDING_MODEL_HEALTH_JSON';
 const GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const GMAIL_SALES_GROUNDING_SHUTDOWN_MODEL_PREFIXES = ['gemini-2.0-'];
@@ -4758,6 +4759,15 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     citationUrlSafetyRejectedCount: Number(last.citationUrlSafetyRejectedCount || 0),
     citationUrlSafetyAcceptedCount: Number(last.citationUrlSafetyAcceptedCount || 0),
     citationUrlSafetyRejectionReasonCounts: last.citationUrlSafetyRejectionReasonCounts || {},
+    citationUrlSafetyRejectionReasonCountTotal: Number(last.citationUrlSafetyRejectionReasonCountTotal || 0),
+    citationUrlSafetyDecisionCount: Number(last.citationUrlSafetyDecisionCount || 0),
+    citationUrlSafetyInvariantValid: Boolean(last.citationUrlSafetyInvariantValid),
+    citationUrlCategoryCounts: last.citationUrlCategoryCounts || {},
+    citationUrlRedirectCandidateCount: Number(last.citationUrlRedirectCandidateCount || 0),
+    citationUrlDirectHttpsCandidateCount: Number(last.citationUrlDirectHttpsCandidateCount || 0),
+    citationUrlOfficialDocumentationCandidateCount: Number(last.citationUrlOfficialDocumentationCandidateCount || 0),
+    citationUrlThirdPartyCandidateCount: Number(last.citationUrlThirdPartyCandidateCount || 0),
+    citationUrlUnknownCategoryCount: Number(last.citationUrlUnknownCategoryCount || 0),
     citationUrlIdentityValidationAttemptCount: Number(last.citationUrlIdentityValidationAttemptCount || 0),
     citationUrlIdentityAcceptedCount: Number(last.citationUrlIdentityAcceptedCount || 0),
     citationUrlIdentityRejectedCount: Number(last.citationUrlIdentityRejectedCount || 0),
@@ -4912,7 +4922,7 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       stats.completedAt = now;
       stats.runId = 'grounding-' + hashValue_(now + '|hard-gate|' + hardGateReason + '|' + stats.eligibleDiscoveryTargetCount);
       stats.recommendedNextAction = hardGateReason === 'response_contract_probe_invalid' ? 'run_grounding_model_failover_probe'
-        : (hardGateReason === 'citation_acceptance_probe_invalid' ? 'run_citation_acceptance_probe'
+        : (hardGateReason === 'citation_acceptance_probe_invalid' ? (Number(citationProbe.citationUrlSafetyRejectedCount || 0) > 0 ? 'fix_citation_safety_validator' : 'run_citation_acceptance_probe')
           : (hardGateReason === 'citation_url_parser_runtime_invalid' ? 'fix_citation_url_parser' : 'run_source_discovery'));
       persistGroundedDiscoverySummary_(stats);
       return buildGmailSalesGroundingResult_('blocked', Object.assign({
@@ -7017,6 +7027,15 @@ function emptyGroundedSourceDiscoveryStats_() {
     citationUrlSafetyRejectedCount: 0,
     citationUrlSafetyAcceptedCount: 0,
     citationUrlSafetyRejectionReasonCounts: {},
+    citationUrlSafetyRejectionReasonCountTotal: 0,
+    citationUrlSafetyDecisionCount: 0,
+    citationUrlSafetyInvariantValid: false,
+    citationUrlCategoryCounts: {},
+    citationUrlRedirectCandidateCount: 0,
+    citationUrlDirectHttpsCandidateCount: 0,
+    citationUrlOfficialDocumentationCandidateCount: 0,
+    citationUrlThirdPartyCandidateCount: 0,
+    citationUrlUnknownCategoryCount: 0,
     citationUrlValueTypeCounts: {},
     citationUrlStringCount: 0,
     citationUrlNonStringCount: 0,
@@ -7587,10 +7606,17 @@ function accumulateGroundingParserStats_(stats, parsedGrounding) {
   stats.citationUrlParsedCount += parsedGrounding.citationUrlParsedCount || 0;
   stats.citationUrlSafetyRejectedCount += parsedGrounding.citationUrlSafetyRejectedCount || 0;
   stats.citationUrlSafetyAcceptedCount += parsedGrounding.citationUrlSafetyAcceptedCount || 0;
+  stats.citationUrlSafetyRejectionReasonCountTotal += parsedGrounding.citationUrlSafetyRejectionReasonCountTotal || 0;
+  stats.citationUrlSafetyDecisionCount += parsedGrounding.citationUrlSafetyDecisionCount || 0;
+  stats.citationUrlRedirectCandidateCount += parsedGrounding.citationUrlRedirectCandidateCount || 0;
+  stats.citationUrlDirectHttpsCandidateCount += parsedGrounding.citationUrlDirectHttpsCandidateCount || 0;
+  stats.citationUrlOfficialDocumentationCandidateCount += parsedGrounding.citationUrlOfficialDocumentationCandidateCount || 0;
+  stats.citationUrlThirdPartyCandidateCount += parsedGrounding.citationUrlThirdPartyCandidateCount || 0;
+  stats.citationUrlUnknownCategoryCount += parsedGrounding.citationUrlUnknownCategoryCount || 0;
   Object.keys(parsedGrounding.citationUrlSafetyRejectionReasonCounts || {}).forEach((key) => {
     stats.citationUrlSafetyRejectionReasonCounts[key] = (stats.citationUrlSafetyRejectionReasonCounts[key] || 0) + parsedGrounding.citationUrlSafetyRejectionReasonCounts[key];
   });
-  ['citationUrlValueTypeCounts', 'citationUrlLengthBucketCounts', 'citationUrlParseFailureReasonCounts'].forEach((field) => {
+  ['citationUrlCategoryCounts', 'citationUrlValueTypeCounts', 'citationUrlLengthBucketCounts', 'citationUrlParseFailureReasonCounts'].forEach((field) => {
     Object.keys(parsedGrounding[field] || {}).forEach((key) => {
       stats[field][key] = (stats[field][key] || 0) + parsedGrounding[field][key];
     });
@@ -7602,6 +7628,8 @@ function accumulateGroundingParserStats_(stats, parsedGrounding) {
   stats.citationUrlHttpPrefixCount += parsedGrounding.citationUrlHttpPrefixCount || 0;
   stats.citationUrlOtherPrefixCount += parsedGrounding.citationUrlOtherPrefixCount || 0;
   stats.citationUrlControlCharacterCount += parsedGrounding.citationUrlControlCharacterCount || 0;
+  stats.citationUrlSafetyInvariantValid = Number(stats.citationUrlSafetyRejectedCount || 0) === Number(stats.citationUrlSafetyRejectionReasonCountTotal || 0) &&
+    Number(stats.citationUrlSafetyValidationAttemptCount || 0) === Number(stats.citationUrlSafetyAcceptedCount || 0) + Number(stats.citationUrlSafetyRejectedCount || 0);
   stats.citationUrlIdentityValidationAttemptCount += parsedGrounding.citationUrlIdentityValidationAttemptCount || 0;
   stats.citationUrlIdentityAcceptedCount += parsedGrounding.citationUrlIdentityAcceptedCount || 0;
   stats.citationUrlAcceptedCount += parsedGrounding.citationUrlAcceptedCount || 0;
@@ -7636,6 +7664,15 @@ function parseGeminiGroundingInteractionResponse_(searchResult, target) {
     citationUrlSafetyRejectedCount: 0,
     citationUrlSafetyAcceptedCount: 0,
     citationUrlSafetyRejectionReasonCounts: {},
+    citationUrlSafetyRejectionReasonCountTotal: 0,
+    citationUrlSafetyDecisionCount: 0,
+    citationUrlSafetyInvariantValid: false,
+    citationUrlCategoryCounts: {},
+    citationUrlRedirectCandidateCount: 0,
+    citationUrlDirectHttpsCandidateCount: 0,
+    citationUrlOfficialDocumentationCandidateCount: 0,
+    citationUrlThirdPartyCandidateCount: 0,
+    citationUrlUnknownCategoryCount: 0,
     citationUrlValueTypeCounts: {},
     citationUrlStringCount: 0,
     citationUrlNonStringCount: 0,
@@ -7648,6 +7685,7 @@ function parseGeminiGroundingInteractionResponse_(searchResult, target) {
     citationUrlParseFailureReasonCounts: {},
     citationUrlIdentityValidationAttemptCount: 0,
     citationUrlIdentityAcceptedCount: 0,
+    citationUrlIdentityRejectedCount: 0,
     citationUrlAcceptedCount: 0,
     citationUrlFinalAcceptedCount: 0,
     groundingToolNotInvoked: false,
@@ -7693,6 +7731,7 @@ function parseGeminiGroundingInteractionResponse_(searchResult, target) {
       }
     });
   }
+  finalizeGroundingCitationSafetyDiagnostics_(result);
   result.groundingToolNotInvoked = result.googleSearchCallStepCount === 0;
   result.groundingModelOutputMissing = result.modelOutputStepCount === 0 || result.modelOutputTextPresentCount === 0;
   result.groundingAnnotationMissing = result.modelOutputStepCount > 0 && result.modelOutputAnnotationCount === 0;
@@ -7755,6 +7794,7 @@ function parseGeminiModelOutputAnnotation_(annotation, text, target, result) {
   result.citationUrlParsedCount += 1;
   result.citationUrlSafetyValidationAttemptCount += 1;
   const safety = classifyGroundingCitationUrlSafety_(normalized.url);
+  recordGroundingCitationSafetyDecision_(result, safety);
   if (!safety.ok) {
     result.citationUrlSafetyRejectedCount += 1;
     incrementCount_(result.citationUrlSafetyRejectionReasonCounts, safety.reasonCode || 'unknown_safety_rejection');
@@ -7762,6 +7802,11 @@ function parseGeminiModelOutputAnnotation_(annotation, text, target, result) {
   }
   result.citationUrlSafetyAcceptedCount += 1;
   result.citationUrlIdentityValidationAttemptCount += 1;
+  const identity = validateGroundingCitationIdentityForTarget_(safety, target);
+  if (!identity.accepted) {
+    result.citationUrlIdentityRejectedCount += 1;
+    return;
+  }
   result.citationUrlIdentityAcceptedCount += 1;
   result.citationUrlAcceptedCount += 1;
   result.citationUrlFinalAcceptedCount += 1;
@@ -7818,6 +7863,7 @@ function parseLegacyGeminiGroundingResponse_(parsed, target, result) {
     result.citationUrlParsedCount += 1;
     result.citationUrlSafetyValidationAttemptCount += 1;
     const safety = classifyGroundingCitationUrlSafety_(normalized.url);
+    recordGroundingCitationSafetyDecision_(result, safety);
     if (!safety.ok) {
       result.citationUrlSafetyRejectedCount += 1;
       incrementCount_(result.citationUrlSafetyRejectionReasonCounts, safety.reasonCode || 'unknown_safety_rejection');
@@ -7825,6 +7871,11 @@ function parseLegacyGeminiGroundingResponse_(parsed, target, result) {
     }
     result.citationUrlSafetyAcceptedCount += 1;
     result.citationUrlIdentityValidationAttemptCount += 1;
+    const identity = validateGroundingCitationIdentityForTarget_(safety, target);
+    if (!identity.accepted) {
+      result.citationUrlIdentityRejectedCount += 1;
+      return;
+    }
     result.citationUrlIdentityAcceptedCount += 1;
     result.citationUrlAcceptedCount += 1;
     result.citationUrlFinalAcceptedCount += 1;
@@ -7841,6 +7892,36 @@ function parseLegacyGeminiGroundingResponse_(parsed, target, result) {
       candidateToken: String(target.candidateToken || '')
     });
   });
+}
+
+function recordGroundingCitationSafetyDecision_(result, safety) {
+  result.citationUrlSafetyDecisionCount += 1;
+  const category = String(safety && safety.normalizedCategory || '').trim() || 'unknown';
+  incrementCount_(result.citationUrlCategoryCounts, category);
+  if (safety && safety.redirectResolutionRequired) result.citationUrlRedirectCandidateCount += 1;
+  if (safety && safety.ok && safety.scheme === 'https') result.citationUrlDirectHttpsCandidateCount += 1;
+  if (category === 'official_documentation') result.citationUrlOfficialDocumentationCandidateCount += 1;
+  if (category === 'public_web') result.citationUrlThirdPartyCandidateCount += 1;
+  if (category === 'unknown') result.citationUrlUnknownCategoryCount += 1;
+}
+
+function finalizeGroundingCitationSafetyDiagnostics_(result) {
+  const reasonTotal = Object.keys(result.citationUrlSafetyRejectionReasonCounts || {}).reduce((sum, key) => sum + Number(result.citationUrlSafetyRejectionReasonCounts[key] || 0), 0);
+  result.citationUrlSafetyRejectionReasonCountTotal = reasonTotal;
+  result.citationUrlSafetyInvariantValid =
+    Number(result.citationUrlSafetyRejectedCount || 0) === reasonTotal &&
+    Number(result.citationUrlSafetyValidationAttemptCount || 0) === Number(result.citationUrlSafetyAcceptedCount || 0) + Number(result.citationUrlSafetyRejectedCount || 0) &&
+    Number(result.citationUrlSafetyDecisionCount || 0) === Number(result.citationUrlSafetyValidationAttemptCount || 0);
+}
+
+function validateGroundingCitationIdentityForTarget_(safety, target) {
+  const expectedHosts = (target && target.expectedOfficialCitationHosts || []).map((host) => String(host || '').toLowerCase()).filter(Boolean);
+  if (expectedHosts.length === 0) return { accepted: true, reasonCode: 'identity_not_constrained' };
+  const host = String(safety && safety.host || '').toLowerCase();
+  const hostAccepted = expectedHosts.some((expected) => host === expected || host.endsWith('.' + expected));
+  if (!hostAccepted) return { accepted: false, reasonCode: 'expected_official_identity_mismatch' };
+  if (String(safety && safety.normalizedCategory || '') !== 'official_documentation') return { accepted: false, reasonCode: 'expected_official_documentation_mismatch' };
+  return { accepted: true, reasonCode: 'expected_official_documentation_matched' };
 }
 
 function collectCitationUrls_(value, urls) {
@@ -7980,14 +8061,21 @@ function recordGroundingCitationUrlSyntaxDiagnostics_(result, value) {
 
 function classifyGroundingCitationUrlSafety_(url) {
   const checked = normalizeGroundingCitationUrl_(url);
-  if (!checked.ok) return checked;
+  if (!checked.ok) return buildGroundingCitationSafetyRejected_(checked, checked.reasonCode || 'malformed_url', 'syntax');
   const host = checked.host;
-  if (host === 'localhost' || host.endsWith('.localhost')) return { ok: false, reasonCode: 'localhost' };
-  if (isPrivateOrReservedHost_(host)) return { ok: false, reasonCode: 'private_ip' };
-  if (isLikelyUrlShortenerHost_(host)) return { ok: false, reasonCode: 'url_shortener' };
-  const category = groundedRejectedDomainCategory_(host, checked.url);
-  if (category) return { ok: false, reasonCode: category };
-  return checked;
+  if (host === 'localhost' || host.endsWith('.localhost')) return buildGroundingCitationSafetyRejected_(checked, 'localhost', 'local');
+  if (isPrivateOrReservedHost_(host)) return buildGroundingCitationSafetyRejected_(checked, 'private_ip', 'private_network');
+  if (isLikelyUrlShortenerHost_(host)) return buildGroundingCitationSafetyRejected_(checked, 'url_shortener', 'redirect');
+  const category = classifyGroundedCitationDomainCategory_(host, checked.url);
+  if (!category.accepted) return buildGroundingCitationSafetyRejected_(checked, category.reasonCode || 'unknown_safety_rejection', category.normalizedCategory || 'blocked');
+  return Object.assign({}, checked, {
+    ok: true,
+    accepted: true,
+    reasonCode: category.reasonCode || 'accepted_https_public_web',
+    normalizedCategory: category.normalizedCategory || 'public_web',
+    redirectResolutionRequired: false,
+    safeForIdentityValidation: true
+  });
 }
 
 function normalizeGroundedCitationUrl_(url) {
@@ -7997,21 +8085,71 @@ function normalizeGroundedCitationUrl_(url) {
 }
 
 function groundedRejectedDomainCategory_(host, url) {
+  const classified = classifyGroundedCitationDomainCategory_(host, url);
+  return classified.accepted ? '' : classified.reasonCode;
+}
+
+function buildGroundingCitationSafetyRejected_(checked, reasonCode, normalizedCategory) {
+  return Object.assign({}, checked || {}, {
+    ok: false,
+    accepted: false,
+    reasonCode: reasonCode || 'unknown_safety_rejection',
+    normalizedCategory: normalizedCategory || 'blocked',
+    redirectResolutionRequired: reasonCode === 'tracking_redirect' || reasonCode === 'unsupported_google_redirect',
+    safeForIdentityValidation: false
+  });
+}
+
+function classifyGroundedCitationDomainCategory_(host, url) {
   const h = String(host || '').toLowerCase();
   const value = String(url || '').toLowerCase();
   const social = ['facebook.com', 'instagram.com', 'x.com', 'twitter.com', 'linkedin.com', 'youtube.com', 'tiktok.com'];
-  const directory = ['google.com', 'goo.gl', 'yelp.com', 'tripadvisor.com', 'hotpepper.jp', 'ekiten.jp', 'navitime.co.jp'];
+  const directory = ['yelp.com', 'tripadvisor.com', 'hotpepper.jp', 'ekiten.jp', 'navitime.co.jp'];
   const review = ['trustpilot.com', 'reviews.io', 'minhyo.jp'];
   const marketplace = ['amazon.co.jp', 'amazon.com', 'rakuten.co.jp', 'yahoo.co.jp'];
   const jobs = ['indeed.com', 'wantedly.com', 'green-japan.com', 'rikunabi.com', 'mynavi.jp'];
   const pr = ['prtimes.jp', 'value-press.com', 'atpress.ne.jp'];
-  if (social.some((d) => h === d || h.endsWith('.' + d))) return 'social_network';
-  if (directory.some((d) => h === d || h.endsWith('.' + d))) return value.indexOf('/maps') !== -1 ? 'map_listing' : 'business_directory';
-  if (review.some((d) => h === d || h.endsWith('.' + d))) return 'review_site';
-  if (marketplace.some((d) => h === d || h.endsWith('.' + d))) return 'marketplace';
-  if (jobs.some((d) => h === d || h.endsWith('.' + d))) return 'job_site';
-  if (pr.some((d) => h === d || h.endsWith('.' + d))) return 'press_release_distribution';
-  return '';
+  if (isGroundedCitationOfficialDocumentationHost_(h)) return { accepted: true, reasonCode: 'accepted_official_documentation', normalizedCategory: 'official_documentation' };
+  if (isGroundedCitationGoogleServiceHost_(h)) return classifyGroundedGoogleCitationService_(h, value);
+  if (social.some((d) => h === d || h.endsWith('.' + d))) return { accepted: false, reasonCode: 'social_network', normalizedCategory: 'social_network' };
+  if (directory.some((d) => h === d || h.endsWith('.' + d))) return { accepted: false, reasonCode: 'business_directory', normalizedCategory: 'business_directory' };
+  if (review.some((d) => h === d || h.endsWith('.' + d))) return { accepted: false, reasonCode: 'review_site', normalizedCategory: 'review_site' };
+  if (marketplace.some((d) => h === d || h.endsWith('.' + d))) return { accepted: false, reasonCode: 'marketplace', normalizedCategory: 'marketplace' };
+  if (jobs.some((d) => h === d || h.endsWith('.' + d))) return { accepted: false, reasonCode: 'job_site', normalizedCategory: 'job_site' };
+  if (pr.some((d) => h === d || h.endsWith('.' + d))) return { accepted: false, reasonCode: 'press_release_distribution', normalizedCategory: 'press_release_distribution' };
+  return { accepted: true, reasonCode: 'accepted_https_public_web', normalizedCategory: 'public_web' };
+}
+
+function isGroundedCitationOfficialDocumentationHost_(host) {
+  const h = String(host || '').toLowerCase();
+  return [
+    'developers.google.com',
+    'cloud.google.com',
+    'firebase.google.com',
+    'developer.apple.com',
+    'learn.microsoft.com',
+    'developer.mozilla.org',
+    'docs.github.com',
+    'docs.stripe.com',
+    'platform.openai.com'
+  ].some((domain) => h === domain || h.endsWith('.' + domain));
+}
+
+function isGroundedCitationGoogleServiceHost_(host) {
+  const h = String(host || '').toLowerCase();
+  return h === 'google.com' || h.endsWith('.google.com') || h === 'goo.gl' || h.endsWith('.goo.gl');
+}
+
+function classifyGroundedGoogleCitationService_(host, value) {
+  const h = String(host || '').toLowerCase();
+  const url = String(value || '').toLowerCase();
+  if (h === 'goo.gl' || h.endsWith('.goo.gl')) return { accepted: false, reasonCode: 'url_shortener', normalizedCategory: 'redirect' };
+  if (url.indexOf('/maps') !== -1 || h === 'maps.google.com') return { accepted: false, reasonCode: 'map_listing', normalizedCategory: 'map_listing' };
+  if (h === 'news.google.com') return { accepted: false, reasonCode: 'unrelated_google_service', normalizedCategory: 'news_service' };
+  if (h === 'accounts.google.com' || h === 'myaccount.google.com') return { accepted: false, reasonCode: 'unrelated_google_service', normalizedCategory: 'account_service' };
+  if ((h === 'www.google.com' || h === 'google.com') && (url.indexOf('/url?') !== -1 || url.indexOf('/amp/') !== -1)) return { accepted: false, reasonCode: 'unsupported_google_redirect', normalizedCategory: 'redirect' };
+  if ((h === 'www.google.com' || h === 'google.com') && (url.indexOf('/search') !== -1 || url.indexOf('?q=') !== -1)) return { accepted: false, reasonCode: 'unrelated_google_service', normalizedCategory: 'search_service' };
+  return { accepted: false, reasonCode: 'unrelated_google_service', normalizedCategory: 'google_service' };
 }
 
 function selectVerifiedGroundedOfficialSource_(target, citations, grounding) {
@@ -8137,6 +8275,32 @@ function readGmailSalesGroundingCitationAcceptanceProbeSummary_() {
   }
 }
 
+function inspectGmailSalesGroundingCitationAcceptanceProbeStatus() {
+  const summary = readGmailSalesGroundingCitationAcceptanceProbeSummary_();
+  const result = {
+    event: 'gmail_sales_grounding_citation_acceptance_probe_status',
+    mode: 'read_only',
+    lastProbeCompletedAt: String(summary.completedAt || ''),
+    lastProbeValid: Boolean(summary.citationAcceptanceValid),
+    safetyValidatorVersion: String(summary.safetyValidatorVersion || GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION),
+    probeScenarioVersion: String(summary.probeScenarioVersion || GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SCENARIO_VERSION),
+    urlCitationAnnotationCount: Number(summary.urlCitationAnnotationCount || 0),
+    citationUrlSyntaxValidCount: Number(summary.citationUrlSyntaxValidCount || 0),
+    citationUrlSafetyAcceptedCount: Number(summary.citationUrlSafetyAcceptedCount || 0),
+    citationUrlSafetyRejectedCount: Number(summary.citationUrlSafetyRejectedCount || 0),
+    citationUrlSafetyRejectionReasonCounts: summary.citationUrlSafetyRejectionReasonCounts || {},
+    citationUrlIdentityValidationAttemptCount: Number(summary.citationUrlIdentityValidationAttemptCount || 0),
+    citationUrlFinalAcceptedCount: Number(summary.citationUrlFinalAcceptedCount || 0),
+    recommendedNextAction: summary.citationAcceptanceValid ? 'run_source_discovery' : 'run_citation_acceptance_probe',
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false
+  };
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
 function inspectGmailSalesCitationUrlParserRuntimeCompatibility_() {
   const fixtures = [
     { value: 'https://example.com/', valid: true },
@@ -8258,12 +8422,18 @@ function testGmailSalesGroundingCitationAcceptanceContractOnce() {
     });
   }
   const prompt = [
-    'Use Google Search to identify the official website for OpenAI.',
-    'Return a concise public statement with inline source citations for the official site.',
-    'Do not include private, candidate, contact, or user-provided data.'
+    'Use Google Search to find exactly one official developer documentation page operated by the public vendor named in this probe.',
+    'Cite only a page operated by the vendor itself. Do not cite news, social networks, directories, maps, jobs, reviews, marketplaces, or press-release distribution pages.',
+    'If an official vendor-operated documentation page cannot be verified, do not force a URL.',
+    'Use URL citation annotations for the official documentation page; do not list URLs as plain text.',
+    'Do not include candidate data, sales data, email addresses, personal names, or user-provided private data.',
+    'Probe scenario: official public developer documentation only.'
   ].join('\n');
   const search = callGeminiGroundedSearch_(grounding, prompt);
-  const target = { candidateToken: 'citation-acceptance-probe' };
+  const target = {
+    candidateToken: 'citation-acceptance-probe',
+    expectedOfficialCitationHosts: ['developers.google.com', 'cloud.google.com', 'firebase.google.com']
+  };
   if (!search.ok) {
     const result = buildGmailSalesGroundingCitationAcceptanceProbeResult_('blocked', {
       blockedReason: 'grounding_provider_error',
@@ -8278,16 +8448,21 @@ function testGmailSalesGroundingCitationAcceptanceContractOnce() {
     return result;
   }
   const parsed = parseGeminiGroundingInteractionResponse_(search.response, target);
-  const reasonTotal = Object.keys(parsed.citationUrlSafetyRejectionReasonCounts || {}).reduce((sum, key) => sum + Number(parsed.citationUrlSafetyRejectionReasonCounts[key] || 0), 0);
+  const reasonTotal = Number(parsed.citationUrlSafetyRejectionReasonCountTotal || 0);
   const citationAcceptanceValid = Boolean(
+    search.ok &&
     parsed.responseJsonParsed &&
     parsed.googleSearchCallStepCount >= 1 &&
     parsed.googleSearchResultStepCount >= 1 &&
     parsed.urlCitationAnnotationCount >= 1 &&
     parsed.citationUrlSyntaxValidCount >= 1 &&
+    parsed.citationUrlSafetyInvariantValid &&
     parsed.citationUrlSafetyAcceptedCount >= 1 &&
+    parsed.citationUrlIdentityValidationAttemptCount >= 1 &&
+    parsed.citationUrlIdentityAcceptedCount >= 1 &&
     parsed.citationUrlFinalAcceptedCount >= 1 &&
-    reasonTotal === Number(parsed.citationUrlSafetyRejectedCount || 0)
+    reasonTotal === Number(parsed.citationUrlSafetyRejectedCount || 0) &&
+    !Boolean((parsed.citationUrlSafetyRejectionReasonCounts || {}).unknown_safety_rejection)
   );
   const result = buildGmailSalesGroundingCitationAcceptanceProbeResult_(citationAcceptanceValid ? 'pass' : 'blocked', {
     blockedReason: citationAcceptanceValid ? '' : 'citation_acceptance_contract_invalid',
@@ -8305,11 +8480,22 @@ function testGmailSalesGroundingCitationAcceptanceContractOnce() {
     citationUrlSafetyValidationAttemptCount: parsed.citationUrlSafetyValidationAttemptCount,
     citationUrlSafetyAcceptedCount: parsed.citationUrlSafetyAcceptedCount,
     citationUrlSafetyRejectedCount: parsed.citationUrlSafetyRejectedCount,
+    citationUrlSafetyRejectionReasonCounts: parsed.citationUrlSafetyRejectionReasonCounts || {},
     citationUrlSafetyRejectionReasonCountTotal: reasonTotal,
+    citationUrlSafetyDecisionCount: parsed.citationUrlSafetyDecisionCount,
+    citationUrlSafetyInvariantValid: parsed.citationUrlSafetyInvariantValid,
+    citationUrlCategoryCounts: parsed.citationUrlCategoryCounts || {},
+    citationUrlRedirectCandidateCount: parsed.citationUrlRedirectCandidateCount,
+    citationUrlDirectHttpsCandidateCount: parsed.citationUrlDirectHttpsCandidateCount,
+    citationUrlOfficialDocumentationCandidateCount: parsed.citationUrlOfficialDocumentationCandidateCount,
+    citationUrlThirdPartyCandidateCount: parsed.citationUrlThirdPartyCandidateCount,
+    citationUrlUnknownCategoryCount: parsed.citationUrlUnknownCategoryCount,
     citationUrlIdentityValidationAttemptCount: parsed.citationUrlIdentityValidationAttemptCount,
     citationUrlIdentityAcceptedCount: parsed.citationUrlIdentityAcceptedCount,
     citationUrlIdentityRejectedCount: parsed.citationUrlIdentityRejectedCount,
     citationUrlFinalAcceptedCount: parsed.citationUrlFinalAcceptedCount,
+    safetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    probeScenarioVersion: GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SCENARIO_VERSION,
     citationAcceptanceValid,
     completedAt: new Date().toISOString()
   });
@@ -8464,12 +8650,23 @@ function buildGmailSalesGroundingCitationAcceptanceProbeResult_(status, override
     citationUrlSafetyValidationAttemptCount: 0,
     citationUrlSafetyAcceptedCount: 0,
     citationUrlSafetyRejectedCount: 0,
+    citationUrlSafetyRejectionReasonCounts: {},
     citationUrlSafetyRejectionReasonCountTotal: 0,
+    citationUrlSafetyDecisionCount: 0,
+    citationUrlSafetyInvariantValid: false,
+    citationUrlCategoryCounts: {},
+    citationUrlRedirectCandidateCount: 0,
+    citationUrlDirectHttpsCandidateCount: 0,
+    citationUrlOfficialDocumentationCandidateCount: 0,
+    citationUrlThirdPartyCandidateCount: 0,
+    citationUrlUnknownCategoryCount: 0,
     citationUrlIdentityValidationAttemptCount: 0,
     citationUrlIdentityAcceptedCount: 0,
     citationUrlIdentityRejectedCount: 0,
     citationUrlFinalAcceptedCount: 0,
     citationAcceptanceValid: false,
+    safetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    probeScenarioVersion: GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SCENARIO_VERSION,
     storeDisabled: true,
     gmailSendExecuted: false,
     gmailDraftCreated: false,
