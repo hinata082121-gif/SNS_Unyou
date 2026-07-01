@@ -360,28 +360,34 @@ test('grounding is fail-closed when Gemini configuration is not valid', () => {
   assert.equal(env.propertyWriteCount, 0);
 });
 
-test('grounded discovery continues through model failover path when response contract probe is missing', () => {
+test('grounded discovery is hard-gated when response contract probe is missing', () => {
   const env = createEnvironment({ sourceCount: 1, contractProbeValid: false });
   seedGroundingReviewAndQueue(env, 1);
   const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
-  assert.equal(result.status, 'pass');
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'response_contract_probe_invalid');
   assert.equal(result.groundingContractProbeMissingOrInvalid, true);
-  assert.equal(result.candidatesAttemptedCount, 1);
-  assert.equal(result.searchQueryCount, 1);
-  assert.equal(result.sourceReferencesAppliedCount, 1);
-  assert.equal(env.fetchCalls.length, 1);
+  assert.equal(result.candidatesAttemptedCount, 0);
+  assert.equal(result.searchQueryCount, 0);
+  assert.equal(result.groundingHttpRequestCount, 0);
+  assert.equal(result.sourceReferencesAppliedCount, 0);
+  assert.equal(result.aiApiCalled, false);
+  assert.equal(env.fetchCalls.length, 0);
 });
 
-test('grounded discovery continues through model failover path when citation acceptance probe is missing', () => {
+test('grounded discovery is hard-gated when citation acceptance probe is missing', () => {
   const env = createEnvironment({ sourceCount: 1, citationProbeValid: false });
   seedGroundingReviewAndQueue(env, 1);
   const result = env.context.runGmailSalesGroundedOfficialSourceDiscoveryOnce();
-  assert.equal(result.status, 'pass');
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'citation_acceptance_probe_invalid');
   assert.equal(result.citationAcceptanceProbeMissingOrInvalid, true);
-  assert.equal(result.candidatesAttemptedCount, 1);
-  assert.equal(result.searchQueryCount, 1);
-  assert.equal(result.sourceReferencesAppliedCount, 1);
-  assert.equal(env.fetchCalls.length, 1);
+  assert.equal(result.candidatesAttemptedCount, 0);
+  assert.equal(result.searchQueryCount, 0);
+  assert.equal(result.groundingHttpRequestCount, 0);
+  assert.equal(result.sourceReferencesAppliedCount, 0);
+  assert.equal(result.aiApiCalled, false);
+  assert.equal(env.fetchCalls.length, 0);
 });
 
 test('provider non-2xx response is classified without normal response parsing or source-not-found', () => {

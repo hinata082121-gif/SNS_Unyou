@@ -4816,6 +4816,38 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       stats.citationAcceptanceProbeMissingOrInvalid = true;
       stats.recommendedNextAction = 'run_grounding_model_failover_probe';
     }
+    const parserProbe = inspectGmailSalesCitationUrlParserRuntimeCompatibility_();
+    stats.citationUrlParserRuntimeCompatible = parserProbe.runtimeParserCompatible;
+    if (!parserProbe.runtimeParserCompatible) {
+      stats.citationUrlParserRuntimeInvalid = true;
+      stats.recommendedNextAction = 'run_citation_url_parser_runtime_probe';
+    }
+    const hardGateReason = !contractProbe.responseContractValid ? 'response_contract_probe_invalid'
+      : (!citationProbe.citationAcceptanceValid ? 'citation_acceptance_probe_invalid'
+        : (!parserProbe.runtimeParserCompatible ? 'citation_url_parser_runtime_invalid'
+          : (stats.remainingGroundingPromptRequestCountToday < 1 ? 'grounding_budget_exceeded' : '')));
+    if (hardGateReason) {
+      stats.completedAt = now;
+      stats.runId = 'grounding-' + hashValue_(now + '|hard-gate|' + hardGateReason + '|' + stats.eligibleDiscoveryTargetCount);
+      stats.recommendedNextAction = hardGateReason === 'response_contract_probe_invalid' ? 'run_grounding_model_failover_probe'
+        : (hardGateReason === 'citation_acceptance_probe_invalid' ? 'run_citation_acceptance_probe'
+          : (hardGateReason === 'citation_url_parser_runtime_invalid' ? 'fix_citation_url_parser' : 'run_source_discovery'));
+      persistGroundedDiscoverySummary_(stats);
+      return buildGmailSalesGroundingResult_('blocked', Object.assign({
+        blockedReason: hardGateReason,
+        groundingEnabled: grounding.enabled,
+        groundingModel: grounding.model,
+        groundingModelConfigured: Boolean(grounding.model),
+        providerConfigurationValid: grounding.providerConfigurationValid,
+        candidatesAttemptedCount: 0,
+        searchQueryCount: 0,
+        groundingHttpRequestCount: 0,
+        sourceReferencesAppliedCount: 0,
+        googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted),
+        scriptPropertiesUpdated: true,
+        aiApiCalled: false
+      }, stats));
+    }
     const sourceSnapshots = [];
     const reviewSnapshots = [];
     const queueSnapshots = [];
@@ -4861,11 +4893,23 @@ function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
       const prompt = buildGroundedOfficialSourceSearchPrompt_(target);
       const failover = callGeminiGroundedSearchWithFailover_(grounding, prompt, target, { now, health: modelHealth });
       stats.modelsAttemptedCount += failover.modelsAttemptedCount;
+      stats.uniqueModelsAttemptedCount += failover.uniqueModelsAttemptedCount || 0;
+      stats.providerAvailableModelCount += failover.providerAvailableModelCount || 0;
+      stats.responseContractHealthyModelCount += failover.responseContractHealthyModelCount || 0;
+      stats.citationAcceptedModelCount += failover.citationAcceptedModelCount || 0;
+      if (failover.selectedResponseContractModel && !stats.selectedResponseContractModel) stats.selectedResponseContractModel = failover.selectedResponseContractModel;
+      if (failover.selectedCitationAcceptedModel && !stats.selectedCitationAcceptedModel) stats.selectedCitationAcceptedModel = failover.selectedCitationAcceptedModel;
+      if (failover.localValidationBlocked) stats.localValidationBlocked = true;
       if (failover.failoverExecuted) stats.failoverCandidateCount += 1;
+      if (failover.failoverExecuted) stats.failoverExecuted = true;
+      if (failover.failoverSucceeded) stats.failoverSucceeded = true;
       if (failover.selectedModel && !stats.selectedHealthyModel && failover.ok) stats.selectedHealthyModel = failover.selectedModel;
       failover.attempts.forEach((attempt) => {
         if (attempt.skipped) return;
         stats.searchQueryCount += 1;
+        stats.candidateDiscoveryPromptRequestCount += 1;
+        if (Number(attempt.attempt || 1) > 1) stats.retryPromptRequestCount += 1;
+        if (Number(attempt.modelIndex || 0) > 0) stats.failoverPromptRequestCount += 1;
         stats.groundingHttpRequestCount += 1;
         incrementCount_(stats.modelAttemptCounts, attempt.model);
         incrementCount_(stats.modelRequestCounts, attempt.model);
@@ -6607,7 +6651,7 @@ function getGmailSalesGroundingPromptRequestUsage_() {
   const last = readGmailSalesGroundingLastRunSummary_();
   const contract = readGmailSalesGroundingContractProbeSummary_();
   const citation = readGmailSalesGroundingCitationAcceptanceProbeSummary_();
-  const candidateDiscoveryRequestCountToday = isIsoTimestampToday_(last.completedAt) ? Number(last.groundingHttpRequestCount || last.searchQueryCount || 0) : 0;
+  const candidateDiscoveryRequestCountToday = isIsoTimestampToday_(last.completedAt) ? Number(last.candidateDiscoveryPromptRequestCount || last.groundingHttpRequestCount || last.searchQueryCount || 0) : 0;
   const responseContractProbeRequestCountToday = isIsoTimestampToday_(contract.completedAt) && contract.httpRequestExecuted ? 1 : 0;
   const citationAcceptanceProbeRequestCountToday = isIsoTimestampToday_(citation.completedAt) && citation.httpRequestExecuted ? 1 : 0;
   const manualCount = Math.max(0, Number(props.getProperty('GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY') || '0'));
@@ -6670,6 +6714,9 @@ function emptyGroundedSourceDiscoveryStats_() {
     searchQueryCount: 0,
     searchRequestSuccessCount: 0,
     searchRequestFailureCount: 0,
+    candidateDiscoveryPromptRequestCount: 0,
+    retryPromptRequestCount: 0,
+    failoverPromptRequestCount: 0,
     dailyPromptRequestLimit: 0,
     groundingPromptRequestCountToday: 0,
     responseContractProbeRequestCountToday: 0,
@@ -6690,6 +6737,15 @@ function emptyGroundedSourceDiscoveryStats_() {
     allGroundingModelsUnavailable: false,
     selectedHealthyModel: '',
     modelsAttemptedCount: 0,
+    uniqueModelsAttemptedCount: 0,
+    providerAvailableModelCount: 0,
+    responseContractHealthyModelCount: 0,
+    citationAcceptedModelCount: 0,
+    selectedResponseContractModel: '',
+    selectedCitationAcceptedModel: '',
+    failoverExecuted: false,
+    failoverSucceeded: false,
+    localValidationBlocked: false,
     modelAttemptCounts: {},
     modelRequestCounts: {},
     modelExecutedQueryCounts: {},
@@ -6729,6 +6785,16 @@ function emptyGroundedSourceDiscoveryStats_() {
     citationUrlSafetyRejectedCount: 0,
     citationUrlSafetyAcceptedCount: 0,
     citationUrlSafetyRejectionReasonCounts: {},
+    citationUrlValueTypeCounts: {},
+    citationUrlStringCount: 0,
+    citationUrlNonStringCount: 0,
+    citationUrlEmptyCount: 0,
+    citationUrlHttpsPrefixCount: 0,
+    citationUrlHttpPrefixCount: 0,
+    citationUrlOtherPrefixCount: 0,
+    citationUrlLengthBucketCounts: {},
+    citationUrlControlCharacterCount: 0,
+    citationUrlParseFailureReasonCounts: {},
     citationUrlIdentityValidationAttemptCount: 0,
     citationUrlIdentityAcceptedCount: 0,
     citationUrlIdentityRejectedCount: 0,
@@ -7143,12 +7209,19 @@ function isNonRetryableGroundingProviderCategory_(category) {
 function classifyGroundingParsedAttempt_(parsedGrounding) {
   if (!parsedGrounding) return { ok: false, category: 'unsupported_response_shape', retryable: true, status: 'grounding_response_shape_unsupported' };
   if (parsedGrounding.responseJsonParseFailure) return { ok: false, category: 'grounding_response_parse_error', retryable: true, status: 'grounding_response_parse_error' };
+  const responseContractHealthy = Boolean(
+    parsedGrounding.responseJsonParsed &&
+    parsedGrounding.googleSearchCallStepCount >= 1 &&
+    parsedGrounding.modelOutputStepCount >= 1 &&
+    parsedGrounding.urlCitationAnnotationCount >= 1
+  );
   if (parsedGrounding.groundingToolNotInvoked) return { ok: false, category: 'grounding_tool_not_invoked', retryable: true, status: 'grounding_tool_not_invoked' };
   if (parsedGrounding.groundingModelOutputMissing) return { ok: false, category: 'grounding_model_output_missing', retryable: true, status: 'grounding_model_output_missing' };
   if (parsedGrounding.groundingAnnotationMissing) return { ok: false, category: 'grounding_annotations_missing', retryable: true, status: 'grounding_annotations_missing' };
   if (parsedGrounding.groundingCalledWithoutCitation) return { ok: false, category: 'grounding_called_without_citation', retryable: true, status: 'grounding_called_without_citation' };
   if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlSafetyRejectedCount > 0) return { ok: false, category: 'citation_safety_rejected', retryable: false, status: 'citation_safety_rejected' };
   if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlIdentityRejectedCount > 0) return { ok: false, category: 'citation_identity_rejected', retryable: false, status: 'citation_identity_rejected' };
+  if (responseContractHealthy && parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlSyntaxInvalidCount > 0 && parsedGrounding.citationUrlSyntaxValidCount === 0) return { ok: false, category: 'local_citation_parser_error', retryable: false, status: 'local_citation_parser_error', localValidationBlocked: true, responseContractHealthy: true };
   if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0) return { ok: false, category: 'citation_acceptance_contract_invalid', retryable: true, status: 'citation_parse_failed' };
   return { ok: true, category: '', retryable: false, status: 'verified_candidate_citations' };
 }
@@ -7167,11 +7240,22 @@ function callGeminiGroundedSearchWithFailover_(grounding, prompt, target, option
     failureCategory: 'all_grounding_models_unavailable',
     attempts: [],
     modelsAttemptedCount: 0,
+    uniqueModelsAttemptedCount: 0,
     failoverExecuted: false,
+    failoverSucceeded: false,
     allModelsUnavailable: false,
+    allProviderModelsUnavailable: false,
+    providerAvailableModelCount: 0,
+    responseContractHealthyModelCount: 0,
+    citationAcceptedModelCount: 0,
+    selectedResponseContractModel: '',
+    selectedCitationAcceptedModel: '',
+    localValidationBlocked: false,
     providerErrorCategoryCounts: {},
     health
   };
+  const uniqueModelsAttempted = {};
+  let provider2xxCount = 0;
   for (let modelIndex = 0; modelIndex < cascade.length; modelIndex += 1) {
     const model = cascade[modelIndex];
     if (isGroundingModelInCooldown_(model, health, now)) {
@@ -7180,22 +7264,35 @@ function callGeminiGroundedSearchWithFailover_(grounding, prompt, target, option
     }
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       result.modelsAttemptedCount += 1;
+      uniqueModelsAttempted[model] = true;
+      result.uniqueModelsAttemptedCount = Object.keys(uniqueModelsAttempted).length;
       result.selectedModel = model;
       const search = callGeminiGroundedSearch_(Object.assign({}, grounding, { model }), prompt);
-      result.attempts.push({ model, attempt, statusCode: search.statusCode || 0, ok: search.ok });
+      result.attempts.push({ model, modelIndex, attempt, statusCode: search.statusCode || 0, ok: search.ok });
       if (!search.ok) {
         const category = classifyGroundingProviderError_(search.statusCode, search.errorCode);
         incrementCount_(result.providerErrorCategoryCounts, category);
         updateGroundingModelHealthEntry_(health, model, 'failure', category, now);
         result.failureCategory = category;
         result.status = category === 'rate_limited' ? 'grounding_provider_error_retryable' : 'grounding_provider_error';
-        if (isNonRetryableGroundingProviderCategory_(category)) return result;
+        if (isNonRetryableGroundingProviderCategory_(category)) {
+          result.failoverExecuted = result.uniqueModelsAttemptedCount >= 2;
+          result.allProviderModelsUnavailable = provider2xxCount === 0;
+          return result;
+        }
         if (category === 'server_error' && attempt < 2) continue;
-        result.failoverExecuted = modelIndex < cascade.length - 1;
         break;
       }
+      provider2xxCount += 1;
+      result.providerAvailableModelCount = Object.keys(uniqueModelsAttempted).length;
       const parsedGrounding = parseGeminiGroundingInteractionResponse_(search.response, target);
       const parsed = classifyGroundingParsedAttempt_(parsedGrounding);
+      const responseContractHealthy = Boolean(parsed.responseContractHealthy ||
+        (parsedGrounding.responseJsonParsed && parsedGrounding.googleSearchCallStepCount >= 1 && parsedGrounding.modelOutputStepCount >= 1 && parsedGrounding.urlCitationAnnotationCount >= 1));
+      if (responseContractHealthy) {
+        result.responseContractHealthyModelCount += 1;
+        if (!result.selectedResponseContractModel) result.selectedResponseContractModel = model;
+      }
       if (parsed.ok) {
         updateGroundingModelHealthEntry_(health, model, 'success', '', now);
         result.ok = true;
@@ -7203,18 +7300,29 @@ function callGeminiGroundedSearchWithFailover_(grounding, prompt, target, option
         result.parsedGrounding = parsedGrounding;
         result.status = 'verified_official_source';
         result.failureCategory = '';
+        result.citationAcceptedModelCount += 1;
+        result.selectedCitationAcceptedModel = model;
+        result.failoverExecuted = result.uniqueModelsAttemptedCount >= 2;
+        result.failoverSucceeded = result.failoverExecuted;
+        result.allProviderModelsUnavailable = provider2xxCount === 0;
         return result;
       }
       updateGroundingModelHealthEntry_(health, model, 'failure', parsed.category, now);
       result.parsedGrounding = parsedGrounding;
       result.failureCategory = parsed.category;
       result.status = parsed.status;
-      if (!parsed.retryable) return result;
-      result.failoverExecuted = modelIndex < cascade.length - 1;
+      if (parsed.localValidationBlocked) result.localValidationBlocked = true;
+      if (!parsed.retryable) {
+        result.failoverExecuted = result.uniqueModelsAttemptedCount >= 2;
+        result.allProviderModelsUnavailable = provider2xxCount === 0;
+        return result;
+      }
       break;
     }
   }
   result.allModelsUnavailable = !result.ok && result.modelsAttemptedCount === 0;
+  result.failoverExecuted = result.uniqueModelsAttemptedCount >= 2;
+  result.allProviderModelsUnavailable = provider2xxCount === 0;
   return result;
 }
 
@@ -7250,6 +7358,18 @@ function accumulateGroundingParserStats_(stats, parsedGrounding) {
   Object.keys(parsedGrounding.citationUrlSafetyRejectionReasonCounts || {}).forEach((key) => {
     stats.citationUrlSafetyRejectionReasonCounts[key] = (stats.citationUrlSafetyRejectionReasonCounts[key] || 0) + parsedGrounding.citationUrlSafetyRejectionReasonCounts[key];
   });
+  ['citationUrlValueTypeCounts', 'citationUrlLengthBucketCounts', 'citationUrlParseFailureReasonCounts'].forEach((field) => {
+    Object.keys(parsedGrounding[field] || {}).forEach((key) => {
+      stats[field][key] = (stats[field][key] || 0) + parsedGrounding[field][key];
+    });
+  });
+  stats.citationUrlStringCount += parsedGrounding.citationUrlStringCount || 0;
+  stats.citationUrlNonStringCount += parsedGrounding.citationUrlNonStringCount || 0;
+  stats.citationUrlEmptyCount += parsedGrounding.citationUrlEmptyCount || 0;
+  stats.citationUrlHttpsPrefixCount += parsedGrounding.citationUrlHttpsPrefixCount || 0;
+  stats.citationUrlHttpPrefixCount += parsedGrounding.citationUrlHttpPrefixCount || 0;
+  stats.citationUrlOtherPrefixCount += parsedGrounding.citationUrlOtherPrefixCount || 0;
+  stats.citationUrlControlCharacterCount += parsedGrounding.citationUrlControlCharacterCount || 0;
   stats.citationUrlIdentityValidationAttemptCount += parsedGrounding.citationUrlIdentityValidationAttemptCount || 0;
   stats.citationUrlIdentityAcceptedCount += parsedGrounding.citationUrlIdentityAcceptedCount || 0;
   stats.citationUrlAcceptedCount += parsedGrounding.citationUrlAcceptedCount || 0;
@@ -7284,6 +7404,16 @@ function parseGeminiGroundingInteractionResponse_(searchResult, target) {
     citationUrlSafetyRejectedCount: 0,
     citationUrlSafetyAcceptedCount: 0,
     citationUrlSafetyRejectionReasonCounts: {},
+    citationUrlValueTypeCounts: {},
+    citationUrlStringCount: 0,
+    citationUrlNonStringCount: 0,
+    citationUrlEmptyCount: 0,
+    citationUrlHttpsPrefixCount: 0,
+    citationUrlHttpPrefixCount: 0,
+    citationUrlOtherPrefixCount: 0,
+    citationUrlLengthBucketCounts: {},
+    citationUrlControlCharacterCount: 0,
+    citationUrlParseFailureReasonCounts: {},
     citationUrlIdentityValidationAttemptCount: 0,
     citationUrlIdentityAcceptedCount: 0,
     citationUrlAcceptedCount: 0,
@@ -7359,26 +7489,31 @@ function parseGeminiModelOutputAnnotation_(annotation, text, target, result) {
   incrementCount_(result.annotationTypeCounts, type || 'unknown');
   if (type !== 'url_citation') return;
   result.urlCitationAnnotationCount += 1;
-  const url = String(annotation.url || annotation.uri || '').trim();
+  const rawUrl = annotation.url !== undefined ? annotation.url : annotation.uri;
+  const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
   const start = annotation.start_index !== undefined ? annotation.start_index : annotation.startIndex;
   const end = annotation.end_index !== undefined ? annotation.end_index : annotation.endIndex;
+  const normalized = recordGroundingCitationUrlSyntaxDiagnostics_(result, rawUrl);
   if (!url) {
     result.citationUrlMissingCount += 1;
+    result.citationUrlSyntaxInvalidCount += 1;
     return;
   }
   result.citationUrlPresentCount += 1;
+  if (normalized.ok) {
+    result.citationUrlSyntaxValidCount += 1;
+    result.citationUrlNormalizedCount += 1;
+  } else {
+    result.citationUrlSyntaxInvalidCount += 1;
+  }
   if (!isValidCitationTextRange_(text, start, end)) {
     result.citationIndexInvalidCount += 1;
     return;
   }
   result.citationIndexValidCount += 1;
-  const normalized = normalizeGroundingCitationUrl_(url);
   if (!normalized.ok) {
-    result.citationUrlSyntaxInvalidCount += 1;
     return;
   }
-  result.citationUrlSyntaxValidCount += 1;
-  result.citationUrlNormalizedCount += 1;
   if (result.seenCitationUrls[normalized.url]) {
     result.citationUrlDuplicateCount += 1;
     return;
@@ -7435,7 +7570,7 @@ function parseLegacyGeminiGroundingResponse_(parsed, target, result) {
     result.urlCitationAnnotationCount += 1;
     result.citationUrlPresentCount += 1;
     result.citationIndexValidCount += 1;
-    const normalized = normalizeGroundingCitationUrl_(url);
+    const normalized = recordGroundingCitationUrlSyntaxDiagnostics_(result, url);
     if (!normalized.ok) {
       result.citationUrlSyntaxInvalidCount += 1;
       return;
@@ -7491,23 +7626,124 @@ function collectCitationUrls_(value, urls) {
 }
 
 function normalizeGroundingCitationUrl_(url) {
-  const raw = String(url || '').trim();
+  return normalizeGroundingCitationUrlAppsScriptSafe_(url);
+}
+
+function parseGroundingCitationUrlAppsScriptSafe_(value) {
+  if (typeof value !== 'string') return { ok: false, reasonCode: 'non_string_url' };
+  const raw = value.trim();
   if (!raw) return { ok: false, reasonCode: 'missing_url' };
-  let parsed;
-  try {
-    parsed = new URL(raw);
-  } catch (error) {
-    return { ok: false, reasonCode: 'malformed_url' };
+  if (/[\u0000-\u001F\u007F]/.test(raw)) return { ok: false, reasonCode: 'control_character_in_url' };
+  if (/%(?![0-9A-Fa-f]{2})/.test(raw)) return { ok: false, reasonCode: 'malformed_percent_encoding' };
+  return parseHttpsUrlComponentsWithoutBrowserApi_(raw);
+}
+
+function parseHttpsUrlComponentsWithoutBrowserApi_(raw) {
+  const schemeMatch = String(raw || '').match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\//);
+  if (!schemeMatch) return { ok: false, reasonCode: 'missing_scheme' };
+  const scheme = schemeMatch[1].toLowerCase();
+  if (scheme !== 'https') return { ok: false, reasonCode: 'unsupported_scheme' };
+  let rest = raw.slice(schemeMatch[0].length);
+  const fragmentIndex = rest.indexOf('#');
+  if (fragmentIndex !== -1) rest = rest.slice(0, fragmentIndex);
+  const firstPathIndex = firstIndexOfAny_(rest, ['/', '?']);
+  const authority = firstPathIndex === -1 ? rest : rest.slice(0, firstPathIndex);
+  let pathAndQuery = firstPathIndex === -1 ? '' : rest.slice(firstPathIndex);
+  if (!authority) return { ok: false, reasonCode: 'missing_hostname' };
+  if (authority.indexOf('@') !== -1) return { ok: false, reasonCode: 'credential_in_url' };
+  let host = authority;
+  let port = '';
+  if (authority.charAt(0) === '[') {
+    const closing = authority.indexOf(']');
+    if (closing === -1) return { ok: false, reasonCode: 'malformed_hostname' };
+    host = authority.slice(1, closing);
+    if (authority.slice(closing + 1).charAt(0) === ':') port = authority.slice(closing + 2);
+    else if (authority.slice(closing + 1)) return { ok: false, reasonCode: 'malformed_hostname' };
+  } else if (authority.lastIndexOf(':') !== -1) {
+    const colon = authority.lastIndexOf(':');
+    host = authority.slice(0, colon);
+    port = authority.slice(colon + 1);
   }
-  if (parsed.username || parsed.password) return { ok: false, reasonCode: 'credential_in_url' };
-  if (parsed.protocol !== 'https:') return { ok: false, reasonCode: 'unsupported_scheme' };
-  if (!parsed.hostname) return { ok: false, reasonCode: 'missing_hostname' };
-  parsed.hash = '';
-  if (parsed.port === '443') parsed.port = '';
-  parsed.hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  parsed.pathname = parsed.pathname.replace(/\/{2,}/g, '/');
-  ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid'].forEach((key) => parsed.searchParams.delete(key));
-  return { ok: true, url: parsed.toString(), host: parsed.hostname };
+  host = String(host || '').toLowerCase().replace(/\.$/, '');
+  if (!host) return { ok: false, reasonCode: 'missing_hostname' };
+  if (/\s/.test(host) || host.indexOf('/') !== -1) return { ok: false, reasonCode: 'malformed_hostname' };
+  if (port) {
+    if (!/^\d+$/.test(port)) return { ok: false, reasonCode: 'invalid_port' };
+    const portNumber = Number(port);
+    if (!Number.isFinite(portNumber) || portNumber < 1 || portNumber > 65535) return { ok: false, reasonCode: 'invalid_port' };
+    if (port === '443') port = '';
+  }
+  if (!pathAndQuery) pathAndQuery = '/';
+  if (pathAndQuery.charAt(0) === '?') pathAndQuery = '/' + pathAndQuery;
+  const queryIndex = pathAndQuery.indexOf('?');
+  let path = queryIndex === -1 ? pathAndQuery : pathAndQuery.slice(0, queryIndex);
+  const query = queryIndex === -1 ? '' : pathAndQuery.slice(queryIndex + 1);
+  if (!path) path = '/';
+  path = path.replace(/\/{2,}/g, '/');
+  const normalizedQuery = normalizeGroundingCitationQueryString_(query);
+  const authorityOut = host + (port ? ':' + port : '');
+  return {
+    ok: true,
+    scheme,
+    host,
+    hostname: host,
+    port,
+    path,
+    query: normalizedQuery,
+    url: 'https://' + authorityOut + path + (normalizedQuery ? '?' + normalizedQuery : '')
+  };
+}
+
+function normalizeGroundingCitationUrlAppsScriptSafe_(value) {
+  return parseGroundingCitationUrlAppsScriptSafe_(value);
+}
+
+function firstIndexOfAny_(text, chars) {
+  let found = -1;
+  chars.forEach((char) => {
+    const index = text.indexOf(char);
+    if (index !== -1 && (found === -1 || index < found)) found = index;
+  });
+  return found;
+}
+
+function normalizeGroundingCitationQueryString_(query) {
+  if (!query) return '';
+  const tracking = {
+    utm_source: true,
+    utm_medium: true,
+    utm_campaign: true,
+    utm_term: true,
+    utm_content: true,
+    fbclid: true,
+    gclid: true
+  };
+  return String(query).split('&').filter((part) => {
+    if (!part) return false;
+    const key = part.split('=')[0].toLowerCase();
+    return !tracking[key];
+  }).join('&');
+}
+
+function recordGroundingCitationUrlSyntaxDiagnostics_(result, value) {
+  const valueType = value === null ? 'null' : typeof value;
+  incrementCount_(result.citationUrlValueTypeCounts, valueType);
+  if (typeof value === 'string') result.citationUrlStringCount += 1;
+  else result.citationUrlNonStringCount += 1;
+  const text = typeof value === 'string' ? value : '';
+  const trimmed = text.trim();
+  if (!trimmed) result.citationUrlEmptyCount += 1;
+  if (/[\u0000-\u001F\u007F]/.test(text)) result.citationUrlControlCharacterCount += 1;
+  const lower = trimmed.toLowerCase();
+  if (lower.indexOf('https://') === 0) result.citationUrlHttpsPrefixCount += 1;
+  else if (lower.indexOf('http://') === 0) result.citationUrlHttpPrefixCount += 1;
+  else result.citationUrlOtherPrefixCount += 1;
+  const length = trimmed.length;
+  const bucket = length === 0 ? '0' : (length <= 128 ? '1_128' : (length <= 512 ? '129_512' : (length <= 2048 ? '513_2048' : 'over_2048')));
+  incrementCount_(result.citationUrlLengthBucketCounts, bucket);
+  const parsed = normalizeGroundingCitationUrl_(value);
+  if (!parsed.ok) incrementCount_(result.citationUrlParseFailureReasonCounts, parsed.reasonCode || 'unknown_parse_failure');
+  return parsed;
 }
 
 function classifyGroundingCitationUrlSafety_(url) {
@@ -7667,6 +7903,69 @@ function readGmailSalesGroundingCitationAcceptanceProbeSummary_() {
   } catch (error) {
     return {};
   }
+}
+
+function inspectGmailSalesCitationUrlParserRuntimeCompatibility_() {
+  const fixtures = [
+    { value: 'https://example.com/', valid: true },
+    { value: 'https://www.example.co.jp/path?q=1', valid: true },
+    { value: 'https://sub.example.com/a/b', valid: true },
+    { value: 'https://xn--example-placeholder.invalid/path', valid: true },
+    { value: 'http://example.com/', valid: false },
+    { value: 'https://user:pass@example.com/', valid: false },
+    { value: 'https://localhost/path', valid: true },
+    { value: 'https://127.0.0.1/private', valid: true },
+    { value: 'not a url', valid: false },
+    { value: 'https://example.com/%zz', valid: false },
+    { value: 'https://example.com/\u0007bad', valid: false }
+  ];
+  const result = {
+    event: 'gmail_sales_citation_url_parser_runtime_compatibility',
+    mode: 'read_only',
+    status: 'blocked',
+    urlConstructorAvailable: typeof URL === 'function',
+    urlSearchParamsAvailable: typeof URLSearchParams === 'function',
+    fallbackParserAvailable: typeof parseHttpsUrlComponentsWithoutBrowserApi_ === 'function',
+    fixtureCount: fixtures.length,
+    syntaxValidCount: 0,
+    syntaxInvalidCount: 0,
+    normalizationSucceededCount: 0,
+    expectedValidFixtureCount: 0,
+    expectedInvalidFixtureCount: 0,
+    runtimeParserCompatible: false,
+    failureReasonCounts: {},
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    candidateRowsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false
+  };
+  fixtures.forEach((fixture) => {
+    if (fixture.valid) result.expectedValidFixtureCount += 1;
+    else result.expectedInvalidFixtureCount += 1;
+    const parsed = normalizeGroundingCitationUrlAppsScriptSafe_(fixture.value);
+    if (parsed.ok) {
+      result.syntaxValidCount += 1;
+      if (parsed.url && parsed.host) result.normalizationSucceededCount += 1;
+    } else {
+      result.syntaxInvalidCount += 1;
+      incrementCount_(result.failureReasonCounts, parsed.reasonCode || 'unknown_parse_failure');
+    }
+    if (Boolean(parsed.ok) !== fixture.valid) incrementCount_(result.failureReasonCounts, 'fixture_expectation_mismatch');
+  });
+  result.runtimeParserCompatible = result.fallbackParserAvailable &&
+    result.syntaxValidCount === result.expectedValidFixtureCount &&
+    result.syntaxInvalidCount === result.expectedInvalidFixtureCount &&
+    !result.failureReasonCounts.fixture_expectation_mismatch;
+  result.status = result.runtimeParserCompatible ? 'pass' : 'blocked';
+  return result;
+}
+
+function testGmailSalesCitationUrlParserRuntimeCompatibilityOnce() {
+  const result = inspectGmailSalesCitationUrlParserRuntimeCompatibility_();
+  logGmailSalesJsonResult_(result);
+  return result;
 }
 
 function testGmailSalesGroundingResponseContractOnce() {
@@ -7840,17 +8139,26 @@ function testGmailSalesGroundingModelFailoverOnce() {
     modelConfigurationValid: Boolean(grounding.modelConfigurationValid),
     modelsConfiguredCount: grounding.modelCascade.length,
     modelsAttemptedCount: failover.modelsAttemptedCount,
+    uniqueModelsAttemptedCount: failover.uniqueModelsAttemptedCount,
     modelSuccessCount: failover.ok ? 1 : 0,
     modelFailureCount: Math.max(0, failover.modelsAttemptedCount - (failover.ok ? 1 : 0)),
     selectedModel: failover.ok ? failover.selectedModel : '',
+    providerAvailableModelCount: failover.providerAvailableModelCount,
+    responseContractHealthyModelCount: failover.responseContractHealthyModelCount,
+    citationAcceptedModelCount: failover.citationAcceptedModelCount,
+    selectedResponseContractModel: failover.selectedResponseContractModel,
+    selectedCitationAcceptedModel: failover.selectedCitationAcceptedModel,
     providerErrorCategoryCounts,
     responseContractValid,
     citationAcceptanceValid,
     citationUrlSafetyAcceptedCount: Number(parsed.citationUrlSafetyAcceptedCount || 0),
     citationUrlFinalAcceptedCount: Number(parsed.citationUrlFinalAcceptedCount || 0),
     failoverExecuted: failover.failoverExecuted,
-    allModelsUnavailable: failover.allModelsUnavailable || !failover.ok,
-    recommendedNextAction: failover.ok ? 'run_source_discovery' : 'repair_grounding_provider_or_wait_for_cooldown',
+    failoverSucceeded: failover.failoverSucceeded,
+    allModelsUnavailable: failover.allModelsUnavailable || failover.allProviderModelsUnavailable,
+    allProviderModelsUnavailable: failover.allProviderModelsUnavailable,
+    localValidationBlocked: failover.localValidationBlocked,
+    recommendedNextAction: failover.ok ? 'run_source_discovery' : (failover.localValidationBlocked ? 'fix_citation_url_parser' : 'repair_grounding_provider_or_wait_for_cooldown'),
     completedAt: new Date().toISOString()
   });
   logGmailSalesJsonResult_(result);
@@ -7873,16 +8181,25 @@ function buildGmailSalesGroundingModelFailoverProbeResult_(status, overrides) {
     modelConfigurationValid: false,
     modelsConfiguredCount: 0,
     modelsAttemptedCount: 0,
+    uniqueModelsAttemptedCount: 0,
     modelSuccessCount: 0,
     modelFailureCount: 0,
     selectedModel: '',
+    providerAvailableModelCount: 0,
+    responseContractHealthyModelCount: 0,
+    citationAcceptedModelCount: 0,
+    selectedResponseContractModel: '',
+    selectedCitationAcceptedModel: '',
     providerErrorCategoryCounts: {},
     responseContractValid: false,
     citationAcceptanceValid: false,
     citationUrlSafetyAcceptedCount: 0,
     citationUrlFinalAcceptedCount: 0,
     failoverExecuted: false,
+    failoverSucceeded: false,
     allModelsUnavailable: false,
+    allProviderModelsUnavailable: false,
+    localValidationBlocked: false,
     recommendedNextAction: '',
     storeDisabled: true,
     gmailSendExecuted: false,
