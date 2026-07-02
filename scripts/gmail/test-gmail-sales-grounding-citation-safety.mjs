@@ -155,7 +155,10 @@ while (annotations.length < 28) annotations.push(annotation(safePrimary));
   const parsed = context.parseGeminiGroundingInteractionResponse_({ getContentText: () => JSON.stringify(citationSteps([annotation(safePrimary, { start_index: 1000, end_index: 1001 })])) }, { candidateToken: 'probe' });
   assert.equal(parsed.urlCitationAnnotationCount, 1);
   assert.equal(parsed.citationIndexInvalidCount, 1);
-  assert.equal(parsed.citationUrlFinalAcceptedCount, 0);
+  assert.equal(parsed.citationUrlSafetyValidationAttemptCount, 1);
+  assert.equal(parsed.citationUrlFinalAcceptedCount, 1);
+  assert.equal(parsed.citationUrlEligibleForSafetyDespiteInvalidSpanCount, 1);
+  assert.equal(parsed.citationUrlEligibleForInlineRenderingCount, 0);
 }
 
 {

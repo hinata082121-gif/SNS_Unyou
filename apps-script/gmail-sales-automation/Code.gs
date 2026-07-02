@@ -215,10 +215,12 @@ const GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_PROPERTY = 'GMAIL_
 const GMAIL_SALES_CITATION_SAFETY_RUNTIME_CONTRACT_SUMMARY_PROPERTY = 'GMAIL_SALES_CITATION_SAFETY_RUNTIME_CONTRACT_SUMMARY_JSON';
 const GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_PROPERTY = 'GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_JSON';
 const GMAIL_SALES_GROUNDING_VERSION_DEFAULT = 'official-source-discovery-v1';
-const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v3';
+const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v4';
 const GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION = 'gemini-interactions-google-search-v2';
 const GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION = 'grounding-citation-safety-v3';
 const GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SCENARIO_VERSION = 'citation-acceptance-official-docs-v2';
+const GMAIL_SALES_GROUNDING_CITATION_SPAN_VALIDATOR_VERSION = 'citation-span-validator-v2';
+const GMAIL_SALES_GROUNDING_CITATION_PIPELINE_VERSION = 'citation-url-independent-span-v1';
 const GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY = 'GMAIL_SALES_GROUNDING_MODEL_HEALTH_JSON';
 const GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const GMAIL_SALES_GROUNDING_SHUTDOWN_MODEL_PREFIXES = ['gemini-2.0-'];
@@ -4568,6 +4570,21 @@ function runGmailSalesOfficialEvidenceEnrichmentOnce() {
         stats.evidenceEnrichmentBlockedCount += 1;
       }
     });
+    if (targets.length === 0) {
+      const rebuild = buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, now);
+      stats.evidenceReplenishmentQueueCount = Number(rebuild.queueRebuildEligibleCount || rebuild.reviewNeedsMoreEvidenceCount || 0);
+      stats.completedAt = now;
+      stats.runId = 'evidence-enrichment-' + hashValue_(now + '|no-verified-source-reference|' + stats.evidenceReplenishmentQueueCount);
+      return buildGmailSalesAiContactBasisResult_('gmail_sales_official_evidence_enrichment', 'blocked', Object.assign({
+        blockedReason: 'no_verified_source_reference',
+        sourceCandidatesUpdated: false,
+        googleSheetsUpdated: false,
+        scriptPropertiesUpdated: false,
+        gmailSendExecuted: false,
+        gmailDraftCreated: false,
+        triggerChanged: false
+      }, stats));
+    }
     const sourceSnapshots = [];
     const reviewSnapshots = [];
     const replenishmentRows = [];
@@ -4778,6 +4795,8 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     groundingParserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
     groundingRequestContractVersion: GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION,
     citationSafetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    citationSpanValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SPAN_VALIDATOR_VERSION,
+    citationPipelineVersion: GMAIL_SALES_GROUNDING_CITATION_PIPELINE_VERSION,
     storeDisabled: true,
     lastContractProbeCompletedAt: String((readGmailSalesGroundingContractProbeSummary_() || {}).completedAt || ''),
     lastContractProbeValid: Boolean((readGmailSalesGroundingContractProbeSummary_() || {}).responseContractValid),
@@ -4804,6 +4823,14 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
     citationUrlMissingCount: Number(last.citationUrlMissingCount || 0),
     citationIndexValidCount: Number(last.citationIndexValidCount || 0),
     citationIndexInvalidCount: Number(last.citationIndexInvalidCount || 0),
+    citationSpanPresentCount: Number(last.citationSpanPresentCount || 0),
+    citationSpanMissingCount: Number(last.citationSpanMissingCount || 0),
+    citationSpanValidCount: Number(last.citationSpanValidCount || 0),
+    citationSpanInvalidCount: Number(last.citationSpanInvalidCount || 0),
+    citationSpanValidationReasonCounts: last.citationSpanValidationReasonCounts || {},
+    citationUrlEligibleForSafetyDespiteInvalidSpanCount: Number(last.citationUrlEligibleForSafetyDespiteInvalidSpanCount || 0),
+    citationUrlEligibleForInlineRenderingCount: Number(last.citationUrlEligibleForInlineRenderingCount || 0),
+    citationPipelineInvariantValid: Boolean(last.citationPipelineInvariantValid),
     citationUrlSyntaxValidCount: Number(last.citationUrlSyntaxValidCount || 0),
     citationUrlSyntaxInvalidCount: Number(last.citationUrlSyntaxInvalidCount || 0),
     citationUrlNormalizedCount: Number(last.citationUrlNormalizedCount || 0),
@@ -5164,9 +5191,10 @@ function runGmailSalesGroundedOfficialSourceDiscoveryInternal_(options) {
     persistGmailSalesGroundingModelHealthState_(modelHealth);
     persistGroundedDiscoverySummary_(stats);
     const runStatus = stats.sourceReferencesAppliedCount > 0 && (stats.candidateRetryableFailureCount > 0 || stats.candidatePermanentFailureCount > 0) ? 'partial_success' : (stats.sourceReferencesAppliedCount > 0 ? 'pass' : (stats.candidateRetryableFailureCount > 0 || stats.allModelsFailedCandidateCount > 0 ? 'blocked' : 'pass'));
+    const finalBlockedReason = runStatus === 'blocked' ? classifyGroundedDiscoveryBlockedReason_(stats) : '';
     return buildGmailSalesGroundingResult_('pass', Object.assign({
       status: runStatus,
-      blockedReason: runStatus === 'blocked' ? 'all_grounding_models_unavailable' : '',
+      blockedReason: finalBlockedReason,
       groundingEnabled: grounding.enabled,
       groundingModel: grounding.model,
       groundingModelConfigured: Boolean(grounding.model),
@@ -5178,6 +5206,17 @@ function runGmailSalesGroundedOfficialSourceDiscoveryInternal_(options) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function classifyGroundedDiscoveryBlockedReason_(stats) {
+  if (Number(stats.citationsRejectedBySafetyCandidateCount || 0) > 0) return 'citation_urls_rejected_by_safety';
+  if (Number(stats.citationsRejectedByIdentityCandidateCount || 0) > 0) return 'citation_urls_rejected_by_identity';
+  if (Number(stats.citationUrlSyntaxValidCount || 0) === 0 && Number(stats.citationUrlSyntaxInvalidCount || 0) > 0) return 'citation_url_parser_failed';
+  if (Number(stats.citationUrlSyntaxValidCount || 0) > 0 && Number(stats.citationUrlSafetyValidationAttemptCount || 0) === 0) return 'citation_pipeline_invariant_failed';
+  if (Number(stats.responseContractHealthyModelCount || 0) === 0 && Number(stats.groundingHttpSuccessCount || 0) === 0 && Number(stats.groundingHttpFailureCount || 0) > 0) return 'all_grounding_models_unavailable';
+  if (Number(stats.candidateRetryableFailureCount || 0) > 0) return 'grounding_provider_retryable_failure';
+  if (Number(stats.candidatePermanentFailureCount || 0) > 0) return 'grounding_candidate_permanent_failure';
+  return 'grounded_source_not_found';
 }
 
 function configureGmailSalesAiNonSecretSettingsOnce() {
@@ -5894,6 +5933,8 @@ function isOfficialEvidenceEnrichmentTarget_(reviewRow, sourceByKey) {
   if (sourceItem.row.unsubscribe === true || String(sourceItem.row.unsubscribe || '').toLowerCase() === 'true') return { ok: false, stale: false };
   if (sourceItem.row.doNotContact === true || String(sourceItem.row.doNotContact || '').toLowerCase() === 'true') return { ok: false, stale: false };
   if (String(sourceItem.row.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown) return { ok: false, stale: false };
+  const sourceReference = String(row.sourceReference || sourceItem.row.sourceReference || '').trim();
+  if (!sourceReference || !validateOfficialEvidenceUrl_(sourceReference).ok) return { ok: false, stale: false, reason: 'no_verified_source_reference' };
   const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
   if (!queue.include || String(queue.row.sourceRowDigest || '') !== String(row.sourceRowDigest || '').trim()) return { ok: false, stale: true };
   return { ok: true, stale: false, sourceItem };
@@ -7075,6 +7116,8 @@ function emptyGroundedSourceDiscoveryStats_() {
     groundingParserVersion: GMAIL_SALES_GROUNDING_PARSER_VERSION,
     groundingRequestContractVersion: GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION,
     citationSafetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    citationSpanValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SPAN_VALIDATOR_VERSION,
+    citationPipelineVersion: GMAIL_SALES_GROUNDING_CITATION_PIPELINE_VERSION,
     storeDisabled: true,
     groundingHttpRequestCount: 0,
     groundingHttpSuccessCount: 0,
@@ -7093,6 +7136,14 @@ function emptyGroundedSourceDiscoveryStats_() {
     citationUrlMissingCount: 0,
     citationIndexValidCount: 0,
     citationIndexInvalidCount: 0,
+    citationSpanPresentCount: 0,
+    citationSpanMissingCount: 0,
+    citationSpanValidCount: 0,
+    citationSpanInvalidCount: 0,
+    citationSpanValidationReasonCounts: {},
+    citationUrlEligibleForSafetyDespiteInvalidSpanCount: 0,
+    citationUrlEligibleForInlineRenderingCount: 0,
+    citationPipelineInvariantValid: false,
     citationUrlSyntaxValidCount: 0,
     citationUrlSyntaxInvalidCount: 0,
     citationUrlNormalizedCount: 0,
@@ -7551,9 +7602,10 @@ function classifyGroundingParsedAttempt_(parsedGrounding) {
   if (parsedGrounding.groundingModelOutputMissing) return { ok: false, category: 'grounding_model_output_missing', retryable: true, status: 'grounding_model_output_missing' };
   if (parsedGrounding.groundingAnnotationMissing) return { ok: false, category: 'grounding_annotations_missing', retryable: true, status: 'grounding_annotations_missing' };
   if (parsedGrounding.groundingCalledWithoutCitation) return { ok: false, category: 'grounding_called_without_citation', retryable: true, status: 'grounding_called_without_citation' };
+  if (parsedGrounding.citationUrlSyntaxValidCount > 0 && parsedGrounding.citationUrlSafetyValidationAttemptCount === 0) return { ok: false, category: 'citation_pipeline_invariant_failed', retryable: false, status: 'citation_pipeline_invariant_failed', localValidationBlocked: true, responseContractHealthy: true };
+  if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlSyntaxValidCount === 0 && parsedGrounding.citationUrlSyntaxInvalidCount > 0) return { ok: false, category: 'citation_url_parser_failed', retryable: false, status: 'citation_url_parser_failed', localValidationBlocked: true, responseContractHealthy: true };
   if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlSafetyRejectedCount > 0) return { ok: false, category: 'citation_safety_rejected', retryable: false, status: 'citation_safety_rejected' };
   if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlIdentityRejectedCount > 0) return { ok: false, category: 'citation_identity_rejected', retryable: false, status: 'citation_identity_rejected' };
-  if (responseContractHealthy && parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0 && parsedGrounding.citationUrlSyntaxInvalidCount > 0 && parsedGrounding.citationUrlSyntaxValidCount === 0) return { ok: false, category: 'local_citation_parser_error', retryable: false, status: 'local_citation_parser_error', localValidationBlocked: true, responseContractHealthy: true };
   if (parsedGrounding.urlCitationAnnotationCount > 0 && parsedGrounding.citationUrlFinalAcceptedCount === 0) return { ok: false, category: 'citation_acceptance_contract_invalid', retryable: true, status: 'citation_parse_failed' };
   return { ok: true, category: '', retryable: false, status: 'verified_candidate_citations' };
 }
@@ -7678,6 +7730,12 @@ function accumulateGroundingParserStats_(stats, parsedGrounding) {
   stats.citationUrlMissingCount += parsedGrounding.citationUrlMissingCount || 0;
   stats.citationIndexValidCount += parsedGrounding.citationIndexValidCount || 0;
   stats.citationIndexInvalidCount += parsedGrounding.citationIndexInvalidCount || 0;
+  stats.citationSpanPresentCount += parsedGrounding.citationSpanPresentCount || 0;
+  stats.citationSpanMissingCount += parsedGrounding.citationSpanMissingCount || 0;
+  stats.citationSpanValidCount += parsedGrounding.citationSpanValidCount || 0;
+  stats.citationSpanInvalidCount += parsedGrounding.citationSpanInvalidCount || 0;
+  stats.citationUrlEligibleForSafetyDespiteInvalidSpanCount += parsedGrounding.citationUrlEligibleForSafetyDespiteInvalidSpanCount || 0;
+  stats.citationUrlEligibleForInlineRenderingCount += parsedGrounding.citationUrlEligibleForInlineRenderingCount || 0;
   stats.citationUrlSyntaxValidCount += parsedGrounding.citationUrlSyntaxValidCount || 0;
   stats.citationUrlSyntaxInvalidCount += parsedGrounding.citationUrlSyntaxInvalidCount || 0;
   stats.citationUrlNormalizedCount += parsedGrounding.citationUrlNormalizedCount || 0;
@@ -7697,7 +7755,7 @@ function accumulateGroundingParserStats_(stats, parsedGrounding) {
   Object.keys(parsedGrounding.citationUrlSafetyRejectionReasonCounts || {}).forEach((key) => {
     stats.citationUrlSafetyRejectionReasonCounts[key] = (stats.citationUrlSafetyRejectionReasonCounts[key] || 0) + parsedGrounding.citationUrlSafetyRejectionReasonCounts[key];
   });
-  ['citationUrlCategoryCounts', 'citationUrlValueTypeCounts', 'citationUrlLengthBucketCounts', 'citationUrlParseFailureReasonCounts'].forEach((field) => {
+  ['citationUrlCategoryCounts', 'citationUrlValueTypeCounts', 'citationUrlLengthBucketCounts', 'citationUrlParseFailureReasonCounts', 'citationSpanValidationReasonCounts'].forEach((field) => {
     Object.keys(parsedGrounding[field] || {}).forEach((key) => {
       stats[field][key] = (stats[field][key] || 0) + parsedGrounding[field][key];
     });
@@ -7711,6 +7769,11 @@ function accumulateGroundingParserStats_(stats, parsedGrounding) {
   stats.citationUrlControlCharacterCount += parsedGrounding.citationUrlControlCharacterCount || 0;
   stats.citationUrlSafetyInvariantValid = Number(stats.citationUrlSafetyRejectedCount || 0) === Number(stats.citationUrlSafetyRejectionReasonCountTotal || 0) &&
     Number(stats.citationUrlSafetyValidationAttemptCount || 0) === Number(stats.citationUrlSafetyAcceptedCount || 0) + Number(stats.citationUrlSafetyRejectedCount || 0);
+  stats.citationPipelineInvariantValid =
+    Number(stats.citationUrlPresentCount || 0) === Number(stats.citationUrlSyntaxValidCount || 0) + Number(stats.citationUrlSyntaxInvalidCount || 0) &&
+    Number(stats.citationUrlSyntaxValidCount || 0) === Number(stats.citationUrlNormalizedCount || 0) &&
+    Number(stats.citationUrlNormalizedCount || 0) === Number(stats.citationUrlUniqueCount || 0) + Number(stats.citationUrlDuplicateCount || 0) &&
+    Number(stats.citationUrlUniqueCount || 0) === Number(stats.citationUrlSafetyValidationAttemptCount || 0);
   stats.citationUrlIdentityValidationAttemptCount += parsedGrounding.citationUrlIdentityValidationAttemptCount || 0;
   stats.citationUrlIdentityAcceptedCount += parsedGrounding.citationUrlIdentityAcceptedCount || 0;
   stats.citationUrlAcceptedCount += parsedGrounding.citationUrlAcceptedCount || 0;
@@ -7735,6 +7798,14 @@ function parseGeminiGroundingInteractionResponse_(searchResult, target) {
     citationUrlMissingCount: 0,
     citationIndexValidCount: 0,
     citationIndexInvalidCount: 0,
+    citationSpanPresentCount: 0,
+    citationSpanMissingCount: 0,
+    citationSpanValidCount: 0,
+    citationSpanInvalidCount: 0,
+    citationSpanValidationReasonCounts: {},
+    citationUrlEligibleForSafetyDespiteInvalidSpanCount: 0,
+    citationUrlEligibleForInlineRenderingCount: 0,
+    citationPipelineInvariantValid: false,
     citationUrlSyntaxValidCount: 0,
     citationUrlSyntaxInvalidCount: 0,
     citationUrlNormalizedCount: 0,
@@ -7823,7 +7894,8 @@ function parseGeminiGroundingInteractionResponse_(searchResult, target) {
 
 function parseGeminiModelOutputStep_(step, target, result) {
   const content = Array.isArray(step.content) ? step.content : (Array.isArray(step.output) ? step.output : []);
-  content.forEach((block) => {
+  const textIndex = buildGeminiModelOutputTextIndex_(content);
+  content.forEach((block, blockIndex) => {
     const blockType = String(block.type || block.contentType || '').trim() || 'unknown';
     incrementCount_(result.contentTypeCounts, blockType);
     if (blockType !== 'text' && !block.text) return;
@@ -7832,11 +7904,15 @@ function parseGeminiModelOutputStep_(step, target, result) {
     if (text) result.modelOutputTextPresentCount += 1;
     const annotations = Array.isArray(block.annotations) ? block.annotations : [];
     result.modelOutputAnnotationCount += annotations.length;
-    annotations.forEach((annotation) => parseGeminiModelOutputAnnotation_(annotation, text, target, result));
+    annotations.forEach((annotation) => parseGeminiModelOutputAnnotation_(annotation, {
+      blockText: text,
+      concatenatedText: textIndex.concatenatedText,
+      blockOffset: textIndex.blockOffsets[blockIndex] || 0
+    }, target, result));
   });
 }
 
-function parseGeminiModelOutputAnnotation_(annotation, text, target, result) {
+function parseGeminiModelOutputAnnotation_(annotation, textContext, target, result) {
   const type = String(annotation.type || annotation.annotationType || '').trim();
   incrementCount_(result.annotationTypeCounts, type || 'unknown');
   if (type !== 'url_citation') return;
@@ -7845,6 +7921,8 @@ function parseGeminiModelOutputAnnotation_(annotation, text, target, result) {
   const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
   const start = annotation.start_index !== undefined ? annotation.start_index : annotation.startIndex;
   const end = annotation.end_index !== undefined ? annotation.end_index : annotation.endIndex;
+  const span = diagnoseGeminiCitationSpan_(textContext || {}, start, end);
+  recordGeminiCitationSpanDiagnostics_(result, span);
   const normalized = recordGroundingCitationUrlSyntaxDiagnostics_(result, rawUrl);
   if (!url) {
     result.citationUrlMissingCount += 1;
@@ -7858,14 +7936,10 @@ function parseGeminiModelOutputAnnotation_(annotation, text, target, result) {
   } else {
     result.citationUrlSyntaxInvalidCount += 1;
   }
-  if (!isValidCitationTextRange_(text, start, end)) {
-    result.citationIndexInvalidCount += 1;
-    return;
-  }
-  result.citationIndexValidCount += 1;
   if (!normalized.ok) {
     return;
   }
+  if (!span.spanValid) result.citationUrlEligibleForSafetyDespiteInvalidSpanCount += 1;
   if (result.seenCitationUrls[normalized.url]) {
     result.citationUrlDuplicateCount += 1;
     return;
@@ -7896,20 +7970,79 @@ function parseGeminiModelOutputAnnotation_(annotation, text, target, result) {
     host: safety.host,
     officialConfidence: 0.98,
     businessIdentityMatched: true,
-    contactPageDiscovered: /contact|inquir|問|form/i.test(text),
-    businessInquiryEvidencePresent: /business|partner|advertis|media|inquir|法人|広告|掲載|取材/i.test(text),
-    solicitationRestrictionPresent: /no solicitation|営業.*(不可|禁止)|勧誘.*(不可|禁止)/i.test(text),
+    contactPageDiscovered: /contact|inquir|問|form/i.test(String((textContext || {}).blockText || '')),
+    businessInquiryEvidencePresent: /business|partner|advertis|media|inquir|法人|広告|掲載|取材/i.test(String((textContext || {}).blockText || '')),
+    solicitationRestrictionPresent: /no solicitation|営業.*(不可|禁止)|勧誘.*(不可|禁止)/i.test(String((textContext || {}).blockText || '')),
+    eligibleForInlineCitationRendering: span.eligibleForInlineCitationRendering,
     riskFlags: [],
     reasonCodes: ['grounded_url_citation_verified'],
     candidateToken: String(target.candidateToken || '')
   });
 }
 
-function isValidCitationTextRange_(text, start, end) {
-  if (start === undefined && end === undefined) return true;
+function buildGeminiModelOutputTextIndex_(content) {
+  const blocks = Array.isArray(content) ? content : [];
+  let concatenatedText = '';
+  const blockOffsets = [];
+  blocks.forEach((block) => {
+    const blockType = String(block && (block.type || block.contentType) || '').trim() || 'unknown';
+    const text = blockType === 'text' || block && block.text ? String(block.text || '') : '';
+    blockOffsets.push(concatenatedText.length);
+    concatenatedText += text;
+  });
+  return { concatenatedText, blockOffsets };
+}
+
+function diagnoseGeminiCitationSpan_(textContext, start, end) {
+  const blockText = String((textContext || {}).blockText || '');
+  const concatenatedText = String((textContext || {}).concatenatedText || blockText);
+  const blockOffset = Number((textContext || {}).blockOffset || 0);
+  if (start === undefined && end === undefined) return buildGeminiCitationSpanDiagnostic_(false, false, 'missing_start_index');
+  if (start === undefined) return buildGeminiCitationSpanDiagnostic_(true, false, 'missing_start_index');
+  if (end === undefined) return buildGeminiCitationSpanDiagnostic_(true, false, 'missing_end_index');
   const s = Number(start);
   const e = Number(end);
-  return Number.isFinite(s) && Number.isFinite(e) && s >= 0 && e >= s && e <= String(text || '').length;
+  if (!Number.isFinite(s)) return buildGeminiCitationSpanDiagnostic_(true, false, 'non_numeric_start_index');
+  if (!Number.isFinite(e)) return buildGeminiCitationSpanDiagnostic_(true, false, 'non_numeric_end_index');
+  if (s < 0 || e < 0) return buildGeminiCitationSpanDiagnostic_(true, false, 'negative_index');
+  if (s > e) return buildGeminiCitationSpanDiagnostic_(true, false, 'start_after_end');
+  const blockUtf16Valid = e <= blockText.length;
+  const concatenatedUtf16Valid = s >= blockOffset && e <= blockOffset + blockText.length && e <= concatenatedText.length;
+  const blockCodePointValid = e <= Array.from(blockText).length;
+  const concatenatedCodePointValid = e <= Array.from(concatenatedText).length;
+  if (blockUtf16Valid || concatenatedUtf16Valid || blockCodePointValid || concatenatedCodePointValid) {
+    return buildGeminiCitationSpanDiagnostic_(true, true, '', {
+      blockUtf16Valid,
+      concatenatedUtf16Valid,
+      blockCodePointValid,
+      concatenatedCodePointValid
+    });
+  }
+  if (e > concatenatedText.length && e > Array.from(concatenatedText).length) return buildGeminiCitationSpanDiagnostic_(true, false, 'index_out_of_concatenated_text_range');
+  return buildGeminiCitationSpanDiagnostic_(true, false, 'index_out_of_block_range');
+}
+
+function buildGeminiCitationSpanDiagnostic_(present, valid, reason, details) {
+  return Object.assign({
+    spanPresent: Boolean(present),
+    spanValid: Boolean(valid),
+    spanValidationReason: valid ? '' : (reason || 'unknown_span_validation_failure'),
+    eligibleForInlineCitationRendering: Boolean(valid)
+  }, details || {});
+}
+
+function recordGeminiCitationSpanDiagnostics_(result, span) {
+  if (span.spanPresent) result.citationSpanPresentCount += 1;
+  else result.citationSpanMissingCount += 1;
+  if (span.spanValid) {
+    result.citationSpanValidCount += 1;
+    result.citationIndexValidCount += 1;
+    result.citationUrlEligibleForInlineRenderingCount += 1;
+  } else {
+    result.citationSpanInvalidCount += 1;
+    result.citationIndexInvalidCount += 1;
+    incrementCount_(result.citationSpanValidationReasonCounts, span.spanValidationReason || 'unknown_span_validation_failure');
+  }
 }
 
 function parseLegacyGeminiGroundingResponse_(parsed, target, result) {
@@ -7993,6 +8126,11 @@ function finalizeGroundingCitationSafetyDiagnostics_(result) {
     Number(result.citationUrlSafetyRejectedCount || 0) === reasonTotal &&
     Number(result.citationUrlSafetyValidationAttemptCount || 0) === Number(result.citationUrlSafetyAcceptedCount || 0) + Number(result.citationUrlSafetyRejectedCount || 0) &&
     Number(result.citationUrlSafetyDecisionCount || 0) === Number(result.citationUrlSafetyValidationAttemptCount || 0);
+  result.citationPipelineInvariantValid =
+    Number(result.citationUrlPresentCount || 0) === Number(result.citationUrlSyntaxValidCount || 0) + Number(result.citationUrlSyntaxInvalidCount || 0) &&
+    Number(result.citationUrlSyntaxValidCount || 0) === Number(result.citationUrlNormalizedCount || 0) &&
+    Number(result.citationUrlNormalizedCount || 0) === Number(result.citationUrlUniqueCount || 0) + Number(result.citationUrlDuplicateCount || 0) &&
+    Number(result.citationUrlUniqueCount || 0) === Number(result.citationUrlSafetyValidationAttemptCount || 0);
 }
 
 function validateGroundingCitationIdentityForTarget_(safety, target) {
@@ -8314,6 +8452,12 @@ function recommendGroundedSourceDiscoveryNextAction_(grounding, stats, last, eli
   if (Number(stats.queueRowsRequiringCanonicalRebuildCount || 0) > 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'repair_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.replenishmentQueuePhysicalCount || stats.replenishmentQueueCount || 0) === 0) return 'rebuild_replenishment_queue';
   if (Number(stats.reviewNeedsMoreEvidenceCount || 0) > 0 && Number(stats.queueEligibleStatusCount || 0) === 0 && Number(stats.queueRebuildEligibleCount || 0) > 0) return 'rebuild_replenishment_queue';
+  if (Number(stats.sourceReferencesAppliedCount || 0) > 0) return 'run_evidence_enrichment';
+  if (Number(stats.citationsRejectedBySafetyCandidateCount || 0) > 0) return 'inspect_citation_safety_rejections';
+  if (Number(stats.citationsRejectedByIdentityCandidateCount || 0) > 0) return 'inspect_citation_identity_rejections';
+  if (Number(stats.citationUrlSyntaxValidCount || 0) > 0 && Number(stats.citationUrlSafetyValidationAttemptCount || 0) === 0) return 'fix_citation_pipeline';
+  if (Number(stats.citationUrlEligibleForSafetyDespiteInvalidSpanCount || 0) > 0) return 'continue_citation_url_validation';
+  if (Number(stats.allModelsFailedCandidateCount || 0) > 0 && Number(stats.responseContractHealthyModelCount || 0) === 0) return 'wait_for_provider_cooldown';
   if (Number(eligible || stats.eligibleDiscoveryTargetCount || 0) > 0) return 'run_source_discovery';
   if (!Boolean((readGmailSalesGroundingContractProbeSummary_() || {}).responseContractValid)) return 'run_grounding_model_failover_probe';
   if (!Boolean((readGmailSalesGroundingCitationAcceptanceProbeSummary_() || {}).citationAcceptanceValid)) return 'run_grounding_model_failover_probe';

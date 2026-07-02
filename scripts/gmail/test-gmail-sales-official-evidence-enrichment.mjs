@@ -56,12 +56,15 @@ test('enrichment classifies missing source for replenishment without URL guessin
   env.context.refreshGmailSalesContactBasisReviewQueueOnce();
   markNeedsMoreEvidence(env, 2, 'evidence_payload_missing');
   const result = env.context.runGmailSalesOfficialEvidenceEnrichmentOnce();
-  assert.equal(result.evidenceEnrichmentTargetCount, 1);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'no_verified_source_reference');
+  assert.equal(result.evidenceEnrichmentTargetCount, 0);
   assert.equal(result.evidenceEnrichmentSucceededCount, 0);
-  assert.equal(result.evidenceEnrichmentMissingCount, 1);
+  assert.equal(result.evidenceEnrichmentMissingCount, 0);
   assert.equal(result.officialPageFetchCount, 0);
   assert.equal(result.evidenceReplenishmentQueueCount, 1);
-  assert.equal(Boolean(env.workbook.sheets.Gmail_Evidence_Replenishment_Queue), true);
+  assert.equal(Boolean(env.workbook.sheets.Gmail_Evidence_Replenishment_Queue), false);
+  assert.equal(result.googleSheetsUpdated, false);
 });
 
 test('official URL safety blocks localhost private IP and mismatched redirect', () => {

@@ -179,7 +179,9 @@ for (const exposeUrl of [true, false]) {
   const parsed = context.parseGeminiGroundingInteractionResponse_({ getContentText: () => JSON.stringify(response) }, { candidateToken: 'probe' });
   assert.equal(parsed.citationIndexInvalidCount, 1);
   assert.equal(parsed.citationUrlSyntaxValidCount, 1);
-  assert.equal(parsed.citationUrlFinalAcceptedCount, 0);
+  assert.equal(parsed.citationUrlSafetyValidationAttemptCount, 1);
+  assert.equal(parsed.citationUrlFinalAcceptedCount, 1);
+  assert.equal(parsed.citationUrlEligibleForSafetyDespiteInvalidSpanCount, 1);
 }
 
 {
@@ -189,8 +191,8 @@ for (const exposeUrl of [true, false]) {
     apiKey: 'redacted'
   }, 'redacted prompt', { candidateToken: 'probe' }, { now: '2026-07-01T00:00:00.000Z', health: {} });
   assert.equal(failover.ok, false);
-  assert.equal(failover.status, 'local_citation_parser_error');
-  assert.equal(failover.failureCategory, 'local_citation_parser_error');
+  assert.equal(failover.status, 'citation_url_parser_failed');
+  assert.equal(failover.failureCategory, 'citation_url_parser_failed');
   assert.equal(failover.localValidationBlocked, true);
   assert.equal(failover.failoverExecuted, false);
   assert.equal(failover.uniqueModelsAttemptedCount, 1);

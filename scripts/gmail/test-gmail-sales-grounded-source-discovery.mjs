@@ -110,6 +110,27 @@ test('single candidate grounded source discovery attempts at most one candidate'
   assert.equal(env.logs.some((line) => line.includes('Business 1')), false);
 });
 
+test('grounded source discovery validates citation URLs when citation spans are invalid', () => {
+  const env = createEnvironment({ sourceCount: 1, invalidCitationSpan: true });
+  seedGroundingReviewAndQueue(env, 1);
+  const result = env.context.runGmailSalesGroundedOfficialSourceDiscoverySingleCandidateOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.candidatesAttemptedCount, 1);
+  assert.equal(result.modelsAttemptedCount, 1);
+  assert.equal(result.uniqueModelsAttemptedCount, 1);
+  assert.equal(result.responseContractHealthyModelCount, 1);
+  assert.equal(result.allGroundingModelsUnavailable, false);
+  assert.equal(result.localValidationBlocked, false);
+  assert.equal(result.citationSpanInvalidCount, 1);
+  assert.equal(result.citationUrlEligibleForSafetyDespiteInvalidSpanCount, 1);
+  assert.equal(result.citationUrlSafetyValidationAttemptCount, 1);
+  assert.equal(result.citationUrlIdentityValidationAttemptCount, 1);
+  assert.equal(result.citationUrlFinalAcceptedCount, 1);
+  assert.equal(result.sourceReferencesAppliedCount, 1);
+  assert.equal(result.recommendedNextAction, 'run_evidence_enrichment');
+  assert.equal(env.fetchCalls.length, 1);
+});
+
 test('runtime join handles 66 non-identifying queue rows without storing business identity in the queue', () => {
   const env = createEnvironment({ sourceCount: 66 });
   seedGroundingReviewAndQueue(env, 66);
@@ -564,6 +585,7 @@ function createEnvironment(options = {}) {
     logs: [],
     fetchCalls: [],
     fetchStatusCode: options.fetchStatusCode || 200,
+    invalidCitationSpan: Boolean(options.invalidCitationSpan),
     sheetWriteCount: 0,
     propertyWriteCount: 0,
     triggerWriteCount: 0,
@@ -731,7 +753,7 @@ function buildContext(env) {
                     url: `https://official-${env.fetchCalls.length}.example/contact`,
                     title: 'official contact',
                     start_index: 4,
-                    end_index: 20
+                    end_index: env.invalidCitationSpan ? 999 : 20
                   }]
                 }]
               }
