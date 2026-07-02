@@ -214,6 +214,7 @@ const GMAIL_SALES_GROUNDING_CONTRACT_PROBE_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUN
 const GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_PROPERTY = 'GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SUMMARY_JSON';
 const GMAIL_SALES_CITATION_SAFETY_RUNTIME_CONTRACT_SUMMARY_PROPERTY = 'GMAIL_SALES_CITATION_SAFETY_RUNTIME_CONTRACT_SUMMARY_JSON';
 const GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_PROPERTY = 'GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_JSON';
+const GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY = 'gmail_sales_source_reference_cell_contract_last_probe';
 const GMAIL_SALES_GROUNDING_VERSION_DEFAULT = 'official-source-discovery-v1';
 const GMAIL_SALES_GROUNDING_PARSER_VERSION = 'grounded-source-parser-v4';
 const GMAIL_SALES_GROUNDING_REQUEST_CONTRACT_VERSION = 'gemini-interactions-google-search-v2';
@@ -4890,7 +4891,12 @@ function inspectGmailSalesSourceReferenceTransactionReadiness() {
   const resolved = context.spreadsheet ? resolveGmailSalesEvidenceReplenishmentQueueSheet_(context.spreadsheet) : { sheet: null, queueSheetNameResolved: '' };
   const queueData = resolved.sheet ? readSheetObjects_(resolved.sheet) : { headers: [], items: [] };
   const collected = collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, queueData, grounding);
-  const sourceRequiredHeadersValid = missingHeaders_(sourceData.headers || [], ['sourceReference', 'sourceReferenceHash', 'sourceType']).length === 0;
+  const sourceHeaderMap = context.sourceSheet ? buildExactSheetHeaderMap_(context.sourceSheet) : buildExactSheetHeaderMapFromHeaders_([]);
+  const sourceReferenceHeader = resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceReference');
+  const sourceReferenceHashHeader = resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceReferenceHash');
+  const sourceTypeHeader = resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceType');
+  const sourceRowDigestHeader = resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceRowDigest');
+  const sourceRequiredHeadersValid = Boolean(sourceReferenceHeader.resolved && sourceReferenceHashHeader.resolved && sourceTypeHeader.resolved && !sourceReferenceHeader.duplicate && !sourceReferenceHashHeader.duplicate && !sourceTypeHeader.duplicate);
   const reviewRequiredHeadersValid = missingHeaders_(reviewData.headers || [], ['sourceReference', 'sourceReferenceHash', 'sourceType', 'sourceRowDigest']).length === 0;
   const queueRequiredHeadersValid = missingHeaders_(queueData.headers || [], ['candidateToken', 'failureReasonCode', 'queuedAt', 'status', 'sourceRowDigest']).length === 0;
   const duplicateSourceJoinKeyCount = countDuplicateNonEmptyValues_((sourceData.items || []).map((item) => buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)));
@@ -4908,6 +4914,18 @@ function inspectGmailSalesSourceReferenceTransactionReadiness() {
   if (duplicateReviewCandidateTokenCount > 0 || duplicateReviewSourceDigestCount > 0) blockedReasons.push('review_join_key_duplicate');
   if (duplicateQueueCandidateTokenCount > 0) blockedReasons.push('queue_join_key_duplicate');
   if (collected.stats.eligibilitySnapshotInvariantFailed) blockedReasons.push('eligibility_snapshot_invariant_failed');
+  const cellStats = inspectSourceReferenceCellsByStructure_(context.sourceSheet, sourceHeaderMap, collected.targets);
+  const lastProbe = readSourceReferenceCellContractLastProbe_();
+  if (sourceReferenceHeader.duplicate) blockedReasons.push('source_reference_header_duplicate');
+  if (!sourceReferenceHeader.resolved) blockedReasons.push('source_reference_header_missing');
+  if (!cellStats.sourceReferenceStructurallyWritableCellCount && collected.targets.length > 0) blockedReasons.push('source_reference_cell_not_writable');
+  const transactionReadinessValid = blockedReasons.length === 0;
+  const probeValid = Boolean(lastProbe.probeContractValid);
+  const recommendedNextAction = !sourceRequiredHeadersValid ? 'repair_source_reference_schema'
+    : (cellStats.sourceReferenceFormulaCellCount > 0 || cellStats.sourceReferenceArrayFormulaCellCount > 0 ? 'remove_source_reference_formula_manually'
+      : (cellStats.sourceReferenceProtectedCellCount > 0 ? 'inspect_source_reference_protection'
+        : (!transactionReadinessValid ? 'fix_source_reference_row_resolution'
+          : (!probeValid ? 'run_source_reference_cell_write_probe' : 'run_single_candidate_source_discovery'))));
   const result = {
     event: 'gmail_sales_source_reference_transaction_readiness',
     mode: 'read_only',
@@ -4915,17 +4933,35 @@ function inspectGmailSalesSourceReferenceTransactionReadiness() {
     reviewSheetPresent: Boolean(context.reviewSheet),
     queueSheetPresent: Boolean(resolved.sheet),
     sourceRequiredHeadersValid,
+    sourceHeaderCount: sourceHeaderMap.headerCount,
+    sourceRequiredHeaderCount: 3,
+    sourceRequiredHeaderResolvedCount: [sourceReferenceHeader, sourceReferenceHashHeader, sourceTypeHeader].filter((entry) => entry.resolved).length,
+    sourceDuplicateRequiredHeaderCount: [sourceReferenceHeader, sourceReferenceHashHeader, sourceTypeHeader].filter((entry) => entry.duplicate).length,
+    sourceReferenceHeaderResolved: sourceReferenceHeader.resolved,
+    sourceReferenceHeaderDuplicateCount: sourceReferenceHeader.count > 1 ? sourceReferenceHeader.count : 0,
+    sourceReferenceHashHeaderResolved: sourceReferenceHashHeader.resolved,
+    sourceTypeHeaderResolved: sourceTypeHeader.resolved,
+    sourceRowDigestHeaderResolved: sourceRowDigestHeader.resolved,
+    sourceReferenceColumnIndexValid: sourceReferenceHeader.columnIndexValid,
     reviewRequiredHeadersValid,
     queueRequiredHeadersValid,
     sourceReviewResolvableJoinCount: collected.stats.sourceJoinSucceededCount,
     reviewQueueResolvableJoinCount: collected.stats.reviewJoinSucceededCount,
     eligibleTransactionTargetCount: collected.targets.length,
+    sourceReferenceEligibleCellCount: cellStats.sourceReferenceEligibleCellCount,
+    sourceReferenceFormulaCellCount: cellStats.sourceReferenceFormulaCellCount,
+    sourceReferenceArrayFormulaCellCount: cellStats.sourceReferenceArrayFormulaCellCount,
+    sourceReferenceMergedCellCount: cellStats.sourceReferenceMergedCellCount,
+    sourceReferenceProtectedCellCount: cellStats.sourceReferenceProtectedCellCount,
+    sourceReferenceStructurallyWritableCellCount: cellStats.sourceReferenceStructurallyWritableCellCount,
+    sourceReferenceCellContractLastProbeValid: probeValid,
     duplicateSourceJoinKeyCount,
     duplicateReviewCandidateTokenCount,
     duplicateReviewSourceDigestCount,
     duplicateQueueCandidateTokenCount,
-    transactionReadinessValid: blockedReasons.length === 0,
+    transactionReadinessValid,
     blockedReasons,
+    recommendedNextAction,
     gmailSendExecuted: false,
     gmailDraftCreated: false,
     googleSheetsUpdated: false,
@@ -4933,6 +4969,359 @@ function inspectGmailSalesSourceReferenceTransactionReadiness() {
     triggerChanged: false,
     aiApiCalled: false
   };
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function buildExactSheetHeaderMap_(sheet) {
+  return buildExactSheetHeaderMapFromHeaders_(getSheetHeaders_(sheet));
+}
+
+function buildExactSheetHeaderMapFromHeaders_(headers) {
+  const result = {
+    headerCount: (headers || []).length,
+    blankHeaderCount: 0,
+    normalized: {},
+    exactColumns: {}
+  };
+  (headers || []).forEach((header, index) => {
+    const exact = String(header || '');
+    const normalized = normalizeExactSheetHeaderName_(exact);
+    if (!normalized) {
+      result.blankHeaderCount += 1;
+      return;
+    }
+    if (!result.normalized[normalized]) result.normalized[normalized] = [];
+    result.normalized[normalized].push(index + 1);
+    if (!result.exactColumns[exact]) result.exactColumns[exact] = [];
+    result.exactColumns[exact].push(index + 1);
+  });
+  return result;
+}
+
+function normalizeExactSheetHeaderName_(header) {
+  return String(header || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
+}
+
+function resolveExactHeaderMapEntry_(headerMap, requiredHeader) {
+  const columns = ((headerMap || {}).normalized || {})[normalizeExactSheetHeaderName_(requiredHeader)] || [];
+  return {
+    resolved: columns.length === 1,
+    count: columns.length,
+    duplicate: columns.length > 1,
+    columnIndex: columns.length === 1 ? columns[0] : 0,
+    columnIndexValid: columns.length === 1 && columns[0] > 0
+  };
+}
+
+function inspectSourceReferenceCellsByStructure_(sourceSheet, sourceHeaderMap, targets) {
+  const result = {
+    sourceReferenceEligibleCellCount: 0,
+    sourceReferenceFormulaCellCount: 0,
+    sourceReferenceArrayFormulaCellCount: 0,
+    sourceReferenceMergedCellCount: 0,
+    sourceReferenceProtectedCellCount: 0,
+    sourceReferenceStructurallyWritableCellCount: 0
+  };
+  const header = resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceReference');
+  if (!sourceSheet || !header.resolved) return result;
+  (targets || []).forEach((target) => {
+    const capability = inspectSourceReferenceCellCapability_(sourceSheet, target && target.sourceItem ? target.sourceItem.rowIndex : 0, header.columnIndex);
+    if (capability.sourceRowResolved && capability.sourceReferenceColumnResolved) result.sourceReferenceEligibleCellCount += 1;
+    if (capability.sourceCellHasFormula) result.sourceReferenceFormulaCellCount += 1;
+    if (capability.sourceCellHasArrayFormula) result.sourceReferenceArrayFormulaCellCount += 1;
+    if (capability.sourceCellIsPartOfMergedRange) result.sourceReferenceMergedCellCount += 1;
+    if (capability.sourceCellIsProtected) result.sourceReferenceProtectedCellCount += 1;
+    if (capability.sourceCellWritableByStructure) result.sourceReferenceStructurallyWritableCellCount += 1;
+  });
+  return result;
+}
+
+function inspectSourceReferenceCellCapability_(sourceSheet, sourceRowIndex, sourceReferenceColumnIndex) {
+  const result = {
+    sourceRowResolved: Boolean(sourceSheet && sourceRowIndex),
+    sourceRowIndexValid: Boolean(sourceRowIndex && sourceRowIndex > 1),
+    sourceReferenceColumnResolved: Boolean(sourceReferenceColumnIndex),
+    sourceReferenceColumnIndexValid: Boolean(sourceReferenceColumnIndex && sourceReferenceColumnIndex > 0),
+    sourceCellIsPartOfMergedRange: false,
+    sourceCellHasFormula: false,
+    sourceCellHasArrayFormula: false,
+    sourceCellHasDataValidation: false,
+    sourceCellIsProtected: false,
+    sourceCellProtectionBlocksCurrentUser: false,
+    sourceCellCurrentValueBlank: true,
+    sourceCellDisplayValueBlank: true,
+    sourceCellWritableByStructure: false,
+    sourceCellCapabilityBlockedReasons: []
+  };
+  if (!sourceSheet) result.sourceCellCapabilityBlockedReasons.push('source_sheet_missing');
+  if (!result.sourceRowIndexValid) result.sourceCellCapabilityBlockedReasons.push('source_row_index_invalid');
+  if (!result.sourceReferenceColumnIndexValid) result.sourceCellCapabilityBlockedReasons.push('source_reference_column_invalid');
+  if (!sourceSheet || !result.sourceRowIndexValid || !result.sourceReferenceColumnIndexValid) return result;
+  const range = sourceSheet.getRange(sourceRowIndex, sourceReferenceColumnIndex, 1, 1);
+  try {
+    const formula = typeof range.getFormula === 'function' ? String(range.getFormula() || '') : '';
+    result.sourceCellHasFormula = Boolean(formula);
+    result.sourceCellHasArrayFormula = /^=arrayformula/i.test(formula.trim());
+    if (result.sourceCellHasFormula) result.sourceCellCapabilityBlockedReasons.push('source_cell_formula_present');
+    if (result.sourceCellHasArrayFormula) result.sourceCellCapabilityBlockedReasons.push('source_cell_array_formula_present');
+  } catch (error) {
+    result.sourceCellCapabilityBlockedReasons.push('source_cell_formula_inspection_failed');
+  }
+  try {
+    result.sourceCellHasDataValidation = typeof range.getDataValidation === 'function' ? Boolean(range.getDataValidation()) : false;
+    if (result.sourceCellHasDataValidation) result.sourceCellCapabilityBlockedReasons.push('source_cell_validation_present');
+  } catch (error) {
+    result.sourceCellCapabilityBlockedReasons.push('source_cell_validation_inspection_failed');
+  }
+  try {
+    result.sourceCellIsPartOfMergedRange = typeof range.isPartOfMerge === 'function' ? Boolean(range.isPartOfMerge()) : false;
+    if (result.sourceCellIsPartOfMergedRange) result.sourceCellCapabilityBlockedReasons.push('source_cell_merged');
+  } catch (error) {
+    result.sourceCellCapabilityBlockedReasons.push('source_cell_merge_inspection_failed');
+  }
+  try {
+    const protections = typeof sourceSheet.getProtections === 'function' ? sourceSheet.getProtections(SpreadsheetApp.ProtectionType.RANGE) : [];
+    result.sourceCellIsProtected = (protections || []).some((protection) => protectionIntersectsCell_(protection, sourceRowIndex, sourceReferenceColumnIndex));
+    result.sourceCellProtectionBlocksCurrentUser = result.sourceCellIsProtected && !(protections || []).some((protection) => !protectionIntersectsCell_(protection, sourceRowIndex, sourceReferenceColumnIndex) || (typeof protection.canEdit === 'function' && protection.canEdit()));
+    if (result.sourceCellIsProtected) result.sourceCellCapabilityBlockedReasons.push('source_cell_protected');
+  } catch (error) {
+    result.sourceCellCapabilityBlockedReasons.push('source_cell_protection_inspection_failed');
+  }
+  const values = range.getValues();
+  const current = values && values[0] ? values[0][0] : '';
+  result.sourceCellCurrentValueBlank = !String(current || '').trim();
+  result.sourceCellDisplayValueBlank = typeof range.getDisplayValue === 'function' ? !String(range.getDisplayValue() || '').trim() : result.sourceCellCurrentValueBlank;
+  result.sourceCellWritableByStructure = result.sourceCellCapabilityBlockedReasons.filter((reason) => [
+    'source_cell_formula_present',
+    'source_cell_array_formula_present',
+    'source_cell_merged',
+    'source_cell_protected',
+    'source_row_index_invalid',
+    'source_reference_column_invalid',
+    'source_sheet_missing'
+  ].indexOf(reason) !== -1).length === 0;
+  return result;
+}
+
+function protectionIntersectsCell_(protection, rowIndex, columnIndex) {
+  if (!protection || typeof protection.getRange !== 'function') return false;
+  const range = protection.getRange();
+  const startRow = range.getRow ? range.getRow() : 0;
+  const startColumn = range.getColumn ? range.getColumn() : 0;
+  const endRow = startRow + (range.getNumRows ? range.getNumRows() : 1) - 1;
+  const endColumn = startColumn + (range.getNumColumns ? range.getNumColumns() : 1) - 1;
+  return rowIndex >= startRow && rowIndex <= endRow && columnIndex >= startColumn && columnIndex <= endColumn;
+}
+
+function testGmailSalesSourceReferenceCellWriteContractOnce() {
+  const result = {
+    event: 'gmail_sales_source_reference_cell_write_contract_probe',
+    mode: 'write_probe',
+    status: 'blocked',
+    blockedReason: '',
+    sourceSheetPresent: false,
+    sourceRowResolved: false,
+    sourceRowIndexValid: false,
+    sourceReferenceHeaderResolved: false,
+    sourceReferenceColumnIndexValid: false,
+    sourceCellWritableByStructure: false,
+    sourceCellHasFormula: false,
+    sourceCellHasArrayFormula: false,
+    sourceCellHasDataValidation: false,
+    sourceCellIsProtected: false,
+    sourceCellIsPartOfMergedRange: false,
+    writeAttempted: false,
+    flushExecuted: false,
+    freshReadBackAttempted: false,
+    freshReadBackMatched: false,
+    restoreAttempted: false,
+    restoreSucceeded: false,
+    probeContractValid: false,
+    failureReasonCounts: {},
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    aiApiCalled: false,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    triggerChanged: false
+  };
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    result.blockedReason = 'safe_rest_required';
+    incrementCount_(result.failureReasonCounts, result.blockedReason);
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  result.sourceSheetPresent = Boolean(context.sourceSheet);
+  if (!context.sourceSheet) {
+    result.blockedReason = 'source_sheet_missing';
+    incrementCount_(result.failureReasonCounts, result.blockedReason);
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const sourceData = readSheetObjects_(context.sourceSheet);
+  const headerMap = buildExactSheetHeaderMap_(context.sourceSheet);
+  const sourceReferenceHeader = resolveExactHeaderMapEntry_(headerMap, 'sourceReference');
+  result.sourceReferenceHeaderResolved = sourceReferenceHeader.resolved;
+  result.sourceReferenceColumnIndexValid = sourceReferenceHeader.columnIndexValid;
+  if (sourceReferenceHeader.duplicate) result.blockedReason = 'source_reference_header_duplicate';
+  else if (!sourceReferenceHeader.resolved) result.blockedReason = 'source_reference_header_missing';
+  if (result.blockedReason) {
+    incrementCount_(result.failureReasonCounts, result.blockedReason);
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const rowItem = (sourceData.items || []).find((item) => item && item.rowIndex > 1);
+  result.sourceRowResolved = Boolean(rowItem);
+  result.sourceRowIndexValid = Boolean(rowItem && rowItem.rowIndex > 1);
+  if (!rowItem) {
+    result.blockedReason = 'source_row_not_resolved';
+    incrementCount_(result.failureReasonCounts, result.blockedReason);
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const capability = inspectSourceReferenceCellCapability_(context.sourceSheet, rowItem.rowIndex, sourceReferenceHeader.columnIndex);
+  Object.assign(result, {
+    sourceCellWritableByStructure: capability.sourceCellWritableByStructure,
+    sourceCellHasFormula: capability.sourceCellHasFormula,
+    sourceCellHasArrayFormula: capability.sourceCellHasArrayFormula,
+    sourceCellHasDataValidation: capability.sourceCellHasDataValidation,
+    sourceCellIsProtected: capability.sourceCellIsProtected,
+    sourceCellIsPartOfMergedRange: capability.sourceCellIsPartOfMergedRange
+  });
+  if (!capability.sourceCellWritableByStructure) {
+    result.blockedReason = mapSourceCellCapabilityBlockedReason_(capability.sourceCellCapabilityBlockedReasons);
+    incrementCount_(result.failureReasonCounts, result.blockedReason);
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const range = context.sourceSheet.getRange(rowItem.rowIndex, sourceReferenceHeader.columnIndex, 1, 1);
+  const originalValue = range.getValues()[0][0];
+  const originalHash = hashValue_(String(originalValue || ''));
+  const probeValue = 'source-reference-probe-' + hashValue_(Utilities.getUuid()).slice(0, 24);
+  const probeHash = hashValue_(probeValue);
+  try {
+    result.writeAttempted = true;
+    range.setValue(probeValue);
+    result.googleSheetsUpdated = true;
+    if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) {
+      SpreadsheetApp.flush();
+      result.flushExecuted = true;
+    }
+    result.freshReadBackAttempted = true;
+    const readBack = context.sourceSheet.getRange(rowItem.rowIndex, sourceReferenceHeader.columnIndex, 1, 1).getValues()[0][0];
+    const readBackHash = hashValue_(String(readBack || ''));
+    result.freshReadBackMatched = readBackHash === probeHash;
+    if (!String(readBack || '').trim()) incrementCount_(result.failureReasonCounts, 'source_cell_blank_after_write');
+    else if (!result.freshReadBackMatched) incrementCount_(result.failureReasonCounts, 'source_cell_hash_mismatch');
+  } catch (error) {
+    result.blockedReason = 'source_cell_write_exception';
+    incrementCount_(result.failureReasonCounts, result.blockedReason);
+  }
+  try {
+    result.restoreAttempted = true;
+    range.setValue(originalValue);
+    result.googleSheetsUpdated = true;
+    if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) SpreadsheetApp.flush();
+    const restored = context.sourceSheet.getRange(rowItem.rowIndex, sourceReferenceHeader.columnIndex, 1, 1).getValues()[0][0];
+    result.restoreSucceeded = hashValue_(String(restored || '')) === originalHash;
+    if (!result.restoreSucceeded) incrementCount_(result.failureReasonCounts, 'source_cell_restore_read_back_failed');
+  } catch (error) {
+    result.restoreSucceeded = false;
+    incrementCount_(result.failureReasonCounts, 'source_cell_restore_failed');
+  }
+  result.probeContractValid = Boolean(result.writeAttempted && result.freshReadBackMatched && result.restoreSucceeded);
+  result.status = result.probeContractValid ? 'pass' : 'blocked';
+  result.blockedReason = result.probeContractValid ? '' : (result.blockedReason || Object.keys(result.failureReasonCounts)[0] || 'unknown_source_cell_write_failure');
+  if (result.probeContractValid) writeSourceReferenceCellContractLastProbe_(result);
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function mapSourceCellCapabilityBlockedReason_(reasons) {
+  const values = reasons || [];
+  if (values.indexOf('source_cell_formula_present') !== -1) return 'source_cell_formula_present';
+  if (values.indexOf('source_cell_array_formula_present') !== -1) return 'source_cell_array_formula_present';
+  if (values.indexOf('source_cell_merged') !== -1) return 'source_cell_merged';
+  if (values.indexOf('source_cell_protected') !== -1) return 'source_cell_protected';
+  if (values.indexOf('source_row_index_invalid') !== -1) return 'source_row_index_invalid';
+  if (values.indexOf('source_reference_column_invalid') !== -1) return 'source_reference_column_invalid';
+  return 'unknown_source_cell_write_failure';
+}
+
+function readSourceReferenceCellContractLastProbe_() {
+  try {
+    return JSON.parse(String(CacheService.getScriptCache().get(GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY) || '{}')) || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function writeSourceReferenceCellContractLastProbe_(probeResult) {
+  CacheService.getScriptCache().put(GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY, JSON.stringify({
+    probeContractValid: Boolean(probeResult && probeResult.probeContractValid),
+    completedAt: new Date().toISOString()
+  }), 21600);
+}
+
+function repairGmailSalesSourceReferenceSchemaOnce() {
+  const result = {
+    event: 'gmail_sales_source_reference_schema_repair',
+    mode: 'write',
+    status: 'blocked',
+    blockedReason: '',
+    sourceSheetPresent: false,
+    missingHeaderAddedCount: 0,
+    duplicateHeaderDetected: false,
+    headerReadBackPassed: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    aiApiCalled: false,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    triggerChanged: false
+  };
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    result.blockedReason = 'safe_rest_required';
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  result.sourceSheetPresent = Boolean(context.sourceSheet);
+  if (!context.sourceSheet) {
+    result.blockedReason = 'source_sheet_missing';
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const headers = getSheetHeaders_(context.sourceSheet);
+  const headerMap = buildExactSheetHeaderMapFromHeaders_(headers);
+  const required = ['sourceReference', 'sourceReferenceHash', 'sourceType'];
+  const duplicate = required.some((header) => resolveExactHeaderMapEntry_(headerMap, header).duplicate);
+  result.duplicateHeaderDetected = duplicate;
+  if (duplicate) {
+    result.blockedReason = 'source_reference_header_duplicate';
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const missing = required.filter((header) => !resolveExactHeaderMapEntry_(headerMap, header).resolved);
+  if (!missing.length) {
+    result.status = 'pass';
+    result.headerReadBackPassed = true;
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const next = headers.concat(missing);
+  context.sourceSheet.getRange(1, 1, 1, next.length).setValues([next]);
+  SpreadsheetApp.flush();
+  result.googleSheetsUpdated = true;
+  result.missingHeaderAddedCount = missing.length;
+  const afterMap = buildExactSheetHeaderMap_(context.sourceSheet);
+  result.headerReadBackPassed = required.every((header) => resolveExactHeaderMapEntry_(afterMap, header).resolved);
+  result.status = result.headerReadBackPassed ? 'pass' : 'blocked';
+  result.blockedReason = result.headerReadBackPassed ? '' : 'source_reference_header_missing';
   logGmailSalesJsonResult_(result);
   return result;
 }
@@ -5055,6 +5444,31 @@ function runGmailSalesGroundedOfficialSourceDiscoveryInternal_(options) {
         googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted || stats.queueRepairRollback),
         scriptPropertiesUpdated: true,
         aiApiCalled: false
+      }, stats));
+    }
+    const sourceReferenceReadiness = inspectGmailSalesSourceReferenceTransactionReadiness();
+    if (!sourceReferenceReadiness.transactionReadinessValid || !sourceReferenceReadiness.sourceReferenceCellContractLastProbeValid) {
+      const blockedReason = !sourceReferenceReadiness.transactionReadinessValid ? 'source_reference_transaction_not_ready'
+        : (readSourceReferenceCellContractLastProbe_().probeContractValid === false ? 'source_reference_cell_contract_invalid' : 'source_reference_cell_contract_not_verified');
+      stats.completedAt = now;
+      stats.runId = 'grounding-' + hashValue_(now + '|source-reference-cell-gate|' + blockedReason + '|' + stats.eligibleDiscoveryTargetCount);
+      stats.recommendedNextAction = !sourceReferenceReadiness.transactionReadinessValid ? sourceReferenceReadiness.recommendedNextAction : 'run_source_reference_cell_write_probe';
+      persistGroundedDiscoverySummary_(stats);
+      return buildGmailSalesGroundingResult_('blocked', Object.assign({
+        blockedReason,
+        groundingEnabled: grounding.enabled,
+        groundingModel: grounding.model,
+        groundingModelConfigured: Boolean(grounding.model),
+        providerConfigurationValid: grounding.providerConfigurationValid,
+        candidatesAttemptedCount: 0,
+        searchQueryCount: 0,
+        groundingHttpRequestCount: 0,
+        aiApiCalled: false,
+        googleSheetsUpdated: Boolean(stats.queueMigrationExecuted || stats.queueRebuildExecuted),
+        scriptPropertiesUpdated: true,
+        recommendedNextAction: stats.recommendedNextAction,
+        sourceReferenceCellContractLastProbeValid: Boolean(sourceReferenceReadiness.sourceReferenceCellContractLastProbeValid),
+        transactionReadinessValid: Boolean(sourceReferenceReadiness.transactionReadinessValid)
       }, stats));
     }
     const contractProbe = readGmailSalesGroundingContractProbeSummary_();
@@ -7289,6 +7703,8 @@ function emptyGroundedSourceDiscoveryStats_() {
     businessInquiryEvidenceCount: 0,
     solicitationRestrictedCount: 0,
     sourceReferencesAppliedCount: 0,
+    sourceReferenceSourceRowWriteAttemptedCount: 0,
+    sourceReferenceSourceRowWriteConfirmedCount: 0,
     sourceReferenceWriteAttemptedCount: 0,
     sourceReferenceSourceRowWriteCount: 0,
     sourceReferenceReviewRowWriteCount: 0,
@@ -8518,15 +8934,64 @@ function applyVerifiedSourceReference_(context, sourceData, reviewData, replenis
   transactionStats.sourceReferenceWriteAttemptedCount = Number(transactionStats.sourceReferenceWriteAttemptedCount || 0) + 1;
   const readBackFailureReasons = [];
   const sourceSnapshot = snapshotFields_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, ['sourceReference', 'sourceReferenceHash', 'sourceType'].concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
-  const reviewSnapshot = snapshotFields_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, ['sourceReference', 'sourceReferenceHash', 'sourceType', 'evidenceEnrichmentStatus'].concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
   if (sourceSnapshots) sourceSnapshots.push(sourceSnapshot);
+  const sourceHeaderMap = buildExactSheetHeaderMap_(context.sourceSheet);
+  const sourceReferenceHeader = resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceReference');
+  if (!sourceReferenceHeader.resolved) {
+    const reason = sourceReferenceHeader.duplicate ? 'source_reference_header_duplicate' : 'source_reference_header_missing';
+    incrementCount_(transactionStats.readBackFailureReasonCounts, reason);
+    transactionStats.sourceReferenceWriteRolledBackCount = Number(transactionStats.sourceReferenceWriteRolledBackCount || 0) + 1;
+    transactionStats.sourceReferenceRollbackSucceededCount = Number(transactionStats.sourceReferenceRollbackSucceededCount || 0) + 1;
+    updateSourceReferenceTransactionInvariant_(transactionStats);
+    return { ok: false, blockedReason: 'source_discovery_read_back_failed', readBackFailureReasons: [reason] };
+  }
+  const capability = inspectSourceReferenceCellCapability_(context.sourceSheet, target.sourceItem.rowIndex, sourceReferenceHeader.columnIndex);
+  if (!capability.sourceCellWritableByStructure) {
+    const reason = mapSourceCellCapabilityBlockedReason_(capability.sourceCellCapabilityBlockedReasons);
+    incrementCount_(transactionStats.readBackFailureReasonCounts, reason);
+    transactionStats.sourceReferenceWriteRolledBackCount = Number(transactionStats.sourceReferenceWriteRolledBackCount || 0) + 1;
+    transactionStats.sourceReferenceRollbackSucceededCount = Number(transactionStats.sourceReferenceRollbackSucceededCount || 0) + 1;
+    updateSourceReferenceTransactionInvariant_(transactionStats);
+    return { ok: false, blockedReason: 'source_discovery_read_back_failed', readBackFailureReasons: [reason] };
+  }
+  const sourceReferenceRange = context.sourceSheet.getRange(target.sourceItem.rowIndex, sourceReferenceHeader.columnIndex, 1, 1);
+  transactionStats.sourceReferenceSourceRowWriteAttemptedCount = Number(transactionStats.sourceReferenceSourceRowWriteAttemptedCount || 0) + 1;
+  try {
+    sourceReferenceRange.setValue(verified.sourceReference);
+  } catch (error) {
+    restoreFields_(context.sourceSheet, sourceHeaders, sourceSnapshot);
+    transactionStats.sourceReferenceWriteRolledBackCount = Number(transactionStats.sourceReferenceWriteRolledBackCount || 0) + 1;
+    transactionStats.sourceReferenceRollbackSucceededCount = Number(transactionStats.sourceReferenceRollbackSucceededCount || 0) + 1;
+    incrementCount_(transactionStats.readBackFailureReasonCounts, 'source_cell_write_exception');
+    updateSourceReferenceTransactionInvariant_(transactionStats);
+    return { ok: false, blockedReason: 'source_discovery_read_back_failed', readBackFailureReasons: ['source_cell_write_exception'] };
+  }
+  if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) SpreadsheetApp.flush();
+  transactionStats.sourceReadBackAttemptCount = Number(transactionStats.sourceReadBackAttemptCount || 0) + 1;
+  const sourceReferenceReadBack = context.sourceSheet.getRange(target.sourceItem.rowIndex, sourceReferenceHeader.columnIndex, 1, 1).getValues()[0][0];
+  const sourceReferenceMatched = hashValue_(String(sourceReferenceReadBack || '')) === hashValue_(String(verified.sourceReference || ''));
+  if (!sourceReferenceMatched) {
+    const reason = !String(sourceReferenceReadBack || '').trim() ? 'source_reference_blank_after_write' : 'source_cell_hash_mismatch';
+    transactionStats.sourceReadBackMismatchCount = Number(transactionStats.sourceReadBackMismatchCount || 0) + 1;
+    restoreFields_(context.sourceSheet, sourceHeaders, sourceSnapshot);
+    if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) SpreadsheetApp.flush();
+    transactionStats.sourceReferenceWriteRolledBackCount = Number(transactionStats.sourceReferenceWriteRolledBackCount || 0) + 1;
+    const rollbackReadBack = readBackRollbackForSourceReferenceTransaction_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, sourceSnapshot, { rowIndex: target.reviewItem.rowIndex, values: [] }, []);
+    if (rollbackReadBack.ok) transactionStats.sourceReferenceRollbackSucceededCount = Number(transactionStats.sourceReferenceRollbackSucceededCount || 0) + 1;
+    else transactionStats.sourceReferenceRollbackFailedCount = Number(transactionStats.sourceReferenceRollbackFailedCount || 0) + 1;
+    incrementCount_(transactionStats.readBackFailureReasonCounts, reason);
+    updateSourceReferenceTransactionInvariant_(transactionStats);
+    return { ok: false, blockedReason: rollbackReadBack.ok ? 'source_discovery_read_back_failed' : 'source_discovery_rollback_failed', readBackFailureReasons: [reason] };
+  }
+  transactionStats.sourceReadBackMatchedCount = Number(transactionStats.sourceReadBackMatchedCount || 0) + 1;
+  transactionStats.sourceReferenceSourceRowWriteConfirmedCount = Number(transactionStats.sourceReferenceSourceRowWriteConfirmedCount || 0) + 1;
+  transactionStats.sourceReferenceSourceRowWriteCount = Number(transactionStats.sourceReferenceSourceRowWriteCount || 0) + 1;
+  const reviewSnapshot = snapshotFields_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, ['sourceReference', 'sourceReferenceHash', 'sourceType', 'evidenceEnrichmentStatus'].concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
   if (reviewSnapshots) reviewSnapshots.push(reviewSnapshot);
   const beforeQueueSnapshotCount = queueSnapshots ? queueSnapshots.length : 0;
-  setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceReference', verified.sourceReference);
   setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceReferenceHash', verified.sourceReferenceHash);
   setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceType', 'grounded_official_source');
   writeGroundingAuditFields_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, verified, now);
-  transactionStats.sourceReferenceSourceRowWriteCount = Number(transactionStats.sourceReferenceSourceRowWriteCount || 0) + 1;
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceReference', verified.sourceReference);
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceReferenceHash', verified.sourceReferenceHash);
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceType', 'grounded_official_source');
@@ -8574,13 +9039,16 @@ function readBackVerifiedSourceReferenceTransaction_(context, sourceData, review
     sourceType: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceType') || '').trim(),
     evidenceEnrichmentStatus: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'evidenceEnrichmentStatus') || '').trim()
   };
-  stats.sourceReadBackAttemptCount = Number(stats.sourceReadBackAttemptCount || 0) + 1;
+  const countSourceReadBack = Number(stats.sourceReadBackAttemptCount || 0) === 0;
+  if (countSourceReadBack) stats.sourceReadBackAttemptCount = Number(stats.sourceReadBackAttemptCount || 0) + 1;
   if (!source.sourceReference) reasons.push('source_reference_blank_after_write');
   if (source.sourceReferenceHash !== verified.sourceReferenceHash) reasons.push('source_reference_hash_mismatch');
   if (source.sourceType !== 'grounded_official_source') reasons.push('source_type_mismatch');
   const sourceOk = reasons.length === 0;
-  if (sourceOk) stats.sourceReadBackMatchedCount = Number(stats.sourceReadBackMatchedCount || 0) + 1;
-  else stats.sourceReadBackMismatchCount = Number(stats.sourceReadBackMismatchCount || 0) + 1;
+  if (countSourceReadBack) {
+    if (sourceOk) stats.sourceReadBackMatchedCount = Number(stats.sourceReadBackMatchedCount || 0) + 1;
+    else stats.sourceReadBackMismatchCount = Number(stats.sourceReadBackMismatchCount || 0) + 1;
+  }
   const reviewReasonStart = reasons.length;
   stats.reviewReadBackAttemptCount = Number(stats.reviewReadBackAttemptCount || 0) + 1;
   if (!review.sourceReference) reasons.push('review_source_reference_blank_after_write');
@@ -9483,6 +9951,8 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     businessInquiryEvidenceCount: 0,
     solicitationRestrictedCount: 0,
     sourceReferencesAppliedCount: 0,
+    sourceReferenceSourceRowWriteAttemptedCount: 0,
+    sourceReferenceSourceRowWriteConfirmedCount: 0,
     sourceReferenceWriteAttemptedCount: 0,
     sourceReferenceSourceRowWriteCount: 0,
     sourceReferenceReviewRowWriteCount: 0,

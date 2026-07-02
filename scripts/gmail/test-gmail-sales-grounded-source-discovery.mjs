@@ -106,11 +106,7 @@ test('grounded source discovery applies verified citation sources with one Gemin
 test('source reference transaction rolls back when fresh source read-back does not match', () => {
   const env = createEnvironment({ sourceCount: 1 });
   seedGroundingReviewAndQueue(env, 1);
-  const originalSetCell = env.context.setCellByHeader_;
-  env.context.setCellByHeader_ = (sheet, headers, rowIndex, header, value) => {
-    if (sheet.getName && sheet.getName() === 'Gmail営業候補プール' && header === 'sourceReference' && value) return true;
-    return originalSetCell(sheet, headers, rowIndex, header, value);
-  };
+  env.ignoreSourceReferenceSet = true;
   const result = env.context.runGmailSalesGroundedOfficialSourceDiscoverySingleCandidateOnce();
   assert.equal(result.status, 'blocked');
   assert.equal(result.blockedReason, 'source_discovery_read_back_failed');
@@ -120,15 +116,19 @@ test('source reference transaction rolls back when fresh source read-back does n
   assert.equal(result.candidateSuccessCount, 0);
   assert.equal(result.sourceReferencesAppliedCount, 0);
   assert.equal(result.sourceReferenceWriteAttemptedCount, 1);
+  assert.equal(result.sourceReferenceSourceRowWriteAttemptedCount, 1);
+  assert.equal(result.sourceReferenceSourceRowWriteConfirmedCount, 0);
+  assert.equal(result.sourceReferenceReviewRowWriteCount, 0);
+  assert.equal(result.sourceReferenceQueueRowWriteCount, 0);
   assert.equal(result.sourceReferenceCommittedCount, 0);
   assert.equal(result.sourceReferenceWriteRolledBackCount, 1);
   assert.equal(result.sourceReferenceRollbackSucceededCount, 1);
   assert.equal(result.sourceReadBackAttemptCount, 1);
   assert.equal(result.sourceReadBackMismatchCount, 1);
-  assert.equal(result.reviewReadBackAttemptCount, 1);
-  assert.equal(result.reviewReadBackMatchedCount, 1);
-  assert.equal(result.queueReadBackAttemptCount, 1);
-  assert.equal(result.queueReadBackMatchedCount, 1);
+  assert.equal(result.reviewReadBackAttemptCount, 0);
+  assert.equal(result.reviewReadBackMatchedCount, 0);
+  assert.equal(result.queueReadBackAttemptCount, 0);
+  assert.equal(result.queueReadBackMatchedCount, 0);
   assert.equal(result.readBackFailureReasonCounts.source_reference_blank_after_write, 1);
   assert.equal(result.sourceReferenceTransactionInvariantValid, true);
   assert.equal(result.groundingEnabled, true);
@@ -172,6 +172,74 @@ test('source reference transaction readiness inspector is read-only and reports 
   assert.equal(result.aiApiCalled, false);
   assert.equal(afterWrites, beforeWrites);
   assert.equal(JSON.stringify(result).includes('Business'), false);
+});
+
+test('source reference cell write probe writes reads back and restores without API calls', () => {
+  const env = createEnvironment({ sourceCount: 1, sourceProbeValid: false });
+  writeCell(env.workbook.sheets['Gmail営業候補プール'], 2, 'sourceReference', 'existing-redacted-value');
+  const result = env.context.testGmailSalesSourceReferenceCellWriteContractOnce();
+  assert.equal(result.status, 'pass');
+  assert.equal(result.writeAttempted, true);
+  assert.equal(result.flushExecuted, true);
+  assert.equal(result.freshReadBackAttempted, true);
+  assert.equal(result.freshReadBackMatched, true);
+  assert.equal(result.restoreAttempted, true);
+  assert.equal(result.restoreSucceeded, true);
+  assert.equal(result.probeContractValid, true);
+  assert.equal(result.googleSheetsUpdated, true);
+  assert.equal(result.scriptPropertiesUpdated, false);
+  assert.equal(result.aiApiCalled, false);
+  assert.equal(result.gmailSendExecuted, false);
+  assert.equal(result.triggerChanged, false);
+  assert.equal(readCell(env.workbook.sheets['Gmail営業候補プール'], 2, 'sourceReference'), 'existing-redacted-value');
+  assert.equal(env.fetchCalls.length, 0);
+  assert.equal(env.propertyWriteCount, 0);
+  assert.equal(Boolean(JSON.parse(env.cache.gmail_sales_source_reference_cell_contract_last_probe).probeContractValid), true);
+});
+
+test('source reference cell write probe blocks formula cells without writing', () => {
+  const env = createEnvironment({ sourceCount: 1, sourceProbeValid: false });
+  const sheet = env.workbook.sheets['Gmail営業候補プール'];
+  sheet.formulas[`2:${sheet.rows[0].indexOf('sourceReference') + 1}`] = '=ARRAYFORMULA("redacted")';
+  const result = env.context.testGmailSalesSourceReferenceCellWriteContractOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'source_cell_formula_present');
+  assert.equal(result.writeAttempted, false);
+  assert.equal(result.googleSheetsUpdated, false);
+  assert.equal(result.aiApiCalled, false);
+});
+
+test('source reference schema repair adds missing headers and blocks duplicates', () => {
+  const env = createEnvironment({ sourceCount: 1 });
+  const sheet = env.workbook.sheets['Gmail営業候補プール'];
+  const sourceReferenceIndex = sheet.rows[0].indexOf('sourceReference');
+  sheet.rows[0].splice(sourceReferenceIndex, 1);
+  sheet.rows.slice(1).forEach((row) => row.splice(sourceReferenceIndex, 1));
+  const repaired = env.context.repairGmailSalesSourceReferenceSchemaOnce();
+  assert.equal(repaired.status, 'pass');
+  assert.equal(repaired.missingHeaderAddedCount, 1);
+  assert.equal(repaired.headerReadBackPassed, true);
+  assert.equal(repaired.googleSheetsUpdated, true);
+
+  const duplicateEnv = createEnvironment({ sourceCount: 1 });
+  duplicateEnv.workbook.sheets['Gmail営業候補プール'].rows[0].push('sourceReference');
+  const blocked = duplicateEnv.context.repairGmailSalesSourceReferenceSchemaOnce();
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.blockedReason, 'source_reference_header_duplicate');
+  assert.equal(blocked.googleSheetsUpdated, false);
+});
+
+test('source discovery hard gate blocks Gemini calls until source cell probe passes', () => {
+  const env = createEnvironment({ sourceCount: 1, sourceProbeValid: false });
+  seedGroundingReviewAndQueue(env, 1);
+  const result = env.context.runGmailSalesGroundedOfficialSourceDiscoverySingleCandidateOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'source_reference_cell_contract_not_verified');
+  assert.equal(result.candidatesAttemptedCount, 0);
+  assert.equal(result.groundingHttpRequestCount, 0);
+  assert.equal(result.aiApiCalled, false);
+  assert.equal(result.recommendedNextAction, 'run_source_reference_cell_write_probe');
+  assert.equal(env.fetchCalls.length, 0);
 });
 
 test('single candidate grounded source discovery attempts at most one candidate', () => {
@@ -665,6 +733,7 @@ function createEnvironment(options = {}) {
       }
     },
     logs: [],
+    cache: {},
     fetchCalls: [],
     fetchStatusCode: options.fetchStatusCode || 200,
     invalidCitationSpan: Boolean(options.invalidCitationSpan),
@@ -674,6 +743,9 @@ function createEnvironment(options = {}) {
     mailSendCount: 0,
     draftCreateCount: 0
   };
+  if (options.sourceProbeValid !== false) {
+    env.cache.gmail_sales_source_reference_cell_contract_last_probe = JSON.stringify({ probeContractValid: true, completedAt: '2026-07-01T00:00:00.000Z' });
+  }
   Object.values(env.workbook.sheets).forEach((sheet) => { sheet.env = env; });
   env.context = buildContext(env);
   vm.createContext(env.context);
@@ -796,6 +868,7 @@ function buildContext(env) {
     },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     SpreadsheetApp: {
+      ProtectionType: { RANGE: 'RANGE' },
       openById: () => env.workbook,
       flush: () => {},
       newDataValidation: () => ({
@@ -812,7 +885,10 @@ function buildContext(env) {
     },
     MailApp: { getRemainingDailyQuota: () => 100, sendEmail: () => { env.mailSendCount += 1; } },
     GmailApp: { search: () => [], createDraft: () => { env.draftCreateCount += 1; } },
-    CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+    CacheService: { getScriptCache: () => ({
+      get: (key) => env.cache[key] || null,
+      put: (key, value) => { env.cache[key] = String(value); }
+    }) },
     UrlFetchApp: {
       fetch: (url, options = {}) => {
         env.fetchCalls.push({ url: String(url), options });
@@ -904,6 +980,9 @@ class MockSheet {
     this.name = name;
     this.rows = rows.map((row) => row.slice());
     this.validations = {};
+    this.formulas = {};
+    this.merged = {};
+    this.protections = [];
   }
   getName() { return this.name; }
   getLastRow() { return this.rows.length; }
@@ -911,6 +990,7 @@ class MockSheet {
   getMaxRows() { return Math.max(this.rows.length, 200); }
   getDataRange() { return new MockRange(this, 1, 1, this.getLastRow(), this.getLastColumn()); }
   getRange(row, column, numRows = 1, numColumns = 1) { return new MockRange(this, row, column, numRows, numColumns); }
+  getProtections() { return this.protections; }
   setFrozenRows() {}
   setColumnWidth() {}
 }
@@ -929,6 +1009,15 @@ class MockRange {
       return row[this.column + c - 1] ?? '';
     }));
   }
+  getValue() { return this.getValues()[0][0]; }
+  getDisplayValue() { return String(this.getValue() ?? ''); }
+  getFormula() { return this.sheet.formulas[`${this.row}:${this.column}`] || ''; }
+  getDataValidation() { return this.sheet.validations[`${this.row}:${this.column}`] || null; }
+  isPartOfMerge() { return Boolean(this.sheet.merged[`${this.row}:${this.column}`]); }
+  getRow() { return this.row; }
+  getColumn() { return this.column; }
+  getNumRows() { return this.numRows; }
+  getNumColumns() { return this.numColumns; }
   setValues(values) {
     if (this.sheet.env) this.sheet.env.sheetWriteCount += 1;
     values.forEach((rowValues, r) => {
@@ -939,6 +1028,8 @@ class MockRange {
   }
   setValue(value) {
     if (this.sheet.env) this.sheet.env.sheetWriteCount += 1;
+    if (this.sheet.env && this.sheet.env.throwOnSourceReferenceSet && this.sheet.name === 'Gmail営業候補プール' && this.column === this.sheet.rows[0].indexOf('sourceReference') + 1) throw new Error('mock setValue failure');
+    if (this.sheet.env && this.sheet.env.ignoreSourceReferenceSet && this.sheet.name === 'Gmail営業候補プール' && this.column === this.sheet.rows[0].indexOf('sourceReference') + 1 && value) return;
     const target = this.row - 1;
     if (!this.sheet.rows[target]) this.sheet.rows[target] = [];
     this.sheet.rows[target][this.column - 1] = value;
