@@ -10,7 +10,12 @@ const SOURCE_HEADERS = [
   'subject', 'body', 'status', 'sendDate', 'dedupeKey', 'sentStatus', 'replyStatus', 'unsubscribe',
   'doNotContact', 'sendState', 'notes', 'existingRelationshipEvidence', 'explicitOptInEvidence',
   'businessContactEvidence', 'contactBasisType', 'contactBasisRecordedAt', 'sourceReferenceHash',
-  'optOutAvailable', 'lastVerifiedAt', 'suppressionCheckedAt', 'historyCheckedAt'
+  'optOutAvailable', 'lastVerifiedAt', 'suppressionCheckedAt', 'historyCheckedAt', 'sourceEvidenceDigest',
+  'sourceVerificationStatus', 'sourceSafetyVerified', 'sourceIdentityVerified', 'sourceSafetyValidatorVersion',
+  'sourceIdentityValidatorVersion', 'sourceVerificationPolicyVersion', 'sourceVerificationDigest',
+  'sourceIdentityDigestVersion', 'sourceEvidenceDigestVersion', 'officialDomainHash', 'sourceVerifiedAt',
+  'sourceVerificationVersion', 'sourceDiscoveryConfidence', 'sourceDiscoveryReasonCodes',
+  'sourceDiscoveryCitationDigest', 'sourceDiscoveryStatus', 'sourceDiscoveredAt'
 ];
 
 const REVIEW_HEADERS = [
@@ -19,7 +24,12 @@ const REVIEW_HEADERS = [
   'explicitOptInEvidence', 'businessContactEvidence', 'existingContactBasisType', 'suggestedBasisType',
   'suggestionReasonCode', 'reviewDecision', 'approvedBasisType', 'evidenceNotes', 'optOutAvailable',
   'reviewerLabel', 'reviewedAt', 'applyStatus', 'applyErrorCode', 'appliedAt', 'lastQueueSyncedAt',
-  'priorityRank', 'priorityReasonCode'
+  'priorityRank', 'priorityReasonCode', 'sourceEvidenceDigest', 'sourceVerificationStatus',
+  'sourceSafetyVerified', 'sourceIdentityVerified', 'sourceSafetyValidatorVersion',
+  'sourceIdentityValidatorVersion', 'sourceVerificationPolicyVersion', 'sourceVerificationDigest',
+  'sourceIdentityDigestVersion', 'sourceEvidenceDigestVersion', 'officialDomainHash', 'sourceVerifiedAt',
+  'sourceVerificationVersion', 'sourceDiscoveryConfidence', 'sourceDiscoveryReasonCodes',
+  'sourceDiscoveryCitationDigest', 'sourceDiscoveryStatus', 'sourceDiscoveredAt'
 ];
 
 const tests = [];
@@ -112,7 +122,7 @@ test('committed source digest repair preserves source reference and enables enri
   const readiness = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
   assert.equal(readiness.evidenceEnrichmentEligibleCount, 1);
   assert.equal(readiness.enrichmentReadinessValid, true);
-  assert.equal(readiness.recommendedNextAction, 'run_evidence_enrichment');
+  assert.equal(readiness.recommendedNextAction, 'run_official_evidence_enrichment');
 });
 
 test('stable identity digest ignores mutable source reference and audit fields', () => {
@@ -130,6 +140,91 @@ test('stable identity digest ignores mutable source reference and audit fields',
   const evidenceA = env.context.computeGmailSalesSourceEvidenceDigest_(row, { sourceReferenceHash: 'a', sourceType: 'grounded_official_source' });
   const evidenceB = env.context.computeGmailSalesSourceEvidenceDigest_(row, { sourceReferenceHash: 'b', sourceType: 'grounded_official_source' });
   assert.notEqual(evidenceA, evidenceB);
+});
+
+test('readiness separates legacy review references from source-backed verification candidates', () => {
+  const env = createEnvironment({ sourceCount: 66, aiEnabled: true, provider: 'mock' });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  for (let rowIndex = 2; rowIndex <= 67; rowIndex += 1) markNeedsMoreEvidence(env, rowIndex, 'insufficient_evidence');
+  for (let rowIndex = 3; rowIndex <= 67; rowIndex += 1) {
+    writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, 'sourceReference', '');
+    writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, 'sourceReferenceHash', '');
+  }
+  clearAttestation(env, 2);
+  const readiness = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+  assert.equal(readiness.reviewReferencePresentCount, 66);
+  assert.equal(readiness.sourceBackedReferenceCandidateCount, 1);
+  assert.equal(readiness.referenceAndHashMatchedCandidateCount, 1);
+  assert.equal(readiness.reviewOnlyLegacyReferenceCount, 65);
+  assert.equal(readiness.verifiedSourceReferenceCandidateCount, 0);
+  assert.equal(readiness.evidenceEnrichmentEligibleCount, 0);
+  assert.equal(readiness.enrichmentEligibilityReasonCounts.source_safety_attestation_missing, 1);
+  assert.equal(readiness.enrichmentEligibilityReasonCounts.source_reference_missing_on_source, 65);
+  assert.equal(readiness.recommendedNextAction, 'repair_committed_source_verification_attestation');
+  assert.equal(readiness.aiApiCalled, false);
+});
+
+test('committed source verification attestation repair preserves reference hash and type', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, 2, 'insufficient_evidence');
+  const beforeReference = readReview(env, 2, 'sourceReference');
+  const beforeHash = readReview(env, 2, 'sourceReferenceHash');
+  const beforeType = readReview(env, 2, 'sourceType');
+  clearAttestation(env, 2);
+  const before = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+  assert.equal(before.referenceAndHashMatchedCandidateCount, 1);
+  assert.equal(before.verifiedSourceReferenceCandidateCount, 0);
+  assert.equal(before.recommendedNextAction, 'repair_committed_source_verification_attestation');
+  const repair = env.context.repairGmailSalesCommittedSourceVerificationAttestationOnce();
+  assert.equal(repair.status, 'pass');
+  assert.equal(repair.attestationRepairEligibleCount, 1);
+  assert.equal(repair.attestationRepairAttemptedCount, 1);
+  assert.equal(repair.attestationRepairCommittedCount, 1);
+  assert.equal(repair.attestationRepairRolledBackCount, 0);
+  assert.equal(repair.sourceReferencePreserved, true);
+  assert.equal(repair.sourceReferenceHashPreserved, true);
+  assert.equal(repair.contactBasisChanged, false);
+  assert.equal(repair.sourceSafetyAttestationWrittenCount, 1);
+  assert.equal(repair.reviewSafetyAttestationWrittenCount, 1);
+  assert.equal(repair.sourceIdentityAttestationWrittenCount, 1);
+  assert.equal(repair.reviewIdentityAttestationWrittenCount, 1);
+  assert.equal(repair.verificationReadBackMatched, true);
+  assert.equal(repair.googleSheetsUpdated, true);
+  assert.equal(repair.aiApiCalled, false);
+  assert.equal(readReview(env, 2, 'sourceReference'), beforeReference);
+  assert.equal(readReview(env, 2, 'sourceReferenceHash'), beforeHash);
+  assert.equal(readReview(env, 2, 'sourceType'), beforeType);
+  const after = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+  assert.equal(after.verifiedSourceReferenceCandidateCount, 1);
+  assert.equal(after.evidenceEnrichmentEligibleCount, 1);
+  assert.equal(after.recommendedNextAction, 'run_official_evidence_enrichment');
+});
+
+test('digest repair is blocked by verification attestation before source digest repair', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, 2, 'insufficient_evidence');
+  clearAttestation(env, 2);
+  writeReview(env, 2, 'sourceRowDigest', 'stale-redacted-digest');
+  const repair = env.context.repairGmailSalesCommittedSourceReferenceDigestOnce();
+  assert.equal(repair.repairEligibleCount, 0);
+  assert.equal(repair.repairBlockedByVerificationCount, 1);
+  assert.equal(repair.repairBlockedReasonCounts.source_safety_attestation_missing, 1);
+  assert.equal(repair.googleSheetsUpdated, false);
+});
+
+test('verification digest mismatch is a structured enrichment reason', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, 2, 'insufficient_evidence');
+  writeReview(env, 2, 'sourceVerificationDigest', 'mismatch-redacted-digest');
+  const readiness = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+  assert.equal(readiness.referenceAndHashMatchedCandidateCount, 1);
+  assert.equal(readiness.verifiedSourceReferenceCandidateCount, 0);
+  assert.equal(readiness.sourceVerificationDigestMismatchCount, 1);
+  assert.equal(readiness.enrichmentEligibilityReasonCounts.source_verification_digest_mismatch, 1);
+  assert.equal(readiness.recommendedNextAction, 'repair_committed_source_verification_attestation');
 });
 
 test('official URL safety blocks localhost private IP and mismatched redirect', () => {
@@ -255,11 +350,12 @@ function createEnvironment(options = {}) {
     body: '<main>法人のお問い合わせ 業務提携について お問い合わせフォーム 配信停止</main>'
   });
   Object.values(env.workbook.sheets).forEach((sheet) => { sheet.env = env; });
-  env.context = buildContext(env);
-  vm.createContext(env.context);
-  vm.runInContext(code, env.context, { filename: 'Code.gs' });
-  return env;
-}
+	  env.context = buildContext(env);
+	  vm.createContext(env.context);
+	  vm.runInContext(code, env.context, { filename: 'Code.gs' });
+	  seedVerifiedSourceAttestations(env);
+	  return env;
+	}
 
 function buildContext(env) {
   return {
@@ -335,12 +431,46 @@ function buildSourceRow(index) {
     publicSource: 'official source',
     sourceUrl: 'https://official.example/contact',
     sourceReference: 'https://official.example/contact',
-    sourceType: 'official_site',
-    subject: `Subject ${index}`,
+	    sourceType: 'official_site',
+	    sourceReferenceHash: '',
+	    subject: `Subject ${index}`,
     body: `Body ${index}`,
     status: 'ready',
-    dedupeKey: `dedupe-${index}`
-  };
+	    dedupeKey: `dedupe-${index}`
+	  };
+	}
+
+function seedVerifiedSourceAttestations(env) {
+  const sheet = env.workbook.sheets['Gmail営業候補プール'];
+  for (let rowIndex = 2; rowIndex <= sheet.rows.length; rowIndex += 1) {
+    const sourceReference = readCell(sheet, rowIndex, 'sourceReference');
+    const sourceType = readCell(sheet, rowIndex, 'sourceType');
+    if (!sourceReference || !sourceType) continue;
+    const sourceReferenceHash = env.context.buildGmailSalesSourceReferenceHash_(sourceType, sourceReference);
+    writeCell(sheet, rowIndex, 'sourceReferenceHash', sourceReferenceHash);
+    writeCell(sheet, rowIndex, 'officialDomainHash', env.context.hashValue_('official-domain'));
+    writeCell(sheet, rowIndex, 'sourceDiscoveryCitationDigest', env.context.hashValue_('citation'));
+    writeCell(sheet, rowIndex, 'sourceVerificationVersion', 'official-source-discovery-v1');
+    writeCell(sheet, rowIndex, 'sourceDiscoveryStatus', 'verified');
+    const row = rowObject(sheet, rowIndex);
+    const attestation = env.context.buildGmailSalesSourceVerificationAttestation_(row, {
+      sourceReferenceHash,
+      sourceType,
+      sourceVerifiedAt: '2026-07-01T00:00:00.000Z'
+    });
+    Object.keys(attestation).forEach((field) => writeCell(sheet, rowIndex, field, attestation[field]));
+    writeCell(sheet, rowIndex, 'sourceEvidenceDigest', env.context.computeGmailSalesSourceEvidenceDigest_(rowObject(sheet, rowIndex), { sourceReferenceHash, sourceType }));
+    writeCell(sheet, rowIndex, 'sourceIdentityDigestVersion', 'source-digest-v2-stable-identity');
+    writeCell(sheet, rowIndex, 'sourceEvidenceDigestVersion', 'source-evidence-digest-v1');
+  }
+}
+
+function rowObject(sheet, rowIndex) {
+  const row = sheet.rows[rowIndex - 1] || [];
+  return sheet.rows[0].reduce((acc, header, index) => {
+    acc[header] = row[index] || '';
+    return acc;
+  }, {});
 }
 
 function setSource(env, rowIndex, values) {
@@ -352,6 +482,21 @@ function markNeedsMoreEvidence(env, rowIndex, reason) {
   writeReview(env, rowIndex, 'applyStatus', 'needs_more_evidence');
   writeReview(env, rowIndex, 'applyErrorCode', reason);
   writeReview(env, rowIndex, 'evidenceNotes', `ai_exception_${reason}`);
+}
+
+function clearAttestation(env, rowIndex) {
+  [
+    'sourceVerificationStatus',
+    'sourceSafetyVerified',
+    'sourceIdentityVerified',
+    'sourceSafetyValidatorVersion',
+    'sourceIdentityValidatorVersion',
+    'sourceVerificationPolicyVersion',
+    'sourceVerificationDigest'
+  ].forEach((field) => {
+    writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, field, '');
+    writeReview(env, rowIndex, field, '');
+  });
 }
 
 function readReview(env, rowIndex, header) {

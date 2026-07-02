@@ -222,6 +222,8 @@ const GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION = 'grounding-citation-safety
 const GMAIL_SALES_GROUNDING_CITATION_ACCEPTANCE_PROBE_SCENARIO_VERSION = 'citation-acceptance-official-docs-v2';
 const GMAIL_SALES_GROUNDING_CITATION_SPAN_VALIDATOR_VERSION = 'citation-span-validator-v2';
 const GMAIL_SALES_GROUNDING_CITATION_PIPELINE_VERSION = 'citation-url-independent-span-v1';
+const GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION = 'grounding-citation-identity-v1';
+const GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION = 'source-verification-policy-v1';
 const GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY = 'GMAIL_SALES_GROUNDING_MODEL_HEALTH_JSON';
 const GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const GMAIL_SALES_GROUNDING_SHUTDOWN_MODEL_PREFIXES = ['gemini-2.0-'];
@@ -245,6 +247,13 @@ const GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS = [
   'evidenceSourceDigest',
   'evidencePackageDigest',
   'sourceEvidenceDigest',
+  'sourceVerificationStatus',
+  'sourceSafetyVerified',
+  'sourceIdentityVerified',
+  'sourceSafetyValidatorVersion',
+  'sourceIdentityValidatorVersion',
+  'sourceVerificationPolicyVersion',
+  'sourceVerificationDigest',
   'sourceIdentityDigestVersion',
   'sourceEvidenceDigestVersion',
   'evidenceEnrichmentReasonCodes',
@@ -2850,9 +2859,15 @@ function runGmailSalesAiVerificationPhase_() {
   const queue = refreshGmailSalesContactBasisReviewQueueOnce();
   if (queue.status === 'blocked') return queue;
   let enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
-  if (Number(enrichmentReadiness.verifiedSourceReferenceCandidateCount || 0) > 0) {
-    if (Number(enrichmentReadiness.evidenceEnrichmentEligibleCount || 0) === 0 &&
-      (Number((enrichmentReadiness.enrichmentEligibilityReasonCounts || {}).source_row_digest_mismatch || 0) + Number((enrichmentReadiness.enrichmentEligibilityReasonCounts || {}).source_row_digest_missing || 0) > 0)) {
+	  if (Number(enrichmentReadiness.referenceAndHashMatchedCandidateCount || 0) > 0) {
+	    if (Number(enrichmentReadiness.evidenceEnrichmentEligibleCount || 0) === 0 &&
+	      hasOfficialEvidenceAttestationReason_(enrichmentReadiness.enrichmentEligibilityReasonCounts || {})) {
+	      const attestationRepair = repairGmailSalesCommittedSourceVerificationAttestationOnce();
+	      if (attestationRepair.status === 'blocked') return attestationRepair;
+	      enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+	    }
+	    if (Number(enrichmentReadiness.evidenceEnrichmentEligibleCount || 0) === 0 &&
+	      (Number((enrichmentReadiness.enrichmentEligibilityReasonCounts || {}).source_row_digest_mismatch || 0) + Number((enrichmentReadiness.enrichmentEligibilityReasonCounts || {}).source_row_digest_missing || 0) > 0)) {
       const repair = repairGmailSalesCommittedSourceReferenceDigestOnce();
       if (repair.status === 'blocked') return repair;
       enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
@@ -6426,9 +6441,33 @@ function emptyOfficialEvidenceEnrichmentStats_() {
     sourceReferenceHashMismatchCount: 0,
     sourceRowDigestPresentCount: 0,
     sourceRowDigestMatchCount: 0,
-    sourceRowDigestMismatchCount: 0,
-    sourceRowDigestMissingCount: 0,
-    verifiedSourceReferenceCandidateCount: 0,
+	    sourceRowDigestMismatchCount: 0,
+	    sourceRowDigestMissingCount: 0,
+	    reviewReferencePresentCount: 0,
+	    sourceBackedReferenceCandidateCount: 0,
+	    referenceAndHashMatchedCandidateCount: 0,
+	    verificationAttestationCandidateCount: 0,
+	    reviewOnlyLegacyReferenceCount: 0,
+	    sourceOnlyReferenceCount: 0,
+	    matchedSourceReviewReferenceCount: 0,
+	    staleReviewReferenceCount: 0,
+	    sourceSafetyVerifiedPresentCount: 0,
+	    sourceSafetyVerifiedTrueCount: 0,
+	    reviewSafetyVerifiedPresentCount: 0,
+	    reviewSafetyVerifiedTrueCount: 0,
+	    sourceIdentityVerifiedPresentCount: 0,
+	    sourceIdentityVerifiedTrueCount: 0,
+	    reviewIdentityVerifiedPresentCount: 0,
+	    reviewIdentityVerifiedTrueCount: 0,
+	    sourceVerificationStatusVerifiedCount: 0,
+	    reviewVerificationStatusVerifiedCount: 0,
+	    sourceSafetyValidatorVersionCurrentCount: 0,
+	    sourceIdentityValidatorVersionCurrentCount: 0,
+	    sourceVerificationPolicyVersionCurrentCount: 0,
+	    sourceVerifiedAtPresentCount: 0,
+	    sourceVerificationDigestMatchCount: 0,
+	    sourceVerificationDigestMismatchCount: 0,
+	    verifiedSourceReferenceCandidateCount: 0,
     evidenceEnrichmentEligibleCount: 0,
     evidenceEnrichmentIneligibleCount: 0,
     enrichmentEligibilityReasonCounts: {}
@@ -6474,6 +6513,9 @@ function isOfficialEvidenceEnrichmentTarget_(reviewRow, sourceByKey) {
   if (!reviewHash) return { ok: false, stale: false, reasonCode: 'source_reference_hash_missing_on_review' };
   if (sourceHash !== reviewHash) return { ok: false, stale: true, reasonCode: 'source_reference_hash_mismatch' };
   if (!String(row.sourceType || sourceItem.row.sourceType || '').trim()) return { ok: false, stale: false, reasonCode: 'source_type_missing' };
+  if (!isSupportedOfficialEvidenceSourceType_(sourceTypeValue)) return { ok: false, stale: false, reasonCode: 'unsupported_source_type' };
+  const attestation = inspectGmailSalesSourceVerificationAttestation_(sourceItem.row, row);
+  if (!attestation.ok) return { ok: false, stale: false, reasonCode: attestation.reasonCode || 'source_reference_not_current', sourceItem };
   const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
   if (!queue.include) return { ok: false, stale: false, reasonCode: queue.reason || 'unknown_enrichment_ineligibility' };
   if (!String(row.sourceRowDigest || '').trim()) return { ok: false, stale: true, reasonCode: 'source_row_digest_missing', sourceItem };
@@ -6481,15 +6523,92 @@ function isOfficialEvidenceEnrichmentTarget_(reviewRow, sourceByKey) {
   return { ok: true, stale: false, sourceItem };
 }
 
+function isSupportedOfficialEvidenceSourceType_(sourceType) {
+  return ['grounded_official_source', 'public_business_contact', 'official_site'].indexOf(String(sourceType || '').trim()) !== -1;
+}
+
+function truthyAttestationValue_(value) {
+  return value === true || String(value || '').toLowerCase() === 'true' || String(value || '').toLowerCase() === 'verified';
+}
+
+function verificationFieldPresent_(row, field) {
+  return String((row || {})[field] || '').trim() !== '';
+}
+
+function inspectGmailSalesSourceVerificationAttestation_(sourceRow, reviewRow) {
+  const source = sourceRow || {};
+  const review = reviewRow || {};
+  const sourceDigest = String(source.sourceVerificationDigest || '').trim();
+  const reviewDigest = String(review.sourceVerificationDigest || '').trim();
+  if (!verificationFieldPresent_(source, 'sourceSafetyVerified')) return { ok: false, reasonCode: 'source_safety_attestation_missing' };
+  if (!verificationFieldPresent_(review, 'sourceSafetyVerified')) return { ok: false, reasonCode: 'review_safety_attestation_missing' };
+  if (!truthyAttestationValue_(source.sourceSafetyVerified)) return { ok: false, reasonCode: 'source_safety_attestation_false' };
+  if (!truthyAttestationValue_(review.sourceSafetyVerified)) return { ok: false, reasonCode: 'review_safety_attestation_false' };
+  if (!verificationFieldPresent_(source, 'sourceIdentityVerified')) return { ok: false, reasonCode: 'source_identity_attestation_missing' };
+  if (!verificationFieldPresent_(review, 'sourceIdentityVerified')) return { ok: false, reasonCode: 'review_identity_attestation_missing' };
+  if (!truthyAttestationValue_(source.sourceIdentityVerified)) return { ok: false, reasonCode: 'source_identity_attestation_false' };
+  if (!truthyAttestationValue_(review.sourceIdentityVerified)) return { ok: false, reasonCode: 'review_identity_attestation_false' };
+  if (String(source.sourceVerificationStatus || '').trim() !== 'verified') return { ok: false, reasonCode: 'source_verification_status_not_verified' };
+  if (String(review.sourceVerificationStatus || '').trim() !== 'verified') return { ok: false, reasonCode: 'review_verification_status_not_verified' };
+  if (String(source.sourceSafetyValidatorVersion || '').trim() !== GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION ||
+      String(review.sourceSafetyValidatorVersion || '').trim() !== GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION) return { ok: false, reasonCode: 'safety_validator_version_stale' };
+  if (String(source.sourceIdentityValidatorVersion || '').trim() !== GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION ||
+      String(review.sourceIdentityValidatorVersion || '').trim() !== GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION) return { ok: false, reasonCode: 'identity_validator_version_stale' };
+  if (String(source.sourceVerificationPolicyVersion || '').trim() !== GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION ||
+      String(review.sourceVerificationPolicyVersion || '').trim() !== GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) return { ok: false, reasonCode: 'verification_policy_version_stale' };
+  if (!String(source.sourceVerifiedAt || '').trim() || !String(review.sourceVerifiedAt || '').trim()) return { ok: false, reasonCode: 'source_verified_at_missing' };
+  if (!sourceDigest || !reviewDigest || sourceDigest !== reviewDigest) return { ok: false, reasonCode: 'source_verification_digest_mismatch' };
+  const expected = computeGmailSalesSourceVerificationDigest_(source, {
+    sourceReferenceHash: String(source.sourceReferenceHash || review.sourceReferenceHash || '').trim(),
+    sourceType: String(source.sourceType || review.sourceType || '').trim(),
+    sourceVerifiedAt: String(source.sourceVerifiedAt || '').trim()
+  });
+  if (expected && sourceDigest !== expected) return { ok: false, reasonCode: 'source_verification_digest_mismatch' };
+  return { ok: true, reasonCode: '' };
+}
+
 function classifyOfficialEvidenceEnrichmentBlockedReason_(stats) {
   const reasons = stats.enrichmentEligibilityReasonCounts || {};
   if (Number(stats.sourceReferencePresentCount || 0) === 0 && Number(stats.reviewSourceReferencePresentCount || 0) === 0) return 'no_verified_source_reference';
   if (Number(reasons.source_row_not_found || 0) + Number(reasons.source_join_key_missing || 0) > 0) return 'verified_source_reference_join_failed';
   if (Number(reasons.source_reference_hash_mismatch || 0) + Number(stats.sourceReferenceHashMismatchCount || 0) > 0) return 'verified_source_reference_hash_mismatch';
+  if (hasOfficialEvidenceAttestationReason_(reasons)) return 'verified_source_reference_attestation_stale';
   if (Number(reasons.source_row_digest_mismatch || 0) + Number(reasons.source_row_digest_missing || 0) > 0) return 'verified_source_reference_digest_stale';
   if (Number(reasons.source_reference_not_safety_verified || 0) + Number(reasons.source_reference_not_identity_verified || 0) + Number(reasons.source_reference_not_current || 0) > 0) return 'verified_source_reference_verification_stale';
   if (Number(reasons.source_suppressed || 0) + Number(reasons.source_do_not_contact || 0) + Number(reasons.source_already_sent || 0) + Number(reasons.source_delivery_unknown || 0) + Number(reasons.source_private_personal_contact || 0) + Number(reasons.source_guessed_contact || 0) + Number(reasons.source_solicitation_restricted || 0) > 0) return 'verified_source_reference_policy_blocked';
   return 'no_verified_source_reference';
+}
+
+function hasOfficialEvidenceAttestationReason_(reasons) {
+  const keys = [
+    'source_safety_attestation_missing',
+    'review_safety_attestation_missing',
+    'source_safety_attestation_false',
+    'review_safety_attestation_false',
+    'source_identity_attestation_missing',
+    'review_identity_attestation_missing',
+    'source_identity_attestation_false',
+    'review_identity_attestation_false',
+    'source_verification_status_not_verified',
+    'review_verification_status_not_verified',
+    'safety_validator_version_stale',
+    'identity_validator_version_stale',
+    'verification_policy_version_stale',
+    'source_verified_at_missing',
+    'source_verification_digest_mismatch'
+  ];
+  return keys.some((key) => Number((reasons || {})[key] || 0) > 0);
+}
+
+function recommendOfficialEvidenceEnrichmentNextAction_(stats) {
+  const reasons = stats.enrichmentEligibilityReasonCounts || {};
+  if (Number(stats.evidenceEnrichmentEligibleCount || 0) > 0) return 'run_official_evidence_enrichment';
+  if (Number(reasons.source_reference_mismatch || 0) + Number(reasons.source_reference_hash_mismatch || 0) + Number(stats.sourceReferenceHashMismatchCount || 0) > 0) return 'inspect_source_review_reference_mismatch';
+  if (hasOfficialEvidenceAttestationReason_(reasons)) return 'repair_committed_source_verification_attestation';
+  if (Number(reasons.source_row_digest_mismatch || 0) + Number(reasons.source_row_digest_missing || 0) > 0) return 'repair_committed_source_reference_digest';
+  if (Number(stats.sourceReferencePresentCount || 0) === 0) return 'run_single_candidate_source_discovery';
+  if (Number(stats.sourceReviewJoinFailedCount || 0) > 0 && Number(stats.referenceAndHashMatchedCandidateCount || 0) === 0) return 'inspect_source_review_join';
+  return 'run_single_candidate_source_discovery';
 }
 
 function inspectGmailSalesOfficialEvidenceEnrichmentReadiness() {
@@ -6509,9 +6628,7 @@ function inspectGmailSalesOfficialEvidenceEnrichmentReadiness() {
     sourceSheetPresent: Boolean(context.sourceSheet),
     reviewSheetPresent: Boolean(context.reviewSheet),
     enrichmentReadinessValid: Number(stats.evidenceEnrichmentEligibleCount || 0) > 0,
-    recommendedNextAction: Number(stats.evidenceEnrichmentEligibleCount || 0) > 0 ? 'run_evidence_enrichment'
-      : (Number(stats.enrichmentEligibilityReasonCounts.source_row_digest_mismatch || 0) + Number(stats.enrichmentEligibilityReasonCounts.source_row_digest_missing || 0) > 0 ? 'repair_committed_source_reference_digest'
-        : (Number(stats.sourceReviewJoinFailedCount || 0) > 0 ? 'inspect_source_review_join' : 'run_grounded_source_discovery')),
+	    recommendedNextAction: recommendOfficialEvidenceEnrichmentNextAction_(stats),
     aiEnabled: Boolean(ai.aiEnabled),
     aiProviderConfigured: Boolean(ai.providerConfigured),
     aiModelConfigured: Boolean(ai.modelConfigured),
@@ -6531,35 +6648,79 @@ function inspectGmailSalesOfficialEvidenceEnrichmentReadiness() {
 function accumulateOfficialEvidenceEnrichmentReadinessStats_(stats, sourceData, reviewData, sourceByKey) {
   stats.sourceRowCount = (sourceData.items || []).length;
   stats.reviewRowCount = (reviewData.items || []).length;
-  (sourceData.items || []).forEach((item) => {
-    if (String((item.row || {}).sourceReference || '').trim()) stats.sourceReferencePresentCount += 1;
-    if (String((item.row || {}).sourceReferenceHash || '').trim()) stats.sourceReferenceHashPresentCount += 1;
-    if (String((item.row || {}).sourceType || '').trim()) stats.sourceTypePresentCount += 1;
-  });
-  (reviewData.items || []).forEach((item) => {
-    const row = item.row || {};
-    if (String(row.sourceReference || '').trim()) stats.reviewSourceReferencePresentCount += 1;
-    if (String(row.sourceReferenceHash || '').trim()) stats.reviewSourceReferenceHashPresentCount += 1;
-    if (String(row.sourceRowDigest || '').trim()) stats.sourceRowDigestPresentCount += 1;
-    const validation = isOfficialEvidenceEnrichmentTarget_(row, sourceByKey);
-    if (String(row.sourceReference || '').trim() || String(row.sourceReferenceHash || '').trim()) stats.verifiedSourceReferenceCandidateCount += 1;
-    stats.sourceReviewJoinAttemptCount += 1;
-    const sourceItem = sourceByKey[String(row.sourceRowKey || '').trim()];
-    if (sourceItem) {
-      stats.sourceReviewJoinSucceededCount += 1;
-      if (String(sourceItem.row.sourceReference || '').trim() === String(row.sourceReference || '').trim() && String(row.sourceReference || '').trim()) stats.sourceReferenceExactMatchCount += 1;
-      const sourceTypeValue = String(sourceItem.row.sourceType || row.sourceType || '').trim();
-      const sourceReferenceValue = String(sourceItem.row.sourceReference || '').trim();
-      const sourceHashValue = String(sourceItem.row.sourceReferenceHash || (sourceTypeValue && sourceReferenceValue ? buildGmailSalesSourceReferenceHash_(sourceTypeValue, sourceReferenceValue) : '')).trim();
-      if (sourceHashValue === String(row.sourceReferenceHash || '').trim() && String(row.sourceReferenceHash || '').trim()) stats.sourceReferenceHashMatchCount += 1;
-      else if (String(row.sourceReferenceHash || '').trim()) stats.sourceReferenceHashMismatchCount += 1;
-      const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+	  (sourceData.items || []).forEach((item) => {
+	    if (String((item.row || {}).sourceReference || '').trim()) stats.sourceReferencePresentCount += 1;
+	    if (String((item.row || {}).sourceReferenceHash || '').trim()) stats.sourceReferenceHashPresentCount += 1;
+	    if (String((item.row || {}).sourceType || '').trim()) stats.sourceTypePresentCount += 1;
+	    if (verificationFieldPresent_(item.row, 'sourceSafetyVerified')) stats.sourceSafetyVerifiedPresentCount += 1;
+	    if (truthyAttestationValue_((item.row || {}).sourceSafetyVerified)) stats.sourceSafetyVerifiedTrueCount += 1;
+	    if (verificationFieldPresent_(item.row, 'sourceIdentityVerified')) stats.sourceIdentityVerifiedPresentCount += 1;
+	    if (truthyAttestationValue_((item.row || {}).sourceIdentityVerified)) stats.sourceIdentityVerifiedTrueCount += 1;
+	    if (String((item.row || {}).sourceVerificationStatus || '').trim() === 'verified') stats.sourceVerificationStatusVerifiedCount += 1;
+	    if (String((item.row || {}).sourceSafetyValidatorVersion || '').trim() === GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION) stats.sourceSafetyValidatorVersionCurrentCount += 1;
+	    if (String((item.row || {}).sourceIdentityValidatorVersion || '').trim() === GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION) stats.sourceIdentityValidatorVersionCurrentCount += 1;
+	    if (String((item.row || {}).sourceVerificationPolicyVersion || '').trim() === GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) stats.sourceVerificationPolicyVersionCurrentCount += 1;
+	    if (String((item.row || {}).sourceVerifiedAt || '').trim()) stats.sourceVerifiedAtPresentCount += 1;
+	  });
+	  (reviewData.items || []).forEach((item) => {
+	    const row = item.row || {};
+	    if (String(row.sourceReference || '').trim()) {
+	      stats.reviewSourceReferencePresentCount += 1;
+	      stats.reviewReferencePresentCount += 1;
+	    }
+	    if (String(row.sourceReferenceHash || '').trim()) stats.reviewSourceReferenceHashPresentCount += 1;
+	    if (verificationFieldPresent_(row, 'sourceSafetyVerified')) stats.reviewSafetyVerifiedPresentCount += 1;
+	    if (truthyAttestationValue_(row.sourceSafetyVerified)) stats.reviewSafetyVerifiedTrueCount += 1;
+	    if (verificationFieldPresent_(row, 'sourceIdentityVerified')) stats.reviewIdentityVerifiedPresentCount += 1;
+	    if (truthyAttestationValue_(row.sourceIdentityVerified)) stats.reviewIdentityVerifiedTrueCount += 1;
+	    if (String(row.sourceVerificationStatus || '').trim() === 'verified') stats.reviewVerificationStatusVerifiedCount += 1;
+	    if (String(row.sourceRowDigest || '').trim()) stats.sourceRowDigestPresentCount += 1;
+	    const validation = isOfficialEvidenceEnrichmentTarget_(row, sourceByKey);
+	    stats.sourceReviewJoinAttemptCount += 1;
+	    const sourceItem = sourceByKey[String(row.sourceRowKey || '').trim()];
+	    if (sourceItem) {
+	      stats.sourceReviewJoinSucceededCount += 1;
+	      const sourceReferenceValue = String(sourceItem.row.sourceReference || '').trim();
+	      const reviewReferenceValue = String(row.sourceReference || '').trim();
+	      const sourceTypeValue = String(sourceItem.row.sourceType || row.sourceType || '').trim();
+	      if (sourceReferenceValue && !reviewReferenceValue) stats.sourceOnlyReferenceCount += 1;
+	      if (reviewReferenceValue && !sourceReferenceValue) stats.reviewOnlyLegacyReferenceCount += 1;
+	      if (sourceReferenceValue && reviewReferenceValue && sourceReferenceValue !== reviewReferenceValue) stats.staleReviewReferenceCount += 1;
+	      if (sourceReferenceValue === reviewReferenceValue && reviewReferenceValue) {
+	        stats.sourceReferenceExactMatchCount += 1;
+	        stats.matchedSourceReviewReferenceCount += 1;
+	      }
+	      const sourceHashValue = String(sourceItem.row.sourceReferenceHash || (sourceTypeValue && sourceReferenceValue ? buildGmailSalesSourceReferenceHash_(sourceTypeValue, sourceReferenceValue) : '')).trim();
+	      const reviewHashValue = String(row.sourceReferenceHash || '').trim();
+	      const referenceBacked = Boolean(sourceReferenceValue && reviewReferenceValue && sourceReferenceValue === reviewReferenceValue && isSupportedOfficialEvidenceSourceType_(sourceTypeValue));
+	      if (referenceBacked) stats.sourceBackedReferenceCandidateCount += 1;
+	      if (sourceHashValue === reviewHashValue && reviewHashValue) {
+	        stats.sourceReferenceHashMatchCount += 1;
+	        if (referenceBacked) {
+	          stats.referenceAndHashMatchedCandidateCount += 1;
+	          const attestation = inspectGmailSalesSourceVerificationAttestation_(sourceItem.row, row);
+	          if (String(sourceItem.row.sourceVerificationDigest || '').trim() && String(row.sourceVerificationDigest || '').trim()) {
+	            if (String(sourceItem.row.sourceVerificationDigest || '').trim() === String(row.sourceVerificationDigest || '').trim()) stats.sourceVerificationDigestMatchCount += 1;
+	            else stats.sourceVerificationDigestMismatchCount += 1;
+	          } else if (String(sourceItem.row.sourceVerificationDigest || row.sourceVerificationDigest || '').trim()) {
+	            stats.sourceVerificationDigestMismatchCount += 1;
+	          }
+	          if (verificationFieldPresent_(sourceItem.row, 'sourceSafetyVerified') && verificationFieldPresent_(row, 'sourceSafetyVerified') &&
+	              verificationFieldPresent_(sourceItem.row, 'sourceIdentityVerified') && verificationFieldPresent_(row, 'sourceIdentityVerified')) {
+	            stats.verificationAttestationCandidateCount += 1;
+	          }
+	          if (attestation.ok) stats.verifiedSourceReferenceCandidateCount += 1;
+	        }
+	      }
+	      else if (sourceReferenceValue && reviewReferenceValue && String(row.sourceReferenceHash || '').trim()) stats.sourceReferenceHashMismatchCount += 1;
+	      const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
       if (!String(row.sourceRowDigest || '').trim()) stats.sourceRowDigestMissingCount += 1;
       else if (queue.include && String(queue.row.sourceRowDigest || '') === String(row.sourceRowDigest || '').trim()) stats.sourceRowDigestMatchCount += 1;
       else stats.sourceRowDigestMismatchCount += 1;
-    } else {
-      stats.sourceReviewJoinFailedCount += 1;
-    }
+	    } else {
+	      stats.sourceReviewJoinFailedCount += 1;
+	      if (String(row.sourceReference || '').trim()) stats.reviewOnlyLegacyReferenceCount += 1;
+	    }
     if (validation.ok) stats.evidenceEnrichmentEligibleCount += 1;
     else {
       stats.evidenceEnrichmentIneligibleCount += 1;
@@ -6577,8 +6738,10 @@ function repairGmailSalesCommittedSourceReferenceDigestOnce() {
     repairEligibleCount: 0,
     repairAttemptedCount: 0,
     repairCommittedCount: 0,
-    repairRolledBackCount: 0,
-    sourceReferencePreserved: true,
+	    repairRolledBackCount: 0,
+	    repairBlockedByVerificationCount: 0,
+	    repairBlockedReasonCounts: {},
+	    sourceReferencePreserved: true,
     contactBasisChanged: false,
     googleSheetsUpdated: false,
     aiApiCalled: false,
@@ -6613,11 +6776,18 @@ function repairGmailSalesCommittedSourceReferenceDigestOnce() {
     sourceData.items.forEach((item) => {
       sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
     });
-    const repairTarget = (reviewData.items || []).find((item) => {
-      const validation = isOfficialEvidenceEnrichmentTarget_(item.row, sourceByKey);
-      if (validation.reasonCode !== 'source_row_digest_mismatch' && validation.reasonCode !== 'source_row_digest_missing') return false;
-      const sourceItem = validation.sourceItem || sourceByKey[String((item.row || {}).sourceRowKey || '').trim()];
-      if (!sourceItem) return false;
+	    (reviewData.items || []).forEach((item) => {
+	      const validation = isOfficialEvidenceEnrichmentTarget_(item.row, sourceByKey);
+	      if (hasOfficialEvidenceAttestationReason_({ [validation.reasonCode]: 1 })) {
+	        result.repairBlockedByVerificationCount += 1;
+	        incrementCount_(result.repairBlockedReasonCounts, validation.reasonCode || 'verification_attestation_blocked');
+	      }
+	    });
+	    const repairTarget = (reviewData.items || []).find((item) => {
+	      const validation = isOfficialEvidenceEnrichmentTarget_(item.row, sourceByKey);
+	      if (validation.reasonCode !== 'source_row_digest_mismatch' && validation.reasonCode !== 'source_row_digest_missing') return false;
+	      const sourceItem = validation.sourceItem || sourceByKey[String((item.row || {}).sourceRowKey || '').trim()];
+	      if (!sourceItem) return false;
       const sourceReference = String(sourceItem.row.sourceReference || '').trim();
       const reviewReference = String((item.row || {}).sourceReference || '').trim();
       const sourceType = String(sourceItem.row.sourceType || '').trim();
@@ -6654,6 +6824,152 @@ function repairGmailSalesCommittedSourceReferenceDigestOnce() {
       return result;
     }
     result.repairCommittedCount = 1;
+    return result;
+  } finally {
+    lock.releaseLock();
+    logGmailSalesJsonResult_(result);
+	  }
+	}
+
+function repairGmailSalesCommittedSourceVerificationAttestationOnce() {
+  const result = {
+    event: 'gmail_sales_committed_source_verification_attestation_repair',
+    mode: 'write',
+    status: 'pass',
+    blockedReason: '',
+    attestationRepairEligibleCount: 0,
+    attestationRepairAttemptedCount: 0,
+    attestationRepairCommittedCount: 0,
+    attestationRepairRolledBackCount: 0,
+    sourceReferencePreserved: true,
+    sourceReferenceHashPreserved: true,
+    contactBasisChanged: false,
+    sourceSafetyAttestationWrittenCount: 0,
+    reviewSafetyAttestationWrittenCount: 0,
+    sourceIdentityAttestationWrittenCount: 0,
+    reviewIdentityAttestationWrittenCount: 0,
+    verificationReadBackMatched: false,
+    googleSheetsUpdated: false,
+    aiApiCalled: false,
+    gmailSendExecuted: false,
+    triggerChanged: false
+  };
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    result.status = 'blocked';
+    result.blockedReason = 'safe_rest_required';
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    result.status = 'blocked';
+    result.blockedReason = 'lock_unavailable';
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  try {
+    const context = getGmailSalesContactBasisReviewContext_();
+    if (!context.ok) {
+      result.status = 'blocked';
+      result.blockedReason = context.blockedReason;
+      return result;
+    }
+    ensureSheetHeaders_(context.sourceSheet, GMAIL_CONTACT_BASIS_COLUMNS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
+    ensureSheetHeaders_(context.reviewSheet, GMAIL_CONTACT_BASIS_REVIEW_HEADERS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
+    const sourceData = readSheetObjects_(context.sourceSheet);
+    const reviewData = readSheetObjects_(context.reviewSheet);
+    const sourceByKey = {};
+    sourceData.items.forEach((item) => {
+      sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+    });
+    const candidates = (reviewData.items || []).filter((item) => {
+      const row = item.row || {};
+      const sourceItem = sourceByKey[String(row.sourceRowKey || '').trim()];
+      if (!sourceItem) return false;
+      const sourceReference = String(sourceItem.row.sourceReference || '').trim();
+      const reviewReference = String(row.sourceReference || '').trim();
+      const sourceType = String(sourceItem.row.sourceType || '').trim();
+      const reviewType = String(row.sourceType || '').trim();
+      const sourceHash = String(sourceItem.row.sourceReferenceHash || (sourceType && sourceReference ? buildGmailSalesSourceReferenceHash_(sourceType, sourceReference) : '')).trim();
+      const reviewHash = String(row.sourceReferenceHash || '').trim();
+      if (!sourceReference || !reviewReference || sourceReference !== reviewReference) return false;
+      if (!sourceHash || !reviewHash || sourceHash !== reviewHash) return false;
+      if (!sourceType || !reviewType || sourceType !== reviewType || !isSupportedOfficialEvidenceSourceType_(sourceType)) return false;
+      if (hasAllowedGmailSalesContactBasis_(sourceItem.row) || shouldSkipRecipient_(sourceItem.row)) return false;
+      if (String(sourceItem.row.doNotContact || '').toLowerCase() === 'true') return false;
+      if (String(sourceItem.row.sentStatus || '').trim()) return false;
+      const sourceDiscoveryStatus = String(sourceItem.row.sourceDiscoveryStatus || row.sourceDiscoveryStatus || '').trim();
+      const sourceReady = sourceDiscoveryStatus === 'verified' || String(row.evidenceEnrichmentStatus || '').trim() === 'source_ready';
+      if (!sourceReady) return false;
+      const attestation = inspectGmailSalesSourceVerificationAttestation_(sourceItem.row, row);
+      return !attestation.ok && hasOfficialEvidenceAttestationReason_({ [attestation.reasonCode]: 1 });
+    });
+    result.attestationRepairEligibleCount = candidates.length;
+    if (candidates.length !== 1) {
+      if (candidates.length > 1) {
+        result.status = 'blocked';
+        result.blockedReason = 'attestation_repair_target_not_unique';
+      }
+      return result;
+    }
+    const reviewItem = candidates[0];
+    const sourceItem = sourceByKey[String((reviewItem.row || {}).sourceRowKey || '').trim()];
+    const sourceReferenceBefore = String(sourceItem.row.sourceReference || '').trim();
+    const sourceHashBefore = String(sourceItem.row.sourceReferenceHash || '').trim();
+    const sourceTypeBefore = String(sourceItem.row.sourceType || '').trim();
+    const now = new Date().toISOString();
+    const attestation = buildGmailSalesSourceVerificationAttestation_(sourceItem.row, {
+      sourceReferenceHash: sourceHashBefore,
+      sourceType: sourceTypeBefore,
+      sourceVerifiedAt: now
+    });
+    const sourceSnapshot = snapshotFields_(context.sourceSheet, sourceData.headers, sourceItem.rowIndex, [
+      'sourceVerificationStatus',
+      'sourceSafetyVerified',
+      'sourceIdentityVerified',
+      'sourceSafetyValidatorVersion',
+      'sourceIdentityValidatorVersion',
+      'sourceVerificationPolicyVersion',
+      'sourceVerifiedAt',
+      'sourceVerificationDigest'
+    ]);
+    const reviewSnapshot = snapshotFields_(context.reviewSheet, reviewData.headers, reviewItem.rowIndex, [
+      'sourceVerificationStatus',
+      'sourceSafetyVerified',
+      'sourceIdentityVerified',
+      'sourceSafetyValidatorVersion',
+      'sourceIdentityValidatorVersion',
+      'sourceVerificationPolicyVersion',
+      'sourceVerifiedAt',
+      'sourceVerificationDigest'
+    ]);
+    result.attestationRepairAttemptedCount = 1;
+    writeGmailSalesSourceVerificationAttestation_(context.sourceSheet, sourceData.headers, sourceItem.rowIndex, attestation);
+    writeGmailSalesSourceVerificationAttestation_(context.reviewSheet, reviewData.headers, reviewItem.rowIndex, attestation);
+    SpreadsheetApp.flush();
+    result.googleSheetsUpdated = true;
+    const sourceReadBack = readSheetObjects_(context.sourceSheet).items.find((item) => item.rowIndex === sourceItem.rowIndex);
+    const reviewReadBack = readSheetObjects_(context.reviewSheet).items.find((item) => item.rowIndex === reviewItem.rowIndex);
+    const readBack = sourceReadBack && reviewReadBack && inspectGmailSalesSourceVerificationAttestation_(sourceReadBack.row, reviewReadBack.row).ok &&
+      String(sourceReadBack.row.sourceReference || '').trim() === sourceReferenceBefore &&
+      String(sourceReadBack.row.sourceReferenceHash || '').trim() === sourceHashBefore &&
+      String(sourceReadBack.row.sourceType || '').trim() === sourceTypeBefore;
+    if (!readBack) {
+      restoreFields_(context.sourceSheet, sourceData.headers, sourceSnapshot);
+      restoreFields_(context.reviewSheet, reviewData.headers, reviewSnapshot);
+      SpreadsheetApp.flush();
+      result.status = 'blocked';
+      result.blockedReason = 'attestation_repair_read_back_failed';
+      result.attestationRepairRolledBackCount = 1;
+      return result;
+    }
+    result.verificationReadBackMatched = true;
+    result.attestationRepairCommittedCount = 1;
+    result.sourceSafetyAttestationWrittenCount = 1;
+    result.reviewSafetyAttestationWrittenCount = 1;
+    result.sourceIdentityAttestationWrittenCount = 1;
+    result.reviewIdentityAttestationWrittenCount = 1;
     return result;
   } finally {
     lock.releaseLock();
@@ -9236,32 +9552,42 @@ function applyVerifiedSourceReference_(context, sourceData, reviewData, replenis
   writeGroundingAuditFields_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, verified, now);
   target.sourceItem.row.sourceReference = verified.sourceReference;
   target.sourceItem.row.sourceReferenceHash = verified.sourceReferenceHash;
-  target.sourceItem.row.sourceType = 'grounded_official_source';
-  target.sourceItem.row.officialDomainHash = verified.officialDomainHash;
-  target.sourceItem.row.sourceVerificationVersion = GMAIL_SALES_GROUNDING_VERSION_DEFAULT;
-  target.sourceItem.row.sourceDiscoveryCitationDigest = verified.citationDigest;
-  const refreshedQueue = buildContactBasisReviewQueueRow_(target.sourceItem, now);
-  const committedSourceRowDigest = refreshedQueue.include ? refreshedQueue.row.sourceRowDigest : String((target.reviewItem.row || {}).sourceRowDigest || '');
-  const committedSourceEvidenceDigest = computeGmailSalesSourceEvidenceDigest_(target.sourceItem.row, {
-    sourceReferenceHash: verified.sourceReferenceHash,
-    sourceType: 'grounded_official_source'
-  });
-  setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceEvidenceDigest', committedSourceEvidenceDigest);
-  setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceIdentityDigestVersion', 'source-digest-v2-stable-identity');
-  setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceEvidenceDigestVersion', 'source-evidence-digest-v1');
+	  target.sourceItem.row.sourceType = 'grounded_official_source';
+	  target.sourceItem.row.officialDomainHash = verified.officialDomainHash;
+	  target.sourceItem.row.sourceVerificationVersion = GMAIL_SALES_GROUNDING_VERSION_DEFAULT;
+	  target.sourceItem.row.sourceDiscoveryCitationDigest = verified.citationDigest;
+	  target.sourceItem.row.sourceVerifiedAt = now;
+	  const verificationAttestation = buildGmailSalesSourceVerificationAttestation_(target.sourceItem.row, {
+	    sourceReferenceHash: verified.sourceReferenceHash,
+	    sourceType: 'grounded_official_source',
+	    sourceVerifiedAt: now
+	  });
+	  const refreshedQueue = buildContactBasisReviewQueueRow_(target.sourceItem, now);
+	  const committedSourceRowDigest = refreshedQueue.include ? refreshedQueue.row.sourceRowDigest : String((target.reviewItem.row || {}).sourceRowDigest || '');
+	  const committedSourceEvidenceDigest = computeGmailSalesSourceEvidenceDigest_(target.sourceItem.row, {
+	    sourceReferenceHash: verified.sourceReferenceHash,
+	    sourceType: 'grounded_official_source'
+	  });
+	  setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceEvidenceDigest', committedSourceEvidenceDigest);
+	  writeGmailSalesSourceVerificationAttestation_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, verificationAttestation);
+	  setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceIdentityDigestVersion', 'source-digest-v2-stable-identity');
+	  setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceEvidenceDigestVersion', 'source-evidence-digest-v1');
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceReference', verified.sourceReference);
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceReferenceHash', verified.sourceReferenceHash);
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceType', 'grounded_official_source');
-  setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceRowDigest', committedSourceRowDigest);
-  setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceEvidenceDigest', committedSourceEvidenceDigest);
-  setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceIdentityDigestVersion', 'source-digest-v2-stable-identity');
-  setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceEvidenceDigestVersion', 'source-evidence-digest-v1');
+	  setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceRowDigest', committedSourceRowDigest);
+	  setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceEvidenceDigest', committedSourceEvidenceDigest);
+	  writeGmailSalesSourceVerificationAttestation_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, verificationAttestation);
+	  setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceIdentityDigestVersion', 'source-digest-v2-stable-identity');
+	  setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceEvidenceDigestVersion', 'source-evidence-digest-v1');
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'evidenceEnrichmentStatus', 'source_ready');
   target.reviewItem.row.sourceReference = verified.sourceReference;
   target.reviewItem.row.sourceReferenceHash = verified.sourceReferenceHash;
-  target.reviewItem.row.sourceType = 'grounded_official_source';
-  target.reviewItem.row.sourceRowDigest = committedSourceRowDigest;
-  target.reviewItem.row.sourceEvidenceDigest = committedSourceEvidenceDigest;
+	  target.reviewItem.row.sourceType = 'grounded_official_source';
+	  target.reviewItem.row.sourceRowDigest = committedSourceRowDigest;
+	  target.reviewItem.row.sourceEvidenceDigest = committedSourceEvidenceDigest;
+	  applyGmailSalesSourceVerificationAttestationToRow_(target.sourceItem.row, verificationAttestation);
+	  applyGmailSalesSourceVerificationAttestationToRow_(target.reviewItem.row, verificationAttestation);
   writeGroundingAuditFields_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, verified, now);
   transactionStats.sourceReferenceReviewRowWriteCount = Number(transactionStats.sourceReferenceReviewRowWriteCount || 0) + 1;
   updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'source_discovered', queueSnapshots);
@@ -9294,24 +9620,27 @@ function applyVerifiedSourceReference_(context, sourceData, reviewData, replenis
 
 function readBackVerifiedSourceReferenceTransaction_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, stats) {
   const reasons = [];
-  const source = {
-    sourceReference: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceReference') || '').trim(),
-    sourceReferenceHash: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceReferenceHash') || '').trim(),
-    sourceType: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceType') || '').trim()
-  };
+	  const source = {
+	    sourceReference: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceReference') || '').trim(),
+	    sourceReferenceHash: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceReferenceHash') || '').trim(),
+	    sourceType: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceType') || '').trim(),
+	    sourceVerificationDigest: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceVerificationDigest') || '').trim()
+	  };
   const review = {
     sourceReference: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceReference') || '').trim(),
     sourceReferenceHash: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceReferenceHash') || '').trim(),
     sourceType: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceType') || '').trim(),
-    sourceRowDigest: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceRowDigest') || '').trim(),
-    sourceEvidenceDigest: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceEvidenceDigest') || '').trim(),
-    evidenceEnrichmentStatus: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'evidenceEnrichmentStatus') || '').trim()
-  };
+	    sourceRowDigest: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceRowDigest') || '').trim(),
+	    sourceEvidenceDigest: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceEvidenceDigest') || '').trim(),
+	    sourceVerificationDigest: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceVerificationDigest') || '').trim(),
+	    evidenceEnrichmentStatus: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'evidenceEnrichmentStatus') || '').trim()
+	  };
   const countSourceReadBack = Number(stats.sourceReadBackAttemptCount || 0) === 0;
   if (countSourceReadBack) stats.sourceReadBackAttemptCount = Number(stats.sourceReadBackAttemptCount || 0) + 1;
-  if (!source.sourceReference) reasons.push('source_reference_blank_after_write');
-  if (source.sourceReferenceHash !== verified.sourceReferenceHash) reasons.push('source_reference_hash_mismatch');
-  if (source.sourceType !== 'grounded_official_source') reasons.push('source_type_mismatch');
+	  if (!source.sourceReference) reasons.push('source_reference_blank_after_write');
+	  if (source.sourceReferenceHash !== verified.sourceReferenceHash) reasons.push('source_reference_hash_mismatch');
+	  if (source.sourceType !== 'grounded_official_source') reasons.push('source_type_mismatch');
+	  if (String((target.sourceItem.row || {}).sourceVerificationDigest || '').trim() && source.sourceVerificationDigest !== String((target.sourceItem.row || {}).sourceVerificationDigest || '').trim()) reasons.push('source_verification_digest_mismatch');
   const sourceOk = reasons.length === 0;
   if (countSourceReadBack) {
     if (sourceOk) stats.sourceReadBackMatchedCount = Number(stats.sourceReadBackMatchedCount || 0) + 1;
@@ -9322,8 +9651,9 @@ function readBackVerifiedSourceReferenceTransaction_(context, sourceData, review
   if (!review.sourceReference) reasons.push('review_source_reference_blank_after_write');
   if (review.sourceReferenceHash !== verified.sourceReferenceHash) reasons.push('review_source_reference_hash_mismatch');
   if (review.sourceType !== 'grounded_official_source') reasons.push('review_source_type_mismatch');
-  if (String((target.reviewItem.row || {}).sourceRowDigest || '').trim() && review.sourceRowDigest !== String((target.reviewItem.row || {}).sourceRowDigest || '').trim()) reasons.push('review_source_row_digest_mismatch');
-  if (String((target.reviewItem.row || {}).sourceEvidenceDigest || '').trim() && review.sourceEvidenceDigest !== String((target.reviewItem.row || {}).sourceEvidenceDigest || '').trim()) reasons.push('review_source_evidence_digest_mismatch');
+	  if (String((target.reviewItem.row || {}).sourceRowDigest || '').trim() && review.sourceRowDigest !== String((target.reviewItem.row || {}).sourceRowDigest || '').trim()) reasons.push('review_source_row_digest_mismatch');
+	  if (String((target.reviewItem.row || {}).sourceEvidenceDigest || '').trim() && review.sourceEvidenceDigest !== String((target.reviewItem.row || {}).sourceEvidenceDigest || '').trim()) reasons.push('review_source_evidence_digest_mismatch');
+	  if (String((target.reviewItem.row || {}).sourceVerificationDigest || '').trim() && review.sourceVerificationDigest !== String((target.reviewItem.row || {}).sourceVerificationDigest || '').trim()) reasons.push('review_source_verification_digest_mismatch');
   if ((reviewData.headers || []).indexOf('evidenceEnrichmentStatus') !== -1 && review.evidenceEnrichmentStatus !== 'source_ready') reasons.push('review_evidence_status_mismatch');
   if (source.sourceReference && review.sourceReference && source.sourceReference !== review.sourceReference) reasons.push('source_review_reference_mismatch');
   if (source.sourceReferenceHash && review.sourceReferenceHash && source.sourceReferenceHash !== review.sourceReferenceHash) reasons.push('source_review_hash_mismatch');
@@ -11552,12 +11882,27 @@ function buildContactBasisReviewQueueRow_(item, now) {
       businessDisplayName: maskBusinessDisplayName_(row.name || row['店舗名']),
       contactDisplay: maskContactDisplay_(row.email || row.contactEmail || row['メール'] || row['宛先メール']),
       sourceType,
-      sourceReference,
-      sourceReferenceHash,
-      sourceEvidenceDigest,
-      sourceIdentityDigestVersion: 'source-digest-v2-stable-identity',
-      sourceEvidenceDigestVersion: 'source-evidence-digest-v1',
-      existingRelationshipEvidence: existingEvidence,
+	      sourceReference,
+	      sourceReferenceHash,
+	      sourceEvidenceDigest,
+	      sourceVerificationStatus: row.sourceVerificationStatus || '',
+	      sourceSafetyVerified: row.sourceSafetyVerified || '',
+	      sourceIdentityVerified: row.sourceIdentityVerified || '',
+	      sourceSafetyValidatorVersion: row.sourceSafetyValidatorVersion || '',
+	      sourceIdentityValidatorVersion: row.sourceIdentityValidatorVersion || '',
+	      sourceVerificationPolicyVersion: row.sourceVerificationPolicyVersion || '',
+	      sourceVerificationDigest: row.sourceVerificationDigest || '',
+	      sourceIdentityDigestVersion: 'source-digest-v2-stable-identity',
+	      sourceEvidenceDigestVersion: 'source-evidence-digest-v1',
+	      officialDomainHash: row.officialDomainHash || '',
+	      sourceVerifiedAt: row.sourceVerifiedAt || '',
+	      sourceVerificationVersion: row.sourceVerificationVersion || '',
+	      sourceDiscoveryConfidence: row.sourceDiscoveryConfidence || '',
+	      sourceDiscoveryReasonCodes: row.sourceDiscoveryReasonCodes || '',
+	      sourceDiscoveryCitationDigest: row.sourceDiscoveryCitationDigest || '',
+	      sourceDiscoveryStatus: row.sourceDiscoveryStatus || '',
+	      sourceDiscoveredAt: row.sourceDiscoveredAt || '',
+	      existingRelationshipEvidence: existingEvidence,
       explicitOptInEvidence: optInEvidence,
       businessContactEvidence: businessEvidence,
       existingContactBasisType: basisType || 'needs_review',
@@ -11670,7 +12015,57 @@ function computeGmailSalesSourceEvidenceDigest_(row, context) {
     normalizeTextForComparison_(row.sourceVerificationVersion || GMAIL_SALES_GROUNDING_VERSION_DEFAULT),
     normalizeTextForComparison_(row.sourceDiscoveryCitationDigest || ''),
     'source-evidence-digest-v1'
+	  ].join('|'));
+}
+
+function computeGmailSalesSourceVerificationDigest_(row, context) {
+  return hashValue_([
+    normalizeTextForComparison_('source-verification-digest-v1'),
+    normalizeTextForComparison_(context.sourceType || row.sourceType || ''),
+    normalizeTextForComparison_(context.sourceReferenceHash || row.sourceReferenceHash || ''),
+    normalizeTextForComparison_(row.officialDomainHash || ''),
+    normalizeTextForComparison_(row.sourceDiscoveryCitationDigest || ''),
+    normalizeTextForComparison_(context.sourceVerifiedAt || row.sourceVerifiedAt || ''),
+    GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION,
+    GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION,
+    'verified',
+    'true',
+    'true'
   ].join('|'));
+}
+
+function buildGmailSalesSourceVerificationAttestation_(row, context) {
+  const sourceVerifiedAt = String(context.sourceVerifiedAt || row.sourceVerifiedAt || '').trim();
+  const sourceType = String(context.sourceType || row.sourceType || '').trim();
+  const sourceReferenceHash = String(context.sourceReferenceHash || row.sourceReferenceHash || '').trim();
+  const digest = computeGmailSalesSourceVerificationDigest_(row, {
+    sourceType,
+    sourceReferenceHash,
+    sourceVerifiedAt
+  });
+  return {
+    sourceVerificationStatus: 'verified',
+    sourceSafetyVerified: 'true',
+    sourceIdentityVerified: 'true',
+    sourceSafetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    sourceIdentityValidatorVersion: GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION,
+    sourceVerificationPolicyVersion: GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION,
+    sourceVerifiedAt,
+    sourceVerificationDigest: digest
+  };
+}
+
+function writeGmailSalesSourceVerificationAttestation_(sheet, headers, rowIndex, attestation) {
+  Object.keys(attestation || {}).forEach((field) => {
+    setCellByHeader_(sheet, headers, rowIndex, field, attestation[field]);
+  });
+}
+
+function applyGmailSalesSourceVerificationAttestationToRow_(row, attestation) {
+  Object.keys(attestation || {}).forEach((field) => {
+    row[field] = attestation[field];
+  });
 }
 
 function buildGmailSalesSourceReferenceHash_(sourceType, sourceReference) {
