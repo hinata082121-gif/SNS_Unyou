@@ -58,8 +58,19 @@ test('grounded source discovery applies verified citation sources with one Gemin
   assert.equal(result.eligibleDiscoveryTargetCount, 12);
   assert.equal(result.googleSheetsUpdated, true);
   assert.equal(result.scriptPropertiesUpdated, true);
+  assert.equal(result.verifiedOfficialSourceDetectedCount, 10);
+  assert.equal(result.sourceReferenceWriteAttemptedCount, 10);
+  assert.equal(result.sourceReferenceCommittedCount, 10);
+  assert.equal(result.sourceReferenceWriteRolledBackCount, 0);
+  assert.equal(result.sourceReadBackAttemptCount, 10);
+  assert.equal(result.sourceReadBackMatchedCount, 10);
+  assert.equal(result.reviewReadBackAttemptCount, 10);
+  assert.equal(result.reviewReadBackMatchedCount, 10);
+  assert.equal(result.queueReadBackAttemptCount, 10);
+  assert.equal(result.queueReadBackMatchedCount, 10);
+  assert.equal(result.sourceReferenceTransactionInvariantValid, true);
   assert.equal(env.fetchCalls.length, 10);
-  assert.equal(env.propertyWriteCount, 2);
+  assert.equal(env.propertyWriteCount, 4);
   assert.equal(env.mailSendCount, 0);
   assert.equal(env.draftCreateCount, 0);
   assert.equal(env.triggerWriteCount, 0);
@@ -90,6 +101,77 @@ test('grounded source discovery applies verified citation sources with one Gemin
   assert.equal(status.eligibleDiscoveryTargetCount, 2);
   assert.equal(status.recommendedNextAction, 'run_source_discovery');
   assert.equal(env.logs.some((line) => line.includes('Business 1')), false);
+});
+
+test('source reference transaction rolls back when fresh source read-back does not match', () => {
+  const env = createEnvironment({ sourceCount: 1 });
+  seedGroundingReviewAndQueue(env, 1);
+  const originalSetCell = env.context.setCellByHeader_;
+  env.context.setCellByHeader_ = (sheet, headers, rowIndex, header, value) => {
+    if (sheet.getName && sheet.getName() === 'Gmail営業候補プール' && header === 'sourceReference' && value) return true;
+    return originalSetCell(sheet, headers, rowIndex, header, value);
+  };
+  const result = env.context.runGmailSalesGroundedOfficialSourceDiscoverySingleCandidateOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'source_discovery_read_back_failed');
+  assert.equal(result.recommendedNextAction, 'inspect_source_reference_transaction');
+  assert.equal(result.verifiedOfficialSourceDetectedCount, 1);
+  assert.equal(result.verifiedOfficialSourceCount, 0);
+  assert.equal(result.candidateSuccessCount, 0);
+  assert.equal(result.sourceReferencesAppliedCount, 0);
+  assert.equal(result.sourceReferenceWriteAttemptedCount, 1);
+  assert.equal(result.sourceReferenceCommittedCount, 0);
+  assert.equal(result.sourceReferenceWriteRolledBackCount, 1);
+  assert.equal(result.sourceReferenceRollbackSucceededCount, 1);
+  assert.equal(result.sourceReadBackAttemptCount, 1);
+  assert.equal(result.sourceReadBackMismatchCount, 1);
+  assert.equal(result.reviewReadBackAttemptCount, 1);
+  assert.equal(result.reviewReadBackMatchedCount, 1);
+  assert.equal(result.queueReadBackAttemptCount, 1);
+  assert.equal(result.queueReadBackMatchedCount, 1);
+  assert.equal(result.readBackFailureReasonCounts.source_reference_blank_after_write, 1);
+  assert.equal(result.sourceReferenceTransactionInvariantValid, true);
+  assert.equal(result.groundingEnabled, true);
+  assert.equal(result.groundingModelConfigured, true);
+  assert.equal(result.providerConfigurationValid, true);
+  assert.equal(result.aiApiCalled, true);
+  assert.equal(result.googleSheetsUpdated, true);
+  assert.equal(result.scriptPropertiesUpdated, true);
+  assert.equal(result.groundingHttpRequestCount, 1);
+  assert.equal(result.candidateDiscoveryPromptRequestCount, 1);
+  assert.equal(result.groundingPromptRequestCountToday, 1);
+  assert.equal(readCell(env.workbook.sheets['Gmail営業候補プール'], 2, 'sourceReference'), '');
+  assert.equal(readCell(env.workbook.sheets.Gmail_Contact_Basis_Review, 2, 'sourceReference'), '');
+  assert.equal(readCell(env.workbook.sheets.Gmail_Evidence_Replenishment_Queue, 2, 'status'), 'queued');
+  assert.equal(env.fetchCalls.length, 1);
+  assert.equal(env.mailSendCount, 0);
+  assert.equal(env.draftCreateCount, 0);
+  assert.equal(env.triggerWriteCount, 0);
+  assert.equal(env.logs.some((line) => line.includes('recipient1')), false);
+});
+
+test('source reference transaction readiness inspector is read-only and reports aggregate join health', () => {
+  const env = createEnvironment({ sourceCount: 3 });
+  seedGroundingReviewAndQueue(env, 3);
+  const beforeWrites = env.sheetWriteCount + env.propertyWriteCount + env.triggerWriteCount + env.mailSendCount + env.draftCreateCount;
+  const result = env.context.inspectGmailSalesSourceReferenceTransactionReadiness();
+  const afterWrites = env.sheetWriteCount + env.propertyWriteCount + env.triggerWriteCount + env.mailSendCount + env.draftCreateCount;
+  assert.equal(result.mode, 'read_only');
+  assert.equal(result.sourceSheetPresent, true);
+  assert.equal(result.reviewSheetPresent, true);
+  assert.equal(result.queueSheetPresent, true);
+  assert.equal(result.sourceRequiredHeadersValid, true);
+  assert.equal(result.reviewRequiredHeadersValid, true);
+  assert.equal(result.queueRequiredHeadersValid, true);
+  assert.equal(result.sourceReviewResolvableJoinCount, 3);
+  assert.equal(result.reviewQueueResolvableJoinCount, 3);
+  assert.equal(result.eligibleTransactionTargetCount, 3);
+  assert.equal(result.transactionReadinessValid, true);
+  assert.equal(result.googleSheetsUpdated, false);
+  assert.equal(result.scriptPropertiesUpdated, false);
+  assert.equal(result.aiApiCalled, false);
+  assert.equal(afterWrites, beforeWrites);
+  assert.equal(JSON.stringify(result).includes('Business'), false);
 });
 
 test('single candidate grounded source discovery attempts at most one candidate', () => {

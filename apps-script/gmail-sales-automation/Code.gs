@@ -4881,6 +4881,74 @@ function inspectGmailSalesGroundedOfficialSourceDiscoveryStatus() {
   return result;
 }
 
+function inspectGmailSalesSourceReferenceTransactionReadiness() {
+  const aiConfig = getGmailSalesAiConfig_();
+  const grounding = getGmailSalesGroundingConfig_(aiConfig);
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { headers: [], items: [] };
+  const reviewData = context.reviewSheet ? readSheetObjects_(context.reviewSheet) : { headers: [], items: [] };
+  const resolved = context.spreadsheet ? resolveGmailSalesEvidenceReplenishmentQueueSheet_(context.spreadsheet) : { sheet: null, queueSheetNameResolved: '' };
+  const queueData = resolved.sheet ? readSheetObjects_(resolved.sheet) : { headers: [], items: [] };
+  const collected = collectGroundedSourceDiscoveryTargets_(sourceData, reviewData, queueData, grounding);
+  const sourceRequiredHeadersValid = missingHeaders_(sourceData.headers || [], ['sourceReference', 'sourceReferenceHash', 'sourceType']).length === 0;
+  const reviewRequiredHeadersValid = missingHeaders_(reviewData.headers || [], ['sourceReference', 'sourceReferenceHash', 'sourceType', 'sourceRowDigest']).length === 0;
+  const queueRequiredHeadersValid = missingHeaders_(queueData.headers || [], ['candidateToken', 'failureReasonCode', 'queuedAt', 'status', 'sourceRowDigest']).length === 0;
+  const duplicateSourceJoinKeyCount = countDuplicateNonEmptyValues_((sourceData.items || []).map((item) => buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)));
+  const duplicateReviewCandidateTokenCount = countDuplicateNonEmptyValues_((reviewData.items || []).map((item) => buildGroundingCandidateToken_(item.row || {})));
+  const duplicateReviewSourceDigestCount = countDuplicateNonEmptyValues_((reviewData.items || []).map((item) => String((item.row || {}).sourceRowDigest || '').trim()));
+  const duplicateQueueCandidateTokenCount = countDuplicateNonEmptyValues_((queueData.items || []).map((item) => String((item.row || {}).candidateToken || '').trim()));
+  const blockedReasons = [];
+  if (!context.sourceSheet) blockedReasons.push('source_sheet_missing');
+  if (!context.reviewSheet) blockedReasons.push('review_sheet_missing');
+  if (!resolved.sheet) blockedReasons.push('queue_sheet_missing');
+  if (!sourceRequiredHeadersValid) blockedReasons.push('source_required_headers_missing');
+  if (!reviewRequiredHeadersValid) blockedReasons.push('review_required_headers_missing');
+  if (!queueRequiredHeadersValid) blockedReasons.push('queue_required_headers_missing');
+  if (duplicateSourceJoinKeyCount > 0) blockedReasons.push('source_join_key_duplicate');
+  if (duplicateReviewCandidateTokenCount > 0 || duplicateReviewSourceDigestCount > 0) blockedReasons.push('review_join_key_duplicate');
+  if (duplicateQueueCandidateTokenCount > 0) blockedReasons.push('queue_join_key_duplicate');
+  if (collected.stats.eligibilitySnapshotInvariantFailed) blockedReasons.push('eligibility_snapshot_invariant_failed');
+  const result = {
+    event: 'gmail_sales_source_reference_transaction_readiness',
+    mode: 'read_only',
+    sourceSheetPresent: Boolean(context.sourceSheet),
+    reviewSheetPresent: Boolean(context.reviewSheet),
+    queueSheetPresent: Boolean(resolved.sheet),
+    sourceRequiredHeadersValid,
+    reviewRequiredHeadersValid,
+    queueRequiredHeadersValid,
+    sourceReviewResolvableJoinCount: collected.stats.sourceJoinSucceededCount,
+    reviewQueueResolvableJoinCount: collected.stats.reviewJoinSucceededCount,
+    eligibleTransactionTargetCount: collected.targets.length,
+    duplicateSourceJoinKeyCount,
+    duplicateReviewCandidateTokenCount,
+    duplicateReviewSourceDigestCount,
+    duplicateQueueCandidateTokenCount,
+    transactionReadinessValid: blockedReasons.length === 0,
+    blockedReasons,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false
+  };
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function countDuplicateNonEmptyValues_(values) {
+  const counts = {};
+  let duplicateCount = 0;
+  (values || []).forEach((value) => {
+    const key = String(value || '').trim();
+    if (!key) return;
+    counts[key] = (counts[key] || 0) + 1;
+    if (counts[key] === 2) duplicateCount += 1;
+  });
+  return duplicateCount;
+}
+
 function runGmailSalesGroundedOfficialSourceDiscoveryOnce() {
   return runGmailSalesGroundedOfficialSourceDiscoveryInternal_({});
 }
@@ -5163,7 +5231,8 @@ function runGmailSalesGroundedOfficialSourceDiscoveryInternal_(options) {
         updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'source_not_found_after_grounded_search', queueSnapshots);
         return;
       }
-      const applied = applyVerifiedSourceReference_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, now, sourceSnapshots, reviewSnapshots, queueSnapshots);
+      stats.verifiedOfficialSourceDetectedCount += 1;
+      const applied = applyVerifiedSourceReference_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, now, stats, sourceSnapshots, reviewSnapshots, queueSnapshots);
       if (applied.ok) {
         stats.candidateSuccessCount += 1;
         stats.verifiedOfficialSourceCount += 1;
@@ -5173,35 +5242,31 @@ function runGmailSalesGroundedOfficialSourceDiscoveryInternal_(options) {
         if (verified.solicitationRestrictionPresent) stats.solicitationRestrictedCount += 1;
       } else {
         stats.rollbackCount += 1;
+        stats.candidatePermanentFailureCount += 1;
+        stats.blockedSourceCount += 1;
+        stats.sourceReferenceTransactionFailed = true;
+        stats.sourceReferenceTransactionBlockedReason = applied.blockedReason || 'source_discovery_read_back_failed';
       }
     });
-    const readBackPassed = sourceSnapshots.every((snapshot) => String(getCellByHeader_(context.sourceSheet, sourceData.headers, snapshot.rowIndex, 'sourceReference') || '').trim()) &&
-      reviewSnapshots.every((snapshot) => String(getCellByHeader_(context.reviewSheet, reviewData.headers, snapshot.rowIndex, 'sourceReference') || '').trim());
-    if (!readBackPassed) {
-      sourceSnapshots.forEach((snapshot) => restoreFields_(context.sourceSheet, sourceData.headers, snapshot));
-      reviewSnapshots.forEach((snapshot) => restoreFields_(context.reviewSheet, reviewData.headers, snapshot));
-      queueSnapshots.forEach((snapshot) => restoreFields_(replenishmentSheet, replenishmentData.headers, snapshot));
-      stats.rollbackCount += 1;
-      return buildGmailSalesGroundingResult_('blocked', Object.assign({ blockedReason: 'source_discovery_read_back_failed', rollbackExecuted: true }, stats));
-    }
     stats.estimatedCostYen = estimateGmailSalesAiCostYen_({ provider: 'gemini', maxDailyCostYen: grounding.maxDailyCostYen }, stats.searchQueryCount);
     stats.completedAt = now;
     stats.runId = 'grounding-' + hashValue_(now + '|' + stats.candidatesAttemptedCount + '|' + stats.sourceReferencesAppliedCount);
-    stats.recommendedNextAction = stats.sourceReferencesAppliedCount > 0 ? 'run_evidence_enrichment' : recommendGroundedSourceDiscoveryNextAction_(grounding, stats, {}, collected.targets.length);
+    stats.recommendedNextAction = stats.sourceReferenceTransactionFailed ? 'inspect_source_reference_transaction' : (stats.sourceReferencesAppliedCount > 0 ? 'run_evidence_enrichment' : recommendGroundedSourceDiscoveryNextAction_(grounding, stats, {}, collected.targets.length));
     persistGmailSalesGroundingModelHealthState_(modelHealth);
+    if (stats.groundingHttpRequestCount > 0) persistGmailSalesGroundingUsageAccountingFromStats_(stats);
     persistGroundedDiscoverySummary_(stats);
-    const runStatus = stats.sourceReferencesAppliedCount > 0 && (stats.candidateRetryableFailureCount > 0 || stats.candidatePermanentFailureCount > 0) ? 'partial_success' : (stats.sourceReferencesAppliedCount > 0 ? 'pass' : (stats.candidateRetryableFailureCount > 0 || stats.allModelsFailedCandidateCount > 0 ? 'blocked' : 'pass'));
-    const finalBlockedReason = runStatus === 'blocked' ? classifyGroundedDiscoveryBlockedReason_(stats) : '';
-    return buildGmailSalesGroundingResult_('pass', Object.assign({
+    const runStatus = stats.sourceReferenceTransactionFailed ? 'blocked' : (stats.sourceReferencesAppliedCount > 0 && (stats.candidateRetryableFailureCount > 0 || stats.candidatePermanentFailureCount > 0) ? 'partial_success' : (stats.sourceReferencesAppliedCount > 0 ? 'pass' : (stats.candidateRetryableFailureCount > 0 || stats.allModelsFailedCandidateCount > 0 ? 'blocked' : 'pass')));
+    const finalBlockedReason = stats.sourceReferenceTransactionFailed ? (stats.sourceReferenceTransactionBlockedReason || 'source_discovery_read_back_failed') : (runStatus === 'blocked' ? classifyGroundedDiscoveryBlockedReason_(stats) : '');
+    return buildGmailSalesGroundingResult_(runStatus, Object.assign({
       status: runStatus,
       blockedReason: finalBlockedReason,
       groundingEnabled: grounding.enabled,
       groundingModel: grounding.model,
       groundingModelConfigured: Boolean(grounding.model),
       providerConfigurationValid: grounding.providerConfigurationValid,
-      googleSheetsUpdated: Boolean(stats.sourceReferencesAppliedCount > 0 || stats.queueMigrationExecuted || stats.queueRebuildExecuted),
+      googleSheetsUpdated: Boolean(stats.sourceReferencesAppliedCount > 0 || stats.sourceReferenceSourceRowWriteCount > 0 || stats.sourceReferenceReviewRowWriteCount > 0 || stats.sourceReferenceQueueRowWriteCount > 0 || stats.sourceReferenceWriteRolledBackCount > 0 || stats.queueMigrationExecuted || stats.queueRebuildExecuted),
       scriptPropertiesUpdated: true,
-      aiApiCalled: stats.searchQueryCount > 0
+      aiApiCalled: stats.groundingHttpRequestCount > 0
     }, stats));
   } finally {
     lock.releaseLock();
@@ -6946,6 +7011,32 @@ function getGmailSalesGroundingUsageForJstDate_(dateText) {
   };
 }
 
+function persistGmailSalesGroundingUsageAccountingFromStats_(stats) {
+  const targetDate = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd');
+  const props = PropertiesService.getScriptProperties();
+  const usage = readGmailSalesGroundingUsageAccounting_();
+  const existing = usage[targetDate] || {};
+  const entry = Object.assign({}, existing, {
+    jstDate: targetDate,
+    updatedAt: new Date().toISOString(),
+    groundingPromptRequestCountToday: Math.max(Number(existing.groundingPromptRequestCountToday || 0), Number(stats.groundingPromptRequestCountToday || 0) + Number(stats.candidateDiscoveryPromptRequestCount || 0)),
+    candidateDiscoveryPromptRequestCount: Math.max(Number(existing.candidateDiscoveryPromptRequestCount || 0), Number(stats.candidateDiscoveryRequestCountToday || 0) + Number(stats.candidateDiscoveryPromptRequestCount || 0)),
+    retryPromptRequestCount: Math.max(Number(existing.retryPromptRequestCount || 0), Number(stats.retryPromptRequestCount || 0)),
+    failoverPromptRequestCount: Math.max(Number(existing.failoverPromptRequestCount || 0), Number(stats.failoverPromptRequestCount || 0)),
+    groundingHttpRequestCount: Math.max(Number(existing.groundingHttpRequestCount || 0), Number(stats.groundingHttpRequestCount || 0)),
+    googleSearchExecutedQueryCount: Math.max(Number(existing.googleSearchExecutedQueryCount || 0), Number(stats.googleSearchExecutedQueryCount || 0)),
+    modelRequestCounts: Object.assign({}, existing.modelRequestCounts || {}, stats.modelRequestCounts || {}),
+    closedBudget: false
+  });
+  usage[targetDate] = entry;
+  props.setProperty(GMAIL_SALES_GROUNDING_USAGE_ACCOUNTING_PROPERTY, JSON.stringify(usage));
+  props.setProperty('GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY', String(entry.groundingPromptRequestCountToday));
+  stats.groundingPromptRequestCountToday = entry.groundingPromptRequestCountToday;
+  stats.candidateDiscoveryRequestCountToday = entry.candidateDiscoveryPromptRequestCount;
+  stats.remainingGroundingPromptRequestCountToday = Math.max(0, Number(stats.dailyPromptRequestLimit || 0) - Number(entry.groundingPromptRequestCountToday || 0));
+  return entry;
+}
+
 function reconcileGmailSalesGroundingUsageOnce_() {
   return repairGmailSalesGroundingUsageAccountingOnce();
 }
@@ -7189,6 +7280,7 @@ function emptyGroundedSourceDiscoveryStats_() {
     groundingAnnotationMissingCount: 0,
     groundingResponseShapeUnsupportedCount: 0,
     citationCandidateCount: 0,
+    verifiedOfficialSourceDetectedCount: 0,
     verifiedOfficialSourceCount: 0,
     ambiguousIdentityCount: 0,
     sourceNotFoundCount: 0,
@@ -7197,6 +7289,27 @@ function emptyGroundedSourceDiscoveryStats_() {
     businessInquiryEvidenceCount: 0,
     solicitationRestrictedCount: 0,
     sourceReferencesAppliedCount: 0,
+    sourceReferenceWriteAttemptedCount: 0,
+    sourceReferenceSourceRowWriteCount: 0,
+    sourceReferenceReviewRowWriteCount: 0,
+    sourceReferenceQueueRowWriteCount: 0,
+    sourceReferenceCommittedCount: 0,
+    sourceReferenceWriteRolledBackCount: 0,
+    sourceReferenceRollbackSucceededCount: 0,
+    sourceReferenceRollbackFailedCount: 0,
+    sourceReadBackAttemptCount: 0,
+    sourceReadBackMatchedCount: 0,
+    sourceReadBackMismatchCount: 0,
+    reviewReadBackAttemptCount: 0,
+    reviewReadBackMatchedCount: 0,
+    reviewReadBackMismatchCount: 0,
+    queueReadBackAttemptCount: 0,
+    queueReadBackMatchedCount: 0,
+    queueReadBackMismatchCount: 0,
+    sourceReferenceTransactionInvariantValid: true,
+    sourceReferenceTransactionFailed: false,
+    sourceReferenceTransactionBlockedReason: '',
+    readBackFailureReasonCounts: {},
     rollbackCount: 0,
     cacheHitCount: 0,
     deferredBudgetCount: 0,
@@ -8398,22 +8511,117 @@ function selectVerifiedGroundedOfficialSource_(target, citations, grounding) {
   return citations.length > 0 ? { ok: false, status: 'ambiguous' } : { ok: false, status: 'missing' };
 }
 
-function applyVerifiedSourceReference_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, now, sourceSnapshots, reviewSnapshots, queueSnapshots) {
+function applyVerifiedSourceReference_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, now, stats, sourceSnapshots, reviewSnapshots, queueSnapshots) {
   const sourceHeaders = sourceData.headers;
   const reviewHeaders = reviewData.headers;
-  sourceSnapshots.push(snapshotFields_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, ['sourceReference', 'sourceReferenceHash', 'sourceType'].concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS)));
-  reviewSnapshots.push(snapshotFields_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, ['sourceReference', 'sourceReferenceHash', 'sourceType'].concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS)));
+  const transactionStats = stats || {};
+  transactionStats.sourceReferenceWriteAttemptedCount = Number(transactionStats.sourceReferenceWriteAttemptedCount || 0) + 1;
+  const readBackFailureReasons = [];
+  const sourceSnapshot = snapshotFields_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, ['sourceReference', 'sourceReferenceHash', 'sourceType'].concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
+  const reviewSnapshot = snapshotFields_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, ['sourceReference', 'sourceReferenceHash', 'sourceType', 'evidenceEnrichmentStatus'].concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
+  if (sourceSnapshots) sourceSnapshots.push(sourceSnapshot);
+  if (reviewSnapshots) reviewSnapshots.push(reviewSnapshot);
+  const beforeQueueSnapshotCount = queueSnapshots ? queueSnapshots.length : 0;
   setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceReference', verified.sourceReference);
   setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceReferenceHash', verified.sourceReferenceHash);
   setCellByHeader_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, 'sourceType', 'grounded_official_source');
   writeGroundingAuditFields_(context.sourceSheet, sourceHeaders, target.sourceItem.rowIndex, verified, now);
+  transactionStats.sourceReferenceSourceRowWriteCount = Number(transactionStats.sourceReferenceSourceRowWriteCount || 0) + 1;
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceReference', verified.sourceReference);
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceReferenceHash', verified.sourceReferenceHash);
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceType', 'grounded_official_source');
   setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'evidenceEnrichmentStatus', 'source_ready');
   writeGroundingAuditFields_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, verified, now);
+  transactionStats.sourceReferenceReviewRowWriteCount = Number(transactionStats.sourceReferenceReviewRowWriteCount || 0) + 1;
   updateGroundingQueueStatus_(replenishmentSheet, target, replenishmentData, 'source_discovered', queueSnapshots);
+  if (target.queueItem) transactionStats.sourceReferenceQueueRowWriteCount = Number(transactionStats.sourceReferenceQueueRowWriteCount || 0) + 1;
+  if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) SpreadsheetApp.flush();
+  const readBack = readBackVerifiedSourceReferenceTransaction_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, transactionStats);
+  if (!readBack.ok) {
+    (readBack.reasons || []).forEach((reason) => readBackFailureReasons.push(reason));
+    restoreFields_(context.sourceSheet, sourceHeaders, sourceSnapshot);
+    restoreFields_(context.reviewSheet, reviewHeaders, reviewSnapshot);
+    if (queueSnapshots) {
+      queueSnapshots.slice(beforeQueueSnapshotCount).forEach((snapshot) => restoreFields_(replenishmentSheet, replenishmentData.headers, snapshot));
+    }
+    if (typeof SpreadsheetApp !== 'undefined' && SpreadsheetApp.flush) SpreadsheetApp.flush();
+    transactionStats.sourceReferenceWriteRolledBackCount = Number(transactionStats.sourceReferenceWriteRolledBackCount || 0) + 1;
+    const rollbackReadBack = readBackRollbackForSourceReferenceTransaction_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, sourceSnapshot, reviewSnapshot, queueSnapshots ? queueSnapshots.slice(beforeQueueSnapshotCount) : []);
+    if (rollbackReadBack.ok) transactionStats.sourceReferenceRollbackSucceededCount = Number(transactionStats.sourceReferenceRollbackSucceededCount || 0) + 1;
+    else {
+      transactionStats.sourceReferenceRollbackFailedCount = Number(transactionStats.sourceReferenceRollbackFailedCount || 0) + 1;
+      readBackFailureReasons.push('rollback_read_back_failed');
+    }
+    readBackFailureReasons.forEach((reason) => incrementCount_(transactionStats.readBackFailureReasonCounts, reason));
+    updateSourceReferenceTransactionInvariant_(transactionStats);
+    return { ok: false, blockedReason: rollbackReadBack.ok ? 'source_discovery_read_back_failed' : 'source_discovery_rollback_failed', readBackFailureReasons };
+  }
+  transactionStats.sourceReferenceCommittedCount = Number(transactionStats.sourceReferenceCommittedCount || 0) + 1;
+  updateSourceReferenceTransactionInvariant_(transactionStats);
   return { ok: true };
+}
+
+function readBackVerifiedSourceReferenceTransaction_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, verified, stats) {
+  const reasons = [];
+  const source = {
+    sourceReference: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceReference') || '').trim(),
+    sourceReferenceHash: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceReferenceHash') || '').trim(),
+    sourceType: String(getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'sourceType') || '').trim()
+  };
+  const review = {
+    sourceReference: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceReference') || '').trim(),
+    sourceReferenceHash: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceReferenceHash') || '').trim(),
+    sourceType: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'sourceType') || '').trim(),
+    evidenceEnrichmentStatus: String(getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'evidenceEnrichmentStatus') || '').trim()
+  };
+  stats.sourceReadBackAttemptCount = Number(stats.sourceReadBackAttemptCount || 0) + 1;
+  if (!source.sourceReference) reasons.push('source_reference_blank_after_write');
+  if (source.sourceReferenceHash !== verified.sourceReferenceHash) reasons.push('source_reference_hash_mismatch');
+  if (source.sourceType !== 'grounded_official_source') reasons.push('source_type_mismatch');
+  const sourceOk = reasons.length === 0;
+  if (sourceOk) stats.sourceReadBackMatchedCount = Number(stats.sourceReadBackMatchedCount || 0) + 1;
+  else stats.sourceReadBackMismatchCount = Number(stats.sourceReadBackMismatchCount || 0) + 1;
+  const reviewReasonStart = reasons.length;
+  stats.reviewReadBackAttemptCount = Number(stats.reviewReadBackAttemptCount || 0) + 1;
+  if (!review.sourceReference) reasons.push('review_source_reference_blank_after_write');
+  if (review.sourceReferenceHash !== verified.sourceReferenceHash) reasons.push('review_source_reference_hash_mismatch');
+  if (review.sourceType !== 'grounded_official_source') reasons.push('review_source_type_mismatch');
+  if ((reviewData.headers || []).indexOf('evidenceEnrichmentStatus') !== -1 && review.evidenceEnrichmentStatus !== 'source_ready') reasons.push('review_evidence_status_mismatch');
+  if (source.sourceReference && review.sourceReference && source.sourceReference !== review.sourceReference) reasons.push('source_review_reference_mismatch');
+  if (source.sourceReferenceHash && review.sourceReferenceHash && source.sourceReferenceHash !== review.sourceReferenceHash) reasons.push('source_review_hash_mismatch');
+  const reviewOk = reasons.length === reviewReasonStart;
+  if (reviewOk) stats.reviewReadBackMatchedCount = Number(stats.reviewReadBackMatchedCount || 0) + 1;
+  else stats.reviewReadBackMismatchCount = Number(stats.reviewReadBackMismatchCount || 0) + 1;
+  if (target.queueItem && replenishmentSheet && replenishmentData && replenishmentData.headers) {
+    const queueReasonStart = reasons.length;
+    stats.queueReadBackAttemptCount = Number(stats.queueReadBackAttemptCount || 0) + 1;
+    const queueStatus = String(getCellByHeader_(replenishmentSheet, replenishmentData.headers, target.queueItem.rowIndex, 'status') || '').trim();
+    if (queueStatus !== 'source_discovered') reasons.push('queue_status_mismatch');
+    const queueDigest = String(getCellByHeader_(replenishmentSheet, replenishmentData.headers, target.queueItem.rowIndex, 'sourceRowDigest') || '').trim();
+    const expectedDigest = String((target.reviewItem.row || {}).sourceRowDigest || '').trim();
+    if (expectedDigest && queueDigest !== expectedDigest) reasons.push('queue_source_digest_mismatch');
+    if (reasons.length === queueReasonStart) stats.queueReadBackMatchedCount = Number(stats.queueReadBackMatchedCount || 0) + 1;
+    else stats.queueReadBackMismatchCount = Number(stats.queueReadBackMismatchCount || 0) + 1;
+  }
+  return { ok: reasons.length === 0, reasons };
+}
+
+function readBackRollbackForSourceReferenceTransaction_(context, sourceData, reviewData, replenishmentSheet, replenishmentData, target, sourceSnapshot, reviewSnapshot, queueSnapshots) {
+  const matchesSnapshot = (sheet, headers, snapshot) => (snapshot.values || []).every((entry) => String(getCellByHeader_(sheet, headers, snapshot.rowIndex, entry.field) || '') === String(entry.value || ''));
+  const sourceOk = matchesSnapshot(context.sourceSheet, sourceData.headers, sourceSnapshot);
+  const reviewOk = matchesSnapshot(context.reviewSheet, reviewData.headers, reviewSnapshot);
+  const queueOk = !target.queueItem || !(queueSnapshots || []).length || (queueSnapshots || []).every((snapshot) => matchesSnapshot(replenishmentSheet, replenishmentData.headers, snapshot));
+  return { ok: sourceOk && reviewOk && queueOk };
+}
+
+function updateSourceReferenceTransactionInvariant_(stats) {
+  const sourceTotal = Number(stats.sourceReadBackMatchedCount || 0) + Number(stats.sourceReadBackMismatchCount || 0);
+  const reviewTotal = Number(stats.reviewReadBackMatchedCount || 0) + Number(stats.reviewReadBackMismatchCount || 0);
+  const queueTotal = Number(stats.queueReadBackMatchedCount || 0) + Number(stats.queueReadBackMismatchCount || 0);
+  stats.sourceReferenceTransactionInvariantValid = Number(stats.sourceReadBackAttemptCount || 0) === sourceTotal &&
+    Number(stats.reviewReadBackAttemptCount || 0) === reviewTotal &&
+    Number(stats.queueReadBackAttemptCount || 0) === queueTotal &&
+    Number(stats.sourceReferenceCommittedCount || 0) + Number(stats.sourceReferenceWriteRolledBackCount || 0) <= Number(stats.sourceReferenceWriteAttemptedCount || 0);
 }
 
 function writeGroundingAuditFields_(sheet, headers, rowIndex, verified, now) {
@@ -9266,6 +9474,7 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     groundingAnnotationMissingCount: 0,
     groundingResponseShapeUnsupportedCount: 0,
     citationCandidateCount: 0,
+    verifiedOfficialSourceDetectedCount: 0,
     verifiedOfficialSourceCount: 0,
     ambiguousIdentityCount: 0,
     sourceNotFoundCount: 0,
@@ -9274,6 +9483,27 @@ function buildGmailSalesGroundingResult_(status, overrides) {
     businessInquiryEvidenceCount: 0,
     solicitationRestrictedCount: 0,
     sourceReferencesAppliedCount: 0,
+    sourceReferenceWriteAttemptedCount: 0,
+    sourceReferenceSourceRowWriteCount: 0,
+    sourceReferenceReviewRowWriteCount: 0,
+    sourceReferenceQueueRowWriteCount: 0,
+    sourceReferenceCommittedCount: 0,
+    sourceReferenceWriteRolledBackCount: 0,
+    sourceReferenceRollbackSucceededCount: 0,
+    sourceReferenceRollbackFailedCount: 0,
+    sourceReadBackAttemptCount: 0,
+    sourceReadBackMatchedCount: 0,
+    sourceReadBackMismatchCount: 0,
+    reviewReadBackAttemptCount: 0,
+    reviewReadBackMatchedCount: 0,
+    reviewReadBackMismatchCount: 0,
+    queueReadBackAttemptCount: 0,
+    queueReadBackMatchedCount: 0,
+    queueReadBackMismatchCount: 0,
+    sourceReferenceTransactionInvariantValid: true,
+    sourceReferenceTransactionFailed: false,
+    sourceReferenceTransactionBlockedReason: '',
+    readBackFailureReasonCounts: {},
     cacheHitCount: 0,
     deferredBudgetCount: 0,
     deferredRuntimeCount: 0,
