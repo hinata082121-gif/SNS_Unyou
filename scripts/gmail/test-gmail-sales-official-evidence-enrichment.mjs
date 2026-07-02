@@ -67,6 +67,71 @@ test('enrichment classifies missing source for replenishment without URL guessin
   assert.equal(result.googleSheetsUpdated, false);
 });
 
+test('enrichment readiness diagnoses committed source digest mismatch without AI configuration', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: false });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, 2, 'evidence_payload_missing');
+  writeReview(env, 2, 'sourceRowDigest', 'stale-redacted-digest');
+  const readiness = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+  assert.equal(readiness.sourceSheetPresent, true);
+  assert.equal(readiness.reviewSheetPresent, true);
+  assert.equal(readiness.sourceReferencePresentCount, 1);
+  assert.equal(readiness.reviewSourceReferencePresentCount, 1);
+  assert.equal(readiness.sourceReviewJoinSucceededCount, 1);
+  assert.equal(readiness.sourceReferenceExactMatchCount, 1);
+  assert.equal(readiness.sourceReferenceHashMatchCount, 1);
+  assert.equal(readiness.sourceRowDigestMismatchCount, 1);
+  assert.equal(readiness.evidenceEnrichmentEligibleCount, 0);
+  assert.equal(readiness.enrichmentEligibilityReasonCounts.source_row_digest_mismatch, 1);
+  assert.equal(readiness.recommendedNextAction, 'repair_committed_source_reference_digest');
+  assert.equal(readiness.aiEnabled, false);
+  assert.equal(readiness.aiConfigurationValid, false);
+  assert.equal(readiness.aiApiCalled, false);
+  assert.equal(readiness.googleSheetsUpdated, false);
+  assert.equal(env.fetchMap.size > 0, true);
+});
+
+test('committed source digest repair preserves source reference and enables enrichment', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: false });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, 2, 'insufficient_evidence');
+  const beforeReference = readReview(env, 2, 'sourceReference');
+  writeReview(env, 2, 'sourceRowDigest', 'stale-redacted-digest');
+  const repair = env.context.repairGmailSalesCommittedSourceReferenceDigestOnce();
+  assert.equal(repair.status, 'pass');
+  assert.equal(repair.repairEligibleCount, 1);
+  assert.equal(repair.repairAttemptedCount, 1);
+  assert.equal(repair.repairCommittedCount, 1);
+  assert.equal(repair.repairRolledBackCount, 0);
+  assert.equal(repair.sourceReferencePreserved, true);
+  assert.equal(repair.contactBasisChanged, false);
+  assert.equal(repair.googleSheetsUpdated, true);
+  assert.equal(repair.aiApiCalled, false);
+  assert.equal(readReview(env, 2, 'sourceReference'), beforeReference);
+  assert.equal(readReview(env, 2, 'contactBasisType'), '');
+  const readiness = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+  assert.equal(readiness.evidenceEnrichmentEligibleCount, 1);
+  assert.equal(readiness.enrichmentReadinessValid, true);
+  assert.equal(readiness.recommendedNextAction, 'run_evidence_enrichment');
+});
+
+test('stable identity digest ignores mutable source reference and audit fields', () => {
+  const env = createEnvironment({ sourceCount: 1 });
+  const row = Object.assign({}, buildSourceRow(1));
+  const key = env.context.buildGmailSalesContactSourceRowKey_(row, 2);
+  const first = env.context.computeGmailSalesContactSourceDigest_(row, { sourceRowKey: key });
+  row.sourceReference = 'changed-redacted-reference';
+  row.sourceReferenceHash = 'changed-redacted-hash';
+  row.sourceType = 'changed_type';
+  row.sourceVerifiedAt = '2026-07-02T00:00:00.000Z';
+  row.aiEvidenceDigest = 'changed-redacted-ai-digest';
+  const second = env.context.computeGmailSalesContactSourceDigest_(row, { sourceRowKey: key });
+  assert.equal(first, second);
+  const evidenceA = env.context.computeGmailSalesSourceEvidenceDigest_(row, { sourceReferenceHash: 'a', sourceType: 'grounded_official_source' });
+  const evidenceB = env.context.computeGmailSalesSourceEvidenceDigest_(row, { sourceReferenceHash: 'b', sourceType: 'grounded_official_source' });
+  assert.notEqual(evidenceA, evidenceB);
+});
+
 test('official URL safety blocks localhost private IP and mismatched redirect', () => {
   const env = createEnvironment({ sourceCount: 0 });
   assert.equal(env.context.validateOfficialEvidenceUrl_('http://localhost/contact').reasonCode, 'localhost_rejected');

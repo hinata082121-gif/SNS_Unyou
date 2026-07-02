@@ -169,7 +169,7 @@ test('sourceReferenceHash is generated from real source reference during apply',
 test('stale source digest skips approved row', () => {
   const env = reviewedEnvironment(1);
   approveRows(env, 1, { notes: 'checked evidence', reviewer: 'operator_reviewed' });
-  writeSource(env, 2, 'businessContactEvidence', 'changed evidence');
+  writeSource(env, 2, 'name', 'Changed Business Identity');
   const result = env.context.applyApprovedGmailSalesContactBasisReviewsOnce();
   assert.equal(result.appliedCount, 0);
   assert.equal(result.skippedStaleSourceCount, 1);
