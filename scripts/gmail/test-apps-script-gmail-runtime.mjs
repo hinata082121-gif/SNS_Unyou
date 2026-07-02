@@ -212,7 +212,7 @@ const scenarios = [
     env.entry = 'recoveryDryRun';
     env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
   }, (env, result) => {
-    assert.equal(result.status, 'pass');
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
     assert.equal(result.mode, 'recovery_dry_run');
     assert.equal(result.candidateCount, 1);
     assert.equal(result.eligibleCount, 1);
@@ -244,7 +244,7 @@ const scenarios = [
     env.props.AUTO_SEND_ENABLED = 'false';
     env.props.AUTO_RESET_LIVE_SEND_AFTER_RUN = 'true';
   }, (env, result) => {
-    assert.equal(result.status, 'pass');
+    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
     assert.equal(result.sentCount, 1);
     assert.equal(env.mailSendCount, 1);
     assert.equal(getRecoveryCell(env, 2, 'sendState'), 'SENT');
@@ -1256,9 +1256,10 @@ const scenarios = [
   ['automatic strict manifest is accepted by normal pre-send', (env) => {
     env.manifest = buildAutomaticDailyManifest(env);
     env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
+    env.props.GMAIL_SEND_MAX_SEND_COUNT = '30';
     env.entry = 'dryRun';
   }, (env, result) => {
-    assert.equal(result.status, 'pass');
+    if (result.status !== 'pass') throw new Error(JSON.stringify(safeResultForAssertionMessage(result)));
     assert.equal(result.candidateCount, 30);
     assertDryRunWriteFree(env);
   }],
@@ -1607,35 +1608,31 @@ const scenarios = [
     assert.equal(env.triggerWriteCount, 0);
     assert.equal(env.sheetWriteCount > 0, true);
   }],
-  ['prepareDailyPipeline prepares degraded nonzero source below thirty', (env) => {
+  ['prepareDailyPipeline blocks nonzero source below thirty', (env) => {
     env.entry = 'dailyPreparePipeline';
     installDailyPipelineSourceState(env, { sourceCount: 29 });
   }, (env, result) => {
-    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.status, 'blocked', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.blockedReason, 'candidate_count_not_30');
     assert.equal(result.selectedCount, 29);
-    assert.equal(result.manifestCandidateCount, 29);
-    assert.equal(result.degradedOperation, true);
     assert.equal(result.shortfallCount, 1);
-    assert.equal(result.sheetSynced, true);
-    assert.equal(result.readyForScheduledSend, true);
-    const manifest = JSON.parse(env.props.APPROVED_SEND_MANIFEST_JSON);
-    assert.equal(manifest.candidateCount, 29);
-    assert.equal(manifest.maxSendCount, 29);
+    assert.equal(result.sheetSynced, false);
+    assert.equal(Boolean(env.props.APPROVED_SEND_MANIFEST_JSON), false);
     assert.equal(env.mailSendCount, 0);
     assert.equal(env.props.AUTO_SEND_ENABLED, 'false');
     assert.equal(env.props.LIVE_SEND_ENABLED, 'false');
   }],
-  ['prepareDailyPipeline excludes unknown contact basis and prepares degraded nonzero batch', (env) => {
+  ['prepareDailyPipeline excludes unknown contact basis and blocks below thirty', (env) => {
     env.entry = 'dailyPreparePipeline';
     installDailyPipelineSourceState(env, { sourceCount: 30 });
     const sourceSheet = env.workbook.sheets['Gmail営業候補プール'];
     const basisColumn = sourceSheet.rows[0].indexOf('contactBasisType');
     sourceSheet.rows[1][basisColumn] = 'unknown';
   }, (env, result) => {
-    assert.equal(result.status, 'pass', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.status, 'blocked', JSON.stringify(safeResultForAssertionMessage(result)));
+    assert.equal(result.blockedReason, 'candidate_count_not_30');
     assert.equal(result.selectedCount, 29);
-    assert.equal(result.manifestCandidateCount, 29);
-    assert.equal(result.degradedOperation, true);
+    assert.equal(result.shortfallCount, 1);
     assert.equal(env.mailSendCount, 0);
   }],
   ['prepareDailyPipeline blocks when approved eligible count is zero', (env) => {
@@ -2363,7 +2360,7 @@ function createEnvironment() {
     approvalStatus: 'approved',
     humanReviewCompleted: true,
     expiresAt: '2099-01-01T00:00:00.000Z',
-    maxSendCount: 1,
+    maxSendCount: 30,
     candidateDigests: rows.map((row) => env.context.computeCandidateDigest_(row, TARGET_DATE, BATCH_ID))
   };
   env.props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify(env.manifest);
@@ -3141,7 +3138,7 @@ function installStaleOneCandidateManifestReadinessState(env) {
     targetDate: staleDate,
     batchId: `gmail-sales-${staleDate}`,
     candidateCount: 1,
-    maxSendCount: 1,
+    maxSendCount: 30,
     expectedCandidateCount: 1,
     approvalStatus: 'approved',
     approvalType: 'automatic_strict_gate',
@@ -3327,7 +3324,7 @@ function buildAutomaticDailyManifest(env) {
     autoApprovalPolicyVersion: 'automatic-strict-gate-v1',
     automationVersion: 'normal-daily-v1',
     autoApprovalPassedAt: '2099-01-01T00:00:00.000Z',
-    maxSendCount: 1,
+    maxSendCount: 30,
     expiresAt: '2099-01-01T00:00:00.000Z',
     candidateDigests: digests,
     sourceOutboxIdentity: {
