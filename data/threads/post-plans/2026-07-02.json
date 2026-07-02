@@ -1,0 +1,46 @@
+{
+  "date": "2026-07-02",
+  "strategyVersion": "casual-viral-formats-v1",
+  "posts": [
+    {
+      "date": "2026-07-02",
+      "time": "11:00",
+      "theme": "冒頭改善",
+      "text": "冒頭の一文だけ、読者の状況から始めてみてください。お知らせ感が減って、少し自分ごとに近づきます。 まずはここだけ直す、くらいが続けやすいです。",
+      "cta": "",
+      "contentPillar": "quick_fix",
+      "format": "quick_fix",
+      "hookType": "specific_fix",
+      "tone": "casual_practical",
+      "targetIndustry": "業種共通",
+      "hasQuestion": false,
+      "hasDirectSalesCta": false,
+      "slotRole": "useful_midday_idea",
+      "contentKey": "quick_fix-063",
+      "media": {
+        "type": "none",
+        "items": []
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "time": "19:00",
+      "theme": "予約導線の迷子",
+      "text": "投稿は続けているのに予約につながりにくい時、内容より先に「見た人が次に何をすればいいか」で止まっていることがあります。予約リンク、料金の目安、DMしていい雰囲気。ここが見えるだけで相談しやすくなります。",
+      "cta": "気になる方は、無料SNS診断で導線だけ気軽に確認できます。",
+      "contentPillar": "conversion_path",
+      "format": "empathy_soft_cta",
+      "hookType": "pain_point_question",
+      "tone": "casual_practical",
+      "targetIndustry": "小規模店舗",
+      "hasQuestion": true,
+      "hasDirectSalesCta": false,
+      "slotRole": "evening_conversation",
+      "contentKey": "manual-20260702-19-empathy-diagnosis",
+      "media": {
+        "type": "none",
+        "items": []
+      }
+    }
+  ]
+}

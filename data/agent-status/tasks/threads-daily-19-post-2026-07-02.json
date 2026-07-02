@@ -1,0 +1,50 @@
+{
+  "id": "threads-daily-19-post-2026-07-02",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 19:00 共感・導線投稿",
+  "category": "threads_daily_post",
+  "status": "blocked",
+  "phase": "投稿コマンド到達 / 既存投稿済みのため重複投稿を停止",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-07-02T19:00:34+09:00",
+  "updatedAt": "2026-07-02T19:00:34+09:00",
+  "summary": "2026-07-02 19:00枠のThreads投稿案を共感・予約導線・無料SNS診断への軽いCTA寄りに整え、安全検査後に投稿コマンドを実行した。THREADS_PUBLISH_ENABLED=true かつ THREADS_DRY_RUN=false、API設定有効判定だったが、既に同日19:00枠が投稿済みとして記録されていたため、重複投稿を避けてblockedとして記録した。投稿本文全文・API秘密情報・個人情報はAgent Statusへ保存していない。",
+  "metrics": {
+    "cron": "0 19 * * *",
+    "scheduledTime": "19:00",
+    "executionTime": "2026-07-02T19:00:34+09:00",
+    "postPlanDate": "2026-07-02",
+    "postPlanSlot": "19:00",
+    "publishEnabled": true,
+    "dryRun": false,
+    "apiConfigured": true,
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": false,
+    "alreadyPublished": true,
+    "blockedReason": "already_published",
+    "includesSoftCta": true,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "次回19:00枠では、共感・悩み・問いかけを軸に、無料SNS診断へ自然につなぐ投稿案を事前に確認する。既に投稿済みの場合は再投稿せずblockedとして継続記録し、必要に応じてpublishedログの上書き挙動を点検する。",
+  "safeToAct": false,
+  "notes": [
+    "npm run threads:plan:validate は ok=true",
+    "npm run threads:post:validate は ok=true",
+    "npm run threads:post:19 は blockedReason=already_published で重複投稿を停止",
+    "THREADS_PUBLISH_ENABLED=true かつ THREADS_DRY_RUN=false は投稿コマンド結果で確認済み",
+    "API設定は有効判定だが、トークンやUser IDなどの秘密情報は表示・保存していない",
+    "今回の実行では新規Threads投稿なし",
+    "無料SNS診断への軽い導線を含む19:00投稿案を準備済み",
+    "自動返信・自動いいね・自動フォローは実行していない",
+    "Gmail送信、Google Sheets更新、Apps Scriptトリガー操作は実行していない"
+  ],
+  "artifacts": [
+    "data/agent-status/tasks/threads-daily-19-post-2026-07-02.json",
+    "data/threads/post-plans/2026-07-02.json"
+  ]
+}
