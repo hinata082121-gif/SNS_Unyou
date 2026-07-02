@@ -81,7 +81,8 @@ test('enrichment readiness diagnoses committed source digest mismatch without AI
   const env = createEnvironment({ sourceCount: 1, aiEnabled: false });
   env.context.refreshGmailSalesContactBasisReviewQueueOnce();
   markNeedsMoreEvidence(env, 2, 'evidence_payload_missing');
-  writeReview(env, 2, 'sourceRowDigest', 'stale-redacted-digest');
+  const backedReviewRow = reviewRowIndexForSource(env, 2);
+  writeReview(env, backedReviewRow, 'sourceRowDigest', 'stale-redacted-digest');
   const readiness = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
   assert.equal(readiness.sourceSheetPresent, true);
   assert.equal(readiness.reviewSheetPresent, true);
@@ -106,7 +107,8 @@ test('committed source digest repair preserves source reference and enables enri
   env.context.refreshGmailSalesContactBasisReviewQueueOnce();
   markNeedsMoreEvidence(env, 2, 'insufficient_evidence');
   const beforeReference = readReview(env, 2, 'sourceReference');
-  writeReview(env, 2, 'sourceRowDigest', 'stale-redacted-digest');
+  const backedReviewRow = reviewRowIndexForSource(env, 2);
+  writeReview(env, backedReviewRow, 'sourceRowDigest', 'stale-redacted-digest');
   const repair = env.context.repairGmailSalesCommittedSourceReferenceDigestOnce();
   assert.equal(repair.status, 'pass');
   assert.equal(repair.repairEligibleCount, 1);
@@ -206,7 +208,7 @@ test('digest repair is blocked by verification attestation before source digest 
   env.context.refreshGmailSalesContactBasisReviewQueueOnce();
   markNeedsMoreEvidence(env, 2, 'insufficient_evidence');
   clearAttestation(env, 2);
-  writeReview(env, 2, 'sourceRowDigest', 'stale-redacted-digest');
+  writeReview(env, reviewRowIndexForSource(env, 2), 'sourceRowDigest', 'stale-redacted-digest');
   const repair = env.context.repairGmailSalesCommittedSourceReferenceDigestOnce();
   assert.equal(repair.repairEligibleCount, 0);
   assert.equal(repair.repairBlockedByVerificationCount, 1);
@@ -225,6 +227,81 @@ test('verification digest mismatch is a structured enrichment reason', () => {
   assert.equal(readiness.sourceVerificationDigestMismatchCount, 1);
   assert.equal(readiness.enrichmentEligibilityReasonCounts.source_verification_digest_mismatch, 1);
   assert.equal(readiness.recommendedNextAction, 'repair_committed_source_verification_attestation');
+});
+
+test('production equivalent verified source with stale digest routes to digest repair without discovery', () => {
+  const env = createEnvironment({ sourceCount: 68, aiEnabled: true, provider: 'mock' });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  for (let rowIndex = 2; rowIndex <= 69; rowIndex += 1) markNeedsMoreEvidence(env, rowIndex, 'insufficient_evidence');
+  for (let rowIndex = 3; rowIndex <= 69; rowIndex += 1) {
+    writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, 'sourceReference', '');
+    writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, 'sourceReferenceHash', '');
+  }
+  writeReview(env, reviewRowIndexForSource(env, 2), 'sourceRowDigest', 'stale-redacted-digest');
+  const readiness = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+  assert.equal(readiness.sourceRowCount, 68);
+  assert.equal(readiness.reviewRowCount, 68);
+  assert.equal(readiness.reviewReferencePresentCount, 68);
+  assert.equal(readiness.sourceReferencePresentCount, 1);
+  assert.equal(readiness.sourceBackedReferenceCandidateCount, 1);
+  assert.equal(readiness.referenceAndHashMatchedCandidateCount, 1);
+  assert.equal(readiness.verificationAttestationCandidateCount, 1);
+  assert.equal(readiness.verifiedSourceReferenceCandidateCount, 1);
+  assert.equal(readiness.reviewOnlyLegacyReferenceCount, 67);
+  assert.equal(readiness.enrichmentEligibilityReasonCounts.source_reference_not_safety_verified || 0, 0);
+  assert.equal(readiness.enrichmentEligibilityReasonCounts.source_reference_not_identity_verified || 0, 0);
+  assert.equal(readiness.enrichmentEligibilityReasonCounts.source_reference_not_current || 0, 0);
+  assert.equal(readiness.enrichmentEligibilityReasonCounts.source_row_digest_mismatch, 1);
+  assert.equal(readiness.evidenceEnrichmentEligibleCount, 0);
+  assert.equal(readiness.evidenceEnrichmentIneligibleCount, 68);
+  assert.equal(readiness.enrichmentEligibilityReasonTotalCount, 68);
+  assert.equal(readiness.verificationEligibilityInvariantValid, true);
+  assert.equal(readiness.verifiedCandidateRoutingInvariantValid, true);
+  assert.equal(readiness.eligibilityReasonInvariantValid, true);
+  assert.equal(readiness.discoveryRoutingInvariantValid, true);
+  assert.equal(readiness.recommendedNextAction, 'repair_committed_source_reference_digest');
+});
+
+test('digest repair after production equivalent stale digest enables enrichment', () => {
+  const env = createEnvironment({ sourceCount: 68, aiEnabled: true, provider: 'mock' });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  for (let rowIndex = 2; rowIndex <= 69; rowIndex += 1) markNeedsMoreEvidence(env, rowIndex, 'insufficient_evidence');
+  for (let rowIndex = 3; rowIndex <= 69; rowIndex += 1) {
+    writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, 'sourceReference', '');
+    writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, 'sourceReferenceHash', '');
+  }
+  writeReview(env, reviewRowIndexForSource(env, 2), 'sourceRowDigest', 'stale-redacted-digest');
+  const repair = env.context.repairGmailSalesCommittedSourceReferenceDigestOnce();
+  assert.equal(repair.repairEligibleCount, 1);
+  assert.equal(repair.repairCommittedCount, 1);
+  assert.equal(repair.googleSheetsUpdated, true);
+  const readiness = env.context.inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+  assert.equal(readiness.verifiedSourceReferenceCandidateCount, 1);
+  assert.equal(readiness.sourceRowDigestMatchCount >= 1, true);
+  assert.equal(readiness.evidenceEnrichmentEligibleCount, 1);
+  assert.equal(readiness.recommendedNextAction, 'run_official_evidence_enrichment');
+});
+
+test('canonical verification evaluator normalizes booleans status and versions', () => {
+  const env = createEnvironment({ sourceCount: 1 });
+  const source = rowObject(env.workbook.sheets['Gmail営業候補プール'], 2);
+  const review = Object.assign({}, source);
+  review.sourceVerificationStatus = 'VERIFIED';
+  review.sourceSafetyVerified = true;
+  review.sourceIdentityVerified = 'TRUE';
+  source.sourceSafetyVerified = 'true';
+  source.sourceIdentityVerified = 'verified';
+  source.sourceVerificationStatus = 'verified';
+  const evaluation = env.context.evaluateCommittedSourceVerificationAttestation_(source, review);
+  assert.equal(evaluation.referenceBacked, true);
+  assert.equal(evaluation.safetyVerified, true);
+  assert.equal(evaluation.identityVerified, true);
+  assert.equal(evaluation.verificationStatusVerified, true);
+  assert.equal(evaluation.safetyValidatorCurrent, true);
+  assert.equal(evaluation.identityValidatorCurrent, true);
+  assert.equal(evaluation.policyVersionCurrent, true);
+  assert.equal(evaluation.verificationDigestMatched, true);
+  assert.equal(evaluation.verificationCurrent, true);
 });
 
 test('official URL safety blocks localhost private IP and mismatched redirect', () => {
@@ -485,6 +562,7 @@ function markNeedsMoreEvidence(env, rowIndex, reason) {
 }
 
 function clearAttestation(env, rowIndex) {
+  const reviewRowIndex = reviewRowIndexForSource(env, rowIndex) || rowIndex;
   [
     'sourceVerificationStatus',
     'sourceSafetyVerified',
@@ -495,8 +573,18 @@ function clearAttestation(env, rowIndex) {
     'sourceVerificationDigest'
   ].forEach((field) => {
     writeCell(env.workbook.sheets['Gmail営業候補プール'], rowIndex, field, '');
-    writeReview(env, rowIndex, field, '');
+    writeReview(env, reviewRowIndex, field, '');
   });
+}
+
+function reviewRowIndexForSource(env, sourceRowIndex) {
+  const sourceSheet = env.workbook.sheets['Gmail営業候補プール'];
+  const reviewSheet = env.workbook.sheets.Gmail_Contact_Basis_Review;
+  const sourceRow = rowObject(sourceSheet, sourceRowIndex);
+  const key = env.context.buildGmailSalesContactSourceRowKey_(sourceRow, sourceRowIndex);
+  const index = reviewSheet.rows.findIndex((row, rowIndex) => rowIndex > 0 && row[reviewSheet.rows[0].indexOf('sourceRowKey')] === key);
+  if (index === -1) throw new Error('source backed review row not found');
+  return index + 1;
 }
 
 function readReview(env, rowIndex, header) {

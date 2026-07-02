@@ -2857,9 +2857,19 @@ function runGmailSalesProductionControlLoopManualSafe() {
 
 function runGmailSalesAiVerificationPhase_() {
   const queue = refreshGmailSalesContactBasisReviewQueueOnce();
-  if (queue.status === 'blocked') return queue;
-  let enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
-	  if (Number(enrichmentReadiness.referenceAndHashMatchedCandidateCount || 0) > 0) {
+	  if (queue.status === 'blocked') return queue;
+	  let enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
+	  if (!enrichmentReadiness.enrichmentReadinessInvariantValid) {
+	    return buildGmailSalesAiContactBasisResult_('gmail_sales_ai_verification_phase', 'blocked', Object.assign({
+	      blockedReason: 'enrichment_eligibility_invariant_failed',
+	      googleSheetsUpdated: false,
+	      gmailSendExecuted: false,
+	      triggerChanged: false
+	    }, enrichmentReadiness));
+	  }
+	  if (Number(enrichmentReadiness.sourceBackedReferenceCandidateCount || 0) > 0 ||
+	      Number(enrichmentReadiness.referenceAndHashMatchedCandidateCount || 0) > 0 ||
+	      Number(enrichmentReadiness.verifiedSourceReferenceCandidateCount || 0) > 0) {
 	    if (Number(enrichmentReadiness.evidenceEnrichmentEligibleCount || 0) === 0 &&
 	      hasOfficialEvidenceAttestationReason_(enrichmentReadiness.enrichmentEligibilityReasonCounts || {})) {
 	      const attestationRepair = repairGmailSalesCommittedSourceVerificationAttestationOnce();
@@ -4599,19 +4609,28 @@ function runGmailSalesOfficialEvidenceEnrichmentOnce() {
     const targets = [];
     reviewData.items.forEach((item) => {
       const validation = isOfficialEvidenceEnrichmentTarget_(item.row, sourceByKey);
-      if (validation.ok) {
-        targets.push({ reviewItem: item, sourceItem: validation.sourceItem });
-        stats.evidenceEnrichmentTargetCount += 1;
-      } else {
-        stats.evidenceEnrichmentIneligibleCount += 1;
-        incrementCount_(stats.enrichmentEligibilityReasonCounts, validation.reasonCode || 'unknown_enrichment_ineligibility');
-      }
+	      if (validation.ok) {
+	        targets.push({ reviewItem: item, sourceItem: validation.sourceItem });
+	        stats.evidenceEnrichmentTargetCount += 1;
+	      }
       if (validation.stale) {
         stats.evidenceEnrichmentBlockedCount += 1;
       }
-    });
-    stats.evidenceEnrichmentEligibleCount = stats.evidenceEnrichmentTargetCount;
-    if (targets.length === 0) {
+	    });
+	    stats.evidenceEnrichmentEligibleCount = stats.evidenceEnrichmentTargetCount;
+	    finalizeOfficialEvidenceEnrichmentReadinessStats_(stats);
+	    if (!stats.enrichmentReadinessInvariantValid) {
+	      return buildGmailSalesAiContactBasisResult_('gmail_sales_official_evidence_enrichment', 'blocked', Object.assign({
+	        blockedReason: 'enrichment_eligibility_invariant_failed',
+	        sourceCandidatesUpdated: false,
+	        googleSheetsUpdated: false,
+	        scriptPropertiesUpdated: false,
+	        gmailSendExecuted: false,
+	        gmailDraftCreated: false,
+	        triggerChanged: false
+	      }, stats));
+	    }
+	    if (targets.length === 0) {
       const rebuild = buildEvidenceReplenishmentRowsFromReview_(sourceData, reviewData, now);
       stats.evidenceReplenishmentQueueCount = Number(rebuild.queueRebuildEligibleCount || rebuild.reviewNeedsMoreEvidenceCount || 0);
       stats.completedAt = now;
@@ -6502,20 +6521,19 @@ function isOfficialEvidenceEnrichmentTarget_(reviewRow, sourceByKey) {
   if (String(sourceItem.row.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown) return { ok: false, stale: false, reasonCode: 'source_delivery_unknown' };
   const sourceReference = String(row.sourceReference || sourceItem.row.sourceReference || '').trim();
   const sourceReferenceOnSource = String(sourceItem.row.sourceReference || '').trim();
-  if (!sourceReferenceOnSource) return { ok: false, stale: false, reasonCode: 'source_reference_missing_on_source' };
-  if (!String(row.sourceReference || '').trim()) return { ok: false, stale: false, reasonCode: 'source_reference_missing_on_review' };
-  if (sourceReferenceOnSource !== String(row.sourceReference || '').trim()) return { ok: false, stale: true, reasonCode: 'source_reference_mismatch' };
-  if (!sourceReference || !validateOfficialEvidenceUrl_(sourceReference).ok) return { ok: false, stale: false, reasonCode: 'source_reference_not_safety_verified' };
-  const sourceTypeValue = String(sourceItem.row.sourceType || row.sourceType || '').trim();
-  const sourceHash = String(sourceItem.row.sourceReferenceHash || (sourceTypeValue && sourceReferenceOnSource ? buildGmailSalesSourceReferenceHash_(sourceTypeValue, sourceReferenceOnSource) : '')).trim();
-  const reviewHash = String(row.sourceReferenceHash || '').trim();
+	  if (!sourceReferenceOnSource) return { ok: false, stale: false, reasonCode: 'source_reference_missing_on_source' };
+	  if (!String(row.sourceReference || '').trim()) return { ok: false, stale: false, reasonCode: 'source_reference_missing_on_review' };
+	  if (sourceReferenceOnSource !== String(row.sourceReference || '').trim()) return { ok: false, stale: true, reasonCode: 'source_reference_mismatch' };
+	  const sourceTypeValue = String(sourceItem.row.sourceType || row.sourceType || '').trim();
+	  const sourceHash = String(sourceItem.row.sourceReferenceHash || (sourceTypeValue && sourceReferenceOnSource ? buildGmailSalesSourceReferenceHash_(sourceTypeValue, sourceReferenceOnSource) : '')).trim();
+	  const reviewHash = String(row.sourceReferenceHash || '').trim();
   if (!sourceHash) return { ok: false, stale: false, reasonCode: 'source_reference_hash_missing_on_source' };
   if (!reviewHash) return { ok: false, stale: false, reasonCode: 'source_reference_hash_missing_on_review' };
   if (sourceHash !== reviewHash) return { ok: false, stale: true, reasonCode: 'source_reference_hash_mismatch' };
-  if (!String(row.sourceType || sourceItem.row.sourceType || '').trim()) return { ok: false, stale: false, reasonCode: 'source_type_missing' };
-  if (!isSupportedOfficialEvidenceSourceType_(sourceTypeValue)) return { ok: false, stale: false, reasonCode: 'unsupported_source_type' };
-  const attestation = inspectGmailSalesSourceVerificationAttestation_(sourceItem.row, row);
-  if (!attestation.ok) return { ok: false, stale: false, reasonCode: attestation.reasonCode || 'source_reference_not_current', sourceItem };
+	  if (!String(row.sourceType || sourceItem.row.sourceType || '').trim()) return { ok: false, stale: false, reasonCode: 'source_type_missing' };
+	  if (!isSupportedOfficialEvidenceSourceType_(sourceTypeValue)) return { ok: false, stale: false, reasonCode: 'unsupported_source_type' };
+	  const attestation = evaluateCommittedSourceVerificationAttestation_(sourceItem.row, row);
+	  if (!attestation.ok) return { ok: false, stale: false, reasonCode: attestation.reasonCode || 'source_reference_not_current', sourceItem, verification: attestation };
   const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
   if (!queue.include) return { ok: false, stale: false, reasonCode: queue.reason || 'unknown_enrichment_ineligibility' };
   if (!String(row.sourceRowDigest || '').trim()) return { ok: false, stale: true, reasonCode: 'source_row_digest_missing', sourceItem };
@@ -6531,40 +6549,123 @@ function truthyAttestationValue_(value) {
   return value === true || String(value || '').toLowerCase() === 'true' || String(value || '').toLowerCase() === 'verified';
 }
 
+function normalizeBooleanCell_(value) {
+  const text = String(value === true ? 'true' : value || '').trim().toLowerCase();
+  return text === 'true' || text === 'verified' || text === 'yes' || text === '1';
+}
+
+function normalizeVerificationStatus_(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeValidatorVersion_(value) {
+  return String(value || '').trim();
+}
+
+function normalizeVerifiedAt_(value) {
+  return String(value || '').trim();
+}
+
 function verificationFieldPresent_(row, field) {
   return String((row || {})[field] || '').trim() !== '';
 }
 
-function inspectGmailSalesSourceVerificationAttestation_(sourceRow, reviewRow) {
+function evaluateCommittedSourceVerificationAttestation_(sourceRow, reviewRow) {
   const source = sourceRow || {};
   const review = reviewRow || {};
+  const reasonCodes = [];
+  const sourceReference = String(source.sourceReference || '').trim();
+  const reviewReference = String(review.sourceReference || '').trim();
+  const sourceType = String(source.sourceType || review.sourceType || '').trim();
+  const reviewType = String(review.sourceType || '').trim();
+  const sourceHash = String(source.sourceReferenceHash || (sourceType && sourceReference ? buildGmailSalesSourceReferenceHash_(sourceType, sourceReference) : '')).trim();
+  const reviewHash = String(review.sourceReferenceHash || '').trim();
   const sourceDigest = String(source.sourceVerificationDigest || '').trim();
   const reviewDigest = String(review.sourceVerificationDigest || '').trim();
-  if (!verificationFieldPresent_(source, 'sourceSafetyVerified')) return { ok: false, reasonCode: 'source_safety_attestation_missing' };
-  if (!verificationFieldPresent_(review, 'sourceSafetyVerified')) return { ok: false, reasonCode: 'review_safety_attestation_missing' };
-  if (!truthyAttestationValue_(source.sourceSafetyVerified)) return { ok: false, reasonCode: 'source_safety_attestation_false' };
-  if (!truthyAttestationValue_(review.sourceSafetyVerified)) return { ok: false, reasonCode: 'review_safety_attestation_false' };
-  if (!verificationFieldPresent_(source, 'sourceIdentityVerified')) return { ok: false, reasonCode: 'source_identity_attestation_missing' };
-  if (!verificationFieldPresent_(review, 'sourceIdentityVerified')) return { ok: false, reasonCode: 'review_identity_attestation_missing' };
-  if (!truthyAttestationValue_(source.sourceIdentityVerified)) return { ok: false, reasonCode: 'source_identity_attestation_false' };
-  if (!truthyAttestationValue_(review.sourceIdentityVerified)) return { ok: false, reasonCode: 'review_identity_attestation_false' };
-  if (String(source.sourceVerificationStatus || '').trim() !== 'verified') return { ok: false, reasonCode: 'source_verification_status_not_verified' };
-  if (String(review.sourceVerificationStatus || '').trim() !== 'verified') return { ok: false, reasonCode: 'review_verification_status_not_verified' };
-  if (String(source.sourceSafetyValidatorVersion || '').trim() !== GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION ||
-      String(review.sourceSafetyValidatorVersion || '').trim() !== GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION) return { ok: false, reasonCode: 'safety_validator_version_stale' };
-  if (String(source.sourceIdentityValidatorVersion || '').trim() !== GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION ||
-      String(review.sourceIdentityValidatorVersion || '').trim() !== GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION) return { ok: false, reasonCode: 'identity_validator_version_stale' };
-  if (String(source.sourceVerificationPolicyVersion || '').trim() !== GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION ||
-      String(review.sourceVerificationPolicyVersion || '').trim() !== GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) return { ok: false, reasonCode: 'verification_policy_version_stale' };
-  if (!String(source.sourceVerifiedAt || '').trim() || !String(review.sourceVerifiedAt || '').trim()) return { ok: false, reasonCode: 'source_verified_at_missing' };
-  if (!sourceDigest || !reviewDigest || sourceDigest !== reviewDigest) return { ok: false, reasonCode: 'source_verification_digest_mismatch' };
+  const result = {
+    referenceBacked: Boolean(sourceReference && reviewReference),
+    referenceMatched: Boolean(sourceReference && reviewReference && sourceReference === reviewReference),
+    hashMatched: Boolean(sourceHash && reviewHash && sourceHash === reviewHash),
+    typeSupported: isSupportedOfficialEvidenceSourceType_(sourceType) && (!reviewType || reviewType === sourceType),
+    safetyVerified: false,
+    identityVerified: false,
+    verificationStatusVerified: false,
+    safetyValidatorCurrent: false,
+    identityValidatorCurrent: false,
+    policyVersionCurrent: false,
+    verifiedAtValid: false,
+    verificationDigestMatched: false,
+    verificationCurrent: false,
+    reasonCodes,
+    reasonCode: ''
+  };
+  if (!sourceReference) reasonCodes.push('source_reference_missing_on_source');
+  if (!reviewReference) reasonCodes.push('source_reference_missing_on_review');
+  if (sourceReference && reviewReference && sourceReference !== reviewReference) reasonCodes.push('source_reference_mismatch');
+  if (!sourceHash) reasonCodes.push('source_reference_hash_missing_on_source');
+  if (!reviewHash) reasonCodes.push('source_reference_hash_missing_on_review');
+  if (sourceHash && reviewHash && sourceHash !== reviewHash) reasonCodes.push('source_reference_hash_mismatch');
+  if (!sourceType) reasonCodes.push('source_type_missing');
+  if (sourceType && !result.typeSupported) reasonCodes.push('unsupported_source_type');
+  if (!verificationFieldPresent_(source, 'sourceSafetyVerified')) reasonCodes.push('source_safety_attestation_missing');
+  if (!verificationFieldPresent_(review, 'sourceSafetyVerified')) reasonCodes.push('review_safety_attestation_missing');
+  result.safetyVerified = normalizeBooleanCell_(source.sourceSafetyVerified) && normalizeBooleanCell_(review.sourceSafetyVerified);
+  if (verificationFieldPresent_(source, 'sourceSafetyVerified') && !normalizeBooleanCell_(source.sourceSafetyVerified)) reasonCodes.push('source_safety_attestation_false');
+  if (verificationFieldPresent_(review, 'sourceSafetyVerified') && !normalizeBooleanCell_(review.sourceSafetyVerified)) reasonCodes.push('review_safety_attestation_false');
+  if (!verificationFieldPresent_(source, 'sourceIdentityVerified')) reasonCodes.push('source_identity_attestation_missing');
+  if (!verificationFieldPresent_(review, 'sourceIdentityVerified')) reasonCodes.push('review_identity_attestation_missing');
+  result.identityVerified = normalizeBooleanCell_(source.sourceIdentityVerified) && normalizeBooleanCell_(review.sourceIdentityVerified);
+  if (verificationFieldPresent_(source, 'sourceIdentityVerified') && !normalizeBooleanCell_(source.sourceIdentityVerified)) reasonCodes.push('source_identity_attestation_false');
+  if (verificationFieldPresent_(review, 'sourceIdentityVerified') && !normalizeBooleanCell_(review.sourceIdentityVerified)) reasonCodes.push('review_identity_attestation_false');
+  result.verificationStatusVerified = normalizeVerificationStatus_(source.sourceVerificationStatus) === 'verified' && normalizeVerificationStatus_(review.sourceVerificationStatus) === 'verified';
+  if (verificationFieldPresent_(source, 'sourceVerificationStatus') && normalizeVerificationStatus_(source.sourceVerificationStatus) !== 'verified') reasonCodes.push('source_verification_status_not_verified');
+  if (verificationFieldPresent_(review, 'sourceVerificationStatus') && normalizeVerificationStatus_(review.sourceVerificationStatus) !== 'verified') reasonCodes.push('review_verification_status_not_verified');
+  if (!verificationFieldPresent_(source, 'sourceVerificationStatus')) reasonCodes.push('source_verification_status_not_verified');
+  if (!verificationFieldPresent_(review, 'sourceVerificationStatus')) reasonCodes.push('review_verification_status_not_verified');
+  result.safetyValidatorCurrent = normalizeValidatorVersion_(source.sourceSafetyValidatorVersion) === GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION &&
+    normalizeValidatorVersion_(review.sourceSafetyValidatorVersion) === GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION;
+  if (!result.safetyValidatorCurrent) reasonCodes.push('safety_validator_version_stale');
+  result.identityValidatorCurrent = normalizeValidatorVersion_(source.sourceIdentityValidatorVersion) === GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION &&
+    normalizeValidatorVersion_(review.sourceIdentityValidatorVersion) === GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION;
+  if (!result.identityValidatorCurrent) reasonCodes.push('identity_validator_version_stale');
+  result.policyVersionCurrent = normalizeValidatorVersion_(source.sourceVerificationPolicyVersion) === GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION &&
+    normalizeValidatorVersion_(review.sourceVerificationPolicyVersion) === GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION;
+  if (!result.policyVersionCurrent) reasonCodes.push('verification_policy_version_stale');
+  result.verifiedAtValid = Boolean(normalizeVerifiedAt_(source.sourceVerifiedAt) && normalizeVerifiedAt_(review.sourceVerifiedAt));
+  if (!result.verifiedAtValid) reasonCodes.push('source_verified_at_missing');
+  result.verificationDigestMatched = Boolean(sourceDigest && reviewDigest && sourceDigest === reviewDigest);
+  if (!result.verificationDigestMatched) reasonCodes.push('source_verification_digest_mismatch');
   const expected = computeGmailSalesSourceVerificationDigest_(source, {
-    sourceReferenceHash: String(source.sourceReferenceHash || review.sourceReferenceHash || '').trim(),
-    sourceType: String(source.sourceType || review.sourceType || '').trim(),
-    sourceVerifiedAt: String(source.sourceVerifiedAt || '').trim()
+    sourceReferenceHash: sourceHash || reviewHash,
+    sourceType,
+    sourceVerifiedAt: normalizeVerifiedAt_(source.sourceVerifiedAt)
   });
-  if (expected && sourceDigest !== expected) return { ok: false, reasonCode: 'source_verification_digest_mismatch' };
-  return { ok: true, reasonCode: '' };
+  if (expected && sourceDigest && sourceDigest !== expected && reasonCodes.indexOf('source_verification_digest_mismatch') === -1) reasonCodes.push('source_verification_digest_mismatch');
+  result.verificationCurrent = result.referenceBacked &&
+    result.referenceMatched &&
+    result.hashMatched &&
+    result.typeSupported &&
+    result.safetyVerified &&
+    result.identityVerified &&
+    result.verificationStatusVerified &&
+    result.safetyValidatorCurrent &&
+    result.identityValidatorCurrent &&
+    result.policyVersionCurrent &&
+    result.verifiedAtValid &&
+    result.verificationDigestMatched &&
+    (!expected || sourceDigest === expected);
+  result.ok = result.verificationCurrent;
+  result.reasonCode = result.ok ? '' : (reasonCodes[0] || 'source_reference_not_current');
+  return result;
+}
+
+function inspectGmailSalesSourceVerificationAttestation_(sourceRow, reviewRow) {
+  const evaluation = evaluateCommittedSourceVerificationAttestation_(sourceRow, reviewRow);
+  return {
+    ok: evaluation.ok,
+    reasonCode: evaluation.reasonCode,
+    reasonCodes: evaluation.reasonCodes
+  };
 }
 
 function classifyOfficialEvidenceEnrichmentBlockedReason_(stats) {
@@ -6602,13 +6703,39 @@ function hasOfficialEvidenceAttestationReason_(reasons) {
 
 function recommendOfficialEvidenceEnrichmentNextAction_(stats) {
   const reasons = stats.enrichmentEligibilityReasonCounts || {};
-  if (Number(stats.evidenceEnrichmentEligibleCount || 0) > 0) return 'run_official_evidence_enrichment';
   if (Number(reasons.source_reference_mismatch || 0) + Number(reasons.source_reference_hash_mismatch || 0) + Number(stats.sourceReferenceHashMismatchCount || 0) > 0) return 'inspect_source_review_reference_mismatch';
-  if (hasOfficialEvidenceAttestationReason_(reasons)) return 'repair_committed_source_verification_attestation';
-  if (Number(reasons.source_row_digest_mismatch || 0) + Number(reasons.source_row_digest_missing || 0) > 0) return 'repair_committed_source_reference_digest';
-  if (Number(stats.sourceReferencePresentCount || 0) === 0) return 'run_single_candidate_source_discovery';
+  if (Number(stats.referenceAndHashMatchedCandidateCount || 0) >= 1 && hasOfficialEvidenceAttestationReason_(reasons)) return 'repair_committed_source_verification_attestation';
+  if (Number(stats.verifiedSourceReferenceCandidateCount || 0) >= 1 &&
+      Number(reasons.source_row_digest_mismatch || 0) + Number(reasons.source_row_digest_missing || 0) + Number(reasons.source_evidence_digest_mismatch || 0) + Number(reasons.source_evidence_digest_missing || 0) > 0) return 'repair_committed_source_reference_digest';
+  if (Number(stats.evidenceEnrichmentEligibleCount || 0) > 0) return 'run_official_evidence_enrichment';
+  if (Number(stats.sourceBackedReferenceCandidateCount || 0) === 0 && Number(stats.referenceAndHashMatchedCandidateCount || 0) === 0) return 'run_single_candidate_source_discovery';
+  if (Number(reasons.source_suppressed || 0) + Number(reasons.source_do_not_contact || 0) + Number(reasons.source_already_sent || 0) + Number(reasons.source_delivery_unknown || 0) + Number(reasons.source_private_personal_contact || 0) + Number(reasons.source_guessed_contact || 0) + Number(reasons.source_solicitation_restricted || 0) > 0) return 'inspect_enrichment_policy_blocks';
   if (Number(stats.sourceReviewJoinFailedCount || 0) > 0 && Number(stats.referenceAndHashMatchedCandidateCount || 0) === 0) return 'inspect_source_review_join';
-  return 'run_single_candidate_source_discovery';
+  return 'inspect_enrichment_policy_blocks';
+}
+
+function finalizeOfficialEvidenceEnrichmentReadinessStats_(stats) {
+  const reasons = stats.enrichmentEligibilityReasonCounts || {};
+  const reasonTotal = Object.keys(reasons).reduce((sum, key) => sum + Number(reasons[key] || 0), 0);
+  stats.evidenceEnrichmentTargetCount = Number(stats.evidenceEnrichmentEligibleCount || 0);
+  stats.evaluatedEnrichmentCandidateCount = Number(stats.evidenceEnrichmentEligibleCount || 0) + Number(stats.evidenceEnrichmentIneligibleCount || 0);
+  stats.enrichmentEligibilityReasonTotalCount = reasonTotal;
+  stats.verificationEligibilityInvariantValid = !(Number(stats.verificationAttestationCandidateCount || 0) >= 1 &&
+    Number(stats.verifiedSourceReferenceCandidateCount || 0) >= 1 &&
+    Number(reasons.source_reference_not_safety_verified || 0) > 0);
+  const recommended = recommendOfficialEvidenceEnrichmentNextAction_(stats);
+  stats.verifiedCandidateRoutingInvariantValid = !(Number(stats.verifiedSourceReferenceCandidateCount || 0) >= 1 && recommended === 'run_single_candidate_source_discovery');
+  stats.discoveryRoutingInvariantValid = !((Number(stats.sourceBackedReferenceCandidateCount || 0) > 0 ||
+    Number(stats.referenceAndHashMatchedCandidateCount || 0) > 0 ||
+    Number(stats.verifiedSourceReferenceCandidateCount || 0) > 0) &&
+    recommended === 'run_single_candidate_source_discovery');
+  stats.eligibilityReasonInvariantValid = reasonTotal === Number(stats.evidenceEnrichmentIneligibleCount || 0);
+  stats.enrichmentReadinessInvariantValid = Boolean(stats.verificationEligibilityInvariantValid &&
+    stats.verifiedCandidateRoutingInvariantValid &&
+    stats.eligibilityReasonInvariantValid &&
+    stats.discoveryRoutingInvariantValid);
+  stats.recommendedNextAction = stats.enrichmentReadinessInvariantValid ? recommended : 'repair_enrichment_eligibility_logic';
+  return stats;
 }
 
 function inspectGmailSalesOfficialEvidenceEnrichmentReadiness() {
@@ -6619,16 +6746,17 @@ function inspectGmailSalesOfficialEvidenceEnrichmentReadiness() {
   sourceData.items.forEach((item) => {
     sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
   });
-  const stats = emptyOfficialEvidenceEnrichmentStats_();
-  accumulateOfficialEvidenceEnrichmentReadinessStats_(stats, sourceData, reviewData, sourceByKey);
-  const ai = inspectGmailSalesAiProviderConfiguration();
-  const result = Object.assign({
+	  const stats = emptyOfficialEvidenceEnrichmentStats_();
+	  accumulateOfficialEvidenceEnrichmentReadinessStats_(stats, sourceData, reviewData, sourceByKey);
+	  finalizeOfficialEvidenceEnrichmentReadinessStats_(stats);
+	  const ai = inspectGmailSalesAiProviderConfiguration();
+	  const result = Object.assign({
     event: 'gmail_sales_official_evidence_enrichment_readiness',
     mode: 'read_only',
     sourceSheetPresent: Boolean(context.sourceSheet),
     reviewSheetPresent: Boolean(context.reviewSheet),
-    enrichmentReadinessValid: Number(stats.evidenceEnrichmentEligibleCount || 0) > 0,
-	    recommendedNextAction: recommendOfficialEvidenceEnrichmentNextAction_(stats),
+	    enrichmentReadinessValid: Number(stats.evidenceEnrichmentEligibleCount || 0) > 0 && Boolean(stats.enrichmentReadinessInvariantValid),
+	    recommendedNextAction: stats.recommendedNextAction,
     aiEnabled: Boolean(ai.aiEnabled),
     aiProviderConfigured: Boolean(ai.providerConfigured),
     aiModelConfigured: Boolean(ai.modelConfigured),
@@ -6653,14 +6781,14 @@ function accumulateOfficialEvidenceEnrichmentReadinessStats_(stats, sourceData, 
 	    if (String((item.row || {}).sourceReferenceHash || '').trim()) stats.sourceReferenceHashPresentCount += 1;
 	    if (String((item.row || {}).sourceType || '').trim()) stats.sourceTypePresentCount += 1;
 	    if (verificationFieldPresent_(item.row, 'sourceSafetyVerified')) stats.sourceSafetyVerifiedPresentCount += 1;
-	    if (truthyAttestationValue_((item.row || {}).sourceSafetyVerified)) stats.sourceSafetyVerifiedTrueCount += 1;
-	    if (verificationFieldPresent_(item.row, 'sourceIdentityVerified')) stats.sourceIdentityVerifiedPresentCount += 1;
-	    if (truthyAttestationValue_((item.row || {}).sourceIdentityVerified)) stats.sourceIdentityVerifiedTrueCount += 1;
-	    if (String((item.row || {}).sourceVerificationStatus || '').trim() === 'verified') stats.sourceVerificationStatusVerifiedCount += 1;
-	    if (String((item.row || {}).sourceSafetyValidatorVersion || '').trim() === GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION) stats.sourceSafetyValidatorVersionCurrentCount += 1;
-	    if (String((item.row || {}).sourceIdentityValidatorVersion || '').trim() === GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION) stats.sourceIdentityValidatorVersionCurrentCount += 1;
-	    if (String((item.row || {}).sourceVerificationPolicyVersion || '').trim() === GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) stats.sourceVerificationPolicyVersionCurrentCount += 1;
-	    if (String((item.row || {}).sourceVerifiedAt || '').trim()) stats.sourceVerifiedAtPresentCount += 1;
+		    if (normalizeBooleanCell_((item.row || {}).sourceSafetyVerified)) stats.sourceSafetyVerifiedTrueCount += 1;
+		    if (verificationFieldPresent_(item.row, 'sourceIdentityVerified')) stats.sourceIdentityVerifiedPresentCount += 1;
+		    if (normalizeBooleanCell_((item.row || {}).sourceIdentityVerified)) stats.sourceIdentityVerifiedTrueCount += 1;
+		    if (normalizeVerificationStatus_((item.row || {}).sourceVerificationStatus) === 'verified') stats.sourceVerificationStatusVerifiedCount += 1;
+		    if (normalizeValidatorVersion_((item.row || {}).sourceSafetyValidatorVersion) === GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION) stats.sourceSafetyValidatorVersionCurrentCount += 1;
+		    if (normalizeValidatorVersion_((item.row || {}).sourceIdentityValidatorVersion) === GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION) stats.sourceIdentityValidatorVersionCurrentCount += 1;
+		    if (normalizeValidatorVersion_((item.row || {}).sourceVerificationPolicyVersion) === GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) stats.sourceVerificationPolicyVersionCurrentCount += 1;
+		    if (normalizeVerifiedAt_((item.row || {}).sourceVerifiedAt)) stats.sourceVerifiedAtPresentCount += 1;
 	  });
 	  (reviewData.items || []).forEach((item) => {
 	    const row = item.row || {};
@@ -6670,10 +6798,10 @@ function accumulateOfficialEvidenceEnrichmentReadinessStats_(stats, sourceData, 
 	    }
 	    if (String(row.sourceReferenceHash || '').trim()) stats.reviewSourceReferenceHashPresentCount += 1;
 	    if (verificationFieldPresent_(row, 'sourceSafetyVerified')) stats.reviewSafetyVerifiedPresentCount += 1;
-	    if (truthyAttestationValue_(row.sourceSafetyVerified)) stats.reviewSafetyVerifiedTrueCount += 1;
+	    if (normalizeBooleanCell_(row.sourceSafetyVerified)) stats.reviewSafetyVerifiedTrueCount += 1;
 	    if (verificationFieldPresent_(row, 'sourceIdentityVerified')) stats.reviewIdentityVerifiedPresentCount += 1;
-	    if (truthyAttestationValue_(row.sourceIdentityVerified)) stats.reviewIdentityVerifiedTrueCount += 1;
-	    if (String(row.sourceVerificationStatus || '').trim() === 'verified') stats.reviewVerificationStatusVerifiedCount += 1;
+	    if (normalizeBooleanCell_(row.sourceIdentityVerified)) stats.reviewIdentityVerifiedTrueCount += 1;
+	    if (normalizeVerificationStatus_(row.sourceVerificationStatus) === 'verified') stats.reviewVerificationStatusVerifiedCount += 1;
 	    if (String(row.sourceRowDigest || '').trim()) stats.sourceRowDigestPresentCount += 1;
 	    const validation = isOfficialEvidenceEnrichmentTarget_(row, sourceByKey);
 	    stats.sourceReviewJoinAttemptCount += 1;
@@ -6698,7 +6826,7 @@ function accumulateOfficialEvidenceEnrichmentReadinessStats_(stats, sourceData, 
 	        stats.sourceReferenceHashMatchCount += 1;
 	        if (referenceBacked) {
 	          stats.referenceAndHashMatchedCandidateCount += 1;
-	          const attestation = inspectGmailSalesSourceVerificationAttestation_(sourceItem.row, row);
+	          const attestation = evaluateCommittedSourceVerificationAttestation_(sourceItem.row, row);
 	          if (String(sourceItem.row.sourceVerificationDigest || '').trim() && String(row.sourceVerificationDigest || '').trim()) {
 	            if (String(sourceItem.row.sourceVerificationDigest || '').trim() === String(row.sourceVerificationDigest || '').trim()) stats.sourceVerificationDigestMatchCount += 1;
 	            else stats.sourceVerificationDigestMismatchCount += 1;
@@ -6979,6 +7107,8 @@ function repairGmailSalesCommittedSourceVerificationAttestationOnce() {
 
 function buildCandidateEvidencePackage_(sourceItem, reviewRow, now, stats) {
   const row = sourceItem.row || {};
+  const verification = evaluateCommittedSourceVerificationAttestation_(row, reviewRow || {});
+  if (!verification.ok) return { ok: false, reasonCode: verification.reasonCode || 'source_reference_not_current' };
   const sourceReference = String(reviewRow.sourceReference || row.sourceReference || row.sourceUrl || row.publicSource || '').trim();
   const urlCheck = validateOfficialEvidenceUrl_(sourceReference);
   if (!urlCheck.ok) return { ok: false, reasonCode: urlCheck.reasonCode || 'no_source_reference' };
