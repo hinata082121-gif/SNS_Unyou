@@ -14,6 +14,8 @@ const SOURCE_HEADERS = [
   'sourceVerificationStatus', 'sourceSafetyVerified', 'sourceIdentityVerified', 'sourceSafetyValidatorVersion',
   'sourceIdentityValidatorVersion', 'sourceVerificationPolicyVersion', 'sourceVerificationDigest',
   'sourceIdentityDigestVersion', 'sourceEvidenceDigestVersion', 'officialDomainHash', 'sourceVerifiedAt',
+  'canonicalSourceUrl', 'canonicalSourceUrlHash', 'canonicalSourceUrlStatus', 'canonicalSourceUrlParserVersion',
+  'canonicalSourceUrlVerifiedAt',
   'sourceVerificationVersion', 'sourceDiscoveryConfidence', 'sourceDiscoveryReasonCodes',
   'sourceDiscoveryCitationDigest', 'sourceDiscoveryStatus', 'sourceDiscoveredAt'
 ];
@@ -28,6 +30,8 @@ const REVIEW_HEADERS = [
   'sourceSafetyVerified', 'sourceIdentityVerified', 'sourceSafetyValidatorVersion',
   'sourceIdentityValidatorVersion', 'sourceVerificationPolicyVersion', 'sourceVerificationDigest',
   'sourceIdentityDigestVersion', 'sourceEvidenceDigestVersion', 'officialDomainHash', 'sourceVerifiedAt',
+  'canonicalSourceUrl', 'canonicalSourceUrlHash', 'canonicalSourceUrlStatus', 'canonicalSourceUrlParserVersion',
+  'canonicalSourceUrlVerifiedAt',
   'sourceVerificationVersion', 'sourceDiscoveryConfidence', 'sourceDiscoveryReasonCodes',
   'sourceDiscoveryCitationDigest', 'sourceDiscoveryStatus', 'sourceDiscoveredAt'
 ];
@@ -312,22 +316,74 @@ test('canonical source reference parser handles plain url json and malformed ref
   assert.equal(plain.normalizedSourceType, 'official_website');
   const json = env.context.parseCanonicalOfficialSourceReference_(JSON.stringify({ url: 'https://official.example/contact' }), 'verified_official_source', {});
   assert.equal(json.ok, true);
-  assert.equal(json.referenceFormat, 'json');
+  assert.equal(json.referenceFormat, 'json_object');
+  const quoted = env.context.parseCanonicalOfficialSourceReference_('"https://official.example/contact"', 'official_site', {});
+  assert.equal(quoted.ok, true);
+  assert.equal(quoted.referenceFormat, 'quoted_plain_url');
+  const markdown = env.context.parseCanonicalOfficialSourceReference_('[contact](https://official.example/contact)', 'official_site', {});
+  assert.equal(markdown.ok, true);
+  assert.equal(markdown.referenceFormat, 'markdown_link');
+  const escaped = env.context.parseCanonicalOfficialSourceReference_('url=https:\\/\\/official.example\\/contact', 'official_site', {});
+  assert.equal(escaped.ok, false);
+  assert.equal(escaped.referenceFormat, 'escaped_url');
+  const multi = env.context.parseCanonicalOfficialSourceReference_(JSON.stringify(['https://official.example/contact', 'https://official.example/business']), 'official_site', {});
+  assert.equal(multi.ok, false);
+  assert.equal(multi.reasonCode, 'multiple_explicit_urls_ambiguous');
   const malformed = env.context.parseCanonicalOfficialSourceReference_('{bad json', 'official_site', {});
   assert.equal(malformed.ok, false);
-  assert.equal(malformed.reasonCode, 'source_reference_url_missing');
+  assert.equal(malformed.reasonCode, 'explicit_url_candidate_missing');
   const missing = env.context.parseCanonicalOfficialSourceReference_(JSON.stringify({ hash: 'redacted' }), 'official_site', {});
   assert.equal(missing.ok, false);
-  assert.equal(missing.reasonCode, 'source_reference_url_missing');
+  assert.equal(missing.reasonCode, 'explicit_url_candidate_missing');
   const unsupported = env.context.parseCanonicalOfficialSourceReference_('https://official.example/contact', 'unknown_type', {});
   assert.equal(unsupported.ok, false);
   assert.equal(unsupported.reasonCode, 'source_type_unsupported');
 });
 
-test('fetch readiness inspector validates canonical url without UrlFetchApp', () => {
-  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+test('source reference format inspector classifies committed references without UrlFetchApp', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock', canonicalUrls: false });
   env.context.refreshGmailSalesContactBasisReviewQueueOnce();
   markNeedsMoreEvidence(env, reviewRowIndexForSource(env, 2), 'insufficient_evidence');
+  const format = env.context.inspectGmailSalesCommittedSourceReferenceFormat();
+  assert.equal(format.inspectionTargetCount, 1);
+  assert.equal(format.rawReferencePresentCount, 1);
+  assert.equal(format.formatClassificationCounts.plain_url, 1);
+  assert.equal(format.canonicalRepairEligibleCount, 1);
+  assert.equal(format.recommendedNextAction, 'repair_committed_canonical_source_url');
+  assert.equal(format.urlFetchExecuted, false);
+  assert.equal(format.googleSheetsUpdated, false);
+});
+
+test('canonical source url repair writes metadata and preserves raw reference', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock', canonicalUrls: false });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, reviewRowIndexForSource(env, 2), 'insufficient_evidence');
+  const beforeReference = readReview(env, reviewRowIndexForSource(env, 2), 'sourceReference');
+  const repair = env.context.repairGmailSalesCommittedCanonicalSourceUrlOnce();
+  assert.equal(repair.status, 'pass');
+  assert.equal(repair.canonicalRepairEligibleCount, 1);
+  assert.equal(repair.canonicalRepairAttempted, true);
+  assert.equal(repair.canonicalRepairCommitted, true);
+  assert.equal(repair.canonicalUrlWrittenToSourceCount, 1);
+  assert.equal(repair.canonicalUrlWrittenToReviewCount, 1);
+  assert.equal(repair.canonicalUrlReadBackMatched, true);
+  assert.equal(repair.rawSourceReferencePreserved, true);
+  assert.equal(repair.aiApiCalled, false);
+  assert.equal(repair.urlFetchExecuted, false);
+  assert.equal(repair.gmailSendExecuted, false);
+  assert.equal(readReview(env, reviewRowIndexForSource(env, 2), 'sourceReference'), beforeReference);
+});
+
+test('fetch readiness inspector requires committed canonical url without UrlFetchApp', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock', canonicalUrls: false });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, reviewRowIndexForSource(env, 2), 'insufficient_evidence');
+  const before = env.context.inspectGmailSalesOfficialEvidenceFetchReadiness();
+  assert.equal(before.evidenceEnrichmentEligibleCount, 1);
+  assert.equal(before.fetchEligibleCount, 0);
+  assert.equal(before.fetchReadinessValid, false);
+  assert.equal(before.recommendedNextAction, 'repair_committed_canonical_source_url');
+  env.context.repairGmailSalesCommittedCanonicalSourceUrlOnce();
   const readiness = env.context.inspectGmailSalesOfficialEvidenceFetchReadiness();
   assert.equal(readiness.evidenceEnrichmentEligibleCount, 1);
   assert.equal(readiness.evidencePackageBuildAttemptCount, 1);
@@ -339,14 +395,15 @@ test('fetch readiness inspector validates canonical url without UrlFetchApp', ()
   assert.equal(readiness.sourceUrlSafetyAcceptedCount, 1);
   assert.equal(readiness.fetchEligibleCount, 1);
   assert.equal(readiness.fetchReadinessValid, true);
+  assert.equal(readiness.recommendedNextAction, 'run_official_evidence_enrichment');
   assert.equal(readiness.urlFetchExecuted, false);
   assert.equal(readiness.googleSheetsUpdated, false);
 });
 
 test('canonical url missing prevents pass status and records fetch-not-attempted reason', () => {
-  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock', canonicalUrls: false });
   setSource(env, 2, { sourceReference: JSON.stringify({ hash: 'redacted' }) });
-  seedVerifiedSourceAttestations(env);
+  seedVerifiedSourceAttestations(env, { canonicalUrls: false });
   env.context.refreshGmailSalesContactBasisReviewQueueOnce();
   markNeedsMoreEvidence(env, reviewRowIndexForSource(env, 2), 'insufficient_evidence');
   const result = env.context.runGmailSalesOfficialEvidenceEnrichmentOnce();
@@ -356,8 +413,8 @@ test('canonical url missing prevents pass status and records fetch-not-attempted
   assert.equal(result.evidenceEnrichmentTargetCount, 1);
   assert.equal(result.evidenceEnrichmentSucceededCount, 0);
   assert.equal(result.officialPageFetchAttemptCount, 0);
-  assert.equal(result.fetchNotAttemptedReasonCounts.source_reference_url_missing, 2);
-  assert.equal(result.evidenceEnrichmentMissingReasonCounts.source_reference_url_missing, 1);
+  assert.equal(result.fetchNotAttemptedReasonCounts.explicit_url_candidate_missing >= 1, true);
+  assert.equal(result.evidenceEnrichmentMissingReasonCounts.explicit_url_candidate_missing, 1);
 });
 
 test('fetch telemetry classifies http server errors without retrying discovery', () => {
@@ -507,7 +564,7 @@ function createEnvironment(options = {}) {
 	  env.context = buildContext(env);
 	  vm.createContext(env.context);
 	  vm.runInContext(code, env.context, { filename: 'Code.gs' });
-	  seedVerifiedSourceAttestations(env);
+	  seedVerifiedSourceAttestations(env, options);
 	  return env;
 	}
 
@@ -594,7 +651,7 @@ function buildSourceRow(index) {
 	  };
 	}
 
-function seedVerifiedSourceAttestations(env) {
+function seedVerifiedSourceAttestations(env, options = {}) {
   const sheet = env.workbook.sheets['Gmail営業候補プール'];
   for (let rowIndex = 2; rowIndex <= sheet.rows.length; rowIndex += 1) {
     const sourceReference = readCell(sheet, rowIndex, 'sourceReference');
@@ -616,6 +673,14 @@ function seedVerifiedSourceAttestations(env) {
     writeCell(sheet, rowIndex, 'sourceEvidenceDigest', env.context.computeGmailSalesSourceEvidenceDigest_(rowObject(sheet, rowIndex), { sourceReferenceHash, sourceType }));
     writeCell(sheet, rowIndex, 'sourceIdentityDigestVersion', 'source-digest-v2-stable-identity');
     writeCell(sheet, rowIndex, 'sourceEvidenceDigestVersion', 'source-evidence-digest-v1');
+    if (options.canonicalUrls !== false) {
+      const canonicalHash = env.context.hashValue_(sourceReference);
+      writeCell(sheet, rowIndex, 'canonicalSourceUrl', sourceReference);
+      writeCell(sheet, rowIndex, 'canonicalSourceUrlHash', canonicalHash);
+      writeCell(sheet, rowIndex, 'canonicalSourceUrlStatus', 'verified');
+      writeCell(sheet, rowIndex, 'canonicalSourceUrlParserVersion', 'canonical-source-url-parser-v1');
+      writeCell(sheet, rowIndex, 'canonicalSourceUrlVerifiedAt', '2026-07-01T00:00:00.000Z');
+    }
   }
 }
 

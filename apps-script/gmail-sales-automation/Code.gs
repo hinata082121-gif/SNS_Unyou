@@ -224,6 +224,7 @@ const GMAIL_SALES_GROUNDING_CITATION_SPAN_VALIDATOR_VERSION = 'citation-span-val
 const GMAIL_SALES_GROUNDING_CITATION_PIPELINE_VERSION = 'citation-url-independent-span-v1';
 const GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION = 'grounding-citation-identity-v1';
 const GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION = 'source-verification-policy-v1';
+const GMAIL_SALES_CANONICAL_SOURCE_URL_PARSER_VERSION = 'canonical-source-url-parser-v1';
 const GMAIL_SALES_GROUNDING_MODEL_HEALTH_PROPERTY = 'GMAIL_SALES_GROUNDING_MODEL_HEALTH_JSON';
 const GMAIL_SALES_GROUNDING_DEFAULT_MODEL_CASCADE = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const GMAIL_SALES_GROUNDING_SHUTDOWN_MODEL_PREFIXES = ['gemini-2.0-'];
@@ -247,6 +248,11 @@ const GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS = [
   'evidenceSourceDigest',
   'evidencePackageDigest',
   'sourceEvidenceDigest',
+  'canonicalSourceUrl',
+  'canonicalSourceUrlHash',
+  'canonicalSourceUrlStatus',
+  'canonicalSourceUrlParserVersion',
+  'canonicalSourceUrlVerifiedAt',
   'sourceVerificationStatus',
   'sourceSafetyVerified',
   'sourceIdentityVerified',
@@ -2883,6 +2889,20 @@ function runGmailSalesAiVerificationPhase_() {
       enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
     }
     if (Number(enrichmentReadiness.evidenceEnrichmentEligibleCount || 0) > 0) {
+      const fetchReadiness = inspectGmailSalesOfficialEvidenceFetchReadiness();
+      if (!fetchReadiness.fetchReadinessValid) {
+        if (Number(fetchReadiness.canonicalSourceUrlRepairEligibleCount || 0) === 1) {
+          return repairGmailSalesCommittedCanonicalSourceUrlOnce();
+        }
+        return buildGmailSalesAiContactBasisResult_('gmail_sales_ai_verification_phase', 'blocked', Object.assign({
+          blockedReason: 'canonical_source_url_not_ready',
+          googleSheetsUpdated: false,
+          gmailSendExecuted: false,
+          triggerChanged: false
+        }, fetchReadiness, {
+          recommendedNextAction: fetchReadiness.recommendedNextAction || 'inspect_committed_source_reference_format'
+        }));
+      }
       const enrichment = runGmailSalesOfficialEvidenceEnrichmentOnce();
       if (enrichment.status === 'blocked') return enrichment;
       if (Number(enrichment.evidenceDigestChangedCount || 0) === 0 && Number(enrichment.aiReevaluationEligibleCount || 0) === 0) return enrichment;
@@ -6438,6 +6458,38 @@ function countAiEligibleReviewRows_(items, sourceByKey) {
   return (items || []).filter((item) => isAiEligibleReviewQueueRow_(item.row || {}, sourceByKey)).length;
 }
 
+function canonicalSourceUrlMetadataValid_(row) {
+  const canonicalUrl = String((row || {}).canonicalSourceUrl || '').trim();
+  const canonicalHash = String((row || {}).canonicalSourceUrlHash || '').trim();
+  return Boolean(canonicalUrl &&
+    canonicalHash &&
+    canonicalHash === hashValue_(canonicalUrl) &&
+    String((row || {}).canonicalSourceUrlStatus || '').trim() === 'verified' &&
+    String((row || {}).canonicalSourceUrlParserVersion || '').trim() === GMAIL_SALES_CANONICAL_SOURCE_URL_PARSER_VERSION);
+}
+
+function getCurrentCanonicalSourceUrl_(sourceRow, reviewRow) {
+  const source = sourceRow || {};
+  const review = reviewRow || {};
+  if (canonicalSourceUrlMetadataValid_(review)) {
+    return {
+      ok: true,
+      canonicalUrl: String(review.canonicalSourceUrl || '').trim(),
+      source: 'review_canonical_source_url',
+      canonicalSourceUrlHash: String(review.canonicalSourceUrlHash || '').trim()
+    };
+  }
+  if (canonicalSourceUrlMetadataValid_(source)) {
+    return {
+      ok: true,
+      canonicalUrl: String(source.canonicalSourceUrl || '').trim(),
+      source: 'source_canonical_source_url',
+      canonicalSourceUrlHash: String(source.canonicalSourceUrlHash || '').trim()
+    };
+  }
+  return { ok: false, canonicalUrl: '', source: '', canonicalSourceUrlHash: '' };
+}
+
 function emptyOfficialEvidenceEnrichmentStats_() {
   return {
     evidenceEnrichmentTargetCount: 0,
@@ -6452,6 +6504,10 @@ function emptyOfficialEvidenceEnrichmentStats_() {
 	    sourceReferenceCanonicalizationFailedCount: 0,
 	    canonicalSourceUrlPresentCount: 0,
 	    canonicalSourceUrlMissingCount: 0,
+	    canonicalSourceUrlRepairEligibleCount: 0,
+	    canonicalSourceUrlRepairBlockedReasonCounts: {},
+	    sourceReferenceFormatCounts: {},
+	    canonicalParserStageCounts: {},
 	    sourceTypeSupportedCount: 0,
 	    sourceTypeUnsupportedCount: 0,
 	    sourceUrlSafetyValidationAttemptCount: 0,
@@ -6620,7 +6676,11 @@ function parseCanonicalOfficialSourceReference_(rawReference, sourceType, contex
     reasonCode: '',
     sourceTypeSupported: false,
     sourceTypeFetchSupported: false,
-    sourceTypeNormalizationReason: ''
+    sourceTypeNormalizationReason: '',
+    stage: 'readRawReference',
+    candidateCount: 0,
+    uniqueCandidateCount: 0,
+    formatClassification: ''
   };
   const type = normalizeOfficialEvidenceSourceType_(sourceType);
   result.normalizedSourceType = type.normalizedSourceType;
@@ -6631,38 +6691,126 @@ function parseCanonicalOfficialSourceReference_(rawReference, sourceType, contex
   if (!type.sourceTypeSupported) return Object.assign(result, { reasonCode: 'source_type_unsupported' });
   if (!type.sourceTypeFetchSupported) return Object.assign(result, { reasonCode: 'source_type_fetch_not_supported' });
   const raw = rawReference;
-  if (raw === null || raw === undefined || String(raw).trim() === '') return Object.assign(result, { reasonCode: 'source_reference_missing' });
-  if (typeof raw !== 'string' && typeof raw !== 'number') return Object.assign(result, { reasonCode: 'source_reference_not_string' });
-  const text = String(raw).trim();
-  let urlText = '';
-  if (/^https?:\/\//i.test(text)) {
-    result.referenceFormat = 'plain_url';
-    urlText = text;
-  } else if ((text[0] === '{' && text[text.length - 1] === '}') || (text[0] === '[' && text[text.length - 1] === ']')) {
-    result.referenceFormat = 'json';
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch (error) {
-      return Object.assign(result, { reasonCode: 'source_reference_json_parse_failed' });
-    }
-    urlText = extractUrlFromStructuredOfficialReference_(parsed);
-  } else {
-    result.referenceFormat = 'structured_reference';
-    const match = text.match(/(?:url|sourceReference|sourceUrl|href)\s*[:=]\s*["']?(https?:\/\/[^"'\s,;]+)["']?/i);
-    urlText = match ? match[1] : '';
-  }
-  if (!urlText) return Object.assign(result, { reasonCode: 'source_reference_url_missing' });
-  const check = validateOfficialEvidenceUrl_(urlText);
+  if (raw === null || raw === undefined || String(raw).trim() === '') return Object.assign(result, { reasonCode: 'raw_reference_missing' });
+  if (typeof raw !== 'string' && typeof raw !== 'number') return Object.assign(result, { reasonCode: 'raw_reference_non_string' });
+  const primitive = String(raw);
+  const text = trimUnicodeWhitespace_(primitive);
+  const classification = classifyCommittedSourceReferenceFormat_(text);
+  result.referenceFormat = classification.primary;
+  result.formatClassification = classification.primary;
+  const candidates = extractExplicitOfficialSourceUrlCandidates_(text, classification);
+  result.candidateCount = candidates.length;
+  const unique = [];
+  candidates.forEach((candidate) => {
+    const normalized = normalizeExplicitOfficialUrlCandidate_(candidate);
+    if (normalized && unique.indexOf(normalized) === -1) unique.push(normalized);
+  });
+  result.uniqueCandidateCount = unique.length;
+  if (unique.length === 0) return Object.assign(result, { stage: 'extractExplicitUrlCandidates', reasonCode: 'explicit_url_candidate_missing' });
+  if (unique.length > 1) return Object.assign(result, { stage: 'selectSingleCanonicalUrl', reasonCode: 'multiple_explicit_urls_ambiguous' });
+  const check = validateOfficialEvidenceUrl_(unique[0]);
   if (!check.ok) {
     const mapped = mapOfficialEvidenceUrlValidationReason_(check.reasonCode);
-    return Object.assign(result, { reasonCode: mapped, safetyEligible: false });
+    return Object.assign(result, { stage: 'validateUrlSafety', reasonCode: mapped, safetyEligible: false });
   }
   result.ok = true;
   result.canonicalUrl = check.url;
   result.safetyEligible = true;
+  result.stage = 'selectSingleCanonicalUrl';
   result.reasonCode = '';
   return result;
+}
+
+function trimUnicodeWhitespace_(value) {
+  return String(value || '').replace(/^[\s\uFEFF\u200B\u200C\u200D]+|[\s\uFEFF\u200B\u200C\u200D]+$/g, '');
+}
+
+function classifyCommittedSourceReferenceFormat_(text) {
+  const raw = String(text || '');
+  const trimmed = trimUnicodeWhitespace_(raw);
+  const result = {
+    primary: 'opaque_non_url_string',
+    looksLikeJson: false,
+    looksLikeMarkdownLink: /\[[^\]]+\]\(\s*https?:\/\/[^)]+\)/i.test(trimmed),
+    looksLikeHtmlAnchor: /<a\b[^>]+href\s*=\s*["']https?:\/\//i.test(trimmed),
+    looksLikeEscapedUrl: /https?:\\\/\\\//i.test(trimmed) || /&amp;|&quot;|&#34;/i.test(trimmed),
+    looksLikeMultipleUrlContainer: (trimmed.match(/https?:\/\//gi) || []).length > 1,
+    startsWithQuote: /^["']/.test(trimmed),
+    endsWithQuote: /["']$/.test(trimmed)
+  };
+  result.looksLikeJson = (trimmed[0] === '{' && trimmed[trimmed.length - 1] === '}') || (trimmed[0] === '[' && trimmed[trimmed.length - 1] === ']');
+  if (/^https?:\/\//i.test(trimmed)) result.primary = 'plain_url';
+  else if (/^["']https?:\/\//i.test(trimmed) && /["']$/.test(trimmed)) result.primary = 'quoted_plain_url';
+  else if (result.looksLikeJson && trimmed[0] === '{') result.primary = 'json_object';
+  else if (result.looksLikeJson && trimmed[0] === '[') result.primary = 'json_array';
+  else if (result.looksLikeMarkdownLink) result.primary = 'markdown_link';
+  else if (result.looksLikeHtmlAnchor) result.primary = 'html_anchor';
+  else if (result.looksLikeEscapedUrl) result.primary = 'escaped_url';
+  else if (result.looksLikeMultipleUrlContainer) result.primary = 'multi_url_container';
+  else if (/(?:url|sourceReference|sourceUrl|href|canonicalUrl|citationUrl)\s*[:=]/i.test(trimmed)) result.primary = 'structured_reference';
+  return result;
+}
+
+function extractExplicitOfficialSourceUrlCandidates_(text, classification) {
+  const raw = String(text || '');
+  const candidates = [];
+  const add = (value) => {
+    const normalized = normalizeExplicitOfficialUrlCandidate_(value);
+    if (normalized) candidates.push(normalized);
+  };
+  if (classification.primary === 'plain_url' || classification.primary === 'quoted_plain_url') {
+    add(removeSafeOuterQuotes_(raw));
+    return candidates;
+  }
+  if (classification.looksLikeJson) {
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      return candidates;
+    }
+    extractUrlCandidatesFromKnownStructuredReference_(parsed).forEach(add);
+    return candidates;
+  }
+  const markdown = raw.match(/\[[^\]]+\]\(\s*(https?:\/\/[^)\s]+)\s*\)/i);
+  if (markdown) add(markdown[1]);
+  const anchor = raw.match(/<a\b[^>]+href\s*=\s*["'](https?:\/\/[^"']+)["']/i);
+  if (anchor) add(anchor[1]);
+  const structured = raw.match(/(?:url|sourceReference|sourceUrl|href|canonicalUrl|citationUrl)\s*[:=]\s*["']?(https?:\/\/[^"'\s,;<>]+)["']?/i);
+  if (structured) add(structured[1]);
+  return candidates;
+}
+
+function extractUrlCandidatesFromKnownStructuredReference_(value) {
+  const candidates = [];
+  const add = (candidate) => {
+    if (typeof candidate === 'string') candidates.push(candidate);
+  };
+  if (typeof value === 'string') {
+    add(value);
+  } else if (Array.isArray(value)) {
+    value.forEach((item) => extractUrlCandidatesFromKnownStructuredReference_(item).forEach(add));
+  } else if (value && typeof value === 'object') {
+    ['url', 'sourceUrl', 'canonicalUrl', 'sourceReference', 'referenceUrl', 'citationUrl', 'href'].forEach((key) => {
+      extractUrlCandidatesFromKnownStructuredReference_(value[key]).forEach(add);
+    });
+  }
+  return candidates;
+}
+
+function removeSafeOuterQuotes_(value) {
+  let text = trimUnicodeWhitespace_(value);
+  if ((text[0] === '"' && text[text.length - 1] === '"') || (text[0] === "'" && text[text.length - 1] === "'")) {
+    text = text.slice(1, -1);
+  }
+  return trimUnicodeWhitespace_(text);
+}
+
+function normalizeExplicitOfficialUrlCandidate_(value) {
+  let text = removeSafeOuterQuotes_(String(value || ''));
+  text = text.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/\\\//g, '/');
+  text = text.replace(/[)\].,、。]+$/g, '');
+  return /^https?:\/\//i.test(text) ? text : '';
 }
 
 function extractUrlFromStructuredOfficialReference_(value) {
@@ -6937,21 +7085,255 @@ function inspectGmailSalesOfficialEvidenceFetchReadiness() {
     if (!validation.ok) return;
     buildCandidateEvidencePackage_(validation.sourceItem, item.row || {}, new Date().toISOString(), stats, { dryRun: true });
   });
-  const result = Object.assign({
+  const reasonTotal = Object.keys(stats.fetchEligibilityReasonCounts || {}).reduce((sum, key) => sum + Number(stats.fetchEligibilityReasonCounts[key] || 0), 0);
+  stats.fetchRoutingInvariantValid = !(Number(stats.fetchEligibleCount || 0) === 0 && Number(stats.officialPageFetchPlannedCount || 0) > 0);
+  stats.canonicalUrlInvariantValid = !(Number(stats.canonicalSourceUrlPresentCount || 0) === 0 && Number(stats.fetchEligibleCount || 0) > 0);
+  stats.fetchEligibilityInvariantValid = reasonTotal === Number(stats.fetchIneligibleCount || 0);
+  stats.fetchReasonInvariantValid = !(Number(stats.fetchIneligibleCount || 0) > 0 && reasonTotal === 0);
+  stats.fetchReadinessInvariantValid = Boolean(stats.fetchRoutingInvariantValid &&
+    stats.canonicalUrlInvariantValid &&
+    stats.fetchEligibilityInvariantValid &&
+    stats.fetchReasonInvariantValid);
+  let recommendedNextAction = 'inspect_official_evidence_fetch_readiness';
+  if (!stats.fetchReadinessInvariantValid) recommendedNextAction = 'repair_fetch_readiness_logic';
+  else if (Number(stats.fetchEligibleCount || 0) > 0) recommendedNextAction = 'run_official_evidence_enrichment';
+  else if (Number(stats.canonicalSourceUrlRepairEligibleCount || 0) === 1) recommendedNextAction = 'repair_committed_canonical_source_url';
+  else if (Number(stats.canonicalSourceUrlMissingCount || 0) > 0) recommendedNextAction = 'inspect_committed_source_reference_format';
+  stats.recommendedNextAction = recommendedNextAction;
+  const result = Object.assign({}, stats, {
     event: 'gmail_sales_official_evidence_fetch_readiness',
     mode: 'read_only',
-    fetchReadinessValid: Number(stats.fetchEligibleCount || 0) > 0,
-    recommendedNextAction: Number(stats.fetchEligibleCount || 0) > 0 ? 'run_official_evidence_enrichment' : 'inspect_official_evidence_fetch_readiness',
+    fetchReadinessValid: Number(stats.fetchEligibleCount || 0) > 0 && Boolean(stats.fetchReadinessInvariantValid),
+    recommendedNextAction,
     urlFetchExecuted: false,
     aiApiCalled: false,
     googleSheetsUpdated: false,
     scriptPropertiesUpdated: false,
     gmailSendExecuted: false,
     triggerChanged: false
-  }, stats);
+  });
   logGmailSalesJsonResult_(result);
 	  return result;
 	}
+
+function inspectGmailSalesCommittedSourceReferenceFormat() {
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { headers: [], items: [] };
+  const reviewData = context.reviewSheet ? readSheetObjects_(context.reviewSheet) : { headers: [], items: [] };
+  const sourceByKey = {};
+  sourceData.items.forEach((item) => {
+    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+  });
+  const result = {
+    event: 'gmail_sales_committed_source_reference_format_inspection',
+    mode: 'read_only',
+    inspectionTargetCount: 0,
+    rawReferencePresentCount: 0,
+    rawReferenceValueTypeCounts: {},
+    rawReferenceLengthBucketCounts: {},
+    rawReferenceTrimChangedCount: 0,
+    rawReferenceControlCharacterCount: 0,
+    rawReferenceNewlineCount: 0,
+    startsWithQuoteCount: 0,
+    endsWithQuoteCount: 0,
+    startsWithJsonObjectCount: 0,
+    startsWithJsonArrayCount: 0,
+    markdownLinkLikeCount: 0,
+    htmlAnchorLikeCount: 0,
+    escapedUrlLikeCount: 0,
+    multipleUrlContainerLikeCount: 0,
+    explicitUrlCandidateCount: 0,
+    uniqueUrlCandidateCount: 0,
+    normalizedUrlSyntaxAcceptedCount: 0,
+    urlSafetyAcceptedCount: 0,
+    urlSafetyRejectedCount: 0,
+    canonicalRepairEligibleCount: 0,
+    canonicalRepairBlockedReasonCounts: {},
+    formatClassificationCounts: {},
+    parserStageCounts: {},
+    recommendedNextAction: 'inspect_committed_source_reference_format',
+    urlFetchExecuted: false,
+    aiApiCalled: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    triggerChanged: false
+  };
+  (reviewData.items || []).forEach((item) => {
+    const validation = isOfficialEvidenceEnrichmentTarget_(item.row || {}, sourceByKey);
+    if (!validation.ok) return;
+    result.inspectionTargetCount += 1;
+    const sourceRow = (validation.sourceItem || {}).row || {};
+    const rawReference = item.row.sourceReference || sourceRow.sourceReference || '';
+    if (String(rawReference || '').trim()) result.rawReferencePresentCount += 1;
+    incrementCount_(result.rawReferenceValueTypeCounts, rawReference === null ? 'null' : typeof rawReference);
+    const text = String(rawReference || '');
+    const trimmed = trimUnicodeWhitespace_(text);
+    if (text !== trimmed) result.rawReferenceTrimChangedCount += 1;
+    if (/[\u0000-\u001F\u007F]/.test(text)) result.rawReferenceControlCharacterCount += 1;
+    if (/[\r\n]/.test(text)) result.rawReferenceNewlineCount += 1;
+    const length = trimmed.length;
+    incrementCount_(result.rawReferenceLengthBucketCounts, length === 0 ? 'empty' : (length <= 128 ? '1_128' : (length <= 512 ? '129_512' : '513_plus')));
+    const classification = classifyCommittedSourceReferenceFormat_(trimmed);
+    if (classification.startsWithQuote) result.startsWithQuoteCount += 1;
+    if (classification.endsWithQuote) result.endsWithQuoteCount += 1;
+    if (trimmed[0] === '{') result.startsWithJsonObjectCount += 1;
+    if (trimmed[0] === '[') result.startsWithJsonArrayCount += 1;
+    if (classification.looksLikeMarkdownLink) result.markdownLinkLikeCount += 1;
+    if (classification.looksLikeHtmlAnchor) result.htmlAnchorLikeCount += 1;
+    if (classification.looksLikeEscapedUrl) result.escapedUrlLikeCount += 1;
+    if (classification.looksLikeMultipleUrlContainer) result.multipleUrlContainerLikeCount += 1;
+    incrementCount_(result.formatClassificationCounts, classification.primary || 'unknown');
+    const parsed = parseCanonicalOfficialSourceReference_(rawReference, item.row.sourceType || sourceRow.sourceType || '', { sourceRow, reviewRow: item.row || {} });
+    result.explicitUrlCandidateCount += Number(parsed.candidateCount || 0);
+    result.uniqueUrlCandidateCount += Number(parsed.uniqueCandidateCount || 0);
+    incrementCount_(result.parserStageCounts, parsed.stage || 'unknown');
+    if (parsed.ok) {
+      result.normalizedUrlSyntaxAcceptedCount += 1;
+      result.urlSafetyAcceptedCount += 1;
+      if (!getCurrentCanonicalSourceUrl_(sourceRow, item.row || {}).ok) result.canonicalRepairEligibleCount += 1;
+    } else {
+      result.urlSafetyRejectedCount += 1;
+      incrementCount_(result.canonicalRepairBlockedReasonCounts, parsed.reasonCode || 'canonical_parse_failed');
+    }
+  });
+  if (result.canonicalRepairEligibleCount === 1) result.recommendedNextAction = 'repair_committed_canonical_source_url';
+  else if (result.inspectionTargetCount === 0) result.recommendedNextAction = 'inspect_official_evidence_enrichment_readiness';
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function repairGmailSalesCommittedCanonicalSourceUrlOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    return buildGmailSalesAiContactBasisResult_('gmail_sales_committed_canonical_source_url_repair', 'blocked', {
+      blockedReason: 'safe_rest_required',
+      canonicalRepairCommitted: false
+    });
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return buildGmailSalesAiContactBasisResult_('gmail_sales_committed_canonical_source_url_repair', 'blocked', {
+      blockedReason: 'lock_unavailable',
+      canonicalRepairCommitted: false
+    });
+  }
+  try {
+    const context = getGmailSalesContactBasisReviewContext_();
+    if (!context.ok) {
+      return buildGmailSalesAiContactBasisResult_('gmail_sales_committed_canonical_source_url_repair', 'blocked', {
+        blockedReason: context.blockedReason,
+        canonicalRepairCommitted: false
+      });
+    }
+    ensureSheetHeaders_(context.sourceSheet, GMAIL_CONTACT_BASIS_COLUMNS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
+    ensureSheetHeaders_(context.reviewSheet, GMAIL_CONTACT_BASIS_REVIEW_HEADERS.concat(GMAIL_CONTACT_BASIS_AI_AUDIT_COLUMNS));
+    const sourceData = readSheetObjects_(context.sourceSheet);
+    const reviewData = readSheetObjects_(context.reviewSheet);
+    const sourceByKey = {};
+    sourceData.items.forEach((item) => {
+      sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+    });
+    const targets = [];
+    const blockedReasons = {};
+    (reviewData.items || []).forEach((item) => {
+      const validation = isOfficialEvidenceEnrichmentTarget_(item.row || {}, sourceByKey);
+      if (!validation.ok) return;
+      const sourceItem = validation.sourceItem;
+      const current = getCurrentCanonicalSourceUrl_(sourceItem.row || {}, item.row || {});
+      if (current.ok) {
+        incrementCount_(blockedReasons, 'canonical_source_url_already_present');
+        return;
+      }
+      const parsed = parseCanonicalOfficialSourceReference_(item.row.sourceReference || sourceItem.row.sourceReference || '', item.row.sourceType || sourceItem.row.sourceType || '', { sourceRow: sourceItem.row, reviewRow: item.row });
+      if (parsed.ok) targets.push({ sourceItem, reviewItem: item, parsed });
+      else incrementCount_(blockedReasons, parsed.reasonCode || 'canonical_parse_failed');
+    });
+    if (targets.length !== 1) {
+      return buildGmailSalesAiContactBasisResult_('gmail_sales_committed_canonical_source_url_repair', 'blocked', {
+        blockedReason: targets.length === 0 ? 'canonical_repair_target_not_found' : 'canonical_repair_target_ambiguous',
+        canonicalRepairEligibleCount: targets.length,
+        canonicalRepairBlockedReasonCounts: blockedReasons,
+        canonicalRepairCommitted: false,
+        aiApiCalled: false,
+        urlFetchExecuted: false,
+        googleSheetsUpdated: false
+      });
+    }
+    const target = targets[0];
+    const now = new Date().toISOString();
+    const canonicalUrl = target.parsed.canonicalUrl;
+    const canonicalHash = hashValue_(canonicalUrl);
+    const fields = {
+      canonicalSourceUrl: canonicalUrl,
+      canonicalSourceUrlHash: canonicalHash,
+      canonicalSourceUrlStatus: 'verified',
+      canonicalSourceUrlParserVersion: GMAIL_SALES_CANONICAL_SOURCE_URL_PARSER_VERSION,
+      canonicalSourceUrlVerifiedAt: now
+    };
+    const protectedFields = ['sourceReference', 'sourceReferenceHash', 'sourceVerificationDigest', 'contactBasisType', 'businessContactEvidence'];
+    const sourceSnapshot = snapshotFields_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, Object.keys(fields).concat(protectedFields));
+    const reviewSnapshot = snapshotFields_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, Object.keys(fields).concat(protectedFields));
+    Object.keys(fields).forEach((field) => {
+      setCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, field, fields[field]);
+      setCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, field, fields[field]);
+    });
+    const sourceReadBack = {
+      canonicalSourceUrl: getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'canonicalSourceUrl'),
+      canonicalSourceUrlHash: getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'canonicalSourceUrlHash'),
+      canonicalSourceUrlStatus: getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'canonicalSourceUrlStatus'),
+      canonicalSourceUrlParserVersion: getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, 'canonicalSourceUrlParserVersion')
+    };
+    const reviewReadBack = {
+      canonicalSourceUrl: getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'canonicalSourceUrl'),
+      canonicalSourceUrlHash: getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'canonicalSourceUrlHash'),
+      canonicalSourceUrlStatus: getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'canonicalSourceUrlStatus'),
+      canonicalSourceUrlParserVersion: getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, 'canonicalSourceUrlParserVersion')
+    };
+    const readBackMatched = canonicalSourceUrlMetadataValid_(sourceReadBack) && canonicalSourceUrlMetadataValid_(reviewReadBack);
+    if (!readBackMatched) {
+      restoreFields_(context.sourceSheet, sourceData.headers, sourceSnapshot);
+      restoreFields_(context.reviewSheet, reviewData.headers, reviewSnapshot);
+      return buildGmailSalesAiContactBasisResult_('gmail_sales_committed_canonical_source_url_repair', 'blocked', {
+        blockedReason: 'canonical_source_url_read_back_failed',
+        canonicalRepairEligibleCount: 1,
+        canonicalRepairAttempted: true,
+        canonicalRepairCommitted: false,
+        canonicalRepairRolledBack: true,
+        canonicalUrlReadBackMatched: false,
+        googleSheetsUpdated: true,
+        aiApiCalled: false,
+        urlFetchExecuted: false
+      });
+    }
+    const rawSourceReferencePreserved = protectedFields.every((field) =>
+      getCellByHeader_(context.sourceSheet, sourceData.headers, target.sourceItem.rowIndex, field) === sourceSnapshot.values.find((entry) => entry.field === field).value &&
+      getCellByHeader_(context.reviewSheet, reviewData.headers, target.reviewItem.rowIndex, field) === reviewSnapshot.values.find((entry) => entry.field === field).value);
+    return buildGmailSalesAiContactBasisResult_('gmail_sales_committed_canonical_source_url_repair', 'pass', {
+      canonicalRepairEligibleCount: 1,
+      canonicalRepairAttempted: true,
+      canonicalRepairCommitted: true,
+      canonicalRepairRolledBack: false,
+      rawSourceReferencePreserved,
+      sourceReferenceHashPreserved: rawSourceReferencePreserved,
+      verificationAttestationPreserved: rawSourceReferencePreserved,
+      contactBasisChanged: false,
+      canonicalUrlWrittenToSourceCount: 1,
+      canonicalUrlWrittenToReviewCount: 1,
+      canonicalUrlReadBackMatched: true,
+      aiApiCalled: false,
+      urlFetchExecuted: false,
+      googleSheetsUpdated: true,
+      scriptPropertiesUpdated: false,
+      gmailSendExecuted: false,
+      gmailDraftCreated: false,
+      triggerChanged: false
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 function classifyOfficialEvidenceEnrichmentRunStatus_(stats) {
   if (Number(stats.evidenceEnrichmentTargetCount || 0) >= 1 &&
@@ -7333,12 +7715,40 @@ function buildCandidateEvidencePackage_(sourceItem, reviewRow, now, stats, optio
   }
   const rawReference = reviewRow.sourceReference || row.sourceReference || '';
   const sourceType = reviewRow.sourceType || row.sourceType || '';
+  const canonical = getCurrentCanonicalSourceUrl_(row, reviewRow || {});
+  let parsed = {
+    ok: canonical.ok,
+    canonicalUrl: canonical.canonicalUrl,
+    normalizedSourceType: normalizeOfficialEvidenceSourceType_(sourceType).normalizedSourceType,
+    sourceTypeSupported: normalizeOfficialEvidenceSourceType_(sourceType).sourceTypeSupported,
+    safetyEligible: canonical.ok,
+    reasonCode: '',
+    referenceFormat: 'committed_canonical_url',
+    stage: 'readCommittedCanonicalUrl'
+  };
   if (stats) stats.sourceReferenceCanonicalizationAttemptCount = Number(stats.sourceReferenceCanonicalizationAttemptCount || 0) + 1;
-  const parsed = parseCanonicalOfficialSourceReference_(rawReference, sourceType, { sourceRow: row, reviewRow });
+  if (!canonical.ok) {
+    parsed = parseCanonicalOfficialSourceReference_(rawReference, sourceType, { sourceRow: row, reviewRow });
+    if (stats && parsed.ok) {
+      stats.canonicalSourceUrlRepairEligibleCount = Number(stats.canonicalSourceUrlRepairEligibleCount || 0) + 1;
+      incrementCount_(stats.canonicalSourceUrlRepairBlockedReasonCounts, 'repair_required_before_fetch');
+    }
+    if (parsed.ok) {
+      parsed = Object.assign({}, parsed, {
+        ok: false,
+        canonicalUrl: '',
+        reasonCode: 'canonical_source_url_not_committed',
+        safetyEligible: false,
+        stage: 'readCommittedCanonicalUrl'
+      });
+    }
+  }
   if (stats) {
     if (String(rawReference || '').trim()) stats.sourceReferencePresentCount = Number(stats.sourceReferencePresentCount || 0);
     if (parsed.sourceTypeSupported) stats.sourceTypeSupportedCount = Number(stats.sourceTypeSupportedCount || 0) + 1;
     else stats.sourceTypeUnsupportedCount = Number(stats.sourceTypeUnsupportedCount || 0) + 1;
+    incrementCount_(stats.sourceReferenceFormatCounts, parsed.referenceFormat || 'unknown');
+    incrementCount_(stats.canonicalParserStageCounts, parsed.stage || 'unknown');
     stats.sourceUrlSafetyValidationAttemptCount = Number(stats.sourceUrlSafetyValidationAttemptCount || 0) + 1;
     if (parsed.safetyEligible) stats.sourceUrlSafetyAcceptedCount = Number(stats.sourceUrlSafetyAcceptedCount || 0) + 1;
     else stats.sourceUrlSafetyRejectedCount = Number(stats.sourceUrlSafetyRejectedCount || 0) + 1;
@@ -7386,6 +7796,7 @@ function buildCandidateEvidencePackage_(sourceItem, reviewRow, now, stats, optio
       sourceEvidenceDigestMatched: true,
       fetchEligible: true,
       fetchIneligibilityReason: '',
+      canonicalSourceUrl: parsed.canonicalUrl,
       dryRun: true
     };
   }
@@ -7429,8 +7840,9 @@ function buildCandidateEvidencePackage_(sourceItem, reviewRow, now, stats, optio
 	    sourceReferenceHashMatched: true,
 	    sourceIdentityDigestMatched: true,
 	    sourceEvidenceDigestMatched: true,
-	    fetchEligible: true,
-	    fetchIneligibilityReason: '',
+    fetchEligible: true,
+    fetchIneligibilityReason: '',
+    canonicalSourceUrl: parsed.canonicalUrl,
     officialDomainMatched: true,
     evidenceEnrichmentVersion: 'official-evidence-v1',
     evidenceEnrichedAt: now,
@@ -7677,6 +8089,13 @@ function buildOfficialEvidenceSnippets_(text) {
 }
 
 function writeEvidenceEnrichmentAudit_(sheet, headers, rowIndex, packageResult, now) {
+  if (packageResult.canonicalSourceUrl) {
+    setCellByHeader_(sheet, headers, rowIndex, 'canonicalSourceUrl', packageResult.canonicalSourceUrl);
+    setCellByHeader_(sheet, headers, rowIndex, 'canonicalSourceUrlHash', hashValue_(packageResult.canonicalSourceUrl));
+    setCellByHeader_(sheet, headers, rowIndex, 'canonicalSourceUrlStatus', 'verified');
+    setCellByHeader_(sheet, headers, rowIndex, 'canonicalSourceUrlParserVersion', GMAIL_SALES_CANONICAL_SOURCE_URL_PARSER_VERSION);
+    setCellByHeader_(sheet, headers, rowIndex, 'canonicalSourceUrlVerifiedAt', now);
+  }
   setCellByHeader_(sheet, headers, rowIndex, 'evidenceEnrichmentStatus', packageResult.ok ? 'enriched' : 'missing');
   setCellByHeader_(sheet, headers, rowIndex, 'evidenceEnrichmentVersion', packageResult.evidenceEnrichmentVersion || 'official-evidence-v1');
   setCellByHeader_(sheet, headers, rowIndex, 'evidenceEnrichedAt', now);
@@ -12350,6 +12769,11 @@ function buildContactBasisReviewQueueRow_(item, now) {
 	      sourceReference,
 	      sourceReferenceHash,
 	      sourceEvidenceDigest,
+	      canonicalSourceUrl: row.canonicalSourceUrl || '',
+	      canonicalSourceUrlHash: row.canonicalSourceUrlHash || '',
+	      canonicalSourceUrlStatus: row.canonicalSourceUrlStatus || '',
+	      canonicalSourceUrlParserVersion: row.canonicalSourceUrlParserVersion || '',
+	      canonicalSourceUrlVerifiedAt: row.canonicalSourceUrlVerifiedAt || '',
 	      sourceVerificationStatus: row.sourceVerificationStatus || '',
 	      sourceSafetyVerified: row.sourceSafetyVerified || '',
 	      sourceIdentityVerified: row.sourceIdentityVerified || '',
