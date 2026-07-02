@@ -304,6 +304,83 @@ test('canonical verification evaluator normalizes booleans status and versions',
   assert.equal(evaluation.verificationCurrent, true);
 });
 
+test('canonical source reference parser handles plain url json and malformed references', () => {
+  const env = createEnvironment({ sourceCount: 1 });
+  const plain = env.context.parseCanonicalOfficialSourceReference_('https://official.example/contact', 'official_site', {});
+  assert.equal(plain.ok, true);
+  assert.equal(plain.referenceFormat, 'plain_url');
+  assert.equal(plain.normalizedSourceType, 'official_website');
+  const json = env.context.parseCanonicalOfficialSourceReference_(JSON.stringify({ url: 'https://official.example/contact' }), 'verified_official_source', {});
+  assert.equal(json.ok, true);
+  assert.equal(json.referenceFormat, 'json');
+  const malformed = env.context.parseCanonicalOfficialSourceReference_('{bad json', 'official_site', {});
+  assert.equal(malformed.ok, false);
+  assert.equal(malformed.reasonCode, 'source_reference_url_missing');
+  const missing = env.context.parseCanonicalOfficialSourceReference_(JSON.stringify({ hash: 'redacted' }), 'official_site', {});
+  assert.equal(missing.ok, false);
+  assert.equal(missing.reasonCode, 'source_reference_url_missing');
+  const unsupported = env.context.parseCanonicalOfficialSourceReference_('https://official.example/contact', 'unknown_type', {});
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.reasonCode, 'source_type_unsupported');
+});
+
+test('fetch readiness inspector validates canonical url without UrlFetchApp', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, reviewRowIndexForSource(env, 2), 'insufficient_evidence');
+  const readiness = env.context.inspectGmailSalesOfficialEvidenceFetchReadiness();
+  assert.equal(readiness.evidenceEnrichmentEligibleCount, 1);
+  assert.equal(readiness.evidencePackageBuildAttemptCount, 1);
+  assert.equal(readiness.evidencePackageBuildSucceededCount, 1);
+  assert.equal(readiness.sourceReferenceCanonicalizationAttemptCount, 1);
+  assert.equal(readiness.sourceReferenceCanonicalizationSucceededCount, 1);
+  assert.equal(readiness.canonicalSourceUrlPresentCount, 1);
+  assert.equal(readiness.sourceTypeSupportedCount, 1);
+  assert.equal(readiness.sourceUrlSafetyAcceptedCount, 1);
+  assert.equal(readiness.fetchEligibleCount, 1);
+  assert.equal(readiness.fetchReadinessValid, true);
+  assert.equal(readiness.urlFetchExecuted, false);
+  assert.equal(readiness.googleSheetsUpdated, false);
+});
+
+test('canonical url missing prevents pass status and records fetch-not-attempted reason', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+  setSource(env, 2, { sourceReference: JSON.stringify({ hash: 'redacted' }) });
+  seedVerifiedSourceAttestations(env);
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, reviewRowIndexForSource(env, 2), 'insufficient_evidence');
+  const result = env.context.runGmailSalesOfficialEvidenceEnrichmentOnce();
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.blockedReason, 'evidence_fetch_not_attempted');
+  assert.equal(result.recommendedNextAction, 'inspect_official_evidence_fetch_readiness');
+  assert.equal(result.evidenceEnrichmentTargetCount, 1);
+  assert.equal(result.evidenceEnrichmentSucceededCount, 0);
+  assert.equal(result.officialPageFetchAttemptCount, 0);
+  assert.equal(result.fetchNotAttemptedReasonCounts.source_reference_url_missing, 2);
+  assert.equal(result.evidenceEnrichmentMissingReasonCounts.source_reference_url_missing, 1);
+});
+
+test('fetch telemetry classifies http server errors without retrying discovery', () => {
+  const env = createEnvironment({ sourceCount: 1, aiEnabled: true, provider: 'mock' });
+  env.fetchMap.set('https://official.example/contact', {
+    status: 503,
+    headers: { 'Content-Type': 'text/html' },
+    body: ''
+  });
+  env.context.refreshGmailSalesContactBasisReviewQueueOnce();
+  markNeedsMoreEvidence(env, reviewRowIndexForSource(env, 2), 'insufficient_evidence');
+  const result = env.context.runGmailSalesOfficialEvidenceEnrichmentOnce();
+  assert.equal(result.status, 'partial');
+  assert.equal(result.blockedReason, 'official_page_fetch_failed');
+  assert.equal(result.recommendedNextAction, 'inspect_official_page_fetch_failure');
+  assert.equal(result.officialPageFetchAttemptCount, 1);
+  assert.equal(result.officialPageFetchCount, 1);
+  assert.equal(result.officialPageFetchFailureCount, 1);
+  assert.equal(result.officialPageHttpServerErrorCount, 1);
+  assert.equal(result.fetchAttemptedFailureReasonCounts.official_page_fetch_http_error, 1);
+  assert.equal(result.gmailSendExecuted, false);
+});
+
 test('official URL safety blocks localhost private IP and mismatched redirect', () => {
   const env = createEnvironment({ sourceCount: 0 });
   assert.equal(env.context.validateOfficialEvidenceUrl_('http://localhost/contact').reasonCode, 'localhost_rejected');

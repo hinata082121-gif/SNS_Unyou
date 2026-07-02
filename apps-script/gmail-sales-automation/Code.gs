@@ -4652,10 +4652,12 @@ function runGmailSalesOfficialEvidenceEnrichmentOnce() {
     targets.forEach((target) => {
       const sourceItem = target.sourceItem;
       const reviewItem = target.reviewItem;
-      const packageResult = buildCandidateEvidencePackage_(sourceItem, reviewItem.row, now, stats);
-      if (!packageResult.ok) {
-        stats.evidenceEnrichmentMissingCount += 1;
-        replenishmentRows.push(buildEvidenceReplenishmentQueueRow_(sourceItem, reviewItem.row, packageResult.reasonCode, now));
+	      const packageResult = buildCandidateEvidencePackage_(sourceItem, reviewItem.row, now, stats);
+	      if (!packageResult.ok) {
+	        stats.evidenceEnrichmentMissingCount += 1;
+	        incrementCount_(stats.evidenceEnrichmentMissingReasonCounts, packageResult.reasonCode || 'evidence_package_build_failed');
+	        if (packageResult.fetchEligible === false) incrementCount_(stats.fetchNotAttemptedReasonCounts, packageResult.reasonCode || 'fetch_guard_rejected');
+	        replenishmentRows.push(buildEvidenceReplenishmentQueueRow_(sourceItem, reviewItem.row, packageResult.reasonCode, now));
         writeEvidenceEnrichmentAudit_(context.reviewSheet, reviewData.headers, reviewItem.rowIndex, packageResult, now);
         return;
       }
@@ -4713,11 +4715,12 @@ function runGmailSalesOfficialEvidenceEnrichmentOnce() {
     }
     const queueCount = writeEvidenceReplenishmentQueue_(context.spreadsheet, replenishmentRows);
     stats.evidenceReplenishmentQueueCount = queueCount;
-    stats.completedAt = now;
-    stats.runId = 'evidence-enrichment-' + hashValue_(now + '|' + stats.evidenceEnrichmentTargetCount + '|' + stats.evidenceDigestChangedCount);
-    persistGmailSalesAiEvidenceEnrichmentSummary_(stats);
-    return buildGmailSalesAiContactBasisResult_('gmail_sales_official_evidence_enrichment', 'pass', Object.assign({
-      mode: 'write',
+	    stats.completedAt = now;
+	    stats.runId = 'evidence-enrichment-' + hashValue_(now + '|' + stats.evidenceEnrichmentTargetCount + '|' + stats.evidenceDigestChangedCount);
+	    persistGmailSalesAiEvidenceEnrichmentSummary_(stats);
+	    const statusClass = classifyOfficialEvidenceEnrichmentRunStatus_(stats);
+	    return buildGmailSalesAiContactBasisResult_('gmail_sales_official_evidence_enrichment', statusClass.status, Object.assign({
+	      mode: 'write',
       aiEnabled: aiConfig.enabled,
       aiProvider: aiConfig.provider,
       aiModelConfigured: Boolean(aiConfig.model),
@@ -4728,7 +4731,10 @@ function runGmailSalesOfficialEvidenceEnrichmentOnce() {
       gmailSendExecuted: false,
       gmailDraftCreated: false,
       triggerChanged: false
-    }, stats));
+	    }, stats, {
+	      blockedReason: statusClass.blockedReason,
+	      recommendedNextAction: statusClass.recommendedNextAction
+	    }));
   } finally {
     lock.releaseLock();
   }
@@ -6435,10 +6441,43 @@ function countAiEligibleReviewRows_(items, sourceByKey) {
 function emptyOfficialEvidenceEnrichmentStats_() {
   return {
     evidenceEnrichmentTargetCount: 0,
-    evidenceEnrichmentSucceededCount: 0,
-    evidenceEnrichmentMissingCount: 0,
-    evidenceEnrichmentBlockedCount: 0,
-    officialPageFetchCount: 0,
+	    evidenceEnrichmentSucceededCount: 0,
+	    evidenceEnrichmentMissingCount: 0,
+	    evidenceEnrichmentBlockedCount: 0,
+	    evidencePackageBuildAttemptCount: 0,
+	    evidencePackageBuildSucceededCount: 0,
+	    evidencePackageBuildFailedCount: 0,
+	    sourceReferenceCanonicalizationAttemptCount: 0,
+	    sourceReferenceCanonicalizationSucceededCount: 0,
+	    sourceReferenceCanonicalizationFailedCount: 0,
+	    canonicalSourceUrlPresentCount: 0,
+	    canonicalSourceUrlMissingCount: 0,
+	    sourceTypeSupportedCount: 0,
+	    sourceTypeUnsupportedCount: 0,
+	    sourceUrlSafetyValidationAttemptCount: 0,
+	    sourceUrlSafetyAcceptedCount: 0,
+	    sourceUrlSafetyRejectedCount: 0,
+	    fetchEligibleCount: 0,
+	    fetchIneligibleCount: 0,
+	    fetchEligibilityReasonCounts: {},
+	    evidenceEnrichmentMissingReasonCounts: {},
+	    evidenceEnrichmentBlockedReasonCounts: {},
+	    fetchNotAttemptedReasonCounts: {},
+	    fetchAttemptedFailureReasonCounts: {},
+	    officialPageFetchPlannedCount: 0,
+	    officialPageFetchAttemptCount: 0,
+	    officialPageFetchSuccessCount: 0,
+	    officialPageFetchFailureCount: 0,
+	    officialPageFetchSkippedCount: 0,
+	    officialPageFetchSkippedReasonCounts: {},
+	    officialPageHttpSuccessCount: 0,
+	    officialPageHttpClientErrorCount: 0,
+	    officialPageHttpServerErrorCount: 0,
+	    officialPageTimeoutCount: 0,
+	    officialPageEmptyBodyCount: 0,
+	    officialPageContentTypeAcceptedCount: 0,
+	    officialPageContentTypeRejectedCount: 0,
+	    officialPageFetchCount: 0,
     officialPageCacheHitCount: 0,
     officialBusinessChannelCount: 0,
     solicitationRestrictedCount: 0,
@@ -6542,7 +6581,116 @@ function isOfficialEvidenceEnrichmentTarget_(reviewRow, sourceByKey) {
 }
 
 function isSupportedOfficialEvidenceSourceType_(sourceType) {
-  return ['grounded_official_source', 'public_business_contact', 'official_site'].indexOf(String(sourceType || '').trim()) !== -1;
+  return normalizeOfficialEvidenceSourceType_(sourceType).sourceTypeSupported;
+}
+
+function normalizeOfficialEvidenceSourceType_(sourceType) {
+  const raw = normalizeTextForComparison_(sourceType || '');
+  const aliases = {
+    grounded_official_source: 'official_website',
+    verified_official_source: 'official_website',
+    official_source: 'official_website',
+    official_url: 'official_website',
+    official_site: 'official_website',
+    website: 'official_website',
+    business_site: 'official_website',
+    public_business_contact: 'official_contact_page',
+    official_contact_page: 'official_contact_page',
+    official_business_page: 'official_business_page',
+    official_policy_page: 'official_policy_page',
+    official_company_profile: 'official_company_profile'
+  };
+  const normalizedSourceType = aliases[raw] || '';
+  return {
+    normalizedSourceType,
+    sourceTypePresent: Boolean(raw),
+    sourceTypeSupported: Boolean(normalizedSourceType),
+    sourceTypeFetchSupported: Boolean(normalizedSourceType && normalizedSourceType.indexOf('official_') === 0),
+    sourceTypeNormalizationReason: normalizedSourceType ? 'supported_alias' : (raw ? 'source_type_unsupported' : 'source_type_missing')
+  };
+}
+
+function parseCanonicalOfficialSourceReference_(rawReference, sourceType, context) {
+  const result = {
+    ok: false,
+    canonicalUrl: '',
+    normalizedSourceType: '',
+    referenceFormat: '',
+    safetyEligible: false,
+    reasonCode: '',
+    sourceTypeSupported: false,
+    sourceTypeFetchSupported: false,
+    sourceTypeNormalizationReason: ''
+  };
+  const type = normalizeOfficialEvidenceSourceType_(sourceType);
+  result.normalizedSourceType = type.normalizedSourceType;
+  result.sourceTypeSupported = type.sourceTypeSupported;
+  result.sourceTypeFetchSupported = type.sourceTypeFetchSupported;
+  result.sourceTypeNormalizationReason = type.sourceTypeNormalizationReason;
+  if (!type.sourceTypePresent) return Object.assign(result, { reasonCode: 'source_type_missing' });
+  if (!type.sourceTypeSupported) return Object.assign(result, { reasonCode: 'source_type_unsupported' });
+  if (!type.sourceTypeFetchSupported) return Object.assign(result, { reasonCode: 'source_type_fetch_not_supported' });
+  const raw = rawReference;
+  if (raw === null || raw === undefined || String(raw).trim() === '') return Object.assign(result, { reasonCode: 'source_reference_missing' });
+  if (typeof raw !== 'string' && typeof raw !== 'number') return Object.assign(result, { reasonCode: 'source_reference_not_string' });
+  const text = String(raw).trim();
+  let urlText = '';
+  if (/^https?:\/\//i.test(text)) {
+    result.referenceFormat = 'plain_url';
+    urlText = text;
+  } else if ((text[0] === '{' && text[text.length - 1] === '}') || (text[0] === '[' && text[text.length - 1] === ']')) {
+    result.referenceFormat = 'json';
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      return Object.assign(result, { reasonCode: 'source_reference_json_parse_failed' });
+    }
+    urlText = extractUrlFromStructuredOfficialReference_(parsed);
+  } else {
+    result.referenceFormat = 'structured_reference';
+    const match = text.match(/(?:url|sourceReference|sourceUrl|href)\s*[:=]\s*["']?(https?:\/\/[^"'\s,;]+)["']?/i);
+    urlText = match ? match[1] : '';
+  }
+  if (!urlText) return Object.assign(result, { reasonCode: 'source_reference_url_missing' });
+  const check = validateOfficialEvidenceUrl_(urlText);
+  if (!check.ok) {
+    const mapped = mapOfficialEvidenceUrlValidationReason_(check.reasonCode);
+    return Object.assign(result, { reasonCode: mapped, safetyEligible: false });
+  }
+  result.ok = true;
+  result.canonicalUrl = check.url;
+  result.safetyEligible = true;
+  result.reasonCode = '';
+  return result;
+}
+
+function extractUrlFromStructuredOfficialReference_(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return /^https?:\/\//i.test(value.trim()) ? value.trim() : '';
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const found = extractUrlFromStructuredOfficialReference_(value[index]);
+      if (found) return found;
+    }
+    return '';
+  }
+  if (typeof value === 'object') {
+    const keys = ['url', 'sourceReference', 'sourceUrl', 'href', 'canonicalUrl', 'citationUrl'];
+    for (let index = 0; index < keys.length; index += 1) {
+      const found = extractUrlFromStructuredOfficialReference_(value[keys[index]]);
+      if (found) return found;
+    }
+  }
+  return '';
+}
+
+function mapOfficialEvidenceUrlValidationReason_(reasonCode) {
+  const reason = String(reasonCode || '').trim();
+  if (!reason || reason === 'no_source_reference') return 'source_reference_url_missing';
+  if (reason === 'invalid_source_reference') return 'source_reference_url_syntax_invalid';
+  if (reason === 'unsupported_url_scheme') return 'source_reference_url_scheme_not_allowed';
+  return 'source_reference_url_safety_rejected';
 }
 
 function truthyAttestationValue_(value) {
@@ -6770,7 +6918,73 @@ function inspectGmailSalesOfficialEvidenceEnrichmentReadiness() {
     triggerChanged: false
   }, stats);
   logGmailSalesJsonResult_(result);
-  return result;
+	  return result;
+	}
+
+function inspectGmailSalesOfficialEvidenceFetchReadiness() {
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { headers: [], items: [] };
+  const reviewData = context.reviewSheet ? readSheetObjects_(context.reviewSheet) : { headers: [], items: [] };
+  const sourceByKey = {};
+  sourceData.items.forEach((item) => {
+    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+  });
+  const stats = emptyOfficialEvidenceEnrichmentStats_();
+  accumulateOfficialEvidenceEnrichmentReadinessStats_(stats, sourceData, reviewData, sourceByKey);
+  finalizeOfficialEvidenceEnrichmentReadinessStats_(stats);
+  (reviewData.items || []).forEach((item) => {
+    const validation = isOfficialEvidenceEnrichmentTarget_(item.row || {}, sourceByKey);
+    if (!validation.ok) return;
+    buildCandidateEvidencePackage_(validation.sourceItem, item.row || {}, new Date().toISOString(), stats, { dryRun: true });
+  });
+  const result = Object.assign({
+    event: 'gmail_sales_official_evidence_fetch_readiness',
+    mode: 'read_only',
+    fetchReadinessValid: Number(stats.fetchEligibleCount || 0) > 0,
+    recommendedNextAction: Number(stats.fetchEligibleCount || 0) > 0 ? 'run_official_evidence_enrichment' : 'inspect_official_evidence_fetch_readiness',
+    urlFetchExecuted: false,
+    aiApiCalled: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    gmailSendExecuted: false,
+    triggerChanged: false
+  }, stats);
+  logGmailSalesJsonResult_(result);
+	  return result;
+	}
+
+function classifyOfficialEvidenceEnrichmentRunStatus_(stats) {
+  if (Number(stats.evidenceEnrichmentTargetCount || 0) >= 1 &&
+      Number(stats.evidenceEnrichmentSucceededCount || 0) === 0 &&
+      Number(stats.officialPageFetchAttemptCount || 0) === 0 &&
+      Number(Object.keys(stats.fetchNotAttemptedReasonCounts || {}).reduce((sum, key) => sum + Number(stats.fetchNotAttemptedReasonCounts[key] || 0), 0)) >= 1) {
+    return {
+      status: 'blocked',
+      blockedReason: 'evidence_fetch_not_attempted',
+      recommendedNextAction: 'inspect_official_evidence_fetch_readiness'
+    };
+  }
+  if (Number(stats.evidenceEnrichmentTargetCount || 0) >= 1 &&
+      Number(stats.evidenceEnrichmentSucceededCount || 0) === 0 &&
+      Number(stats.officialPageFetchAttemptCount || 0) > 0) {
+    return {
+      status: 'partial',
+      blockedReason: 'official_page_fetch_failed',
+      recommendedNextAction: 'inspect_official_page_fetch_failure'
+    };
+  }
+  if (Number(stats.evidenceEnrichmentSucceededCount || 0) > 0) {
+    return {
+      status: 'pass',
+      blockedReason: '',
+      recommendedNextAction: 'run_ai_contact_basis_verification'
+    };
+  }
+  return {
+    status: 'pass',
+    blockedReason: '',
+    recommendedNextAction: 'return_candidate_to_evidence_queue'
+  };
 }
 
 function accumulateOfficialEvidenceEnrichmentReadinessStats_(stats, sourceData, reviewData, sourceByKey) {
@@ -7105,15 +7319,84 @@ function repairGmailSalesCommittedSourceVerificationAttestationOnce() {
   }
 }
 
-function buildCandidateEvidencePackage_(sourceItem, reviewRow, now, stats) {
+function buildCandidateEvidencePackage_(sourceItem, reviewRow, now, stats, options) {
   const row = sourceItem.row || {};
+  const settings = options || {};
+  if (stats) stats.evidencePackageBuildAttemptCount = Number(stats.evidencePackageBuildAttemptCount || 0) + 1;
   const verification = evaluateCommittedSourceVerificationAttestation_(row, reviewRow || {});
-  if (!verification.ok) return { ok: false, reasonCode: verification.reasonCode || 'source_reference_not_current' };
-  const sourceReference = String(reviewRow.sourceReference || row.sourceReference || row.sourceUrl || row.publicSource || '').trim();
-  const urlCheck = validateOfficialEvidenceUrl_(sourceReference);
-  if (!urlCheck.ok) return { ok: false, reasonCode: urlCheck.reasonCode || 'no_source_reference' };
-  const fetchedPages = collectOfficialEvidenceForCandidate_(urlCheck.url, stats);
-  if (fetchedPages.pages.length === 0) return { ok: false, reasonCode: fetchedPages.reasonCode || 'official_page_unreachable' };
+  if (!verification.ok) {
+    if (stats) {
+      stats.evidencePackageBuildFailedCount = Number(stats.evidencePackageBuildFailedCount || 0) + 1;
+      incrementCount_(stats.fetchNotAttemptedReasonCounts, verification.reasonCode || 'source_reference_not_current');
+    }
+    return { ok: false, reasonCode: verification.reasonCode || 'source_reference_not_current', fetchEligible: false, fetchIneligibilityReason: verification.reasonCode || 'source_reference_not_current' };
+  }
+  const rawReference = reviewRow.sourceReference || row.sourceReference || '';
+  const sourceType = reviewRow.sourceType || row.sourceType || '';
+  if (stats) stats.sourceReferenceCanonicalizationAttemptCount = Number(stats.sourceReferenceCanonicalizationAttemptCount || 0) + 1;
+  const parsed = parseCanonicalOfficialSourceReference_(rawReference, sourceType, { sourceRow: row, reviewRow });
+  if (stats) {
+    if (String(rawReference || '').trim()) stats.sourceReferencePresentCount = Number(stats.sourceReferencePresentCount || 0);
+    if (parsed.sourceTypeSupported) stats.sourceTypeSupportedCount = Number(stats.sourceTypeSupportedCount || 0) + 1;
+    else stats.sourceTypeUnsupportedCount = Number(stats.sourceTypeUnsupportedCount || 0) + 1;
+    stats.sourceUrlSafetyValidationAttemptCount = Number(stats.sourceUrlSafetyValidationAttemptCount || 0) + 1;
+    if (parsed.safetyEligible) stats.sourceUrlSafetyAcceptedCount = Number(stats.sourceUrlSafetyAcceptedCount || 0) + 1;
+    else stats.sourceUrlSafetyRejectedCount = Number(stats.sourceUrlSafetyRejectedCount || 0) + 1;
+  }
+  if (!parsed.ok) {
+    if (stats) {
+      stats.sourceReferenceCanonicalizationFailedCount = Number(stats.sourceReferenceCanonicalizationFailedCount || 0) + 1;
+      stats.canonicalSourceUrlMissingCount = Number(stats.canonicalSourceUrlMissingCount || 0) + 1;
+      stats.fetchIneligibleCount = Number(stats.fetchIneligibleCount || 0) + 1;
+      stats.evidencePackageBuildFailedCount = Number(stats.evidencePackageBuildFailedCount || 0) + 1;
+      incrementCount_(stats.fetchEligibilityReasonCounts, parsed.reasonCode || 'canonical_source_url_missing');
+      incrementCount_(stats.fetchNotAttemptedReasonCounts, parsed.reasonCode || 'canonical_source_url_missing');
+    }
+    return {
+      ok: false,
+      reasonCode: parsed.reasonCode || 'canonical_source_url_missing',
+      canonicalSourceReferencePresent: Boolean(String(rawReference || '').trim()),
+      canonicalSourceUrlPresent: false,
+      normalizedSourceType: parsed.normalizedSourceType,
+      sourceVerificationCurrent: true,
+      sourceReferenceHashMatched: true,
+      sourceIdentityDigestMatched: true,
+      sourceEvidenceDigestMatched: true,
+      fetchEligible: false,
+      fetchIneligibilityReason: parsed.reasonCode || 'canonical_source_url_missing'
+    };
+  }
+  if (stats) {
+    stats.sourceReferenceCanonicalizationSucceededCount = Number(stats.sourceReferenceCanonicalizationSucceededCount || 0) + 1;
+    stats.canonicalSourceUrlPresentCount = Number(stats.canonicalSourceUrlPresentCount || 0) + 1;
+    stats.fetchEligibleCount = Number(stats.fetchEligibleCount || 0) + 1;
+    stats.officialPageFetchPlannedCount = Number(stats.officialPageFetchPlannedCount || 0) + 1;
+  }
+  if (settings.dryRun) {
+    if (stats) stats.evidencePackageBuildSucceededCount = Number(stats.evidencePackageBuildSucceededCount || 0) + 1;
+    return {
+      ok: true,
+      reasonCode: '',
+      canonicalSourceReferencePresent: true,
+      canonicalSourceUrlPresent: true,
+      normalizedSourceType: parsed.normalizedSourceType,
+      sourceVerificationCurrent: true,
+      sourceReferenceHashMatched: true,
+      sourceIdentityDigestMatched: true,
+      sourceEvidenceDigestMatched: true,
+      fetchEligible: true,
+      fetchIneligibilityReason: '',
+      dryRun: true
+    };
+  }
+  const fetchedPages = collectOfficialEvidenceForCandidate_(parsed.canonicalUrl, stats);
+  if (fetchedPages.pages.length === 0) {
+    if (stats) {
+      stats.evidencePackageBuildFailedCount = Number(stats.evidencePackageBuildFailedCount || 0) + 1;
+      incrementCount_(stats.fetchAttemptedFailureReasonCounts, fetchedPages.reasonCode || 'official_page_missing_after_fetch');
+    }
+    return { ok: false, reasonCode: fetchedPages.reasonCode || 'official_page_missing_after_fetch', fetchEligible: true, fetchIneligibilityReason: '' };
+  }
   const extracted = extractOfficialBusinessEvidence_(fetchedPages.pages);
   if (extracted.solicitationRestrictionPresent) return Object.assign(extracted, {
     ok: false,
@@ -7134,10 +7417,20 @@ function buildCandidateEvidencePackage_(sourceItem, reviewRow, now, stats) {
     GMAIL_SALES_AI_PROMPT_VERSION,
     GMAIL_SALES_AI_DEFAULT_POLICY_VERSION
   ].join('|'));
-  return Object.assign(extracted, {
-    ok: true,
+  if (stats) stats.evidencePackageBuildSucceededCount = Number(stats.evidencePackageBuildSucceededCount || 0) + 1;
+	  return Object.assign(extracted, {
+	    ok: true,
     reasonCode: '',
-    sourceReferenceVerified: true,
+	    sourceReferenceVerified: true,
+	    canonicalSourceReferencePresent: true,
+	    canonicalSourceUrlPresent: true,
+	    normalizedSourceType: parsed.normalizedSourceType,
+	    sourceVerificationCurrent: true,
+	    sourceReferenceHashMatched: true,
+	    sourceIdentityDigestMatched: true,
+	    sourceEvidenceDigestMatched: true,
+	    fetchEligible: true,
+	    fetchIneligibilityReason: '',
     officialDomainMatched: true,
     evidenceEnrichmentVersion: 'official-evidence-v1',
     evidenceEnrichedAt: now,
@@ -7165,26 +7458,46 @@ function collectOfficialEvidenceForCandidate_(sourceReference, stats) {
 function fetchVerifiedOfficialPage_(url, expectedUrl, stats) {
   const sourceCheck = validateOfficialEvidenceUrl_(url);
   const expectedCheck = validateOfficialEvidenceUrl_(expectedUrl);
-  if (!sourceCheck.ok || !expectedCheck.ok) return { ok: false, reasonCode: sourceCheck.reasonCode || expectedCheck.reasonCode };
-  if (!sameRegistrableHost_(sourceCheck.host, expectedCheck.host)) return { ok: false, reasonCode: 'redirect_domain_mismatch' };
+  if (!sourceCheck.ok || !expectedCheck.ok) {
+    if (stats) {
+      stats.officialPageFetchSkippedCount = Number(stats.officialPageFetchSkippedCount || 0) + 1;
+      incrementCount_(stats.officialPageFetchSkippedReasonCounts, sourceCheck.reasonCode || expectedCheck.reasonCode || 'fetch_guard_rejected');
+    }
+    return { ok: false, reasonCode: sourceCheck.reasonCode || expectedCheck.reasonCode };
+  }
+  if (!sameRegistrableHost_(sourceCheck.host, expectedCheck.host)) {
+    if (stats) {
+      stats.officialPageFetchSkippedCount = Number(stats.officialPageFetchSkippedCount || 0) + 1;
+      incrementCount_(stats.officialPageFetchSkippedReasonCounts, 'redirect_domain_mismatch');
+    }
+    return { ok: false, reasonCode: 'redirect_domain_mismatch' };
+  }
   const cache = CacheService.getScriptCache();
   const cacheKey = 'gmail-official-evidence-' + hashValue_(sourceCheck.url);
   const cached = cache.get(cacheKey);
-  if (cached) {
-    stats.officialPageCacheHitCount += 1;
-    return { ok: true, finalUrl: sourceCheck.url, text: cached, contentType: 'text/html', fromCache: true };
-  }
-  let response;
-  try {
-    response = UrlFetchApp.fetch(sourceCheck.url, {
+	  if (cached) {
+	    stats.officialPageCacheHitCount += 1;
+	    return { ok: true, finalUrl: sourceCheck.url, text: cached, contentType: 'text/html', fromCache: true };
+	  }
+	  let response;
+	  try {
+	    if (stats) {
+	      stats.officialPageFetchAttemptCount = Number(stats.officialPageFetchAttemptCount || 0) + 1;
+	      stats.officialPageFetchCount = Number(stats.officialPageFetchAttemptCount || 0);
+	    }
+	    response = UrlFetchApp.fetch(sourceCheck.url, {
       method: 'get',
       muteHttpExceptions: true,
       followRedirects: false
     });
-  } catch (error) {
-    return { ok: false, reasonCode: 'official_page_fetch_failed' };
-  }
-  const code = typeof response.getResponseCode === 'function' ? response.getResponseCode() : 0;
+	  } catch (error) {
+	    if (stats) {
+	      stats.officialPageFetchFailureCount = Number(stats.officialPageFetchFailureCount || 0) + 1;
+	      stats.officialPageTimeoutCount = Number(stats.officialPageTimeoutCount || 0) + 1;
+	    }
+	    return { ok: false, reasonCode: 'official_page_fetch_timeout' };
+	  }
+	  const code = typeof response.getResponseCode === 'function' ? response.getResponseCode() : 0;
   if ([301, 302, 303, 307, 308].indexOf(code) !== -1 && typeof response.getHeaders === 'function') {
     const headers = response.getHeaders() || {};
     const location = headers.Location || headers.location || '';
@@ -7193,16 +7506,38 @@ function fetchVerifiedOfficialPage_(url, expectedUrl, stats) {
     if (!redirectCheck.ok || !sameRegistrableHost_(redirectCheck.host, expectedCheck.host)) return { ok: false, reasonCode: 'redirect_domain_mismatch' };
     return fetchVerifiedOfficialPage_(redirectCheck.url, expectedCheck.url, stats);
   }
-  if (code === 429 || code >= 500) return { ok: false, reasonCode: 'official_page_temporarily_unavailable' };
-  if (code < 200 || code >= 300) return { ok: false, reasonCode: 'official_page_unreachable' };
+	  if (code >= 200 && code < 300 && stats) stats.officialPageHttpSuccessCount = Number(stats.officialPageHttpSuccessCount || 0) + 1;
+	  if (code >= 400 && code < 500 && stats) stats.officialPageHttpClientErrorCount = Number(stats.officialPageHttpClientErrorCount || 0) + 1;
+	  if ((code === 429 || code >= 500) && stats) stats.officialPageHttpServerErrorCount = Number(stats.officialPageHttpServerErrorCount || 0) + 1;
+	  if (code === 429 || code >= 500) {
+	    if (stats) stats.officialPageFetchFailureCount = Number(stats.officialPageFetchFailureCount || 0) + 1;
+	    return { ok: false, reasonCode: 'official_page_fetch_http_error' };
+	  }
+	  if (code < 200 || code >= 300) {
+	    if (stats) stats.officialPageFetchFailureCount = Number(stats.officialPageFetchFailureCount || 0) + 1;
+	    return { ok: false, reasonCode: 'official_page_fetch_http_error' };
+	  }
   const headers = typeof response.getHeaders === 'function' ? response.getHeaders() || {} : {};
   const contentType = String(headers['Content-Type'] || headers['content-type'] || 'text/html').toLowerCase();
-  if (contentType && contentType.indexOf('html') === -1 && contentType.indexOf('text/plain') === -1) return { ok: false, reasonCode: 'unsupported_page_type' };
-  const body = String(typeof response.getContentText === 'function' ? response.getContentText() : '').slice(0, 200000);
-  const text = sanitizeOfficialEvidenceText_(body).slice(0, 5000);
-  if (!text) return { ok: false, reasonCode: 'official_page_empty' };
-  cache.put(cacheKey, text, 21600);
-  stats.officialPageFetchCount += 1;
+	  if (contentType && contentType.indexOf('html') === -1 && contentType.indexOf('text/plain') === -1) {
+	    if (stats) {
+	      stats.officialPageContentTypeRejectedCount = Number(stats.officialPageContentTypeRejectedCount || 0) + 1;
+	      stats.officialPageFetchFailureCount = Number(stats.officialPageFetchFailureCount || 0) + 1;
+	    }
+	    return { ok: false, reasonCode: 'official_page_fetch_unsupported_content_type' };
+	  }
+	  if (stats) stats.officialPageContentTypeAcceptedCount = Number(stats.officialPageContentTypeAcceptedCount || 0) + 1;
+	  const body = String(typeof response.getContentText === 'function' ? response.getContentText() : '').slice(0, 200000);
+	  const text = sanitizeOfficialEvidenceText_(body).slice(0, 5000);
+	  if (!text) {
+	    if (stats) {
+	      stats.officialPageEmptyBodyCount = Number(stats.officialPageEmptyBodyCount || 0) + 1;
+	      stats.officialPageFetchFailureCount = Number(stats.officialPageFetchFailureCount || 0) + 1;
+	    }
+	    return { ok: false, reasonCode: 'official_page_fetch_empty_body' };
+	  }
+	  cache.put(cacheKey, text, 21600);
+	  if (stats) stats.officialPageFetchSuccessCount = Number(stats.officialPageFetchSuccessCount || 0) + 1;
   return { ok: true, finalUrl: sourceCheck.url, text, contentType, fromCache: false };
 }
 
