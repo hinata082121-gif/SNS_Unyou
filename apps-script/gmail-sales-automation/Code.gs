@@ -5731,7 +5731,10 @@ function testGmailSalesSourceReferenceCellWriteContractOnce() {
   result.probeContractValid = Boolean(result.writeAttempted && result.freshReadBackMatched && result.restoreSucceeded);
   result.status = result.probeContractValid ? 'pass' : 'blocked';
   result.blockedReason = result.probeContractValid ? '' : (result.blockedReason || Object.keys(result.failureReasonCounts)[0] || 'unknown_source_cell_write_failure');
-  if (result.probeContractValid) writeSourceReferenceCellContractLastProbe_(result);
+  if (result.probeContractValid) {
+    writeSourceReferenceCellContractLastProbe_(result);
+    result.scriptPropertiesUpdated = true;
+  }
   logGmailSalesJsonResult_(result);
   return result;
 }
@@ -5749,17 +5752,21 @@ function mapSourceCellCapabilityBlockedReason_(reasons) {
 
 function readSourceReferenceCellContractLastProbe_() {
   try {
-    return JSON.parse(String(CacheService.getScriptCache().get(GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY) || '{}')) || {};
+    const cached = JSON.parse(String(CacheService.getScriptCache().get(GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY) || '{}')) || {};
+    if (cached && Object.keys(cached).length) return cached;
+    return JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY) || '{}')) || {};
   } catch (error) {
     return {};
   }
 }
 
 function writeSourceReferenceCellContractLastProbe_(probeResult) {
-  CacheService.getScriptCache().put(GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY, JSON.stringify({
+  const value = JSON.stringify({
     probeContractValid: Boolean(probeResult && probeResult.probeContractValid),
     completedAt: new Date().toISOString()
-  }), 21600);
+  });
+  CacheService.getScriptCache().put(GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY, value, 21600);
+  PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY, value);
 }
 
 function repairGmailSalesSourceReferenceSchemaOnce() {
@@ -6533,11 +6540,21 @@ function runGmailSalesAutomatedEvidenceRecoveryStepWorker_(options) {
       mode: 'safe_step',
       checkpointState: afterAction,
       nextAction: afterAction,
-      stepExecuted: actionResult.evidenceRecoveryAction || 'evidence_package_recovery_action',
+      stepExecuted: actionResult.evidenceRecoveryAction || 'none',
       evidenceRecoveryAction: actionResult.evidenceRecoveryAction || '',
       evidenceRecoveryAttemptedCount: Number(actionResult.evidenceRecoveryAttemptedCount || 0),
       evidenceRecoverySucceededCount: Number(actionResult.evidenceRecoverySucceededCount || 0),
       evidenceRecoveryFailedCount: Number(actionResult.evidenceRecoveryFailedCount || 0),
+      blockedReason: actionResult.blockedReason || '',
+      recommendedNextAction: actionResult.recommendedNextAction || afterEvidence.recommendedNextAction || '',
+      sourceReferenceCellContractLastProbeValid: Boolean(actionResult.sourceReferenceCellContractLastProbeValid),
+      transactionReadinessValid: Boolean(actionResult.transactionReadinessValid),
+      sourceReferenceEligibleCellCount: Number(actionResult.sourceReferenceEligibleCellCount || 0),
+      sourceReferenceStructurallyWritableCellCount: Number(actionResult.sourceReferenceStructurallyWritableCellCount || 0),
+      sourceReferenceFormulaCellCount: Number(actionResult.sourceReferenceFormulaCellCount || 0),
+      sourceReferenceArrayFormulaCellCount: Number(actionResult.sourceReferenceArrayFormulaCellCount || 0),
+      sourceReferenceMergedCellCount: Number(actionResult.sourceReferenceMergedCellCount || 0),
+      sourceReferenceProtectedCellCount: Number(actionResult.sourceReferenceProtectedCellCount || 0),
       aiApiCalled: Boolean(actionResult.aiApiCalled),
       gmailSendExecuted: false,
       gmailDraftCreated: false,
@@ -6576,6 +6593,35 @@ function runGmailSalesEvidencePackageRecoveryWorker_(status, options) {
     gmailDraftCreated: false,
     triggerChanged: false
   };
+  const sourceReferenceReadiness = inspectGmailSalesSourceReferenceTransactionReadiness();
+  if (shouldRunGmailSalesSourceReferenceCellProbe_(sourceReferenceReadiness)) {
+    const probe = runGmailSalesSourceReferenceCellWriteProbeWorker_({ source: settings.source || 'automated_evidence_recovery' });
+    return decorateGmailSalesEvidenceRecoveryActionResult_(Object.assign({}, summarizeGmailSalesSourceReferenceCellProbeResult_(probe), {
+      status: probe.status,
+      blockedReason: probe.blockedReason || '',
+      recommendedNextAction: probe.probeContractValid ? 'run_single_candidate_source_discovery' : 'inspect_source_reference_transaction_readiness',
+      googleSheetsUpdated: Boolean(probe.googleSheetsUpdated),
+      scriptPropertiesUpdated: Boolean(probe.scriptPropertiesUpdated || probe.probeContractValid),
+      aiApiCalled: false
+    }), 'source_reference_cell_write_probe');
+  }
+  if (sourceReferenceReadiness.transactionReadinessValid !== true) {
+    return Object.assign({}, resultBase, summarizeGmailSalesSourceReferenceReadinessForRecovery_(sourceReferenceReadiness), {
+      status: 'blocked',
+      blockedReason: 'source_reference_cell_contract_probe_not_safe',
+      recommendedNextAction: 'inspect_source_reference_transaction_readiness',
+      evidenceRecoveryAction: 'none'
+    });
+  }
+  if (sourceReferenceReadiness.sourceReferenceCellContractLastProbeValid !== true &&
+      Number(sourceReferenceReadiness.sourceReferenceEligibleCellCount || 0) > 0) {
+    return Object.assign({}, resultBase, summarizeGmailSalesSourceReferenceReadinessForRecovery_(sourceReferenceReadiness), {
+      status: 'blocked',
+      blockedReason: 'source_reference_cell_contract_probe_not_safe',
+      recommendedNextAction: 'inspect_source_reference_transaction_readiness',
+      evidenceRecoveryAction: 'none'
+    });
+  }
   const enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness();
   const reasons = enrichmentReadiness.enrichmentEligibilityReasonCounts || {};
   if (Number(enrichmentReadiness.evidenceEnrichmentEligibleCount || 0) === 0 && hasOfficialEvidenceAttestationReason_(reasons)) {
@@ -6606,6 +6652,57 @@ function runGmailSalesEvidencePackageRecoveryWorker_(status, options) {
   return decorateGmailSalesEvidenceRecoveryActionResult_(discovery, 'grounded_official_source_discovery');
 }
 
+function shouldRunGmailSalesSourceReferenceCellProbe_(readiness) {
+  return Boolean(readiness &&
+    readiness.transactionReadinessValid === true &&
+    readiness.sourceReferenceCellContractLastProbeValid !== true &&
+    Number(readiness.sourceReferenceEligibleCellCount || 0) > 0 &&
+    Number(readiness.sourceReferenceStructurallyWritableCellCount || 0) > 0 &&
+    Number(readiness.sourceReferenceFormulaCellCount || 0) === 0 &&
+    Number(readiness.sourceReferenceArrayFormulaCellCount || 0) === 0 &&
+    Number(readiness.sourceReferenceMergedCellCount || 0) === 0 &&
+    Number(readiness.sourceReferenceProtectedCellCount || 0) === 0);
+}
+
+function runGmailSalesSourceReferenceCellWriteProbeWorker_(options) {
+  return testGmailSalesSourceReferenceCellWriteContractOnce(Object.assign({}, options || {}, { lockAlreadyHeld: true }));
+}
+
+function summarizeGmailSalesSourceReferenceReadinessForRecovery_(readiness) {
+  const value = readiness || {};
+  return {
+    sourceReferenceCellContractLastProbeValid: Boolean(value.sourceReferenceCellContractLastProbeValid),
+    transactionReadinessValid: Boolean(value.transactionReadinessValid),
+    sourceReferenceEligibleCellCount: Number(value.sourceReferenceEligibleCellCount || 0),
+    sourceReferenceStructurallyWritableCellCount: Number(value.sourceReferenceStructurallyWritableCellCount || 0),
+    sourceReferenceFormulaCellCount: Number(value.sourceReferenceFormulaCellCount || 0),
+    sourceReferenceArrayFormulaCellCount: Number(value.sourceReferenceArrayFormulaCellCount || 0),
+    sourceReferenceMergedCellCount: Number(value.sourceReferenceMergedCellCount || 0),
+    sourceReferenceProtectedCellCount: Number(value.sourceReferenceProtectedCellCount || 0),
+    recommendedNextAction: value.recommendedNextAction || ''
+  };
+}
+
+function summarizeGmailSalesSourceReferenceCellProbeResult_(probe) {
+  const value = probe || {};
+  return {
+    sourceReferenceCellContractLastProbeValid: Boolean(value.probeContractValid),
+    transactionReadinessValid: true,
+    sourceReferenceEligibleCellCount: Number(value.sourceReferenceEligibleCellCount || 0),
+    sourceReferenceStructurallyWritableCellCount: value.sourceCellWritableByStructure ? 1 : 0,
+    sourceReferenceFormulaCellCount: value.sourceCellHasFormula ? 1 : 0,
+    sourceReferenceArrayFormulaCellCount: value.sourceCellHasArrayFormula ? 1 : 0,
+    sourceReferenceMergedCellCount: value.sourceCellIsPartOfMergedRange ? 1 : 0,
+    sourceReferenceProtectedCellCount: value.sourceCellIsProtected ? 1 : 0,
+    writeAttempted: Boolean(value.writeAttempted),
+    flushExecuted: Boolean(value.flushExecuted),
+    freshReadBackAttempted: Boolean(value.freshReadBackAttempted),
+    freshReadBackMatched: Boolean(value.freshReadBackMatched),
+    restoreAttempted: Boolean(value.restoreAttempted),
+    restoreSucceeded: Boolean(value.restoreSucceeded)
+  };
+}
+
 function decorateGmailSalesEvidenceRecoveryActionResult_(actionResult, actionName) {
   const result = actionResult || {};
   const success = result.status !== 'blocked';
@@ -6614,6 +6711,7 @@ function decorateGmailSalesEvidenceRecoveryActionResult_(actionResult, actionNam
     evidenceRecoveryAttemptedCount: 1,
     evidenceRecoverySucceededCount: success ? 1 : 0,
     evidenceRecoveryFailedCount: success ? 0 : 1,
+    recommendedNextAction: result.recommendedNextAction || '',
     gmailSendExecuted: false,
     gmailDraftCreated: false,
     triggerChanged: false
@@ -6764,6 +6862,15 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     evidenceRecoveryAttemptedCount: 0,
     evidenceRecoverySucceededCount: 0,
     evidenceRecoveryFailedCount: 0,
+    sourceReferenceCellContractLastProbeValid: false,
+    transactionReadinessValid: false,
+    sourceReferenceEligibleCellCount: 0,
+    sourceReferenceStructurallyWritableCellCount: 0,
+    sourceReferenceFormulaCellCount: 0,
+    sourceReferenceArrayFormulaCellCount: 0,
+    sourceReferenceMergedCellCount: 0,
+    sourceReferenceProtectedCellCount: 0,
+    recommendedNextAction: '',
     blockedReasons: [],
     gmailSendExecuted: false,
     gmailDraftCreated: false,

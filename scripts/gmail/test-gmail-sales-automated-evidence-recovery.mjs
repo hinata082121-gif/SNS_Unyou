@@ -25,6 +25,10 @@ class FakeRange {
     }
     return values;
   }
+  getFormula() { return ''; }
+  getDataValidation() { return null; }
+  getDisplayValue() { return String(this.sheet.getCell(this.row, this.col) || ''); }
+  isPartOfMerge() { return false; }
   setValue(value) {
     this.state.sheetWriteCount += 1;
     this.sheet.setCell(this.row, this.col, value);
@@ -55,6 +59,7 @@ class FakeSheet {
   getName() { return this.name; }
   getLastRow() { return this.values.length; }
   getLastColumn() { return this.values[0] ? this.values[0].length : 0; }
+  getProtections() { return []; }
   getRange(row, col, numRows = 1, numCols = 1) { return new FakeRange(this, row, col, numRows, numCols, this.state); }
   getCell(row, col) { return ((this.values[row - 1] || [])[col - 1]) || ''; }
   setCell(row, col, value) {
@@ -65,6 +70,7 @@ class FakeSheet {
 }
 
 function createContext() {
+  const cache = {};
   const props = {
     AUTO_SEND_ENABLED: 'false',
     LIVE_SEND_ENABLED: 'false',
@@ -90,6 +96,8 @@ function createContext() {
     urlFetchCount: 0,
     evidenceActionCallCount: 0,
     aiWorkerCallCount: 0,
+    groundedDiscoveryCallCount: 0,
+    probeCallCount: 0,
     logs: []
   };
   const context = {
@@ -125,7 +133,16 @@ function createContext() {
         releaseLock: () => { state.lockHeld = false; }
       })
     },
-    SpreadsheetApp: { flush: () => { state.flushCount += 1; } },
+    CacheService: {
+      getScriptCache: () => ({
+        get: (key) => cache[key] || '',
+        put: (key, value) => { cache[key] = String(value); }
+      })
+    },
+    SpreadsheetApp: {
+      flush: () => { state.flushCount += 1; },
+      ProtectionType: { RANGE: 'RANGE' }
+    },
     ScriptApp: {
       newTrigger: () => { state.triggerCreateCount += 1; return { timeBased: () => ({ everyMinutes: () => ({ create: () => ({}) }) }) }; },
       getProjectTriggers: () => []
@@ -135,6 +152,7 @@ function createContext() {
     UrlFetchApp: { fetch: () => { state.urlFetchCount += 1; return { getResponseCode: () => 200, getContentText: () => '{}' }; } },
     Utilities: {
       formatDate: () => '2026-07-03',
+      getUuid: () => '00000000-0000-4000-8000-000000000001',
       computeDigest: (_algorithm, value) => Array.from(createHash('sha256').update(String(value || ''), 'utf8').digest()).map((byte) => byte > 127 ? byte - 256 : byte),
       DigestAlgorithm: { SHA_256: 'SHA_256' },
       Charset: { UTF_8: 'UTF_8' },
@@ -238,6 +256,26 @@ function buildReviewRowsWithDigests(context, sourceRows, evaluatedCount, missing
   return rows.slice(0, evaluatedCount + missingCount);
 }
 
+function installSourceReferenceReadiness(context, overrides = {}) {
+  context.inspectGmailSalesSourceReferenceTransactionReadiness = () => Object.assign({
+    transactionReadinessValid: true,
+    sourceReferenceCellContractLastProbeValid: false,
+    sourceReferenceEligibleCellCount: 44,
+    sourceReferenceStructurallyWritableCellCount: 44,
+    sourceReferenceFormulaCellCount: 0,
+    sourceReferenceArrayFormulaCellCount: 0,
+    sourceReferenceMergedCellCount: 0,
+    sourceReferenceProtectedCellCount: 0,
+    recommendedNextAction: 'run_source_reference_cell_write_probe',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false
+  }, overrides);
+}
+
 const r1 = createContext();
 assert.equal(typeof r1.constantTimeEquals_, 'function');
 assert.equal(r1.constantTimeEquals_('same', 'same'), true);
@@ -301,6 +339,10 @@ assert.equal(productionLike.unchangedDigestSkippedCount, 53);
 
 const r7 = createContext();
 installSheets(r7, sourceRows, reviewRows);
+installSourceReferenceReadiness(r7, {
+  sourceReferenceCellContractLastProbeValid: true,
+  recommendedNextAction: 'run_single_candidate_source_discovery'
+});
 r7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = () => ({ evidenceEnrichmentEligibleCount: 1, enrichmentEligibilityReasonCounts: {}, enrichmentReadinessInvariantValid: true });
 r7.inspectGmailSalesOfficialEvidenceFetchReadiness = () => ({ fetchReadinessValid: true, fetchEligibleCount: 1 });
 r7.runGmailSalesOfficialEvidenceEnrichmentOnce = (options) => {
@@ -361,6 +403,136 @@ assert.equal((code.match(/function runGmailSalesProductionControlLoop\s*\(/g) ||
 assert.equal((code.match(/function runGmailSalesDailyAutomationTrigger\s*\(/g) || []).length, 1);
 assert.equal(/approvedBasisType:\s*['"]manual_legal_reviewed['"]/.test(code), false);
 
+const s1 = createContext();
+installSheets(s1, sourceRows, reviewRows);
+installSourceReferenceReadiness(s1);
+s1.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  s1.__state.groundedDiscoveryCallCount += 1;
+  return { status: 'blocked', blockedReason: 'unexpected_discovery_called' };
+};
+const s1Step = s1.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(s1Step.stepExecuted, 'source_reference_cell_write_probe');
+assert.equal(s1Step.evidenceRecoveryAction, 'source_reference_cell_write_probe');
+assert.equal(s1.__state.groundedDiscoveryCallCount, 0);
+assert.equal(s1Step.aiApiCalled, false);
+assert.equal(s1.__state.gmailSendCount, 0);
+assert.equal(s1.__state.triggerCreateCount, 0);
+
+const s2 = s1Step;
+assert.equal(s2.sourceReferenceCellContractLastProbeValid, true);
+assert.equal(s2.evidenceRecoverySucceededCount, 1);
+assert.equal(s2.scriptPropertiesUpdated, true);
+assert.equal(s2.recommendedNextAction, 'run_single_candidate_source_discovery');
+
+const s3 = createContext();
+installSheets(s3, sourceRows, reviewRows);
+installSourceReferenceReadiness(s3);
+s3.testGmailSalesSourceReferenceCellWriteContractOnce = () => ({
+  status: 'blocked',
+  blockedReason: 'source_cell_hash_mismatch',
+  probeContractValid: false,
+  writeAttempted: true,
+  flushExecuted: true,
+  freshReadBackAttempted: true,
+  freshReadBackMatched: false,
+  restoreAttempted: true,
+  restoreSucceeded: true,
+  googleSheetsUpdated: true,
+  scriptPropertiesUpdated: false,
+  aiApiCalled: false,
+  gmailSendExecuted: false,
+  gmailDraftCreated: false,
+  triggerChanged: false
+});
+s3.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  s3.__state.groundedDiscoveryCallCount += 1;
+  return { status: 'blocked', blockedReason: 'unexpected_discovery_called' };
+};
+const s3Step = s3.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(s3Step.stepExecuted, 'source_reference_cell_write_probe');
+assert.equal(s3Step.sourceReferenceCellContractLastProbeValid, false);
+assert.equal(s3Step.evidenceRecoveryFailedCount, 1);
+assert.equal(s3.__state.groundedDiscoveryCallCount, 0);
+assert.equal(s3Step.aiApiCalled, false);
+
+const s4 = createContext();
+installSheets(s4, sourceRows, reviewRows);
+installSourceReferenceReadiness(s4, {
+  sourceReferenceCellContractLastProbeValid: true,
+  recommendedNextAction: 'run_single_candidate_source_discovery'
+});
+s4.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = () => ({
+  evidenceEnrichmentEligibleCount: 0,
+  enrichmentEligibilityReasonCounts: {},
+  enrichmentReadinessInvariantValid: true
+});
+s4.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = (options) => {
+  assert.equal(options.lockAlreadyHeld, true);
+  s4.__state.groundedDiscoveryCallCount += 1;
+  return { status: 'blocked', blockedReason: 'source_not_found_after_grounded_search', googleSheetsUpdated: false, aiApiCalled: false };
+};
+const s4Step = s4.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(s4Step.stepExecuted, 'grounded_official_source_discovery');
+assert.equal(s4.__state.groundedDiscoveryCallCount, 1);
+
+const s5 = createContext();
+installSheets(s5, sourceRows, reviewRows);
+installSourceReferenceReadiness(s5, {
+  sourceReferenceCellContractLastProbeValid: false,
+  recommendedNextAction: 'run_source_reference_cell_write_probe'
+});
+s5.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  s5.__state.groundedDiscoveryCallCount += 1;
+  return { status: 'blocked', blockedReason: 'source_reference_cell_contract_not_verified' };
+};
+const s5Step = s5.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(s5Step.stepExecuted, 'source_reference_cell_write_probe');
+assert.equal(s5.__state.groundedDiscoveryCallCount, 0);
+
+const s6 = createContext();
+installSheets(s6, sourceRows, reviewRows);
+installSourceReferenceReadiness(s6, {
+  transactionReadinessValid: false,
+  sourceReferenceCellContractLastProbeValid: false,
+  recommendedNextAction: 'fix_source_reference_row_resolution'
+});
+s6.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  s6.__state.groundedDiscoveryCallCount += 1;
+  return { status: 'blocked', blockedReason: 'unexpected_discovery_called' };
+};
+const s6Step = s6.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(s6Step.stepExecuted, 'none');
+assert.equal(s6Step.evidenceRecoveryAction, 'none');
+assert.equal(s6Step.blockedReason, 'source_reference_cell_contract_probe_not_safe');
+assert.equal(s6Step.recommendedNextAction, 'inspect_source_reference_transaction_readiness');
+assert.equal(s6.__state.groundedDiscoveryCallCount, 0);
+
+const s7 = createContext();
+installSheets(s7, sourceRows, reviewRows);
+s7.__props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify({
+  targetDate: '2026-07-02',
+  candidateCount: 1,
+  maxSendCount: 1,
+  approvalStatus: 'approved',
+  approvalType: 'automatic_strict_gate',
+  targetAutoApproved: true,
+  candidateDigests: ['stale-digest']
+});
+const s7Manifest = s7.inspectGmailSalesAutomatedEvidenceManifestStatus_();
+assert.equal(s7Manifest.manifestReady, false);
+assert.equal(s7Manifest.manifestExists, true);
+assert.equal(s7Manifest.manifestStale, true);
+const s7Inspect = s7.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.notEqual(s7Inspect.checkpointState, 'READY');
+assert.equal(s7.__state.sendAuthorityCallCount, 0);
+
+assert.equal(JSON.stringify(s1Step).indexOf('providerErrorCategoryCounts'), -1);
+assert.equal(s1.__state.lockAttempts, 1);
+assert.equal(s1.__state.urlFetchCount, 0);
+assert.equal(s1.__state.gmailSendCount, 0);
+assert.equal(s1.__state.draftCreateCount, 0);
+assert.equal(s1.__state.triggerCreateCount, 0);
+
 console.log(JSON.stringify({
   automatedEvidenceRecoveryStateMachineTestPassed: true,
   fixtureR1ConstantTimeEqualsDefined: true,
@@ -377,6 +549,17 @@ console.log(JSON.stringify({
   fixtureR10BudgetRemainingYen: inspected.budgetRemainingYen,
   fixtureR11SafeStepLockAttempts: r7.__state.lockAttempts,
   fixtureR12SendAuthorityCallCount: r7.__state.sendAuthorityCallCount,
+  fixtureS1StepExecuted: s1Step.stepExecuted,
+  fixtureS1GroundedDiscoveryCallCount: s1.__state.groundedDiscoveryCallCount,
+  fixtureS2ProbeValid: s2.sourceReferenceCellContractLastProbeValid,
+  fixtureS3ProbeFailed: s3Step.evidenceRecoveryFailedCount,
+  fixtureS4NextStepDiscoveryCallCount: s4.__state.groundedDiscoveryCallCount,
+  fixtureS5DiscoveryLoopPrevented: s5.__state.groundedDiscoveryCallCount === 0,
+  fixtureS6BlockedReason: s6Step.blockedReason,
+  fixtureS7StaleManifestReady: s7Manifest.manifestReady,
+  fixtureS8SummaryLogCompact: JSON.stringify(s1Step).indexOf('providerErrorCategoryCounts') === -1,
+  fixtureS9SafeStepLockAttempts: s1.__state.lockAttempts,
+  fixtureS10UrlFetchCount: s1.__state.urlFetchCount,
   actualGmailSend: r7.__state.gmailSendCount,
   actualDraftCreate: r7.__state.draftCreateCount,
   actualProductionGeminiCall: 0,
