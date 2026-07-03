@@ -196,12 +196,23 @@ const GMAIL_CONTACT_BASIS_REVIEW_APPLY_STATUSES = [
   'pending',
   'applied',
   'applied_ai',
+  'applied_manual',
   'skipped_invalid',
   'skipped_stale_source',
   'rejected',
   'needs_more_evidence',
   'rollback',
   'error'
+];
+const GMAIL_SALES_MANUAL_REVIEW_DECISIONS = ['approved', 'rejected', 'needs_more_evidence'];
+const GMAIL_SALES_MANUAL_REVIEW_CONCEPTS = [
+  'manualReviewStatus',
+  'manualReviewDecision',
+  'manualReviewBasisType',
+  'manualReviewReason',
+  'manualReviewedAt',
+  'manualReviewer',
+  'manualApplyStatus'
 ];
 const GMAIL_SALES_AI_PROMPT_VERSION = 'contact-basis-ai-prompt-v1';
 const GMAIL_SALES_AI_DEFAULT_POLICY_VERSION = 'contact-basis-policy-v1';
@@ -4578,6 +4589,216 @@ function runGmailSalesEvidenceReadyBatchReviewForRecoveryOnce() {
   });
   appendSafeLog_(wrapped);
   return wrapped;
+}
+
+function prepareGmailSalesManualReviewQueueOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    return buildGmailSalesContactBasisReviewResult_('gmail_sales_manual_review_queue_prepare', 'blocked', {
+      blockedReason: 'safe_rest_required'
+    });
+  }
+  const refresh = refreshGmailSalesContactBasisReviewQueueOnce();
+  const status = inspectGmailSalesManualReviewStatus();
+  const result = Object.assign({}, status, {
+    event: 'gmail_sales_manual_review_queue_prepare',
+    status: refresh.status === 'pass' ? 'pass' : 'blocked',
+    blockedReason: refresh.status === 'pass' ? '' : (refresh.blockedReason || 'review_queue_refresh_failed'),
+    manualReviewQueuePrepared: refresh.status === 'pass',
+    queueInsertedCount: refresh.queueInsertedCount || 0,
+    queueUpdatedCount: refresh.queueUpdatedCount || 0,
+    googleSheetsUpdated: refresh.googleSheetsUpdated === true,
+    aiApiCalled: false,
+    urlFetchCalled: false,
+    gmailSendExecuted: false,
+    triggerChanged: false
+  });
+  appendSafeLog_(result);
+  return result;
+}
+
+function inspectGmailSalesManualReviewStatus() {
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const result = {
+    event: 'gmail_sales_manual_review_status',
+    mode: 'read_only',
+    reviewSheetPresent: Boolean(context.reviewSheet),
+    sourceSheetPresent: Boolean(context.sourceSheet),
+    manualReviewSchemaValid: false,
+    manualReviewConceptsMappedCount: 0,
+    missingManualReviewConceptCount: 0,
+    manualReviewCandidateCount: 0,
+    manualApprovedPendingApplyCount: 0,
+    manualRejectedCount: 0,
+    manualNeedsMoreEvidenceCount: 0,
+    manualAppliedCount: 0,
+    manualBlockedCount: 0,
+    approvedBasisCount: 0,
+    readyInventoryCount: 0,
+    blockedReasons: [],
+    aiApiCalled: false,
+    urlFetchCalled: false,
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    triggerChanged: false
+  };
+  if (!context.reviewSheet || !context.sourceSheet) {
+    result.blockedReasons.push(context.blockedReason || 'review_or_source_sheet_missing');
+    return result;
+  }
+  const reviewData = readSheetObjects_(context.reviewSheet);
+  const sourceData = readSheetObjects_(context.sourceSheet);
+  const manualMap = resolveGmailSalesManualReviewHeaderMap_(reviewData.headers);
+  result.manualReviewConceptsMappedCount = manualMap.mappedCount;
+  result.missingManualReviewConceptCount = manualMap.missing.length;
+  result.manualReviewSchemaValid = manualMap.valid;
+  const sourceByKey = {};
+  sourceData.items.forEach((item) => {
+    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+  });
+  reviewData.items.forEach((item) => {
+    const candidate = classifyGmailSalesManualReviewCandidate_(item.row, sourceByKey);
+    if (candidate.ok) result.manualReviewCandidateCount += 1;
+    const decision = normalizeManualReviewDecision_(getManualReviewValue_(item.row, manualMap, 'manualReviewDecision'));
+    const applyStatus = String(getManualReviewValue_(item.row, manualMap, 'manualApplyStatus') || item.row.applyStatus || '').trim();
+    if (decision === 'approved' && applyStatus !== 'applied_manual') result.manualApprovedPendingApplyCount += 1;
+    if (decision === 'rejected') result.manualRejectedCount += 1;
+    if (decision === 'needs_more_evidence') result.manualNeedsMoreEvidenceCount += 1;
+    if (applyStatus === 'applied_manual') result.manualAppliedCount += 1;
+    if (!candidate.ok && candidate.reasonCode) result.manualBlockedCount += 1;
+  });
+  const coverage = inspectGmailSalesContactBasisCoverage_({});
+  result.approvedBasisCount = coverage.approvedBasisCount;
+  result.readyInventoryCount = coverage.eligibleAfterBasisCheckCount;
+  if (!manualMap.valid) result.blockedReasons.push('manual_review_schema_unmapped');
+  return result;
+}
+
+function applyGmailSalesManualReviewDecisionsOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    return buildGmailSalesContactBasisReviewResult_('gmail_sales_manual_review_decisions_apply', 'blocked', {
+      blockedReason: 'safe_rest_required'
+    });
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return buildGmailSalesContactBasisReviewResult_('gmail_sales_manual_review_decisions_apply', 'blocked', {
+      blockedReason: 'lock_unavailable'
+    });
+  }
+  try {
+    const context = getGmailSalesContactBasisReviewContext_();
+    if (!context.ok) {
+      return buildGmailSalesContactBasisReviewResult_('gmail_sales_manual_review_decisions_apply', 'blocked', {
+        blockedReason: context.blockedReason
+      });
+    }
+    const reviewData = readSheetObjects_(context.reviewSheet);
+    const sourceData = readSheetObjects_(context.sourceSheet);
+    const manualMap = resolveGmailSalesManualReviewHeaderMap_(reviewData.headers);
+    if (!manualMap.valid) {
+      return buildGmailSalesContactBasisReviewResult_('gmail_sales_manual_review_decisions_apply', 'blocked', {
+        blockedReason: 'manual_review_schema_unmapped',
+        missingManualReviewConceptCount: manualMap.missing.length
+      });
+    }
+    const sourceByKey = {};
+    sourceData.items.forEach((item) => {
+      sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+    });
+    const now = new Date().toISOString();
+    const updates = [];
+    const reasonCounts = {};
+    let approvedDecisionCount = 0;
+    let rejectedDecisionCount = 0;
+    let needsMoreEvidenceDecisionCount = 0;
+    reviewData.items.forEach((reviewItem) => {
+      const decision = normalizeManualReviewDecision_(getManualReviewValue_(reviewItem.row, manualMap, 'manualReviewDecision'));
+      if (!decision) return;
+      if (decision === 'rejected') {
+        rejectedDecisionCount += 1;
+        return;
+      }
+      if (decision === 'needs_more_evidence') {
+        needsMoreEvidenceDecisionCount += 1;
+        return;
+      }
+      approvedDecisionCount += 1;
+      const validation = validateManualGmailSalesReviewDecision_(reviewItem.row, manualMap, sourceByKey);
+      if (!validation.ok) {
+        incrementCount_(reasonCounts, validation.errorCode);
+        setManualReviewApplyStatus_(context.reviewSheet, reviewData.headers, manualMap, reviewItem.rowIndex, 'skipped_invalid', validation.errorCode);
+        return;
+      }
+      updates.push({
+        reviewItem,
+        sourceItem: validation.sourceItem,
+        approvedBasisType: validation.approvedBasisType,
+        sourceType: validation.sourceType,
+        sourceReferenceHash: validation.sourceReferenceHash,
+        now
+      });
+    });
+    const sourceSnapshots = updates.map((update) => ({
+      rowIndex: update.sourceItem.rowIndex,
+      values: getGmailSalesCanonicalContactBasisSchema_().map((field) => getCellByHeader_(context.sourceSheet, sourceData.headers, update.sourceItem.rowIndex, field))
+    }));
+    updates.forEach((update) => {
+      writeContactBasisToSourceRow_(context.sourceSheet, sourceData.headers, update.sourceItem.rowIndex, update);
+    });
+    SpreadsheetApp.flush();
+    const readBackPassed = updates.every((update) => verifyContactBasisSourceRow_(context.sourceSheet, sourceData.headers, update.sourceItem.rowIndex, update));
+    if (!readBackPassed) {
+      sourceSnapshots.forEach((snapshot) => {
+        getGmailSalesCanonicalContactBasisSchema_().forEach((field, index) => {
+          setCellByHeader_(context.sourceSheet, sourceData.headers, snapshot.rowIndex, field, snapshot.values[index]);
+        });
+      });
+      updates.forEach((update) => setManualReviewApplyStatus_(context.reviewSheet, reviewData.headers, manualMap, update.reviewItem.rowIndex, 'rollback', 'read_back_mismatch'));
+      return buildGmailSalesContactBasisReviewResult_('gmail_sales_manual_review_decisions_apply', 'blocked', {
+        blockedReason: 'read_back_mismatch',
+        rollbackExecuted: true,
+        approvedDecisionCount,
+        manualApplyCommittedCount: 0,
+        manualApplyBlockedCount: approvedDecisionCount,
+        googleSheetsUpdated: true
+      });
+    }
+    updates.forEach((update) => setManualReviewApplyStatus_(context.reviewSheet, reviewData.headers, manualMap, update.reviewItem.rowIndex, 'applied_manual', ''));
+    const coverage = inspectGmailSalesContactBasisCoverage_({});
+    let prepare = null;
+    if (coverage.eligibleAfterBasisCheckCount >= gmailDailyExpectedCount_()) {
+      prepare = prepareDailyPipeline_({ source: 'manual_review_apply' });
+    }
+    const result = buildGmailSalesContactBasisReviewResult_('gmail_sales_manual_review_decisions_apply', updates.length > 0 ? 'pass' : 'blocked', {
+      blockedReason: updates.length > 0 ? '' : 'no_valid_manual_approved_reviews',
+      mode: 'write',
+      approvedDecisionCount,
+      rejectedDecisionCount,
+      needsMoreEvidenceDecisionCount,
+      manualApplyAttemptedCount: approvedDecisionCount,
+      manualApplyCommittedCount: updates.length,
+      manualApplyBlockedCount: Math.max(0, approvedDecisionCount - updates.length),
+      manualApplyReasonCounts: reasonCounts,
+      rollbackExecuted: false,
+      approvedBasisCountAfterApply: coverage.approvedBasisCount,
+      readyInventoryCountAfterApply: coverage.eligibleAfterBasisCheckCount,
+      manifestGenerated: Boolean(prepare && prepare.manifestGenerated),
+      currentDayManifestCount: prepare ? Number(prepare.manifestCandidateCount || prepare.selectedCount || 0) : 0,
+      currentManifestMaxSendCount: prepare && prepare.manifestGenerated ? gmailDailyExpectedCount_() : 0,
+      shortfallCount: Math.max(0, gmailDailyExpectedCount_() - coverage.eligibleAfterBasisCheckCount),
+      googleSheetsUpdated: updates.length > 0 || Boolean(prepare && prepare.googleSheetsUpdated),
+      scriptPropertiesUpdated: Boolean(prepare && prepare.scriptPropertiesUpdated),
+      aiApiCalled: false,
+      urlFetchCalled: false,
+      gmailSendExecuted: false,
+      triggerChanged: false
+    });
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function inspectGmailSalesContactBasisReviewQueue() {
@@ -13144,6 +13365,102 @@ function compareGmailSalesContactBasisReviewRows_(left, right) {
   const b = Number(right.priorityRank || 99);
   if (a !== b) return a - b;
   return String(left.reviewId || '').localeCompare(String(right.reviewId || ''));
+}
+
+function gmailSalesManualReviewAliases_() {
+  return {
+    manualReviewStatus: ['manualReviewStatus', 'applyStatus'],
+    manualReviewDecision: ['manualReviewDecision', 'reviewDecision'],
+    manualReviewBasisType: ['manualReviewBasisType', 'approvedBasisType'],
+    manualReviewReason: ['manualReviewReason', 'evidenceNotes'],
+    manualReviewedAt: ['manualReviewedAt', 'reviewedAt'],
+    manualReviewer: ['manualReviewer', 'reviewerLabel'],
+    manualApplyStatus: ['manualApplyStatus', 'applyStatus']
+  };
+}
+
+function resolveGmailSalesManualReviewHeaderMap_(headers) {
+  const aliases = gmailSalesManualReviewAliases_();
+  const map = {};
+  const missing = [];
+  GMAIL_SALES_MANUAL_REVIEW_CONCEPTS.forEach((concept) => {
+    const candidates = aliases[concept] || [concept];
+    const found = candidates.find((header) => (headers || []).indexOf(header) !== -1);
+    if (found) map[concept] = found;
+    else missing.push(concept);
+  });
+  return {
+    map,
+    missing,
+    mappedCount: GMAIL_SALES_MANUAL_REVIEW_CONCEPTS.length - missing.length,
+    valid: missing.length === 0
+  };
+}
+
+function getManualReviewValue_(row, manualMap, concept) {
+  const header = manualMap && manualMap.map && manualMap.map[concept];
+  return header ? row[header] : '';
+}
+
+function setManualReviewApplyStatus_(sheet, headers, manualMap, rowIndex, status, errorCode) {
+  const applyHeader = manualMap && manualMap.map && manualMap.map.manualApplyStatus || 'applyStatus';
+  const errorHeader = headers.indexOf('applyErrorCode') !== -1 ? 'applyErrorCode' : '';
+  setCellByHeader_(sheet, headers, rowIndex, applyHeader, status);
+  if (errorHeader) setCellByHeader_(sheet, headers, rowIndex, errorHeader, errorCode || '');
+}
+
+function normalizeManualReviewDecision_(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (GMAIL_SALES_MANUAL_REVIEW_DECISIONS.indexOf(normalized) !== -1) return normalized;
+  return '';
+}
+
+function classifyGmailSalesManualReviewCandidate_(review, sourceByKey) {
+  const sourceItem = sourceByKey[String(review.sourceRowKey || '').trim()];
+  if (!sourceItem) return { ok: false, reasonCode: 'source_row_not_found' };
+  const decision = String(review.reviewDecision || '').trim();
+  const errorCode = String(review.applyErrorCode || '').trim();
+  const reasonText = normalizeTextForComparison_([review.suggestionReasonCode, review.evidenceNotes, errorCode].join(' '));
+  const reviewableDecision = decision === 'needs_review' ||
+    decision === 'needs_more_evidence' ||
+    decision === 'pending' ||
+    reasonText.indexOf('insufficient_evidence') !== -1;
+  if (!reviewableDecision) return { ok: false, reasonCode: 'not_manual_review_target' };
+  const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+  if (!queue.include) return { ok: false, reasonCode: queue.reason || 'policy_or_history_blocked' };
+  if (String(review.applyStatus || '').trim() === 'applied' || String(review.applyStatus || '').trim() === 'applied_ai') {
+    return { ok: false, reasonCode: 'already_applied' };
+  }
+  return { ok: true, sourceItem };
+}
+
+function validateManualGmailSalesReviewDecision_(review, manualMap, sourceByKey) {
+  const sourceItem = sourceByKey[String(review.sourceRowKey || '').trim()];
+  if (!sourceItem) return { ok: false, errorCode: 'source_row_not_found' };
+  const decision = normalizeManualReviewDecision_(getManualReviewValue_(review, manualMap, 'manualReviewDecision'));
+  if (decision !== 'approved') return { ok: false, errorCode: 'manual_decision_not_approved' };
+  const reviewer = String(getManualReviewValue_(review, manualMap, 'manualReviewer') || '').trim();
+  if (!reviewer) return { ok: false, errorCode: 'manual_reviewer_missing' };
+  if (reviewer === 'ai_policy_engine') return { ok: false, errorCode: 'manual_reviewer_must_be_human' };
+  if (!String(getManualReviewValue_(review, manualMap, 'manualReviewedAt') || '').trim()) return { ok: false, errorCode: 'manual_reviewed_at_missing' };
+  const approvedBasisType = normalizeContactBasisType_(getManualReviewValue_(review, manualMap, 'manualReviewBasisType'));
+  if (GMAIL_CONTACT_BASIS_ALLOWED_TYPES.indexOf(approvedBasisType) === -1) return { ok: false, errorCode: 'manual_basis_type_invalid' };
+  const reason = String(getManualReviewValue_(review, manualMap, 'manualReviewReason') || '').trim();
+  if (!reason) return { ok: false, errorCode: 'manual_review_reason_missing' };
+  const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+  if (!queue.include || queue.row.sourceRowDigest !== String(review.sourceRowDigest || '').trim()) {
+    return { ok: false, errorCode: 'source_review_join_mismatch' };
+  }
+  const validation = validateApprovedContactBasisReview_(Object.assign({}, review, {
+    approvedBasisType,
+    evidenceNotes: reason,
+    reviewerLabel: reviewer,
+    reviewedAt: getManualReviewValue_(review, manualMap, 'manualReviewedAt'),
+    optOutAvailable: review.optOutAvailable || 'TRUE'
+  }), sourceByKey);
+  if (!validation.ok) return { ok: false, errorCode: validation.errorCode };
+  if (approvedBasisType === 'manual_legal_reviewed' && reviewer === 'ai_policy_engine') return { ok: false, errorCode: 'ai_manual_legal_reviewed_forbidden' };
+  return validation;
 }
 
 function validateApprovedContactBasisReview_(review, sourceByKey) {

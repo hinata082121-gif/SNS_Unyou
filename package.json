@@ -80,6 +80,7 @@
     "gmail:sales:current-day-readiness:test": "node scripts/gmail/test-gmail-sales-july3-activation-e2e.mjs",
     "gmail:sales:scheduler-classification:test": "node scripts/gmail/test-gmail-sales-july3-activation-e2e.mjs",
     "gmail:sales:july3-activation-e2e:test": "node scripts/gmail/test-gmail-sales-july3-activation-e2e.mjs",
+    "gmail:sales:manual-review:test": "node scripts/gmail/test-gmail-sales-manual-review-activation.mjs",
     "gmail:sales:evidence-replenishment-queue:test": "node scripts/gmail/test-gmail-sales-grounded-source-discovery.mjs",
     "gmail:sales:grounded-source-discovery:test": "node scripts/gmail/test-gmail-sales-grounded-source-discovery.mjs",
     "gmail:sales:source-reference-cell-write:test": "node scripts/gmail/test-gmail-sales-grounded-source-discovery.mjs",
