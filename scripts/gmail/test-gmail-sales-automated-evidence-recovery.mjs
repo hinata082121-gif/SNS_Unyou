@@ -290,6 +290,10 @@ function seedRecoveryUsage(context, operations) {
   });
 }
 
+function setGroundingLastRunSummary(context, summary) {
+  context.__props.GMAIL_SALES_GROUNDING_LAST_RUN_SUMMARY_JSON = JSON.stringify(summary);
+}
+
 const r1 = createContext();
 assert.equal(typeof r1.constantTimeEquals_, 'function');
 assert.equal(r1.constantTimeEquals_('same', 'same'), true);
@@ -604,10 +608,158 @@ t4.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
 const t4Step = t4.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
 assert.equal(t4Step.evidenceRecoveryAction, 'grounded_official_source_discovery');
 assert.equal(t4Step.actionStatus, 'blocked');
-assert.equal(t4Step.actionBlockedReason, 'recovery_budget_remaining_too_low');
+assert.equal(t4Step.actionBlockedReason, 'budget_limit_reached');
 assert.equal(t4Step.cumulativeEstimatedCostYen, 99);
 assert.equal(t4Step.budgetRemainingYen, 1);
 assert.equal(t4.__state.groundedDiscoveryCallCount, 0);
+
+const u1 = createContext();
+u1.__props.GMAIL_SALES_AI_LAST_RUN_SUMMARY_JSON = JSON.stringify({
+  event: 'gmail_sales_ai_contact_basis_verification',
+  completedAt: '2026-07-03T01:00:00.000Z',
+  estimatedCostYen: 7,
+  aiBatchRequestCount: 7
+});
+const u1Ledger = u1.inspectGmailSalesRecoveryUsageLedger();
+assert.equal(u1Ledger.cumulativeEstimatedCostYen, 7);
+assert.equal(u1Ledger.operationTypeCounts.ai_contact_basis_verification, 1);
+assert.equal(u1.__state.propertyWriteCount, 0);
+
+const u2 = createContext();
+setGroundingLastRunSummary(u2, {
+  event: 'gmail_sales_grounded_official_source_discovery',
+  completedAt: '2026-07-03T02:00:00.000Z',
+  estimatedCostYen: 3,
+  sourceReferenceCommittedCount: 1
+});
+const u2Ledger = u2.inspectGmailSalesRecoveryUsageLedger();
+assert.equal(u2Ledger.cumulativeEstimatedCostYen, 3);
+assert.equal(u2Ledger.operationTypeCounts.grounded_official_source_discovery, 1);
+assert.equal(u2.__state.propertyWriteCount, 0);
+
+const u3 = createContext();
+installSheets(u3, sourceRows, reviewRows);
+installSourceReferenceReadiness(u3, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1,
+  recommendedNextAction: 'run_single_candidate_source_discovery'
+});
+const u3EnrichmentReadiness = () => ({ evidenceEnrichmentEligibleCount: 0, enrichmentEligibilityReasonCounts: {}, enrichmentReadinessInvariantValid: true });
+u3.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+u3.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+seedRecoveryUsage(u3, [
+  { operationId: 'previous-ai-retry', event: 'gmail_sales_ai_contact_basis_verification', completedAt: '2026-07-03T00:00:00.000Z', estimatedCostYen: 1 },
+  { operationId: 'previous-grounding', event: 'gmail_sales_grounded_official_source_discovery', completedAt: '2026-07-03T00:01:00.000Z', estimatedCostYen: 3 }
+]);
+u3.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  u3.__state.groundedDiscoveryCallCount += 1;
+  u3.recordGmailSalesRecoveryUsageOperation_({
+    operationId: 'current-grounding',
+    event: 'gmail_sales_grounded_official_source_discovery',
+    completedAt: '2026-07-03T00:02:00.000Z',
+    estimatedCostYen: 3
+  });
+  return { status: 'pass', estimatedCostYen: 3, sourceReferenceCommittedCount: 1, googleSheetsUpdated: true, aiApiCalled: true };
+};
+const u3Step = u3.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(u3Step.actionCostYen, 3);
+assert.equal(u3Step.cumulativeEstimatedCostYen, 7);
+assert.equal(u3Step.budgetRemainingYen, 93);
+assert.equal(u3Step.recoveryUsageOperationCount, 3);
+
+const u4 = createContext();
+u4.__props.GMAIL_SALES_AI_LAST_RUN_SUMMARY_JSON = JSON.stringify({
+  event: 'gmail_sales_ai_contact_basis_verification',
+  completedAt: '2026-07-03T03:00:00.000Z',
+  estimatedCostYen: 1,
+  aiBatchRequestCount: 1
+});
+const u4First = u4.summarizeGmailSalesRecoveryDailyUsage_(u4.getGmailSalesAiConfig_());
+const u4Second = u4.summarizeGmailSalesRecoveryDailyUsage_(u4.getGmailSalesAiConfig_());
+assert.equal(u4First.cumulativeEstimatedCostYen, u4Second.cumulativeEstimatedCostYen);
+assert.equal(u4Second.recoveryUsageOperationCount, 1);
+
+const u5 = createContext();
+setGroundingLastRunSummary(u5, {
+  event: 'gmail_sales_grounded_official_source_discovery',
+  completedAt: '2026-07-03T04:00:00.000Z',
+  estimatedCostYen: 3,
+  groundingHttpRequestCount: 3,
+  sourceReferenceCommittedCount: 1
+});
+const u5First = u5.summarizeGmailSalesRecoveryDailyUsage_(u5.getGmailSalesAiConfig_());
+const u5Second = u5.summarizeGmailSalesRecoveryDailyUsage_(u5.getGmailSalesAiConfig_());
+assert.equal(u5First.cumulativeEstimatedCostYen, 3);
+assert.equal(u5Second.cumulativeEstimatedCostYen, 3);
+
+const u6 = createContext();
+const u6Silent = u6.buildGmailSalesGroundingResult_('pass', {
+  __skipLog: true,
+  sourceReferenceCommittedCount: 1,
+  estimatedCostYen: 3
+});
+assert.equal(u6Silent.__skipLog, undefined);
+assert.equal(u6.__state.logs.length, 0);
+assert.equal(JSON.stringify(u6Silent).indexOf('providerErrorCategoryCounts') !== -1, true);
+
+const u7 = createContext();
+u7.buildGmailSalesGroundingResult_('pass', { sourceReferenceCommittedCount: 1 });
+assert.equal(u7.__state.logs.length, 1);
+
+const u8 = createContext();
+installSheets(u8, sourceRows, reviewRows);
+installSourceReferenceReadiness(u8, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1,
+  recommendedNextAction: 'run_single_candidate_source_discovery'
+});
+u8.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+u8.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+seedRecoveryUsage(u8, [
+  { operationId: 'spent-98', event: 'gmail_sales_ai_contact_basis_verification', completedAt: '2026-07-03T00:00:00.000Z', estimatedCostYen: 98 }
+]);
+u8.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  u8.__state.groundedDiscoveryCallCount += 1;
+  return { status: 'pass', estimatedCostYen: 3 };
+};
+const u8Step = u8.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(u8Step.actionStatus, 'blocked');
+assert.equal(u8Step.actionBlockedReason, 'budget_limit_reached');
+assert.equal(u8.__state.groundedDiscoveryCallCount, 0);
+
+const u9 = createContext();
+const u9Rows = makeSourceRows(53).concat(makeSourceRows(15, { ready: false }));
+const u9Review = buildReviewRowsWithDigests(u9, u9Rows, 53, 15);
+const u9Sheets = installSheets(u9, u9Rows, u9Review);
+installSourceReferenceReadiness(u9, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1,
+  recommendedNextAction: 'run_single_candidate_source_discovery'
+});
+u9.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+u9.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+u9.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  const evidenceColumn = u9Sheets.headers.indexOf('businessContactEvidence') + 1;
+  u9.__sourceSheet.setCell(2, evidenceColumn, 'updated official inquiry evidence');
+  u9.recordGmailSalesRecoveryUsageOperation_({
+    operationId: 'u9-grounding',
+    event: 'gmail_sales_grounded_official_source_discovery',
+    completedAt: '2026-07-03T00:02:00.000Z',
+    estimatedCostYen: 3
+  });
+  return { status: 'pass', estimatedCostYen: 3, sourceReferenceCommittedCount: 1, googleSheetsUpdated: true, aiApiCalled: true };
+};
+const u9Step = u9.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(u9Step.checkpointState, 'AI_REVIEW_PENDING');
+assert.equal(u9Step.changedDigestEligibleCount, 1);
+assert.equal(u9Step.plannedNextAction, 'ai_contact_basis_verification');
+assert.equal(u9.__state.aiWorkerCallCount, 0);
 
 assert.equal(JSON.stringify(s1Step).indexOf('providerErrorCategoryCounts'), -1);
 assert.equal(s1.__state.lockAttempts, 1);
@@ -645,6 +797,15 @@ console.log(JSON.stringify({
   fixtureT2DuplicateUsageDeduped: t2Usage.cumulativeEstimatedCostYen === 7,
   fixtureT3ReadinessCountsMatch: t3Inspect.sourceReferenceEligibleCellCount === t3DirectReadiness.sourceReferenceEligibleCellCount,
   fixtureT4BudgetGateBlockedDiscovery: t4.__state.groundedDiscoveryCallCount === 0,
+  fixtureU1BackfilledAiCostYen: u1Ledger.cumulativeEstimatedCostYen,
+  fixtureU2BackfilledGroundingCostYen: u2Ledger.cumulativeEstimatedCostYen,
+  fixtureU3CurrentActionIncludedCostYen: u3Step.cumulativeEstimatedCostYen,
+  fixtureU4MissingOperationIdStable: u4Second.recoveryUsageOperationCount === 1,
+  fixtureU5GroundingStableKeyDeduped: u5Second.cumulativeEstimatedCostYen === 3,
+  fixtureU6GroundingLogSuppressed: u6.__state.logs.length === 0,
+  fixtureU7PublicGroundingLogPreserved: u7.__state.logs.length === 1,
+  fixtureU8BudgetGateUsesCumulative: u8.__state.groundedDiscoveryCallCount === 0,
+  fixtureU9PlannedNextAction: u9Step.plannedNextAction,
   fixtureS8SummaryLogCompact: JSON.stringify(s1Step).indexOf('providerErrorCategoryCounts') === -1,
   fixtureS9SafeStepLockAttempts: s1.__state.lockAttempts,
   fixtureS10UrlFetchCount: s1.__state.urlFetchCount,
