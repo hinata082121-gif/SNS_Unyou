@@ -29,6 +29,7 @@ function createRows({ safeApprovedCount = 30 } = {}) {
       manualReviewReason: safe ? 'human_reviewed_public_business_contact' : '',
       manualReviewer: safe ? 'human' : '',
       manualReviewedAt: safe ? '2026-07-03T00:00:00.000Z' : '',
+      optOutAvailable: safe ? 'TRUE' : '',
       duplicateKey: safe ? `unique-${index}` : `unsafe-${index % 2}`,
       suppressed: !safe && index % 3 === 0,
       doNotContact: false,
@@ -64,6 +65,7 @@ function validateManualApproval(row, seen) {
   if (!row.manualReviewedAt) return 'manual_reviewed_at_missing';
   if (!ALLOWED_BASIS.includes(row.manualReviewBasisType)) return 'manual_basis_type_invalid';
   if (!row.manualReviewReason) return 'manual_review_reason_missing';
+  if (row.optOutAvailable !== true && String(row.optOutAvailable || '').trim().toLowerCase() !== 'true') return 'opt_out_unavailable';
   if (row.suppressed) return 'suppression_match';
   if (row.doNotContact) return 'do_not_contact';
   if (row.priorSent) return 'already_sent';
@@ -138,6 +140,24 @@ missingReviewer[0].manualReviewer = '';
 const missingReviewerResult = applyManual(missingReviewer);
 assert.equal(missingReviewerResult.reasonCounts.manual_reviewer_missing, 1);
 
+const missingOptOut = createRows();
+missingOptOut[0].optOutAvailable = '';
+const missingOptOutResult = applyManual(missingOptOut);
+assert.equal(missingOptOutResult.reasonCounts.opt_out_unavailable, 1);
+assert.equal(missingOptOut[0].contactBasisType, '');
+assert.notEqual(missingOptOut[0].applyStatus, 'applied_manual');
+assert.equal(createManifest(missingOptOut).created, false);
+
+const falseOptOut = createRows();
+falseOptOut[0].optOutAvailable = 'FALSE';
+const falseOptOutResult = applyManual(falseOptOut);
+assert.equal(falseOptOutResult.reasonCounts.opt_out_unavailable, 1);
+
+const trueOptOut = createRows({ safeApprovedCount: 1 });
+trueOptOut[0].optOutAvailable = true;
+const trueOptOutResult = applyManual(trueOptOut);
+assert.equal(trueOptOutResult.committed, 1);
+
 const aiManual = createRows();
 aiManual[0].manualReviewer = 'ai_policy_engine';
 aiManual[0].manualReviewBasisType = 'manual_legal_reviewed';
@@ -172,6 +192,21 @@ const blockedManifest = createManifest(shortRows);
 assert.equal(blockedManifest.created, false);
 assert.equal(blockedManifest.blockedReason, 'eligible_basis_count_below_30');
 
+const thirtyWithOneMissingOptOut = createRows();
+thirtyWithOneMissingOptOut[0].optOutAvailable = '';
+const optOutGate = applyManual(thirtyWithOneMissingOptOut);
+assert.equal(optOutGate.committed, 29);
+assert.equal(createManifest(thirtyWithOneMissingOptOut).created, false);
+
+const statusSummary = {
+  manualBlockedReasonCounts: { policy_or_history_blocked: 2 },
+  manualOptOutConfirmedCount: queueRows.filter((row) => String(row.optOutAvailable || '').trim().toLowerCase() === 'true').length,
+  manualOptOutMissingOrFalseCount: queueRows.filter((row) => String(row.optOutAvailable || '').trim().toLowerCase() !== 'true').length
+};
+assert.ok(code.includes('manualBlockedReasonCounts'));
+assert.ok(code.includes('manualOptOutConfirmedCount'));
+assert.ok(code.includes('logGmailSalesJsonResult_(result)'));
+
 [
   'prepareGmailSalesManualReviewQueueOnce',
   'applyGmailSalesManualReviewDecisionsOnce',
@@ -181,6 +216,7 @@ assert.equal(blockedManifest.blockedReason, 'eligible_basis_count_below_30');
 const sendCallSites = (code.match(/MailApp\.sendEmail\s*\(/g) || []).length;
 assert.equal(sendCallSites, 1);
 assert.ok(!/manualReviewBasisType:\\s*['"]manual_legal_reviewed['"]/.test(code));
+assert.equal(code.includes("optOutAvailable: review.optOutAvailable || 'TRUE'"), false);
 
 console.log(JSON.stringify({
   manualReviewActivationTestPassed: true,
@@ -190,6 +226,12 @@ console.log(JSON.stringify({
   manifestCount: manifest.count,
   manifestMaxSendCount: manifest.maxSendCount,
   insufficientSafeCandidateBlocks: true,
+  optOutMissingBlocksApply: true,
+  optOutFalseBlocksApply: true,
+  optOutTruePassesValidation: true,
+  manualBlockedReasonCountsPresent: Boolean(statusSummary.manualBlockedReasonCounts),
+  manualOptOutConfirmedCount: statusSummary.manualOptOutConfirmedCount,
+  manualOptOutMissingOrFalseCount: statusSummary.manualOptOutMissingOrFalseCount,
   rollbackTestPassed: rollback.rollbackExecuted,
   aiManualLegalReviewedAutoGenerationBlocked: true,
   actualGmailSend: 0,

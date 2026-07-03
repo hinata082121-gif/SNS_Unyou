@@ -4633,6 +4633,9 @@ function inspectGmailSalesManualReviewStatus() {
     manualNeedsMoreEvidenceCount: 0,
     manualAppliedCount: 0,
     manualBlockedCount: 0,
+    manualBlockedReasonCounts: {},
+    manualOptOutConfirmedCount: 0,
+    manualOptOutMissingOrFalseCount: 0,
     approvedBasisCount: 0,
     readyInventoryCount: 0,
     blockedReasons: [],
@@ -4665,12 +4668,18 @@ function inspectGmailSalesManualReviewStatus() {
     if (decision === 'rejected') result.manualRejectedCount += 1;
     if (decision === 'needs_more_evidence') result.manualNeedsMoreEvidenceCount += 1;
     if (applyStatus === 'applied_manual') result.manualAppliedCount += 1;
-    if (!candidate.ok && candidate.reasonCode) result.manualBlockedCount += 1;
+    if (isManualReviewOptOutConfirmed_(item.row.optOutAvailable)) result.manualOptOutConfirmedCount += 1;
+    else result.manualOptOutMissingOrFalseCount += 1;
+    if (!candidate.ok && candidate.reasonCode) {
+      result.manualBlockedCount += 1;
+      incrementCount_(result.manualBlockedReasonCounts, candidate.reasonCode);
+    }
   });
   const coverage = inspectGmailSalesContactBasisCoverage_({});
   result.approvedBasisCount = coverage.approvedBasisCount;
   result.readyInventoryCount = coverage.eligibleAfterBasisCheckCount;
   if (!manualMap.valid) result.blockedReasons.push('manual_review_schema_unmapped');
+  logGmailSalesJsonResult_(result);
   return result;
 }
 
@@ -13415,6 +13424,11 @@ function normalizeManualReviewDecision_(value) {
   return '';
 }
 
+function isManualReviewOptOutConfirmed_(value) {
+  if (value === true) return true;
+  return String(value || '').trim().toLowerCase() === 'true';
+}
+
 function classifyGmailSalesManualReviewCandidate_(review, sourceByKey) {
   const sourceItem = sourceByKey[String(review.sourceRowKey || '').trim()];
   if (!sourceItem) return { ok: false, reasonCode: 'source_row_not_found' };
@@ -13447,6 +13461,7 @@ function validateManualGmailSalesReviewDecision_(review, manualMap, sourceByKey)
   if (GMAIL_CONTACT_BASIS_ALLOWED_TYPES.indexOf(approvedBasisType) === -1) return { ok: false, errorCode: 'manual_basis_type_invalid' };
   const reason = String(getManualReviewValue_(review, manualMap, 'manualReviewReason') || '').trim();
   if (!reason) return { ok: false, errorCode: 'manual_review_reason_missing' };
+  if (!isManualReviewOptOutConfirmed_(review.optOutAvailable)) return { ok: false, errorCode: 'opt_out_unavailable' };
   const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
   if (!queue.include || queue.row.sourceRowDigest !== String(review.sourceRowDigest || '').trim()) {
     return { ok: false, errorCode: 'source_review_join_mismatch' };
@@ -13456,7 +13471,7 @@ function validateManualGmailSalesReviewDecision_(review, manualMap, sourceByKey)
     evidenceNotes: reason,
     reviewerLabel: reviewer,
     reviewedAt: getManualReviewValue_(review, manualMap, 'manualReviewedAt'),
-    optOutAvailable: review.optOutAvailable || 'TRUE'
+    optOutAvailable: review.optOutAvailable
   }), sourceByKey);
   if (!validation.ok) return { ok: false, errorCode: validation.errorCode };
   if (approvedBasisType === 'manual_legal_reviewed' && reviewer === 'ai_policy_engine') return { ok: false, errorCode: 'ai_manual_legal_reviewed_forbidden' };
