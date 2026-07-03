@@ -257,9 +257,10 @@ function buildReviewRowsWithDigests(context, sourceRows, evaluatedCount, missing
 }
 
 function installSourceReferenceReadiness(context, overrides = {}) {
-  context.inspectGmailSalesSourceReferenceTransactionReadiness = () => Object.assign({
+  const readiness = () => Object.assign({
     transactionReadinessValid: true,
     sourceReferenceCellContractLastProbeValid: false,
+    eligibleTransactionTargetCount: 44,
     sourceReferenceEligibleCellCount: 44,
     sourceReferenceStructurallyWritableCellCount: 44,
     sourceReferenceFormulaCellCount: 0,
@@ -274,6 +275,19 @@ function installSourceReferenceReadiness(context, overrides = {}) {
     triggerChanged: false,
     aiApiCalled: false
   }, overrides);
+  context.inspectGmailSalesSourceReferenceTransactionReadiness = readiness;
+  context.inspectGmailSalesSourceReferenceTransactionReadiness_ = readiness;
+}
+
+function seedRecoveryUsage(context, operations) {
+  context.__props.GMAIL_SALES_RECOVERY_USAGE_LEDGER_JSON = JSON.stringify({
+    '2026-07-03': {
+      operations: operations.reduce((acc, operation) => {
+        acc[operation.operationId] = operation;
+        return acc;
+      }, {})
+    }
+  });
 }
 
 const r1 = createContext();
@@ -343,8 +357,12 @@ installSourceReferenceReadiness(r7, {
   sourceReferenceCellContractLastProbeValid: true,
   recommendedNextAction: 'run_single_candidate_source_discovery'
 });
-r7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = () => ({ evidenceEnrichmentEligibleCount: 1, enrichmentEligibilityReasonCounts: {}, enrichmentReadinessInvariantValid: true });
-r7.inspectGmailSalesOfficialEvidenceFetchReadiness = () => ({ fetchReadinessValid: true, fetchEligibleCount: 1 });
+const r7EnrichmentReadiness = () => ({ evidenceEnrichmentEligibleCount: 1, enrichmentEligibilityReasonCounts: {}, enrichmentReadinessInvariantValid: true });
+const r7FetchReadiness = () => ({ fetchReadinessValid: true, fetchEligibleCount: 1, fetchReadinessInvariantValid: true });
+r7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = r7EnrichmentReadiness;
+r7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = r7EnrichmentReadiness;
+r7.inspectGmailSalesOfficialEvidenceFetchReadiness = r7FetchReadiness;
+r7.inspectGmailSalesOfficialEvidenceFetchReadiness_ = r7FetchReadiness;
 r7.runGmailSalesOfficialEvidenceEnrichmentOnce = (options) => {
   assert.equal(options.lockAlreadyHeld, true);
   r7.__state.evidenceActionCallCount += 1;
@@ -461,11 +479,13 @@ installSourceReferenceReadiness(s4, {
   sourceReferenceCellContractLastProbeValid: true,
   recommendedNextAction: 'run_single_candidate_source_discovery'
 });
-s4.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = () => ({
+const s4EnrichmentReadiness = () => ({
   evidenceEnrichmentEligibleCount: 0,
   enrichmentEligibilityReasonCounts: {},
   enrichmentReadinessInvariantValid: true
 });
+s4.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = s4EnrichmentReadiness;
+s4.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = s4EnrichmentReadiness;
 s4.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = (options) => {
   assert.equal(options.lockAlreadyHeld, true);
   s4.__state.groundedDiscoveryCallCount += 1;
@@ -501,8 +521,8 @@ s6.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
   return { status: 'blocked', blockedReason: 'unexpected_discovery_called' };
 };
 const s6Step = s6.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
-assert.equal(s6Step.stepExecuted, 'none');
-assert.equal(s6Step.evidenceRecoveryAction, 'none');
+assert.equal(s6Step.stepExecuted, 'no_safe_recovery_action');
+assert.equal(s6Step.evidenceRecoveryAction, 'no_safe_recovery_action');
 assert.equal(s6Step.blockedReason, 'source_reference_cell_contract_probe_not_safe');
 assert.equal(s6Step.recommendedNextAction, 'inspect_source_reference_transaction_readiness');
 assert.equal(s6.__state.groundedDiscoveryCallCount, 0);
@@ -525,6 +545,69 @@ assert.equal(s7Manifest.manifestStale, true);
 const s7Inspect = s7.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
 assert.notEqual(s7Inspect.checkpointState, 'READY');
 assert.equal(s7.__state.sendAuthorityCallCount, 0);
+
+const t1 = createContext();
+installSheets(t1, sourceRows, reviewRows);
+seedRecoveryUsage(t1, [
+  { operationId: 'initial-ai', event: 'gmail_sales_ai_contact_basis_verification', completedAt: '2026-07-03T00:00:00.000Z', estimatedCostYen: 7 },
+  { operationId: 'grounded-discovery', event: 'gmail_sales_grounded_official_source_discovery', completedAt: '2026-07-03T00:01:00.000Z', estimatedCostYen: 3 },
+  { operationId: 'ai-retry', event: 'gmail_sales_ai_contact_basis_verification', completedAt: '2026-07-03T00:02:00.000Z', estimatedCostYen: 1 }
+]);
+const t1Inspect = t1.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(t1Inspect.cumulativeEstimatedCostYen, 11);
+assert.equal(t1Inspect.estimatedCostYen, 11);
+assert.equal(t1Inspect.budgetRemainingYen, 89);
+assert.equal(t1Inspect.recoveryUsageOperationCount, 3);
+
+const t2 = createContext();
+t2.recordGmailSalesRecoveryUsageOperation_({ operationId: 'same-operation', event: 'one', completedAt: '2026-07-03T00:00:00.000Z', estimatedCostYen: 7 });
+t2.recordGmailSalesRecoveryUsageOperation_({ operationId: 'same-operation', event: 'one', completedAt: '2026-07-03T00:01:00.000Z', estimatedCostYen: 7 });
+const t2Usage = t2.summarizeGmailSalesRecoveryDailyUsage_(t2.getGmailSalesAiConfig_());
+assert.equal(t2Usage.cumulativeEstimatedCostYen, 7);
+assert.equal(t2Usage.recoveryUsageOperationCount, 1);
+
+const t3 = createContext();
+installSheets(t3, sourceRows, reviewRows);
+installSourceReferenceReadiness(t3, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 44,
+  sourceReferenceEligibleCellCount: 44,
+  recommendedNextAction: 'run_single_candidate_source_discovery'
+});
+const t3DirectReadiness = t3.inspectGmailSalesSourceReferenceTransactionReadiness_({ skipLog: true });
+const t3Inspect = t3.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(t3Inspect.sourceReferenceCellContractLastProbeValid, t3DirectReadiness.sourceReferenceCellContractLastProbeValid);
+assert.equal(t3Inspect.transactionReadinessValid, t3DirectReadiness.transactionReadinessValid);
+assert.equal(t3Inspect.sourceReferenceEligibleCellCount, t3DirectReadiness.sourceReferenceEligibleCellCount);
+assert.equal(t3Inspect.eligibleTransactionTargetCount, t3DirectReadiness.eligibleTransactionTargetCount);
+
+const t4 = createContext();
+installSheets(t4, sourceRows, reviewRows);
+installSourceReferenceReadiness(t4, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1,
+  recommendedNextAction: 'run_single_candidate_source_discovery'
+});
+const t4EnrichmentReadiness = () => ({ evidenceEnrichmentEligibleCount: 0, enrichmentEligibilityReasonCounts: {}, enrichmentReadinessInvariantValid: true });
+t4.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = t4EnrichmentReadiness;
+t4.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = t4EnrichmentReadiness;
+seedRecoveryUsage(t4, [
+  { operationId: 'spent-99', event: 'gmail_sales_grounded_official_source_discovery', completedAt: '2026-07-03T00:00:00.000Z', estimatedCostYen: 99 }
+]);
+t4.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  t4.__state.groundedDiscoveryCallCount += 1;
+  return { status: 'pass', estimatedCostYen: 3 };
+};
+const t4Step = t4.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(t4Step.evidenceRecoveryAction, 'grounded_official_source_discovery');
+assert.equal(t4Step.actionStatus, 'blocked');
+assert.equal(t4Step.actionBlockedReason, 'recovery_budget_remaining_too_low');
+assert.equal(t4Step.cumulativeEstimatedCostYen, 99);
+assert.equal(t4Step.budgetRemainingYen, 1);
+assert.equal(t4.__state.groundedDiscoveryCallCount, 0);
 
 assert.equal(JSON.stringify(s1Step).indexOf('providerErrorCategoryCounts'), -1);
 assert.equal(s1.__state.lockAttempts, 1);
@@ -557,6 +640,11 @@ console.log(JSON.stringify({
   fixtureS5DiscoveryLoopPrevented: s5.__state.groundedDiscoveryCallCount === 0,
   fixtureS6BlockedReason: s6Step.blockedReason,
   fixtureS7StaleManifestReady: s7Manifest.manifestReady,
+  fixtureT1CumulativeEstimatedCostYen: t1Inspect.cumulativeEstimatedCostYen,
+  fixtureT1BudgetRemainingYen: t1Inspect.budgetRemainingYen,
+  fixtureT2DuplicateUsageDeduped: t2Usage.cumulativeEstimatedCostYen === 7,
+  fixtureT3ReadinessCountsMatch: t3Inspect.sourceReferenceEligibleCellCount === t3DirectReadiness.sourceReferenceEligibleCellCount,
+  fixtureT4BudgetGateBlockedDiscovery: t4.__state.groundedDiscoveryCallCount === 0,
   fixtureS8SummaryLogCompact: JSON.stringify(s1Step).indexOf('providerErrorCategoryCounts') === -1,
   fixtureS9SafeStepLockAttempts: s1.__state.lockAttempts,
   fixtureS10UrlFetchCount: s1.__state.urlFetchCount,
