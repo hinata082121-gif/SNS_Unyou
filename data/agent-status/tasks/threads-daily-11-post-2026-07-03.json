@@ -1,0 +1,49 @@
+{
+  "id": "threads-daily-11-post-2026-07-03",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 11:00 ノウハウ投稿",
+  "category": "threads_daily_post",
+  "status": "success",
+  "phase": "投稿案準備・安全検査・投稿完了 / 重複投稿防止も確認済み",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-07-03T11:01:18+09:00",
+  "updatedAt": "2026-07-03T11:01:18+09:00",
+  "summary": "2026-07-03 11:00枠のThreadsノウハウ投稿は、当日投稿計画から準備し、安全検査を通過したうえで公開済みログを確認した。公開許可は有効、dry-runは無効、API接続設定も有効判定。再実行時は既存投稿済み判定により重複投稿を停止したため、新たな二重投稿は行っていない。投稿本文全文・秘密情報・個人情報はAgent Statusへ保存していない。",
+  "metrics": {
+    "cron": "0 11 * * *",
+    "scheduledTime": "11:00",
+    "executionTime": "2026-07-03T11:01:18+09:00",
+    "postPlanDate": "2026-07-03",
+    "postPlanSlot": "11:00",
+    "publishEnabled": true,
+    "dryRun": false,
+    "apiConfigured": true,
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": true,
+    "alreadyPublishedGuardConfirmed": true,
+    "blockedReason": "",
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "次回11:00枠では、Instagramプロフィール改善、固定投稿、予約導線、SNS導線整理、無料SNS診断のいずれかを1テーマに絞り、500文字以内・成果保証なし・個人情報なしで投稿案を準備する。既に投稿済みの場合は再投稿せず、重複投稿防止として記録する。",
+  "safeToAct": true,
+  "notes": [
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md を優先確認し、当日は data/threads/post-plans/2026-07-03.json の11:00枠を使用",
+    "投稿テーマは飲食店向けのSNS文言改善ノウハウ。本文全文はAgent Statusへ保存していない",
+    "npm run threads:post:validate は ok=true",
+    "公開許可=true、dry-run=false、API接続設定有効判定を公開済みログで確認",
+    "11:00枠は公開済み。再実行した npm run threads:post:11 は already_published で重複投稿を停止",
+    "自動返信・自動いいね・自動フォローは実行していない",
+    "Gmail送信、Google Sheets更新、Apps Scriptトリガー操作は実行していない",
+    "秘密情報、メールアドレス、営業先名、返信本文は表示・保存・コミットしていない"
+  ],
+  "artifacts": [
+    "data/agent-status/tasks/threads-daily-11-post-2026-07-03.json",
+    "data/threads/post-plans/2026-07-03.json",
+    "data/threads/published/2026-07-03-11.json"
+  ]
+}
