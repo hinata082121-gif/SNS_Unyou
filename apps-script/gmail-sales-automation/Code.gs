@@ -3014,6 +3014,8 @@ function inspectGmailSalesMondayRecoveryPreflight(options) {
   const operational = Object.assign({}, getGmailSalesGeminiOperationalConfig_(), getGmailSalesRecoveryOperationalConfig_());
   const noOp = evaluateGmailSalesRecoveryNoOpLoopReadOnly_(recovery, recovery.checkpointState);
   const recommended = recommendGmailSalesMondayRecoveryAction_(recovery, policy, noOp, format);
+  const nextBusinessPolicy = Object.assign({}, getGmailSalesOperationalDayPolicy_(getNextGmailSalesBusinessSendDateJst_(targetDate)), { isOperationalDay: true });
+  const nextBusinessRecommended = recommendGmailSalesMondayRecoveryAction_(recovery, nextBusinessPolicy, { noOpLoopDetected: false }, format);
   const result = Object.assign({
     event: 'gmail_sales_monday_recovery_preflight',
     mode: 'read_only',
@@ -3068,7 +3070,13 @@ function inspectGmailSalesMondayRecoveryPreflight(options) {
     fetchEligibilityReasonCounts: format.fetchEligibilityReasonCounts || recovery.fetchEligibilityReasonCounts || {},
     canonicalSourceUrlRepairEligibleCount: Number(recovery.canonicalSourceUrlRepairEligibleCount || format.canonicalSourceUrlRepairEligibleCount || format.canonicalRepairEligibleCount || 0),
     legacyPromotionEligibleCount: Number(recovery.legacyPromotionEligibleCount || 0),
-    legacyPromotionRecommended: Number(recovery.legacyPromotionEligibleCount || 0) > 0,
+    legacyPromotionRecommended: Math.max(
+      Number(recovery.legacyPromotionEligibleCount || 0),
+      Number(recovery.legacySourceTypeNormalizationEligibleCount || 0),
+      Number(recovery.deterministicLocalReverificationEligibleCount || 0),
+      Number(recovery.promotionEligibleAfterTypeNormalizationCount || 0),
+      Number(recovery.promotionEligibleAfterLocalReverificationCount || 0)
+    ) > 0,
     freeTierPrimaryAction: recommended.freeTierPrimaryAction || recommended.recommendedMondayAction,
     groundingShouldRunToday: recommended.recommendedMondayAction === 'run_grounded_discovery_fallback_once' || String(recovery.evidenceRecoveryAction || '') === 'grounded_official_source_discovery',
     freeTierExpectedProgressToday: Math.max(0, Number(recovery.legacyPromotionEligibleCount || 0) + Number(recovery.changedDigestEligibleCount || 0) + Number(recovery.fetchEligibleCount || 0) + Number(recovery.canonicalSourceUrlRepairEligibleCount || format.canonicalSourceUrlRepairEligibleCount || format.canonicalRepairEligibleCount || 0)),
@@ -3087,6 +3095,12 @@ function inspectGmailSalesMondayRecoveryPreflight(options) {
     operatorActionRequired: Boolean(recommended.operatorActionRequired || noOp.noOpLoopDetected),
     recommendedMondayAction: recommended.recommendedMondayAction,
     recommendedMondayActionReasonCode: recommended.recommendedMondayActionReasonCode,
+    todayRecommendedAction: recommended.recommendedMondayAction,
+    todayRecommendedActionReasonCode: recommended.recommendedMondayActionReasonCode,
+    mondayExpectedPrimaryAction: nextBusinessRecommended.freeTierPrimaryAction || nextBusinessRecommended.recommendedMondayAction,
+    mondayExpectedPrimaryActionReasonCode: nextBusinessRecommended.recommendedMondayActionReasonCode,
+    nextBusinessDayRecoveryAction: nextBusinessRecommended.freeTierPrimaryAction || nextBusinessRecommended.recommendedMondayAction,
+    nextBusinessDayRecoveryActionReasonCode: nextBusinessRecommended.recommendedMondayActionReasonCode,
     sendAllowed: Boolean(policy.isOperationalDay && recovery.manifestReady === true && Number(recovery.readyInventoryCount || 0) >= gmailDailyExpectedCount_()),
     recoveryAllowed: Boolean(policy.isOperationalDay),
     gmailSendExecuted: false,
@@ -5587,6 +5601,275 @@ function inspectGmailSalesReviewLegacyReferencePromotionReadiness_(options) {
   return result;
 }
 
+function inspectGmailSalesLegacySourceTypeCompatibility(options) {
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { headers: [], items: [] };
+  const reviewData = context.reviewSheet ? readSheetObjects_(context.reviewSheet) : { headers: [], items: [] };
+  const sourceByKey = {};
+  (sourceData.items || []).forEach((item) => {
+    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+  });
+  const result = {
+    event: 'gmail_sales_legacy_source_type_compatibility',
+    mode: 'read_only',
+    sourceSheetPresent: Boolean(context.sourceSheet),
+    reviewSheetPresent: Boolean(context.reviewSheet),
+    reviewRowCount: (reviewData.items || []).length,
+    reviewSourceReferencePresentCount: 0,
+    reviewSourceTypePresentCount: 0,
+    reviewSourceTypeMissingCount: 0,
+    legacySourceTypeRawDistinctCount: 0,
+    legacySourceTypeRawCounts: {},
+    legacySourceTypeNormalizedCounts: {},
+    legacySourceTypeUnsupportedCounts: {},
+    legacySourceTypeNormalizationCandidateCount: 0,
+    legacySourceTypeNormalizationEligibleCount: 0,
+    legacySourceTypeNormalizationIneligibleCount: 0,
+    normalizedSupportedSourceTypeCount: 0,
+    unsupportedSourceTypeCount: 0,
+    blankSourceTypeCount: 0,
+    sourceReferenceHashPresentOnReviewCount: 0,
+    sourceReferenceHashMatchedCount: 0,
+    sourceReferenceHashMismatchCount: 0,
+    sourceRowDigestMatchCount: 0,
+    sourceRowDigestMismatchCount: 0,
+    deterministicLocalReverificationCandidateCount: 0,
+    deterministicLocalReverificationEligibleCount: 0,
+    deterministicLocalReverificationBlockedReasonCounts: {},
+    promotionEligibleAfterTypeNormalizationCount: 0,
+    promotionEligibleAfterLocalReverificationCount: 0,
+    recommendedNextAction: 'inspect_legacy_source_type_compatibility',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  };
+  (reviewData.items || []).forEach((item) => {
+    const review = item.row || {};
+    const sourceReference = String(review.sourceReference || '').trim();
+    const rawType = String(review.sourceType || '').trim();
+    if (sourceReference) result.reviewSourceReferencePresentCount += 1;
+    if (rawType) result.reviewSourceTypePresentCount += 1;
+    else result.reviewSourceTypeMissingCount += 1;
+    const safeRawKey = safeLegacySourceTypeCountKey_(rawType);
+    incrementCount_(result.legacySourceTypeRawCounts, safeRawKey || 'blank');
+    const normalized = normalizeGmailSalesLegacySourceType_(rawType, sourceReference, { reviewRow: review });
+    if (normalized.ok) {
+      result.normalizedSupportedSourceTypeCount += 1;
+      result.legacySourceTypeNormalizationCandidateCount += 1;
+      result.legacySourceTypeNormalizationEligibleCount += 1;
+      incrementCount_(result.legacySourceTypeNormalizedCounts, normalized.normalizedSourceType);
+    } else {
+      if (!rawType) result.blankSourceTypeCount += 1;
+      else result.unsupportedSourceTypeCount += 1;
+      result.legacySourceTypeNormalizationIneligibleCount += 1;
+      incrementCount_(result.legacySourceTypeUnsupportedCounts, safeRawKey || 'blank');
+    }
+    if (String(review.sourceReferenceHash || '').trim()) result.sourceReferenceHashPresentOnReviewCount += 1;
+    const sourceItem = sourceByKey[String(review.sourceRowKey || '').trim()];
+    if (sourceItem) {
+      const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+      if (String(review.sourceRowDigest || '').trim() && queue.include && String(queue.row.sourceRowDigest || '') === String(review.sourceRowDigest || '').trim()) result.sourceRowDigestMatchCount += 1;
+      else result.sourceRowDigestMismatchCount += 1;
+    } else {
+      result.sourceRowDigestMismatchCount += 1;
+    }
+    const normalizedHash = normalized.ok ? buildGmailSalesSourceReferenceHash_(normalized.normalizedSourceType, sourceReference) : '';
+    const rawHash = rawType && sourceReference ? buildGmailSalesSourceReferenceHash_(rawType, sourceReference) : '';
+    const reviewHash = String(review.sourceReferenceHash || '').trim();
+    if (reviewHash && (reviewHash === normalizedHash || reviewHash === rawHash)) result.sourceReferenceHashMatchedCount += 1;
+    else if (reviewHash || sourceReference) result.sourceReferenceHashMismatchCount += 1;
+    const local = verifyGmailSalesLegacySourceReferenceLocally_({ sourceItem, reviewItem: item, normalizedType: normalized });
+    if (sourceReference) result.deterministicLocalReverificationCandidateCount += 1;
+    if (local.ok) {
+      result.deterministicLocalReverificationEligibleCount += 1;
+      result.promotionEligibleAfterLocalReverificationCount += 1;
+    } else {
+      (local.reasonCodes || [local.reasonCode || 'local_reverification_blocked']).forEach((reason) => incrementCount_(result.deterministicLocalReverificationBlockedReasonCounts, reason));
+    }
+    if (normalized.ok && local.ok) result.promotionEligibleAfterTypeNormalizationCount += 1;
+  });
+  result.legacySourceTypeRawDistinctCount = Object.keys(result.legacySourceTypeRawCounts).length;
+  if (result.promotionEligibleAfterLocalReverificationCount > 0) result.recommendedNextAction = 'run_legacy_reference_promotion_safe_step';
+  else if (result.legacySourceTypeNormalizationIneligibleCount > 0) result.recommendedNextAction = 'inspect_unsupported_legacy_source_types';
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function safeLegacySourceTypeCountKey_(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/@/.test(raw) || /https?:\/\//i.test(raw)) return 'redacted_source_type_value';
+  return normalizeTextForComparison_(raw).replace(/[\s-]+/g, '_').slice(0, 80) || 'blank';
+}
+
+function normalizeGmailSalesLegacySourceType_(rawSourceType, sourceReference, context) {
+  const raw = normalizeTextForComparison_(rawSourceType || '').replace(/[\s-]+/g, '_');
+  const aliases = {
+    homepage: 'official_website',
+    home_page: 'official_website',
+    official_homepage: 'official_website',
+    official_home_page: 'official_website',
+    official_website: 'official_website',
+    official_web_site: 'official_website',
+    official_site: 'official_website',
+    official_web: 'official_website',
+    company_site: 'official_website',
+    corporate_site: 'official_website',
+    corporate: 'official_website',
+    business_site: 'official_website',
+    website: 'official_website',
+    web_site: 'official_website',
+    legacy_official_source: 'official_website',
+    verified_official_source: 'official_website',
+    grounded_official_source: 'official_website',
+    official_source: 'official_website',
+    official_url: 'official_website',
+    contact: 'official_contact_page',
+    contact_page: 'official_contact_page',
+    inquiry: 'official_contact_page',
+    inquiry_page: 'official_contact_page',
+    inquiry_form: 'official_contact_page',
+    contact_form: 'official_contact_page',
+    public_business_contact: 'official_contact_page',
+    official_contact: 'official_contact_page',
+    official_contact_page: 'official_contact_page',
+    business_profile: 'official_company_profile',
+    company_profile: 'official_company_profile',
+    corporate_profile: 'official_company_profile',
+    official_company_profile: 'official_company_profile'
+  };
+  const direct = normalizeOfficialEvidenceSourceType_(raw);
+  if (direct.sourceTypeSupported) return { ok: true, normalizedSourceType: direct.normalizedSourceType, reasonCode: 'already_supported_source_type', usedFallbackDerivation: false };
+  const mapped = aliases[raw] || '';
+  if (mapped && isSupportedOfficialEvidenceSourceType_(mapped)) return { ok: true, normalizedSourceType: mapped, reasonCode: 'legacy_source_type_alias', usedFallbackDerivation: false };
+  const reference = String(sourceReference || '').trim();
+  if (!raw && reference) {
+    const safety = classifyGroundingCitationUrlSafety_(reference);
+    if (safety.ok) {
+      const lower = String(safety.path || safety.url || '').toLowerCase();
+      const derived = /contact|inquiry|toiawase|support/.test(lower) ? 'official_contact_page' : 'official_website';
+      if (isSupportedOfficialEvidenceSourceType_(derived)) return { ok: true, normalizedSourceType: derived, reasonCode: 'derived_from_safe_reference', usedFallbackDerivation: true };
+    }
+  }
+  return { ok: false, normalizedSourceType: '', reasonCode: raw ? 'unsupported_source_type' : 'source_type_missing', usedFallbackDerivation: false };
+}
+
+function analyzeGmailSalesLegacyPromotionCandidate_(sourceItem, reviewItem, capability) {
+  const sourceRow = sourceItem && sourceItem.row || {};
+  const review = reviewItem && reviewItem.row || {};
+  const reviewReference = String(review.sourceReference || '').trim();
+  const rawType = String(review.sourceType || '').trim();
+  const normalized = normalizeGmailSalesLegacySourceType_(rawType, reviewReference, { sourceRow, reviewRow: review });
+  const normalizedType = normalized.normalizedSourceType || '';
+  const normalizedHash = normalizedType && reviewReference ? buildGmailSalesSourceReferenceHash_(normalizedType, reviewReference) : '';
+  const rawHash = rawType && reviewReference ? buildGmailSalesSourceReferenceHash_(rawType, reviewReference) : '';
+  const reviewHash = String(review.sourceReferenceHash || '').trim();
+  const reasonCodes = [];
+  if (!normalized.ok) reasonCodes.push(normalized.reasonCode || 'unsupported_source_type');
+  if (!reviewHash) reasonCodes.push('source_reference_hash_missing_on_review');
+  else if (reviewHash !== normalizedHash && reviewHash !== rawHash) reasonCodes.push('source_reference_hash_mismatch');
+  const expectedDigest = normalizedType ? computeGmailSalesSourceVerificationDigest_(review, {
+    sourceType: normalizedType,
+    sourceReferenceHash: normalizedHash,
+    sourceVerifiedAt: review.sourceVerifiedAt
+  }) : '';
+  const existingVerificationOk = Boolean(normalized.ok &&
+    normalizeBooleanCell_(review.sourceSafetyVerified) &&
+    normalizeBooleanCell_(review.sourceIdentityVerified) &&
+    normalizeVerificationStatus_(review.sourceVerificationStatus) === 'verified' &&
+    normalizeValidatorVersion_(review.sourceSafetyValidatorVersion) === GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION &&
+    normalizeValidatorVersion_(review.sourceIdentityValidatorVersion) === GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION &&
+    normalizeValidatorVersion_(review.sourceVerificationPolicyVersion) === GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION &&
+    String(review.sourceVerificationDigest || '').trim() === expectedDigest &&
+    reviewHash === normalizedHash);
+  if (!normalizeBooleanCell_(review.sourceSafetyVerified)) reasonCodes.push('review_safety_not_verified');
+  if (!normalizeBooleanCell_(review.sourceIdentityVerified)) reasonCodes.push('review_identity_not_verified');
+  if (normalizeVerificationStatus_(review.sourceVerificationStatus) !== 'verified') reasonCodes.push('review_status_not_verified');
+  if (normalizeValidatorVersion_(review.sourceSafetyValidatorVersion) !== GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION ||
+      normalizeValidatorVersion_(review.sourceIdentityValidatorVersion) !== GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION ||
+      normalizeValidatorVersion_(review.sourceVerificationPolicyVersion) !== GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) reasonCodes.push('review_validator_version_stale');
+  if (String(review.sourceVerificationDigest || '').trim() !== expectedDigest || reviewHash !== normalizedHash) reasonCodes.push('review_verification_digest_mismatch');
+  const local = verifyGmailSalesLegacySourceReferenceLocally_({ sourceItem, reviewItem, normalizedType: normalized, capability });
+  (local.reasonCodes || []).forEach((reason) => {
+    if (reasonCodes.indexOf(reason) === -1) reasonCodes.push(reason);
+  });
+  const sourceVerifiedAt = existingVerificationOk ? String(review.sourceVerifiedAt || '').trim() : new Date().toISOString();
+  const prepared = {
+    sourceReference: reviewReference,
+    sourceReferenceHash: normalizedHash || reviewHash,
+    sourceType: normalizedType || rawType,
+    sourceVerificationStatus: 'verified',
+    sourceSafetyVerified: 'true',
+    sourceIdentityVerified: 'true',
+    sourceSafetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    sourceIdentityValidatorVersion: GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION,
+    sourceVerificationPolicyVersion: GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION,
+    sourceVerifiedAt,
+    sourceVerificationDigest: ''
+  };
+  prepared.sourceVerificationDigest = computeGmailSalesSourceVerificationDigest_(Object.assign({}, review, prepared), {
+    sourceType: prepared.sourceType,
+    sourceReferenceHash: prepared.sourceReferenceHash,
+    sourceVerifiedAt
+  });
+  const promoteViaLocalReverification = !existingVerificationOk && local.ok;
+  return {
+    ok: Boolean(existingVerificationOk || promoteViaLocalReverification),
+    reasonCodes: uniqueArray_(reasonCodes),
+    normalizedSourceType: normalizedType,
+    existingVerificationOk,
+    localReverificationAttempted: Boolean(reviewReference),
+    localReverificationOk: Boolean(local.ok),
+    promoteViaLocalReverification,
+    prepared
+  };
+}
+
+function verifyGmailSalesLegacySourceReferenceLocally_(rowContext) {
+  const context = rowContext || {};
+  const sourceItem = context.sourceItem;
+  const reviewItem = context.reviewItem;
+  const sourceRow = sourceItem && sourceItem.row || {};
+  const review = reviewItem && reviewItem.row || {};
+  const normalized = context.normalizedType || normalizeGmailSalesLegacySourceType_(review.sourceType, review.sourceReference, { sourceRow, reviewRow: review });
+  const reasonCodes = [];
+  const reference = String(review.sourceReference || '').trim();
+  if (!sourceItem) reasonCodes.push('source_row_not_found');
+  if (!reference) reasonCodes.push('source_reference_missing_on_review');
+  if (!normalized.ok) reasonCodes.push(normalized.reasonCode || 'unsupported_source_type');
+  const safety = classifyGroundingCitationUrlSafety_(reference);
+  if (!safety.ok) reasonCodes.push(safety.reasonCode || 'unsafe_source_reference');
+  if (safety.ok && String(safety.scheme || '').toLowerCase() !== 'https') reasonCodes.push('unsupported_url_scheme');
+  const normalizedHash = normalized.ok && reference ? buildGmailSalesSourceReferenceHash_(normalized.normalizedSourceType, reference) : '';
+  const rawHash = review.sourceType && reference ? buildGmailSalesSourceReferenceHash_(review.sourceType, reference) : '';
+  const reviewHash = String(review.sourceReferenceHash || '').trim();
+  if (!reviewHash) reasonCodes.push('source_reference_hash_missing_on_review');
+  else if (reviewHash !== normalizedHash && reviewHash !== rawHash) reasonCodes.push('source_reference_hash_mismatch');
+  if (sourceItem) {
+    const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+    if (!queue.include) reasonCodes.push(queue.reason || 'source_policy_blocked');
+    if (!String(review.sourceRowDigest || '').trim()) reasonCodes.push('source_row_digest_missing');
+    else if (!queue.include || String(queue.row.sourceRowDigest || '') !== String(review.sourceRowDigest || '').trim()) reasonCodes.push('source_row_digest_mismatch');
+  }
+  if (sourceRow.unsubscribe === true || String(sourceRow.unsubscribe || '').toLowerCase() === 'true') reasonCodes.push('suppression_present');
+  if (sourceRow.doNotContact === true || String(sourceRow.doNotContact || '').toLowerCase() === 'true') reasonCodes.push('do_not_contact');
+  if (shouldSkipRecipient_(sourceRow)) reasonCodes.push('already_sent_or_prior_history');
+  if (String(sourceRow.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown) reasonCodes.push('delivery_unknown');
+  if (isLikelyPersonalEmail_(sourceRow.email || sourceRow.contactEmail || '')) reasonCodes.push('private_personal_contact');
+  if (String(sourceRow.sourceType || review.sourceType || '').toLowerCase().indexOf('guessed') !== -1) reasonCodes.push('guessed_contact');
+  if (String(sourceRow.solicitationRestricted || review.solicitationRestricted || '').toLowerCase() === 'true') reasonCodes.push('solicitation_restricted');
+  if (context.capability && !context.capability.sourceCellWritableByStructure) reasonCodes.push('source_target_cell_not_writable');
+  return {
+    ok: reasonCodes.length === 0,
+    reasonCode: reasonCodes[0] || '',
+    reasonCodes: uniqueArray_(reasonCodes)
+  };
+}
+
 function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
   const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
   const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { headers: [], items: [] };
@@ -5619,6 +5902,21 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
     legacyPromotionEligibleCount: 0,
     legacyPromotionIneligibleCount: 0,
     legacyPromotionBlockedReasonCounts: {},
+    legacyPromotionPrimaryBlockedReasonCounts: {},
+    legacyPromotionSecondaryBlockedReasonCounts: {},
+    legacyPromotionAllBlockedReasonCounts: {},
+    legacySourceTypeNormalizedCount: 0,
+    legacySourceTypeUnsupportedCount: 0,
+    legacyLocalReverificationAttemptedCount: 0,
+    legacyLocalReverificationSucceededCount: 0,
+    legacyLocalReverificationFailedCount: 0,
+    legacyPromotionViaExistingVerificationCount: 0,
+    legacyPromotionViaLocalReverificationCount: 0,
+    legacyPromotionNormalizedSourceTypeCounts: {},
+    legacySourceTypeNormalizationEligibleCount: 0,
+    deterministicLocalReverificationEligibleCount: 0,
+    promotionEligibleAfterTypeNormalizationCount: 0,
+    promotionEligibleAfterLocalReverificationCount: 0,
     sourceReferenceHashPresentOnReviewCount: 0,
     sourceReferenceHashMissingOnReviewCount: 0,
     reviewSafetyVerifiedTrueCount: 0,
@@ -5656,6 +5954,7 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
     stats.sourceReviewJoinAttemptCount += 1;
     const sourceItem = sourceByKey[String(reviewed.sourceRowKey || '').trim()];
     const reasons = [];
+    let legacyPromotionEligibleForRow = false;
     if (!sourceItem) {
       stats.sourceReviewJoinFailedCount += 1;
       reasons.push('source_row_not_found');
@@ -5678,32 +5977,47 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
         if (!queue.include) reasons.push(queue.reason || 'source_policy_blocked');
         if (!String(reviewed.sourceRowDigest || '').trim()) reasons.push('source_row_digest_missing');
         else if (!queue.include || String(queue.row.sourceRowDigest || '') !== String(reviewed.sourceRowDigest || '').trim()) reasons.push('source_row_digest_mismatch');
-        if (!reviewHash) reasons.push('source_reference_hash_missing_on_review');
-        else if (reviewHash !== buildGmailSalesSourceReferenceHash_(reviewType, reviewReference)) reasons.push('source_reference_hash_mismatch');
-        if (!isSupportedOfficialEvidenceSourceType_(reviewType)) reasons.push('unsupported_source_type');
-        if (!normalizeBooleanCell_(reviewed.sourceSafetyVerified)) reasons.push('review_safety_not_verified');
-        if (!normalizeBooleanCell_(reviewed.sourceIdentityVerified)) reasons.push('review_identity_not_verified');
-        if (normalizeVerificationStatus_(reviewed.sourceVerificationStatus) !== 'verified') reasons.push('review_status_not_verified');
-        if (normalizeValidatorVersion_(reviewed.sourceSafetyValidatorVersion) !== GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION ||
-            normalizeValidatorVersion_(reviewed.sourceIdentityValidatorVersion) !== GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION ||
-            normalizeValidatorVersion_(reviewed.sourceVerificationPolicyVersion) !== GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) reasons.push('review_validator_version_stale');
-        const expectedDigest = computeGmailSalesSourceVerificationDigest_(reviewed, {
-          sourceType: reviewType,
-          sourceReferenceHash: reviewHash,
-          sourceVerifiedAt: reviewed.sourceVerifiedAt
+        const analysis = analyzeGmailSalesLegacyPromotionCandidate_(sourceItem, item, capability);
+        (analysis.reasonCodes || []).forEach((reason) => {
+          if (reasons.indexOf(reason) === -1) reasons.push(reason);
         });
-        if (!String(reviewed.sourceVerificationDigest || '').trim() || String(reviewed.sourceVerificationDigest || '').trim() !== expectedDigest) reasons.push('review_verification_digest_mismatch');
+        if (analysis.normalizedSourceType) {
+          stats.legacySourceTypeNormalizedCount += 1;
+          stats.legacySourceTypeNormalizationEligibleCount += 1;
+          incrementCount_(stats.legacyPromotionNormalizedSourceTypeCounts, analysis.normalizedSourceType);
+        } else {
+          stats.legacySourceTypeUnsupportedCount += 1;
+        }
+        if (analysis.localReverificationAttempted) stats.legacyLocalReverificationAttemptedCount += 1;
+        if (analysis.localReverificationOk) {
+          stats.legacyLocalReverificationSucceededCount += 1;
+          stats.deterministicLocalReverificationEligibleCount += 1;
+          stats.promotionEligibleAfterLocalReverificationCount += 1;
+        } else if (analysis.localReverificationAttempted) {
+          stats.legacyLocalReverificationFailedCount += 1;
+        }
+        if (analysis.existingVerificationOk) stats.legacyPromotionViaExistingVerificationCount += 1;
+        if (analysis.promoteViaLocalReverification) stats.legacyPromotionViaLocalReverificationCount += 1;
+        if (analysis.normalizedSourceType && (analysis.existingVerificationOk || analysis.localReverificationOk)) stats.promotionEligibleAfterTypeNormalizationCount += 1;
         if (duplicateJoinKeyCount > 0 || duplicateReviewCandidateTokenCount > 0 || duplicateReviewSourceDigestCount > 0) reasons.push('duplicate_join_or_digest');
-        if (reasons.length === 0) {
+        if (analysis.ok && reasons.filter((reason) => reason !== 'review_safety_not_verified' &&
+            reason !== 'review_identity_not_verified' &&
+            reason !== 'review_status_not_verified' &&
+            reason !== 'review_validator_version_stale' &&
+            reason !== 'review_verification_digest_mismatch').length === 0) {
+          legacyPromotionEligibleForRow = true;
           stats.legacyPromotionEligibleCount += 1;
-          stats.targets.push({ sourceItem, reviewItem: item });
+          stats.targets.push({ sourceItem, reviewItem: item, prepared: analysis.prepared, viaLocalReverification: analysis.promoteViaLocalReverification, viaExistingVerification: analysis.existingVerificationOk });
         }
       }
     }
     if (reviewReference && (!sourceItem || !String((sourceItem.row || {}).sourceReference || '').trim())) {
-      if (reasons.length > 0) {
+      if (!legacyPromotionEligibleForRow && reasons.length > 0) {
         stats.legacyPromotionIneligibleCount += 1;
         incrementCount_(stats.legacyPromotionBlockedReasonCounts, reasons[0]);
+        incrementCount_(stats.legacyPromotionPrimaryBlockedReasonCounts, reasons[0]);
+        reasons.slice(1).forEach((reason) => incrementCount_(stats.legacyPromotionSecondaryBlockedReasonCounts, reason));
+        reasons.forEach((reason) => incrementCount_(stats.legacyPromotionAllBlockedReasonCounts, reason));
       }
     }
   });
@@ -5729,15 +6043,20 @@ function promoteGmailSalesReviewLegacyReferencesWorker_(options) {
   const settings = options || {};
   const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
   const collected = collectGmailSalesReviewLegacyReferencePromotionTargets_();
-  const batchSize = Math.max(1, Math.min(10, Number(PropertiesService.getScriptProperties().getProperty('GMAIL_SALES_LEGACY_PROMOTION_BATCH_SIZE') || '5')));
+  const batchSize = Math.max(1, Math.min(5, Number(PropertiesService.getScriptProperties().getProperty('GMAIL_SALES_LEGACY_PROMOTION_BATCH_SIZE') || '5')));
   const targets = (collected.targets || []).slice(0, batchSize);
   const headers = context.sourceSheet ? getSheetHeaders_(context.sourceSheet) : [];
   const fields = ['sourceReference', 'sourceReferenceHash', 'sourceType', 'sourceVerificationStatus', 'sourceSafetyVerified', 'sourceIdentityVerified', 'sourceSafetyValidatorVersion', 'sourceIdentityValidatorVersion', 'sourceVerificationPolicyVersion', 'sourceVerifiedAt', 'sourceVerificationDigest'];
   const result = buildGmailSalesLegacyReferencePromotionResult_('pass', Object.assign({}, collected, {
     mode: 'safe_step',
     attemptedPromotionCount: targets.length,
+    legacyPromotionAttemptedCount: targets.length,
     succeededPromotionCount: 0,
+    legacyPromotionSucceededCount: 0,
     failedPromotionCount: 0,
+    legacyPromotionFailedCount: 0,
+    legacyPromotionViaExistingVerificationCount: 0,
+    legacyPromotionViaLocalReverificationCount: 0,
     rolledBackPromotionCount: 0,
     rollbackSucceededCount: 0,
     rollbackFailedCount: 0,
@@ -5748,25 +6067,29 @@ function promoteGmailSalesReviewLegacyReferencesWorker_(options) {
   delete result.targets;
   targets.forEach((target) => {
     const sourceItem = target.sourceItem;
-    const review = target.reviewItem.row || {};
+    const prepared = target.prepared || target.reviewItem.row || {};
     const snapshot = {};
     fields.forEach((field) => {
       snapshot[field] = getCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field);
     });
     fields.forEach((field) => {
-      setCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field, review[field] || '');
+      setCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field, prepared[field] || '');
     });
     SpreadsheetApp.flush();
     const readBack = {};
     fields.forEach((field) => {
       readBack[field] = String(getCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field) || '').trim();
     });
-    const matched = fields.every((field) => String(readBack[field] || '').trim() === String(review[field] || '').trim());
+    const matched = fields.every((field) => String(readBack[field] || '').trim() === String(prepared[field] || '').trim());
     if (matched) {
       result.succeededPromotionCount += 1;
+      result.legacyPromotionSucceededCount += 1;
+      if (target.viaLocalReverification) result.legacyPromotionViaLocalReverificationCount += 1;
+      else if (target.viaExistingVerification) result.legacyPromotionViaExistingVerificationCount += 1;
       result.readBackMatchedCount += 1;
     } else {
       result.failedPromotionCount += 1;
+      result.legacyPromotionFailedCount += 1;
       result.readBackMismatchCount += 1;
       result.rolledBackPromotionCount += 1;
       fields.forEach((field) => {
@@ -5798,6 +6121,11 @@ function buildGmailSalesLegacyReferencePromotionResult_(status, overrides) {
     rollbackFailedCount: 0,
     readBackMatchedCount: 0,
     readBackMismatchCount: 0,
+    legacyPromotionAttemptedCount: 0,
+    legacyPromotionSucceededCount: 0,
+    legacyPromotionFailedCount: 0,
+    legacyPromotionViaExistingVerificationCount: 0,
+    legacyPromotionViaLocalReverificationCount: 0,
     gmailSendExecuted: false,
     gmailDraftCreated: false,
     googleSheetsUpdated: false,
@@ -7111,6 +7439,16 @@ function runGmailSalesAutomatedEvidenceRecoveryStepWorker_(options) {
       rollbackFailedCount: Number(actionResult.rollbackFailedCount || 0),
       readBackMatchedCount: Number(actionResult.readBackMatchedCount || 0),
       readBackMismatchCount: Number(actionResult.readBackMismatchCount || 0),
+      legacyPromotionAttemptedCount: Number(actionResult.legacyPromotionAttemptedCount || actionResult.attemptedPromotionCount || 0),
+      legacyPromotionSucceededCount: Number(actionResult.legacyPromotionSucceededCount || actionResult.succeededPromotionCount || 0),
+      legacyPromotionFailedCount: Number(actionResult.legacyPromotionFailedCount || actionResult.failedPromotionCount || 0),
+      legacyPromotionViaExistingVerificationCount: Number(actionResult.legacyPromotionViaExistingVerificationCount || 0),
+      legacyPromotionViaLocalReverificationCount: Number(actionResult.legacyPromotionViaLocalReverificationCount || 0),
+      legacySourceTypeNormalizedCount: Number(actionResult.legacySourceTypeNormalizedCount || 0),
+      legacySourceTypeUnsupportedCount: Number(actionResult.legacySourceTypeUnsupportedCount || 0),
+      legacyLocalReverificationAttemptedCount: Number(actionResult.legacyLocalReverificationAttemptedCount || 0),
+      legacyLocalReverificationSucceededCount: Number(actionResult.legacyLocalReverificationSucceededCount || 0),
+      legacyLocalReverificationFailedCount: Number(actionResult.legacyLocalReverificationFailedCount || 0),
       evidenceEnrichmentEligibleCount: Number(actionResult.evidenceEnrichmentEligibleCount || 0),
       fetchEligibleCount: Number(actionResult.fetchEligibleCount || 0),
       fetchReadinessValid: Boolean(actionResult.fetchReadinessValid),
@@ -7267,9 +7605,18 @@ function planGmailSalesEvidenceRecoveryAction_(status, readiness) {
   const fetch = readiness && readiness.fetchReadiness || {};
   const reasons = enrichment.enrichmentEligibilityReasonCounts || {};
   const recoveryConfig = getGmailSalesRecoveryOperationalConfig_();
-  if (Number(legacy.legacyPromotionEligibleCount || 0) > 0) {
+  const legacyAvailableCount = Math.max(
+    Number(legacy.legacyPromotionEligibleCount || 0),
+    Number(legacy.legacySourceTypeNormalizationEligibleCount || 0),
+    Number(legacy.deterministicLocalReverificationEligibleCount || 0),
+    Number(legacy.promotionEligibleAfterTypeNormalizationCount || 0),
+    Number(legacy.promotionEligibleAfterLocalReverificationCount || 0)
+  );
+  if (legacyAvailableCount > 0) {
+    const reasonCode = Number(legacy.legacyPromotionEligibleCount || 0) > 0 ? 'legacy_reference_promotion_available'
+      : (Number(legacy.promotionEligibleAfterLocalReverificationCount || 0) > 0 ? 'legacy_local_reverification_available' : 'legacy_source_type_normalization_available');
     return Object.assign(
-      buildGmailSalesEvidenceRecoveryActionPlan_('legacy_review_reference_promotion', 'legacy_review_reference_promotion_available', 'run_legacy_reference_promotion_safe_step', 'none', 'sheet_update', true),
+      buildGmailSalesEvidenceRecoveryActionPlan_('legacy_review_reference_promotion', reasonCode, 'run_legacy_reference_promotion_safe_step', 'none', 'sheet_update', true),
       {
         legacyReferencePromotionPreferred: recoveryConfig.legacyReferencePromotionPreferred,
         groundingFallbackOnly: recoveryConfig.groundingFallbackOnly
@@ -7531,8 +7878,27 @@ function summarizeGmailSalesLegacyReferencePromotionReadiness_(readiness) {
     legacyPromotionCandidateCount: Number(value.legacyPromotionCandidateCount || 0),
     legacyPromotionIneligibleCount: Number(value.legacyPromotionIneligibleCount || 0),
     legacyPromotionBlockedReasonCounts: value.legacyPromotionBlockedReasonCounts || {},
+    legacyPromotionPrimaryBlockedReasonCounts: value.legacyPromotionPrimaryBlockedReasonCounts || {},
+    legacyPromotionSecondaryBlockedReasonCounts: value.legacyPromotionSecondaryBlockedReasonCounts || {},
+    legacyPromotionAllBlockedReasonCounts: value.legacyPromotionAllBlockedReasonCounts || {},
+    legacySourceTypeNormalizedCount: Number(value.legacySourceTypeNormalizedCount || 0),
+    legacySourceTypeUnsupportedCount: Number(value.legacySourceTypeUnsupportedCount || 0),
+    legacyLocalReverificationAttemptedCount: Number(value.legacyLocalReverificationAttemptedCount || 0),
+    legacyLocalReverificationSucceededCount: Number(value.legacyLocalReverificationSucceededCount || 0),
+    legacyLocalReverificationFailedCount: Number(value.legacyLocalReverificationFailedCount || 0),
+    legacyPromotionViaExistingVerificationCount: Number(value.legacyPromotionViaExistingVerificationCount || 0),
+    legacyPromotionViaLocalReverificationCount: Number(value.legacyPromotionViaLocalReverificationCount || 0),
+    legacyPromotionNormalizedSourceTypeCounts: value.legacyPromotionNormalizedSourceTypeCounts || {},
+    legacySourceTypeNormalizationEligibleCount: Number(value.legacySourceTypeNormalizationEligibleCount || 0),
+    deterministicLocalReverificationEligibleCount: Number(value.deterministicLocalReverificationEligibleCount || 0),
+    promotionEligibleAfterTypeNormalizationCount: Number(value.promotionEligibleAfterTypeNormalizationCount || 0),
+    promotionEligibleAfterLocalReverificationCount: Number(value.promotionEligibleAfterLocalReverificationCount || 0),
     reviewOnlyLegacyReferenceCount: Number(value.reviewOnlyLegacyReferenceCount || 0),
-    estimatedLegacyPromotionsAvailable: Number(value.legacyPromotionEligibleCount || 0)
+    estimatedLegacyPromotionsAvailable: Math.max(
+      Number(value.legacyPromotionEligibleCount || 0),
+      Number(value.promotionEligibleAfterLocalReverificationCount || 0),
+      Number(value.promotionEligibleAfterTypeNormalizationCount || 0)
+    )
   };
 }
 
@@ -7798,6 +8164,21 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     legacyPromotionEligibleCount: 0,
     legacyPromotionCandidateCount: 0,
     legacyPromotionIneligibleCount: 0,
+    legacyPromotionAllBlockedReasonCounts: {},
+    legacySourceTypeNormalizedCount: 0,
+    legacySourceTypeUnsupportedCount: 0,
+    legacyLocalReverificationAttemptedCount: 0,
+    legacyLocalReverificationSucceededCount: 0,
+    legacyLocalReverificationFailedCount: 0,
+    legacyPromotionViaExistingVerificationCount: 0,
+    legacyPromotionViaLocalReverificationCount: 0,
+    legacySourceTypeNormalizationEligibleCount: 0,
+    deterministicLocalReverificationEligibleCount: 0,
+    promotionEligibleAfterTypeNormalizationCount: 0,
+    promotionEligibleAfterLocalReverificationCount: 0,
+    legacyPromotionAttemptedCount: 0,
+    legacyPromotionSucceededCount: 0,
+    legacyPromotionFailedCount: 0,
     reviewOnlyLegacyReferenceCount: 0,
     estimatedLegacyPromotionsAvailable: 0,
     operationalTier: 'unknown',
@@ -8577,11 +8958,13 @@ function normalizeOfficialEvidenceSourceType_(sourceType) {
   const aliases = {
     grounded_official_source: 'official_website',
     verified_official_source: 'official_website',
+    official_website: 'official_website',
     official_source: 'official_website',
     official_url: 'official_website',
     official_site: 'official_website',
     website: 'official_website',
     business_site: 'official_website',
+    official_contact: 'official_contact_page',
     public_business_contact: 'official_contact_page',
     official_contact_page: 'official_contact_page',
     official_business_page: 'official_business_page',

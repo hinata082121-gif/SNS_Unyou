@@ -283,6 +283,9 @@ function buildReviewRowsWithDigests(context, sourceRows, evaluatedCount, missing
 function installLegacyPromotionFixture(context, options = {}) {
   const count = options.count || 5;
   const eligibleCount = options.eligibleCount === undefined ? count : options.eligibleCount;
+  const sourceTypes = options.sourceTypes || [];
+  const sourceReferences = options.sourceReferences || [];
+  const currentVerification = options.currentVerification !== false;
   const sourceRows = makeSourceRows(count, { ready: true }).map((row) => Object.assign({}, row, {
     sourceType: '',
     sourceReference: '',
@@ -297,8 +300,8 @@ function installLegacyPromotionFixture(context, options = {}) {
     sourceVerificationDigest: ''
   }));
   const reviewRows = buildReviewRowsWithDigests(context, sourceRows, count, 0).map((row, index) => {
-    const sourceType = 'official_site';
-    const sourceReference = `masked legacy official reference ${index + 1}`;
+    const sourceType = sourceTypes[index] || options.sourceType || 'official_site';
+    const sourceReference = sourceReferences[index] || ['https:', '', `legacy-${index + 1}.example.invalid`, 'contact'].join('/');
     const sourceReferenceHash = context.buildGmailSalesSourceReferenceHash_(sourceType, sourceReference);
     const sourceVerifiedAt = '2026-07-03T00:00:00.000Z';
     const next = Object.assign({}, row, {
@@ -306,18 +309,18 @@ function installLegacyPromotionFixture(context, options = {}) {
       sourceReference,
       sourceReferenceHash,
       sourceVerificationStatus: 'verified',
-      sourceSafetyVerified: 'true',
-      sourceIdentityVerified: 'true',
-      sourceSafetyValidatorVersion: 'grounding-citation-safety-v3',
-      sourceIdentityValidatorVersion: 'grounding-citation-identity-v1',
+      sourceSafetyVerified: currentVerification ? 'true' : 'false',
+      sourceIdentityVerified: currentVerification ? 'true' : 'false',
+      sourceSafetyValidatorVersion: currentVerification ? 'grounding-citation-safety-v3' : 'legacy-source-safety-v1',
+      sourceIdentityValidatorVersion: currentVerification ? 'grounding-citation-identity-v1' : 'legacy-source-identity-v1',
       sourceVerificationPolicyVersion: 'source-verification-policy-v1',
       sourceVerifiedAt
     });
-    next.sourceVerificationDigest = context.computeGmailSalesSourceVerificationDigest_(next, {
+    next.sourceVerificationDigest = currentVerification ? context.computeGmailSalesSourceVerificationDigest_(next, {
       sourceType,
       sourceReferenceHash,
       sourceVerifiedAt
-    });
+    }) : 'legacy-verification-digest';
     if (index >= eligibleCount) next.sourceSafetyVerified = 'false';
     return next;
   });
@@ -1242,11 +1245,11 @@ assert.equal(ft3.__state.urlFetchCount, 0);
 assert.equal(ft3.__state.gmailSendCount, 0);
 
 const ft4 = createContext();
-installLegacyPromotionFixture(ft4, { count: 5, eligibleCount: 4 });
+installLegacyPromotionFixture(ft4, { count: 5, sourceTypes: ['official_site', 'official_site', 'official_site', 'official_site', 'instagram'] });
 const ft4Readiness = ft4.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
 assert.equal(ft4Readiness.legacyPromotionEligibleCount, 4);
 assert.equal(ft4Readiness.legacyPromotionIneligibleCount, 1);
-assert.equal(Boolean(ft4Readiness.legacyPromotionBlockedReasonCounts.review_safety_not_verified), true);
+assert.equal(Boolean(ft4Readiness.legacyPromotionBlockedReasonCounts.unsupported_source_type), true);
 
 const ft5 = createContext();
 installLegacyPromotionFixture(ft5, { count: 5 });
@@ -1328,6 +1331,116 @@ ft13.__props.GMAIL_SALES_FREE_TIER_GROUNDING_ENABLED = 'false';
 const ft13Inspect = ft13.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
 assert.equal(ft13Inspect.actionBlockedReason, 'free_tier_grounding_disabled');
 assert.equal(ft13.__state.groundedDiscoveryCallCount, 0);
+
+const fx1 = createContext();
+installLegacyPromotionFixture(fx1, {
+  count: 3,
+  sourceTypes: ['homepage', 'contact_page', 'business_profile']
+});
+const fx1Inspect = fx1.inspectGmailSalesLegacySourceTypeCompatibility({ skipLog: true });
+assert.equal(fx1Inspect.legacySourceTypeNormalizationEligibleCount, 3);
+assert.equal(fx1Inspect.legacySourceTypeNormalizedCounts.official_website, 1);
+assert.equal(fx1Inspect.legacySourceTypeNormalizedCounts.official_contact_page, 1);
+assert.equal(fx1Inspect.legacySourceTypeNormalizedCounts.official_company_profile, 1);
+assert.equal(fx1Inspect.googleSheetsUpdated, false);
+assert.equal(fx1Inspect.urlFetchExecuted, false);
+
+const fx2 = createContext();
+const fx2SafeRef = ['https:', '', 'legacy-fx2.example.invalid', 'contact'].join('/');
+assert.equal(fx2.normalizeGmailSalesLegacySourceType_('homepage', fx2SafeRef, {}).normalizedSourceType, 'official_website');
+assert.equal(fx2.normalizeGmailSalesLegacySourceType_('official_contact', fx2SafeRef, {}).normalizedSourceType, 'official_contact_page');
+assert.equal(fx2.normalizeGmailSalesLegacySourceType_('', fx2SafeRef, {}).normalizedSourceType, 'official_contact_page');
+assert.equal(fx2.normalizeGmailSalesLegacySourceType_('instagram', fx2SafeRef, {}).ok, false);
+
+const fx3 = createContext();
+installLegacyPromotionFixture(fx3, {
+  count: 1,
+  sourceTypes: ['instagram'],
+  currentVerification: false
+});
+const fx3Readiness = fx3.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fx3Readiness.legacyPromotionEligibleCount, 0);
+assert.equal(Boolean(fx3Readiness.legacyPromotionAllBlockedReasonCounts.unsupported_source_type), true);
+assert.equal(Boolean(fx3Readiness.legacyPromotionAllBlockedReasonCounts.review_validator_version_stale), true);
+
+const fx4 = createContext();
+installLegacyPromotionFixture(fx4, {
+  count: 1,
+  sourceTypes: ['homepage'],
+  currentVerification: false
+});
+const fx4Readiness = fx4.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fx4Readiness.deterministicLocalReverificationEligibleCount, 1);
+assert.equal(fx4Readiness.promotionEligibleAfterLocalReverificationCount, 1);
+assert.equal(fx4Readiness.legacyPromotionEligibleCount, 1);
+
+const fx5 = createContext();
+installLegacyPromotionFixture(fx5, {
+  count: 4,
+  sourceTypes: ['homepage', 'homepage', 'homepage', 'homepage'],
+  sourceReferences: [
+    ['http:', '', 'legacy-fx5.example.invalid'].join('/'),
+    ['https:', '', 'localhost'].join('/'),
+    ['https:', '', '127.0.0.1'].join('/'),
+    ['https:', '', 'legacy-fx5.example.invalid', 'contact'].join('/')
+  ],
+  currentVerification: false
+});
+fx5.__sourceSheet.values[4][fx5.__sourceSheet.values[0].indexOf('unsubscribe')] = 'true';
+const fx5Readiness = fx5.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fx5Readiness.legacyPromotionEligibleCount, 0);
+assert.equal(Boolean(fx5Readiness.legacyPromotionAllBlockedReasonCounts.unsupported_scheme), true);
+assert.equal(Boolean(fx5Readiness.legacyPromotionAllBlockedReasonCounts.localhost), true);
+assert.equal(Boolean(fx5Readiness.legacyPromotionAllBlockedReasonCounts.private_ip), true);
+assert.equal(Boolean(fx5Readiness.legacyPromotionAllBlockedReasonCounts.suppression_present), true);
+
+const fx6 = createContext();
+installLegacyPromotionFixture(fx6, {
+  count: 65,
+  sourceTypes: Array.from({ length: 65 }, (_, index) => index % 2 === 0 ? 'homepage' : 'contact_page'),
+  currentVerification: false
+});
+fx6.__props.GMAIL_SALES_LEGACY_PROMOTION_BATCH_SIZE = '65';
+const fx6Step = fx6.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(fx6Step.stepExecuted, 'legacy_review_reference_promotion');
+assert.equal(fx6Step.legacyPromotionAttemptedCount, 5);
+assert.equal(fx6Step.legacyPromotionSucceededCount, 5);
+assert.equal(fx6Step.legacyPromotionViaLocalReverificationCount, 5);
+assert.equal(fx6.__state.groundedDiscoveryCallCount, 0);
+assert.equal(fx6.__state.urlFetchCount, 0);
+assert.equal(fx6.__state.gmailSendCount, 0);
+
+const fx7 = createContext();
+installLegacyPromotionFixture(fx7, { count: 5, sourceTypes: ['homepage', 'homepage', 'homepage', 'homepage', 'homepage'], currentVerification: false });
+installSourceReferenceReadiness(fx7, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1
+});
+fx7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+fx7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+const fx7Inspect = fx7.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(fx7Inspect.plannedNextAction, 'legacy_review_reference_promotion');
+assert.equal(fx7Inspect.plannedNextActionReasonCode, 'legacy_reference_promotion_available');
+
+const fx8 = createContext();
+installLegacyPromotionFixture(fx8, { count: 5, sourceTypes: ['homepage', 'homepage', 'homepage', 'homepage', 'homepage'], currentVerification: false });
+const fx8Sunday = fx8.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-05T09:00:00+09:00', targetDate: '2026-07-05', skipLog: true });
+assert.equal(fx8Sunday.todayRecommendedAction, 'wait_for_next_business_day');
+assert.equal(fx8Sunday.nextBusinessDayRecoveryAction, 'legacy_review_reference_promotion');
+
+const fx9 = createContext();
+installLegacyPromotionFixture(fx9, { count: 5, sourceTypes: ['homepage', 'homepage', 'homepage', 'homepage', 'homepage'], currentVerification: false });
+fx9.inspectGmailSalesCommittedSourceReferenceFormat = () => ({
+  event: 'gmail_sales_committed_source_reference_format',
+  sourceReferenceUrlSyntaxInvalidCount: 1,
+  canonicalSourceUrlRepairEligibleCount: 0,
+  gmailSendExecuted: false,
+  googleSheetsUpdated: false
+});
+const fx9Status = fx9.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(fx9Status.plannedNextAction, 'legacy_review_reference_promotion');
 
 assert.equal((code.match(/MailApp\.sendEmail\s*\(/g) || []).length, 1);
 assert.equal((code.match(/function runGmailSalesProductionControlLoop\s*\(/g) || []).length, 1);
