@@ -100,6 +100,31 @@ function createContext() {
     probeCallCount: 0,
     logs: []
   };
+  function formatDateForTimezone(dateValue, timezone, pattern) {
+    const date = dateValue instanceof Date ? dateValue : new Date(dateValue || '2026-07-03T00:00:00.000Z');
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone || 'Asia/Tokyo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).formatToParts(date).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+    const normalizedHour = parts.hour === '24' ? '00' : parts.hour;
+    const offsetMinutes = Math.round((Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(normalizedHour), Number(parts.minute), Number(parts.second)) - date.getTime()) / 60000);
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const absOffset = Math.abs(offsetMinutes);
+    const offset = `${sign}${String(Math.floor(absOffset / 60)).padStart(2, '0')}:${String(absOffset % 60).padStart(2, '0')}`;
+    const yyyyMMdd = `${parts.year}-${parts.month}-${parts.day}`;
+    if (pattern === 'yyyy-MM-dd') return yyyyMMdd;
+    if (pattern === 'HH:mm') return `${normalizedHour}:${parts.minute}`;
+    if (pattern === 'yyyy-MM-dd HH:mm') return `${yyyyMMdd} ${normalizedHour}:${parts.minute}`;
+    if (String(pattern || '').includes("yyyy-MM-dd'T'HH:mm:ssXXX")) return `${yyyyMMdd}T${normalizedHour}:${parts.minute}:${parts.second}${offset}`;
+    return yyyyMMdd;
+  }
+
   const context = {
     console,
     Date,
@@ -151,7 +176,7 @@ function createContext() {
     GmailApp: { createDraft: () => { state.draftCreateCount += 1; } },
     UrlFetchApp: { fetch: () => { state.urlFetchCount += 1; return { getResponseCode: () => 200, getContentText: () => '{}' }; } },
     Utilities: {
-      formatDate: () => '2026-07-03',
+      formatDate: formatDateForTimezone,
       getUuid: () => '00000000-0000-4000-8000-000000000001',
       computeDigest: (_algorithm, value) => Array.from(createHash('sha256').update(String(value || ''), 'utf8').digest()).map((byte) => byte > 127 ? byte - 256 : byte),
       DigestAlgorithm: { SHA_256: 'SHA_256' },
@@ -168,7 +193,6 @@ function createContext() {
   context.logGmailSalesJsonResult_ = (result) => state.logs.push(JSON.stringify(result));
   context.appendSafeLog_ = () => {};
   context.getConfig_ = () => ({ currentJstDate: '2026-07-03' });
-  context.getGmailSalesOperationalDayPolicy_ = () => ({ isWeeklyReviewDay: false, isOperationalDay: true, reason: 'monday_to_saturday' });
   context.getGmailSalesProductionPhase_ = () => 'ai_verification';
   context.runGmailSalesDailyAutomationTrigger = () => { state.sendAuthorityCallCount += 1; return { status: 'unexpected_send_authority_called' }; };
   return context;
@@ -955,6 +979,185 @@ const v7Inspect = v7.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog
 assert.equal(v7Inspect.safeToExecute, true);
 assert.equal(v7Inspect.groundingPromptBudgetSufficient, true);
 
+const w1 = createContext();
+installSheets(w1, sourceRows, reviewRows);
+installSourceReferenceReadiness(w1, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1,
+  recommendedNextAction: 'run_single_candidate_source_discovery'
+});
+w1.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+w1.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+const w1WritesBefore = w1.__state.propertyWriteCount + w1.__state.sheetWriteCount + w1.__state.triggerCreateCount + w1.__state.gmailSendCount;
+const w1Preflight = w1.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', skipLog: true });
+assert.equal(w1Preflight.event, 'gmail_sales_monday_recovery_preflight');
+assert.equal(w1Preflight.mode, 'read_only');
+assert.equal(w1Preflight.googleSheetsUpdated, false);
+assert.equal(w1Preflight.scriptPropertiesUpdated, false);
+assert.equal(w1Preflight.triggerChanged, false);
+assert.equal(w1Preflight.aiApiCalled, false);
+assert.equal(w1Preflight.gmailSendExecuted, false);
+assert.equal(w1.__state.propertyWriteCount + w1.__state.sheetWriteCount + w1.__state.triggerCreateCount + w1.__state.gmailSendCount, w1WritesBefore);
+
+assert.equal(Boolean(w1Preflight.nowJst), true);
+assert.equal(Boolean(w1Preflight.nowPacific), true);
+assert.equal(Boolean(w1Preflight.pacificQuotaDate), true);
+assert.equal(Boolean(w1Preflight.pacificQuotaResetAtJst), true);
+assert.equal(Number.isFinite(w1Preflight.minutesUntilPacificReset), true);
+assert.equal(w1Preflight.geminiRateLimitResetBasis, 'pacific_midnight');
+
+const w3 = createContext();
+installSheets(w3, sourceRows, reviewRows);
+const w3Preflight = w3.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-05T12:00:00+09:00', targetDate: '2026-07-05', skipLog: true });
+assert.equal(w3Preflight.isBusinessDayJst, false);
+assert.equal(w3Preflight.isSundayNoSend, true);
+assert.equal(w3Preflight.sendAllowed, false);
+
+const w4 = createContext();
+installSheets(w4, sourceRows, reviewRows);
+const w4Preflight = w4.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
+assert.equal(w4Preflight.isBusinessDayJst, true);
+assert.equal(w4Preflight.recoveryAllowed, true);
+assert.equal(w4Preflight.readyInventoryCount, 0);
+assert.equal(w4Preflight.sendAllowed, false);
+assert.notEqual(w4Preflight.recommendedMondayAction, 'run_production_send');
+
+const w5 = createContext();
+installSheets(w5, sourceRows, reviewRows);
+installSourceReferenceReadiness(w5, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1
+});
+w5.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+w5.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+w5.__props.GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY = '30';
+w5.__props.GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY = '29';
+const w5Preflight = w5.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
+assert.equal(w5Preflight.safeToExecute, false);
+assert.equal(w5Preflight.recommendedMondayAction, 'wait_for_grounding_quota_reset');
+assert.equal(w5Preflight.recommendedMondayActionReasonCode, 'grounding_daily_prompt_limit_reached');
+
+const w6 = createContext();
+installSheets(w6, sourceRows, reviewRows);
+installSourceReferenceReadiness(w6, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1
+});
+w6.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+w6.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+w6.__props.GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY = '30';
+w6.__props.GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY = '0';
+const w6Preflight = w6.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
+assert.equal(w6Preflight.groundingPromptBudgetSufficient, true);
+assert.equal(w6Preflight.safeToExecute, true);
+assert.equal(w6Preflight.recommendedMondayAction, 'run_recovery_safe_step_once');
+
+const w7 = createContext();
+installSheets(w7, sourceRows, reviewRows);
+installSourceReferenceReadiness(w7, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true
+});
+w7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = () => ({ evidenceEnrichmentEligibleCount: 1, enrichmentEligibilityReasonCounts: {}, enrichmentReadinessInvariantValid: true });
+w7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = w7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness;
+w7.inspectGmailSalesOfficialEvidenceFetchReadiness = () => ({ fetchReadinessValid: false, fetchEligibleCount: 0, fetchIneligibleCount: 1, fetchEligibilityReasonCounts: { canonical_source_url_not_committed: 1 }, fetchReadinessInvariantValid: true, canonicalSourceUrlRepairEligibleCount: 1 });
+w7.inspectGmailSalesOfficialEvidenceFetchReadiness_ = w7.inspectGmailSalesOfficialEvidenceFetchReadiness;
+const w7Inspect = w7.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+const w7Preflight = w7.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
+assert.equal(w7Inspect.plannedNextAction, 'canonical_source_url_repair');
+assert.equal(w7Preflight.recommendedMondayAction, 'run_canonical_source_url_repair_safe_step');
+
+const w8 = createContext();
+installSheets(w8, sourceRows, reviewRows);
+installSourceReferenceReadiness(w8, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true
+});
+w8.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = () => ({ evidenceEnrichmentEligibleCount: 1, enrichmentEligibilityReasonCounts: {}, enrichmentReadinessInvariantValid: true });
+w8.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = w8.inspectGmailSalesOfficialEvidenceEnrichmentReadiness;
+w8.inspectGmailSalesOfficialEvidenceFetchReadiness = () => ({ fetchReadinessValid: false, fetchEligibleCount: 0, fetchIneligibleCount: 1, fetchEligibilityReasonCounts: { explicit_url_candidate_missing: 1 }, fetchReadinessInvariantValid: true, canonicalSourceUrlRepairEligibleCount: 0 });
+w8.inspectGmailSalesOfficialEvidenceFetchReadiness_ = w8.inspectGmailSalesOfficialEvidenceFetchReadiness;
+w8.inspectGmailSalesCommittedSourceReferenceFormat = () => ({ event: 'gmail_sales_committed_source_reference_format', mode: 'read_only', sourceReferenceUrlSyntaxInvalidCount: 1, canonicalSourceUrlRepairEligibleCount: 0, canonicalRepairEligibleCount: 0, fetchIneligibleCount: 1, fetchEligibilityReasonCounts: { explicit_url_candidate_missing: 1 }, sampleValuesIncluded: false, piiOrUrlLogged: false });
+const w8Preflight = w8.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
+assert.equal(w8Preflight.aiApiCalled, false);
+assert.equal(['operator_review_before_control_loop', 'run_recovery_safe_step_once'].includes(w8Preflight.recommendedMondayAction), true);
+
+const w9 = createContext();
+installSheets(w9, sourceRows, reviewRows);
+installSourceReferenceReadiness(w9, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true
+});
+w9.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = w7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness;
+w9.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = w9.inspectGmailSalesOfficialEvidenceEnrichmentReadiness;
+w9.inspectGmailSalesOfficialEvidenceFetchReadiness = w7.inspectGmailSalesOfficialEvidenceFetchReadiness;
+w9.inspectGmailSalesOfficialEvidenceFetchReadiness_ = w9.inspectGmailSalesOfficialEvidenceFetchReadiness;
+w9.repairGmailSalesCommittedCanonicalSourceUrlOnce = () => ({
+  status: 'pass',
+  canonicalRepairEligibleCount: 1,
+  canonicalRepairAttempted: true,
+  canonicalRepairCommitted: true,
+  canonicalUrlReadBackMatched: true,
+  googleSheetsUpdated: true,
+  aiApiCalled: false,
+  urlFetchExecuted: false,
+  gmailSendExecuted: false,
+  triggerChanged: false
+});
+const w9Step = w9.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(w9Step.stepExecuted, 'canonical_source_url_repair');
+assert.equal(w9Step.actionStatus, 'pass');
+assert.equal(w9Step.canonicalUrlReadBackMatched, true);
+assert.equal(w9.__state.urlFetchCount, 0);
+assert.equal(w9.__state.aiWorkerCallCount, 0);
+assert.equal(w9.__state.gmailSendCount, 0);
+assert.equal(w9.__state.triggerCreateCount, 0);
+
+const w10 = createContext();
+installSheets(w10, sourceRows, reviewRows);
+installSourceReferenceReadiness(w10, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1
+});
+w10.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+w10.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+const w10Before = w10.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+const w10Fingerprint = w10.buildGmailSalesRecoveryNoOpFingerprint_(w10Before, w10Before.checkpointState);
+w10.__props.GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_NOOP_LOOP_JSON = JSON.stringify({ fingerprint: w10Fingerprint, consecutiveCount: 1, updatedAt: '2026-07-06T00:00:00.000Z' });
+w10.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
+  w10.__state.groundedDiscoveryCallCount += 1;
+  return { status: 'pass', estimatedCostYen: 3 };
+};
+const w10Step = w10.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(w10Step.actionStatus, 'blocked');
+assert.equal(w10Step.actionBlockedReason, 'no_progress_loop_detected');
+assert.equal(w10Step.operatorActionRequired, true);
+assert.equal(w10.__state.groundedDiscoveryCallCount, 0);
+
+const w11Free = createContext();
+const w11FreeConfig = w11Free.getGmailSalesGeminiOperationalConfig_();
+assert.equal(['unknown', 'free'].includes(w11FreeConfig.operationalTier), true);
+assert.equal(w11FreeConfig.effectiveGroundingDailyPromptLimit, 30);
+const w11Paid = createContext();
+w11Paid.__props.GEMINI_OPERATIONAL_TIER = 'paid_tier_1';
+w11Paid.__props.GMAIL_SALES_GROUNDING_DAILY_PROMPT_LIMIT = '90';
+const w11PaidConfig = w11Paid.getGmailSalesGeminiOperationalConfig_();
+assert.equal(w11PaidConfig.operationalTier, 'paid_tier_1');
+assert.equal(w11PaidConfig.effectiveGroundingDailyPromptLimit, 90);
+
+assert.equal((code.match(/MailApp\.sendEmail\s*\(/g) || []).length, 1);
+assert.equal((code.match(/function runGmailSalesProductionControlLoop\s*\(/g) || []).length, 1);
+assert.equal((code.match(/function runGmailSalesDailyAutomationTrigger\s*\(/g) || []).length, 1);
+assert.equal(/approvedBasisType:\s*['"]manual_legal_reviewed['"]/.test(code), false);
+
 assert.equal(JSON.stringify(s1Step).indexOf('providerErrorCategoryCounts'), -1);
 assert.equal(s1.__state.lockAttempts, 1);
 assert.equal(s1.__state.urlFetchCount, 0);
@@ -1008,6 +1211,18 @@ console.log(JSON.stringify({
   fixtureV5AiBudgetGateBlocked: v5.__state.aiWorkerCallCount === 0,
   fixtureV6GroundingPromptGateBlocked: v6.__state.groundedDiscoveryCallCount === 0,
   fixtureV7GroundingPromptGateAllows: v7Inspect.groundingPromptBudgetSufficient,
+  fixtureW1MondayPreflightReadOnly: w1Preflight.mode === 'read_only',
+  fixtureW2PacificResetBasis: w1Preflight.geminiRateLimitResetBasis,
+  fixtureW3SundayNoSend: w3Preflight.isSundayNoSend && !w3Preflight.sendAllowed,
+  fixtureW4MondayRecoveryAllowedSendGated: w4Preflight.recoveryAllowed && !w4Preflight.sendAllowed,
+  fixtureW5PromptInsufficientAction: w5Preflight.recommendedMondayAction,
+  fixtureW6PromptSufficientAction: w6Preflight.recommendedMondayAction,
+  fixtureW7CanonicalRepairPlanned: w7Inspect.plannedNextAction,
+  fixtureW8SourceReferenceNotRepairableNoApi: w8Preflight.aiApiCalled === false,
+  fixtureW9CanonicalRepairSafeStep: w9Step.stepExecuted,
+  fixtureW10NoOpLoopBlocked: w10Step.actionBlockedReason,
+  fixtureW11FreePromptLimit: w11FreeConfig.effectiveGroundingDailyPromptLimit,
+  fixtureW11PaidPromptLimit: w11PaidConfig.effectiveGroundingDailyPromptLimit,
   fixtureS8SummaryLogCompact: JSON.stringify(s1Step).indexOf('providerErrorCategoryCounts') === -1,
   fixtureS9SafeStepLockAttempts: s1.__state.lockAttempts,
   fixtureS10UrlFetchCount: s1.__state.urlFetchCount,
