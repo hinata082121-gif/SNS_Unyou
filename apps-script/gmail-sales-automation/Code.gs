@@ -3011,7 +3011,7 @@ function inspectGmailSalesMondayRecoveryPreflight(options) {
   const usage = summarizeGmailSalesRecoveryDailyUsage_(aiConfig);
   const recovery = inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
   const format = inspectGmailSalesCommittedSourceReferenceFormat({ skipLog: true });
-  const operational = getGmailSalesGeminiOperationalConfig_();
+  const operational = Object.assign({}, getGmailSalesGeminiOperationalConfig_(), getGmailSalesRecoveryOperationalConfig_());
   const noOp = evaluateGmailSalesRecoveryNoOpLoopReadOnly_(recovery, recovery.checkpointState);
   const recommended = recommendGmailSalesMondayRecoveryAction_(recovery, policy, noOp, format);
   const result = Object.assign({
@@ -3067,10 +3067,23 @@ function inspectGmailSalesMondayRecoveryPreflight(options) {
     fetchIneligibleCount: Number(format.fetchIneligibleCount || recovery.fetchIneligibleCount || 0),
     fetchEligibilityReasonCounts: format.fetchEligibilityReasonCounts || recovery.fetchEligibilityReasonCounts || {},
     canonicalSourceUrlRepairEligibleCount: Number(recovery.canonicalSourceUrlRepairEligibleCount || format.canonicalSourceUrlRepairEligibleCount || format.canonicalRepairEligibleCount || 0),
+    legacyPromotionEligibleCount: Number(recovery.legacyPromotionEligibleCount || 0),
+    legacyPromotionRecommended: Number(recovery.legacyPromotionEligibleCount || 0) > 0,
+    freeTierPrimaryAction: recommended.freeTierPrimaryAction || recommended.recommendedMondayAction,
+    groundingShouldRunToday: recommended.recommendedMondayAction === 'run_grounded_discovery_fallback_once' || String(recovery.evidenceRecoveryAction || '') === 'grounded_official_source_discovery',
+    freeTierExpectedProgressToday: Math.max(0, Number(recovery.legacyPromotionEligibleCount || 0) + Number(recovery.changedDigestEligibleCount || 0) + Number(recovery.fetchEligibleCount || 0) + Number(recovery.canonicalSourceUrlRepairEligibleCount || format.canonicalSourceUrlRepairEligibleCount || format.canonicalRepairEligibleCount || 0)),
+    estimatedLegacyPromotionsAvailable: Number(recovery.estimatedLegacyPromotionsAvailable || recovery.legacyPromotionEligibleCount || 0),
+    estimatedUrlFetchEnrichmentAvailable: Number(recovery.fetchEligibleCount || 0),
+    estimatedAiReviewsAvailable: Number(recovery.changedDigestEligibleCount || 0),
+    expectedReadyInventoryIncreaseLowerBound: Number(recovery.changedDigestEligibleCount || 0) > 0 ? 0 : 0,
+    expectedReadyInventoryIncreaseUpperBound: Math.max(0, Number(recovery.legacyPromotionEligibleCount || 0) + Number(recovery.fetchEligibleCount || 0) + Number(recovery.changedDigestEligibleCount || 0)),
     sourceReferenceFormatDiagnosticRequired: Boolean(Number(recovery.evidenceEnrichmentEligibleCount || 0) > 0 && recovery.fetchReadinessValid !== true),
     sourceReferenceRepairRecommended: Number(recovery.canonicalSourceUrlRepairEligibleCount || format.canonicalSourceUrlRepairEligibleCount || format.canonicalRepairEligibleCount || 0) > 0,
     noOpLoopDetected: Boolean(noOp.noOpLoopDetected),
     noOpLoopConsecutiveCount: Number(noOp.noOpLoopConsecutiveCount || 0),
+    noOpLoopAction: noOp.noOpLoopDetected ? 'operator_diagnostic_required' : 'continue',
+    noOpLoopCount: Number(noOp.noOpLoopConsecutiveCount || 0),
+    quotaWaitDetected: String(recovery.actionBlockedReason || '') === 'grounding_daily_prompt_limit_reached' || String(recovery.actionBlockedReason || '') === 'grounding_prompt_reserve_reached',
     operatorActionRequired: Boolean(recommended.operatorActionRequired || noOp.noOpLoopDetected),
     recommendedMondayAction: recommended.recommendedMondayAction,
     recommendedMondayActionReasonCode: recommended.recommendedMondayActionReasonCode,
@@ -3089,7 +3102,7 @@ function inspectGmailSalesMondayRecoveryPreflight(options) {
 
 function recommendGmailSalesMondayRecoveryAction_(recovery, policy, noOp, format) {
   if (noOp && noOp.noOpLoopDetected) {
-    return { recommendedMondayAction: 'operator_review_before_control_loop', recommendedMondayActionReasonCode: 'no_progress_loop_detected', operatorActionRequired: true };
+    return { recommendedMondayAction: 'operator_diagnostic_required', recommendedMondayActionReasonCode: 'no_progress_loop_detected', operatorActionRequired: true, freeTierPrimaryAction: 'operator_diagnostic_required' };
   }
   if (!policy || !policy.isOperationalDay) {
     return { recommendedMondayAction: 'wait_for_next_business_day', recommendedMondayActionReasonCode: policy && policy.reason || 'not_business_day', operatorActionRequired: false };
@@ -3100,18 +3113,27 @@ function recommendGmailSalesMondayRecoveryAction_(recovery, policy, noOp, format
   if (Number(recovery.readyInventoryCount || 0) >= gmailDailyExpectedCount_() && recovery.manifestReady !== true) {
     return { recommendedMondayAction: 'build_exact_30_manifest', recommendedMondayActionReasonCode: 'ready_inventory_sufficient_manifest_stale', operatorActionRequired: false };
   }
-  if (String(recovery.actionBlockedReason || '') === 'grounding_daily_prompt_limit_reached' || recovery.groundingPromptBudgetSufficient === false) {
-    return { recommendedMondayAction: 'wait_for_grounding_quota_reset', recommendedMondayActionReasonCode: 'grounding_daily_prompt_limit_reached', operatorActionRequired: false };
-  }
-  if (String(recovery.plannedNextAction || recovery.evidenceRecoveryAction || '') === 'canonical_source_url_repair' ||
-      Number(recovery.canonicalSourceUrlRepairEligibleCount || format && (format.canonicalSourceUrlRepairEligibleCount || format.canonicalRepairEligibleCount) || 0) > 0) {
-    return { recommendedMondayAction: 'run_canonical_source_url_repair_safe_step', recommendedMondayActionReasonCode: 'committed_source_reference_not_fetchable', operatorActionRequired: false };
+  if (Number(recovery.legacyPromotionEligibleCount || 0) > 0) {
+    return { recommendedMondayAction: 'run_legacy_reference_promotion_safe_step', recommendedMondayActionReasonCode: 'legacy_review_reference_promotion_available', operatorActionRequired: false, freeTierPrimaryAction: 'legacy_review_reference_promotion' };
   }
   if (String(recovery.checkpointState || '') === GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.aiReviewPending) {
     return { recommendedMondayAction: 'run_recovery_safe_step_once', recommendedMondayActionReasonCode: 'ai_review_pending_single_batch', operatorActionRequired: false };
   }
-  if (recovery.safeToExecute === true || recovery.groundingPromptBudgetSufficient === true) {
-    return { recommendedMondayAction: 'run_recovery_safe_step_once', recommendedMondayActionReasonCode: 'grounding_budget_sufficient', operatorActionRequired: false };
+  if (Number(recovery.fetchEligibleCount || 0) > 0 && recovery.fetchReadinessValid === true) {
+    return { recommendedMondayAction: 'run_official_evidence_enrichment_safe_step', recommendedMondayActionReasonCode: 'official_evidence_fetch_ready', operatorActionRequired: false, freeTierPrimaryAction: 'official_evidence_enrichment' };
+  }
+  if (String(recovery.plannedNextAction || recovery.evidenceRecoveryAction || '') === 'canonical_source_url_repair' ||
+      Number(recovery.canonicalSourceUrlRepairEligibleCount || format && (format.canonicalSourceUrlRepairEligibleCount || format.canonicalRepairEligibleCount) || 0) > 0) {
+    return { recommendedMondayAction: 'run_canonical_source_url_repair_safe_step', recommendedMondayActionReasonCode: 'committed_source_reference_not_fetchable', operatorActionRequired: false, freeTierPrimaryAction: 'canonical_source_url_repair' };
+  }
+  if (String(recovery.actionBlockedReason || '') === 'grounding_daily_prompt_limit_reached' || String(recovery.actionBlockedReason || '') === 'grounding_prompt_reserve_reached' || recovery.groundingPromptBudgetSufficient === false) {
+    return { recommendedMondayAction: 'wait_for_grounding_quota_reset', recommendedMondayActionReasonCode: recovery.actionBlockedReason || 'grounding_daily_prompt_limit_reached', operatorActionRequired: false, freeTierPrimaryAction: 'wait_for_grounding_quota_reset' };
+  }
+  if (recovery.safeToExecute === true && String(recovery.evidenceRecoveryAction || '') === 'grounded_official_source_discovery') {
+    return { recommendedMondayAction: 'run_grounded_discovery_fallback_once', recommendedMondayActionReasonCode: 'grounding_fallback_available', operatorActionRequired: false, freeTierPrimaryAction: 'grounded_official_source_discovery' };
+  }
+  if (recovery.safeToExecute === true) {
+    return { recommendedMondayAction: 'run_recovery_safe_step_once', recommendedMondayActionReasonCode: recovery.evidenceRecoveryActionReasonCode || 'safe_recovery_action_available', operatorActionRequired: false };
   }
   if (Number(recovery.evidenceEnrichmentEligibleCount || 0) > 0 && recovery.fetchReadinessValid !== true) {
     return { recommendedMondayAction: 'operator_review_before_control_loop', recommendedMondayActionReasonCode: 'committed_source_reference_not_fetchable_not_repairable', operatorActionRequired: true };
@@ -5541,6 +5563,251 @@ function inspectGmailSalesSourceReferenceTransactionReadiness(options) {
   return inspectGmailSalesSourceReferenceTransactionReadiness_(options);
 }
 
+function inspectGmailSalesReviewLegacyReferencePromotionReadiness(options) {
+  const result = inspectGmailSalesReviewLegacyReferencePromotionReadiness_(options);
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function inspectGmailSalesReviewLegacyReferencePromotionReadiness_(options) {
+  const collected = collectGmailSalesReviewLegacyReferencePromotionTargets_();
+  const result = Object.assign({
+    event: 'gmail_sales_review_legacy_reference_promotion_readiness',
+    mode: 'read_only',
+    recommendedNextAction: collected.legacyPromotionEligibleCount > 0 ? 'run_legacy_reference_promotion_safe_step' : 'inspect_review_legacy_reference_promotion_readiness',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  }, collected);
+  delete result.targets;
+  return result;
+}
+
+function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { headers: [], items: [] };
+  const reviewData = context.reviewSheet ? readSheetObjects_(context.reviewSheet) : { headers: [], items: [] };
+  const resolved = context.spreadsheet ? resolveGmailSalesEvidenceReplenishmentQueueSheet_(context.spreadsheet) : { sheet: null };
+  const sourceHeaderMap = context.sourceSheet ? buildExactSheetHeaderMap_(context.sourceSheet) : buildExactSheetHeaderMapFromHeaders_([]);
+  const duplicateJoinKeyCount = countDuplicateNonEmptyValues_((sourceData.items || []).map((item) => buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)));
+  const duplicateReviewCandidateTokenCount = countDuplicateNonEmptyValues_((reviewData.items || []).map((item) => buildGroundingCandidateToken_(item.row || {})));
+  const duplicateReviewSourceDigestCount = countDuplicateNonEmptyValues_((reviewData.items || []).map((item) => String((item.row || {}).sourceRowDigest || '').trim()));
+  const sourceByKey = {};
+  (sourceData.items || []).forEach((item) => {
+    sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
+  });
+  const stats = {
+    sourceSheetPresent: Boolean(context.sourceSheet),
+    reviewSheetPresent: Boolean(context.reviewSheet),
+    queueSheetPresent: Boolean(resolved.sheet),
+    sourceCandidateCount: (sourceData.items || []).length,
+    reviewRowCount: (reviewData.items || []).length,
+    sourceReviewJoinAttemptCount: 0,
+    sourceReviewJoinSucceededCount: 0,
+    sourceReviewJoinFailedCount: 0,
+    sourceRowDigestMatchCount: 0,
+    sourceRowDigestMismatchCount: 0,
+    reviewSourceReferencePresentCount: 0,
+    sourceReferencePresentCount: 0,
+    reviewOnlyLegacyReferenceCount: 0,
+    staleReviewReferenceCount: 0,
+    legacyPromotionCandidateCount: 0,
+    legacyPromotionEligibleCount: 0,
+    legacyPromotionIneligibleCount: 0,
+    legacyPromotionBlockedReasonCounts: {},
+    sourceReferenceHashPresentOnReviewCount: 0,
+    sourceReferenceHashMissingOnReviewCount: 0,
+    reviewSafetyVerifiedTrueCount: 0,
+    reviewIdentityVerifiedTrueCount: 0,
+    reviewVerificationStatusVerifiedCount: 0,
+    reviewValidatorVersionCurrentCount: 0,
+    sourceTargetCellWritableCount: 0,
+    sourceTargetFormulaCellCount: 0,
+    sourceTargetMergedCellCount: 0,
+    sourceTargetProtectedCellCount: 0,
+    duplicateJoinKeyCount,
+    duplicateReviewCandidateTokenCount,
+    duplicateReviewSourceDigestCount,
+    targets: []
+  };
+  (sourceData.items || []).forEach((item) => {
+    if (String((item.row || {}).sourceReference || '').trim()) stats.sourceReferencePresentCount += 1;
+  });
+  (reviewData.items || []).forEach((item) => {
+    const reviewed = item.row || {};
+    const reviewReference = String(reviewed.sourceReference || '').trim();
+    const reviewType = String(reviewed.sourceType || '').trim();
+    const reviewHash = String(reviewed.sourceReferenceHash || '').trim();
+    if (reviewReference) stats.reviewSourceReferencePresentCount += 1;
+    if (reviewHash) stats.sourceReferenceHashPresentOnReviewCount += 1;
+    else if (reviewReference) stats.sourceReferenceHashMissingOnReviewCount += 1;
+    if (normalizeBooleanCell_(reviewed.sourceSafetyVerified)) stats.reviewSafetyVerifiedTrueCount += 1;
+    if (normalizeBooleanCell_(reviewed.sourceIdentityVerified)) stats.reviewIdentityVerifiedTrueCount += 1;
+    if (normalizeVerificationStatus_(reviewed.sourceVerificationStatus) === 'verified') stats.reviewVerificationStatusVerifiedCount += 1;
+    if (normalizeValidatorVersion_(reviewed.sourceSafetyValidatorVersion) === GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION &&
+        normalizeValidatorVersion_(reviewed.sourceIdentityValidatorVersion) === GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION &&
+        normalizeValidatorVersion_(reviewed.sourceVerificationPolicyVersion) === GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) {
+      stats.reviewValidatorVersionCurrentCount += 1;
+    }
+    stats.sourceReviewJoinAttemptCount += 1;
+    const sourceItem = sourceByKey[String(reviewed.sourceRowKey || '').trim()];
+    const reasons = [];
+    if (!sourceItem) {
+      stats.sourceReviewJoinFailedCount += 1;
+      reasons.push('source_row_not_found');
+    } else {
+      stats.sourceReviewJoinSucceededCount += 1;
+      const sourceReference = String(sourceItem.row.sourceReference || '').trim();
+      const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+      if (String(reviewed.sourceRowDigest || '').trim() && queue.include && String(queue.row.sourceRowDigest || '') === String(reviewed.sourceRowDigest || '').trim()) stats.sourceRowDigestMatchCount += 1;
+      else stats.sourceRowDigestMismatchCount += 1;
+      if (reviewReference && !sourceReference) stats.reviewOnlyLegacyReferenceCount += 1;
+      if (reviewReference && sourceReference && reviewReference !== sourceReference) stats.staleReviewReferenceCount += 1;
+      if (reviewReference && !sourceReference) {
+        stats.legacyPromotionCandidateCount += 1;
+        const capability = inspectSourceReferenceCellCapability_(context.sourceSheet, sourceItem.rowIndex, resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceReference').columnIndex);
+        if (capability.sourceCellWritableByStructure) stats.sourceTargetCellWritableCount += 1;
+        if (capability.sourceCellHasFormula || capability.sourceCellHasArrayFormula) stats.sourceTargetFormulaCellCount += 1;
+        if (capability.sourceCellIsPartOfMergedRange) stats.sourceTargetMergedCellCount += 1;
+        if (capability.sourceCellIsProtected) stats.sourceTargetProtectedCellCount += 1;
+        if (!capability.sourceCellWritableByStructure) reasons.push('source_target_cell_not_writable');
+        if (!queue.include) reasons.push(queue.reason || 'source_policy_blocked');
+        if (!String(reviewed.sourceRowDigest || '').trim()) reasons.push('source_row_digest_missing');
+        else if (!queue.include || String(queue.row.sourceRowDigest || '') !== String(reviewed.sourceRowDigest || '').trim()) reasons.push('source_row_digest_mismatch');
+        if (!reviewHash) reasons.push('source_reference_hash_missing_on_review');
+        else if (reviewHash !== buildGmailSalesSourceReferenceHash_(reviewType, reviewReference)) reasons.push('source_reference_hash_mismatch');
+        if (!isSupportedOfficialEvidenceSourceType_(reviewType)) reasons.push('unsupported_source_type');
+        if (!normalizeBooleanCell_(reviewed.sourceSafetyVerified)) reasons.push('review_safety_not_verified');
+        if (!normalizeBooleanCell_(reviewed.sourceIdentityVerified)) reasons.push('review_identity_not_verified');
+        if (normalizeVerificationStatus_(reviewed.sourceVerificationStatus) !== 'verified') reasons.push('review_status_not_verified');
+        if (normalizeValidatorVersion_(reviewed.sourceSafetyValidatorVersion) !== GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION ||
+            normalizeValidatorVersion_(reviewed.sourceIdentityValidatorVersion) !== GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION ||
+            normalizeValidatorVersion_(reviewed.sourceVerificationPolicyVersion) !== GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) reasons.push('review_validator_version_stale');
+        const expectedDigest = computeGmailSalesSourceVerificationDigest_(reviewed, {
+          sourceType: reviewType,
+          sourceReferenceHash: reviewHash,
+          sourceVerifiedAt: reviewed.sourceVerifiedAt
+        });
+        if (!String(reviewed.sourceVerificationDigest || '').trim() || String(reviewed.sourceVerificationDigest || '').trim() !== expectedDigest) reasons.push('review_verification_digest_mismatch');
+        if (duplicateJoinKeyCount > 0 || duplicateReviewCandidateTokenCount > 0 || duplicateReviewSourceDigestCount > 0) reasons.push('duplicate_join_or_digest');
+        if (reasons.length === 0) {
+          stats.legacyPromotionEligibleCount += 1;
+          stats.targets.push({ sourceItem, reviewItem: item });
+        }
+      }
+    }
+    if (reviewReference && (!sourceItem || !String((sourceItem.row || {}).sourceReference || '').trim())) {
+      if (reasons.length > 0) {
+        stats.legacyPromotionIneligibleCount += 1;
+        incrementCount_(stats.legacyPromotionBlockedReasonCounts, reasons[0]);
+      }
+    }
+  });
+  return stats;
+}
+
+function promoteGmailSalesReviewLegacyReferencesOnce(options) {
+  const settings = options || {};
+  const props = PropertiesService.getScriptProperties();
+  if (!settings.lockAlreadyHeld && (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false')) {
+    return buildGmailSalesLegacyReferencePromotionResult_('blocked', { blockedReason: 'safe_rest_required' });
+  }
+  const lock = settings.lockAlreadyHeld ? null : LockService.getScriptLock();
+  if (lock && !lock.tryLock(30000)) return buildGmailSalesLegacyReferencePromotionResult_('blocked', { blockedReason: 'lock_unavailable' });
+  try {
+    return promoteGmailSalesReviewLegacyReferencesWorker_(settings);
+  } finally {
+    if (lock) lock.releaseLock();
+  }
+}
+
+function promoteGmailSalesReviewLegacyReferencesWorker_(options) {
+  const settings = options || {};
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const collected = collectGmailSalesReviewLegacyReferencePromotionTargets_();
+  const batchSize = Math.max(1, Math.min(10, Number(PropertiesService.getScriptProperties().getProperty('GMAIL_SALES_LEGACY_PROMOTION_BATCH_SIZE') || '5')));
+  const targets = (collected.targets || []).slice(0, batchSize);
+  const headers = context.sourceSheet ? getSheetHeaders_(context.sourceSheet) : [];
+  const fields = ['sourceReference', 'sourceReferenceHash', 'sourceType', 'sourceVerificationStatus', 'sourceSafetyVerified', 'sourceIdentityVerified', 'sourceSafetyValidatorVersion', 'sourceIdentityValidatorVersion', 'sourceVerificationPolicyVersion', 'sourceVerifiedAt', 'sourceVerificationDigest'];
+  const result = buildGmailSalesLegacyReferencePromotionResult_('pass', Object.assign({}, collected, {
+    mode: 'safe_step',
+    attemptedPromotionCount: targets.length,
+    succeededPromotionCount: 0,
+    failedPromotionCount: 0,
+    rolledBackPromotionCount: 0,
+    rollbackSucceededCount: 0,
+    rollbackFailedCount: 0,
+    readBackMatchedCount: 0,
+    readBackMismatchCount: 0,
+    batchSize
+  }));
+  delete result.targets;
+  targets.forEach((target) => {
+    const sourceItem = target.sourceItem;
+    const review = target.reviewItem.row || {};
+    const snapshot = {};
+    fields.forEach((field) => {
+      snapshot[field] = getCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field);
+    });
+    fields.forEach((field) => {
+      setCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field, review[field] || '');
+    });
+    SpreadsheetApp.flush();
+    const readBack = {};
+    fields.forEach((field) => {
+      readBack[field] = String(getCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field) || '').trim();
+    });
+    const matched = fields.every((field) => String(readBack[field] || '').trim() === String(review[field] || '').trim());
+    if (matched) {
+      result.succeededPromotionCount += 1;
+      result.readBackMatchedCount += 1;
+    } else {
+      result.failedPromotionCount += 1;
+      result.readBackMismatchCount += 1;
+      result.rolledBackPromotionCount += 1;
+      fields.forEach((field) => {
+        setCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field, snapshot[field] || '');
+      });
+      SpreadsheetApp.flush();
+      const rollbackMatched = fields.every((field) => String(getCellByHeader_(context.sourceSheet, headers, sourceItem.rowIndex, field) || '').trim() === String(snapshot[field] || '').trim());
+      if (rollbackMatched) result.rollbackSucceededCount += 1;
+      else result.rollbackFailedCount += 1;
+    }
+  });
+  result.status = result.failedPromotionCount > 0 ? 'partial' : 'pass';
+  result.googleSheetsUpdated = result.succeededPromotionCount > 0;
+  if (!(settings && settings.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function buildGmailSalesLegacyReferencePromotionResult_(status, overrides) {
+  return Object.assign({
+    event: 'gmail_sales_review_legacy_reference_promotion',
+    mode: 'safe_step',
+    status,
+    stepExecuted: 'legacy_review_reference_promotion',
+    attemptedPromotionCount: 0,
+    succeededPromotionCount: 0,
+    failedPromotionCount: 0,
+    rolledBackPromotionCount: 0,
+    rollbackSucceededCount: 0,
+    rollbackFailedCount: 0,
+    readBackMatchedCount: 0,
+    readBackMismatchCount: 0,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  }, overrides || {});
+}
+
 function inspectGmailSalesSourceReferenceTransactionReadiness_(options) {
   const aiConfig = getGmailSalesAiConfig_();
   const grounding = getGmailSalesGroundingConfig_(aiConfig);
@@ -6832,6 +7099,18 @@ function runGmailSalesAutomatedEvidenceRecoveryStepWorker_(options) {
       sourceReferenceArrayFormulaCellCount: Number(actionResult.sourceReferenceArrayFormulaCellCount || 0),
       sourceReferenceMergedCellCount: Number(actionResult.sourceReferenceMergedCellCount || 0),
       sourceReferenceProtectedCellCount: Number(actionResult.sourceReferenceProtectedCellCount || 0),
+      legacyPromotionEligibleCount: Number(actionResult.legacyPromotionEligibleCount || 0),
+      legacyPromotionCandidateCount: Number(actionResult.legacyPromotionCandidateCount || 0),
+      legacyPromotionIneligibleCount: Number(actionResult.legacyPromotionIneligibleCount || 0),
+      reviewOnlyLegacyReferenceCount: Number(actionResult.reviewOnlyLegacyReferenceCount || 0),
+      attemptedPromotionCount: Number(actionResult.attemptedPromotionCount || 0),
+      succeededPromotionCount: Number(actionResult.succeededPromotionCount || 0),
+      failedPromotionCount: Number(actionResult.failedPromotionCount || 0),
+      rolledBackPromotionCount: Number(actionResult.rolledBackPromotionCount || 0),
+      rollbackSucceededCount: Number(actionResult.rollbackSucceededCount || 0),
+      rollbackFailedCount: Number(actionResult.rollbackFailedCount || 0),
+      readBackMatchedCount: Number(actionResult.readBackMatchedCount || 0),
+      readBackMismatchCount: Number(actionResult.readBackMismatchCount || 0),
       evidenceEnrichmentEligibleCount: Number(actionResult.evidenceEnrichmentEligibleCount || 0),
       fetchEligibleCount: Number(actionResult.fetchEligibleCount || 0),
       fetchReadinessValid: Boolean(actionResult.fetchReadinessValid),
@@ -6887,10 +7166,12 @@ function runGmailSalesEvidencePackageRecoveryWorker_(status, options) {
     triggerChanged: false
   };
   const sourceReferenceReadiness = inspectGmailSalesSourceReferenceTransactionReadiness_({ skipLog: true });
+  const legacyPromotionReadiness = inspectGmailSalesReviewLegacyReferencePromotionReadiness_({ skipLog: true });
   const enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness_({ skipLog: true });
   const fetchReadiness = inspectGmailSalesOfficialEvidenceFetchReadiness_({ skipLog: true });
   const actionPlan = planGmailSalesEvidenceRecoveryAction_(status || {}, {
     sourceReferenceReadiness,
+    legacyPromotionReadiness,
     enrichmentReadiness,
     fetchReadiness
   });
@@ -6898,6 +7179,7 @@ function runGmailSalesEvidencePackageRecoveryWorker_(status, options) {
   const estimatedActionCost = estimateGmailSalesRecoveryActionCostYen_(actionPlan);
   const summary = Object.assign({}, resultBase,
     summarizeGmailSalesSourceReferenceReadinessForRecovery_(sourceReferenceReadiness),
+    summarizeGmailSalesLegacyReferencePromotionReadiness_(legacyPromotionReadiness),
     summarizeGmailSalesEvidenceRecoveryActionReadiness_(enrichmentReadiness, fetchReadiness),
     usage,
     actionPlan);
@@ -6931,6 +7213,8 @@ function runGmailSalesEvidencePackageRecoveryWorker_(status, options) {
       scriptPropertiesUpdated: Boolean(probe.scriptPropertiesUpdated || probe.probeContractValid),
       aiApiCalled: false
     });
+  } else if (actionPlan.evidenceRecoveryAction === 'legacy_review_reference_promotion') {
+    actionResult = promoteGmailSalesReviewLegacyReferencesOnce({ lockAlreadyHeld: true, source: settings.source || 'automated_evidence_recovery', skipLog: true, summaryOnly: true });
   } else if (actionPlan.evidenceRecoveryAction === 'official_evidence_enrichment') {
     actionResult = runGmailSalesOfficialEvidenceEnrichmentOnce({ lockAlreadyHeld: true, source: settings.source || 'automated_evidence_recovery', skipLog: true, summaryOnly: true });
   } else if (actionPlan.evidenceRecoveryAction === 'canonical_source_url_repair') {
@@ -6978,9 +7262,20 @@ function runGmailSalesEvidencePackageRecoveryWorker_(status, options) {
 
 function planGmailSalesEvidenceRecoveryAction_(status, readiness) {
   const source = readiness && readiness.sourceReferenceReadiness || {};
+  const legacy = readiness && readiness.legacyPromotionReadiness || {};
   const enrichment = readiness && readiness.enrichmentReadiness || {};
   const fetch = readiness && readiness.fetchReadiness || {};
   const reasons = enrichment.enrichmentEligibilityReasonCounts || {};
+  const recoveryConfig = getGmailSalesRecoveryOperationalConfig_();
+  if (Number(legacy.legacyPromotionEligibleCount || 0) > 0) {
+    return Object.assign(
+      buildGmailSalesEvidenceRecoveryActionPlan_('legacy_review_reference_promotion', 'legacy_review_reference_promotion_available', 'run_legacy_reference_promotion_safe_step', 'none', 'sheet_update', true),
+      {
+        legacyReferencePromotionPreferred: recoveryConfig.legacyReferencePromotionPreferred,
+        groundingFallbackOnly: recoveryConfig.groundingFallbackOnly
+      }
+    );
+  }
   if (shouldRunGmailSalesSourceReferenceCellProbe_(source)) {
     return buildGmailSalesEvidenceRecoveryActionPlan_('source_reference_cell_write_probe', 'source_reference_cell_probe_required', 'run_source_reference_cell_write_probe', 'none', 'sheet_probe_and_property_summary', true);
   }
@@ -7008,11 +7303,18 @@ function planGmailSalesEvidenceRecoveryAction_(status, readiness) {
       Number(source.eligibleTransactionTargetCount || source.sourceReferenceEligibleCellCount || 0) > 0) {
     const promptUsage = getGmailSalesGroundingPromptRequestUsage_();
     const plannedPromptCount = getGmailSalesPlannedGroundingPromptRequestCount_();
-    const promptBudgetSufficient = Number(promptUsage.remainingGroundingPromptRequestCountToday || 0) >= plannedPromptCount;
+    const groundingCandidatesUsedToday = Math.floor(Number(promptUsage.groundingPromptRequestCountToday || 0) / Math.max(1, plannedPromptCount));
+    const groundingCandidatesRemainingToday = Math.max(0, Number(recoveryConfig.maxGroundingCandidatesPerDay || 0) - groundingCandidatesUsedToday);
+    let groundingBlockedReason = '';
+    if (recoveryConfig.freeTierMode && !recoveryConfig.freeTierGroundingEnabled) groundingBlockedReason = 'free_tier_grounding_disabled';
+    else if (recoveryConfig.freeTierMode && groundingCandidatesRemainingToday <= 0) groundingBlockedReason = 'free_tier_grounding_daily_candidate_limit_reached';
+    else if (recoveryConfig.freeTierMode && Number(promptUsage.remainingGroundingPromptRequestCountToday || 0) <= Number(recoveryConfig.groundingPromptReserve || 0)) groundingBlockedReason = 'grounding_prompt_reserve_reached';
+    const promptBudgetSufficient = !groundingBlockedReason && Number(promptUsage.remainingGroundingPromptRequestCountToday || 0) >= plannedPromptCount;
+    if (!groundingBlockedReason && !promptBudgetSufficient) groundingBlockedReason = 'grounding_daily_prompt_limit_reached';
     return Object.assign(
       buildGmailSalesEvidenceRecoveryActionPlan_(
         'grounded_official_source_discovery',
-        promptBudgetSufficient ? 'grounded_source_discovery_available_because_fetch_readiness_false' : 'grounding_daily_prompt_limit_reached',
+        promptBudgetSufficient ? 'grounded_source_discovery_available_because_fetch_readiness_false' : groundingBlockedReason,
         'run_single_candidate_source_discovery',
         'gemini_grounding',
         'sheet_update',
@@ -7024,7 +7326,15 @@ function planGmailSalesEvidenceRecoveryAction_(status, readiness) {
         remainingGroundingPromptRequestCountToday: Number(promptUsage.remainingGroundingPromptRequestCountToday || 0),
         plannedGroundingPromptRequestCount: plannedPromptCount,
         groundingPromptBudgetSufficient: promptBudgetSufficient,
-        actionBlockedReason: promptBudgetSufficient ? '' : 'grounding_daily_prompt_limit_reached'
+        groundingFallbackOnly: recoveryConfig.groundingFallbackOnly,
+        freeTierGroundingEnabled: recoveryConfig.freeTierGroundingEnabled,
+        freeTierGroundingDailyCandidateLimit: recoveryConfig.maxGroundingCandidatesPerDay,
+        groundingCandidatesUsedToday,
+        groundingCandidatesRemainingToday,
+        groundingModelFailoverMax: recoveryConfig.groundingModelFailoverMax,
+        groundingCooldownActive: false,
+        groundingBlockedReason,
+        actionBlockedReason: promptBudgetSufficient ? '' : groundingBlockedReason
       }
     );
   }
@@ -7145,7 +7455,13 @@ function evaluateGmailSalesRecoveryNoOpLoopReadOnly_(status, nextState) {
 
 function shouldSkipGmailSalesRecoveryNoOpAccounting_(status) {
   const reason = String(status && status.actionBlockedReason || '');
-  return reason === 'grounding_daily_prompt_limit_reached' || reason === 'budget_limit_reached';
+  if (reason === 'grounding_daily_prompt_limit_reached' ||
+      reason === 'grounding_prompt_reserve_reached' ||
+      reason === 'free_tier_grounding_daily_candidate_limit_reached' ||
+      reason === 'budget_limit_reached') return true;
+  if (status && status.manifestReady === true) return true;
+  if (status && Number(status.readyInventoryCount || 0) >= gmailDailyExpectedCount_() && status.manifestReady !== true) return true;
+  return false;
 }
 
 function evaluateGmailSalesRecoveryNoOpLoopForSafeStep_(status, nextState) {
@@ -7205,6 +7521,18 @@ function summarizeGmailSalesSourceReferenceReadinessForRecovery_(readiness) {
     sourceReferenceMergedCellCount: Number(value.sourceReferenceMergedCellCount || 0),
     sourceReferenceProtectedCellCount: Number(value.sourceReferenceProtectedCellCount || 0),
     recommendedNextAction: value.recommendedNextAction || ''
+  };
+}
+
+function summarizeGmailSalesLegacyReferencePromotionReadiness_(readiness) {
+  const value = readiness || {};
+  return {
+    legacyPromotionEligibleCount: Number(value.legacyPromotionEligibleCount || 0),
+    legacyPromotionCandidateCount: Number(value.legacyPromotionCandidateCount || 0),
+    legacyPromotionIneligibleCount: Number(value.legacyPromotionIneligibleCount || 0),
+    legacyPromotionBlockedReasonCounts: value.legacyPromotionBlockedReasonCounts || {},
+    reviewOnlyLegacyReferenceCount: Number(value.reviewOnlyLegacyReferenceCount || 0),
+    estimatedLegacyPromotionsAvailable: Number(value.legacyPromotionEligibleCount || 0)
   };
 }
 
@@ -7342,16 +7670,20 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
   result.evidenceRecoveryAction = result.evidenceRecoveryEligibleCount > 0 ? 'evidence_package_recovery' : '';
   if (result.evidenceRecoveryEligibleCount > 0) {
     const sourceReferenceReadiness = inspectGmailSalesSourceReferenceTransactionReadiness_({ skipLog: true });
+    const legacyPromotionReadiness = inspectGmailSalesReviewLegacyReferencePromotionReadiness_({ skipLog: true });
     const enrichmentReadiness = inspectGmailSalesOfficialEvidenceEnrichmentReadiness_({ skipLog: true });
     const fetchReadiness = inspectGmailSalesOfficialEvidenceFetchReadiness_({ skipLog: true });
     const recoveryPlan = planGmailSalesEvidenceRecoveryAction_(result, {
       sourceReferenceReadiness,
+      legacyPromotionReadiness,
       enrichmentReadiness,
       fetchReadiness
     });
     Object.assign(result,
       summarizeGmailSalesSourceReferenceReadinessForRecovery_(sourceReferenceReadiness),
+      summarizeGmailSalesLegacyReferencePromotionReadiness_(legacyPromotionReadiness),
       summarizeGmailSalesEvidenceRecoveryActionReadiness_(enrichmentReadiness, fetchReadiness),
+      getGmailSalesRecoveryOperationalConfig_(),
       recoveryPlan);
     Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
   }
@@ -7463,6 +7795,27 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     fetchReadinessValid: false,
     fetchReadinessInvariantValid: false,
     canonicalSourceUrlRepairEligibleCount: 0,
+    legacyPromotionEligibleCount: 0,
+    legacyPromotionCandidateCount: 0,
+    legacyPromotionIneligibleCount: 0,
+    reviewOnlyLegacyReferenceCount: 0,
+    estimatedLegacyPromotionsAvailable: 0,
+    operationalTier: 'unknown',
+    recoveryMode: 'free_tier',
+    freeTierMode: true,
+    groundingFallbackOnly: true,
+    maxGroundingCandidatesPerDay: 3,
+    maxGroundingCandidatesPerSafeStep: 1,
+    groundingModelCascadeSuppressed: true,
+    legacyReferencePromotionPreferred: true,
+    urlFetchEnrichmentPreferred: true,
+    freeTierGroundingEnabled: true,
+    freeTierGroundingDailyCandidateLimit: 3,
+    groundingCandidatesUsedToday: 0,
+    groundingCandidatesRemainingToday: 0,
+    groundingModelFailoverMax: 1,
+    groundingCooldownActive: false,
+    groundingBlockedReason: '',
     recommendedNextAction: '',
     blockedReasons: [],
     gmailSendExecuted: false,
@@ -10232,16 +10585,24 @@ function getGmailSalesGroundingConfig_(aiConfig) {
   const model = String(props.getProperty('GMAIL_SALES_GROUNDING_MODEL') || 'gemini-2.5-flash-lite').trim();
   const providerConfigurationValid = aiConfig.enabled === true && aiConfig.provider === 'gemini' && Boolean(aiConfig.model) && aiConfig.apiKeyConfigured === true;
   const operational = getGmailSalesGeminiOperationalConfig_();
+  const recovery = getGmailSalesRecoveryOperationalConfig_();
   const promptRequestLimit = operational.effectiveGroundingDailyPromptLimit;
   const modelCascadeSummary = normalizeGmailSalesGroundingModelCascade_(props.getProperty('GMAIL_SALES_GROUNDING_MODEL_CASCADE_JSON'), model);
+  const activeModelCascade = recovery.freeTierMode
+    ? modelCascadeSummary.activeModelCascade.slice(0, recovery.groundingModelFailoverMax)
+    : modelCascadeSummary.activeModelCascade;
+  const configuredMaxCandidates = Math.max(1, Math.min(10, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_CANDIDATES_PER_RUN') || '10')));
+  const maxCandidatesPerRun = recovery.freeTierMode
+    ? Math.max(1, Math.min(configuredMaxCandidates, recovery.maxGroundingCandidatesPerSafeStep))
+    : configuredMaxCandidates;
   return {
     enabled,
     model,
-    modelCascade: modelCascadeSummary.activeModelCascade,
+    modelCascade: activeModelCascade,
     configuredModelCascade: modelCascadeSummary.configuredModelCascade,
-    activeModelCascade: modelCascadeSummary.activeModelCascade,
+    activeModelCascade,
     configuredModelCount: modelCascadeSummary.configuredModelCount,
-    activeModelCount: modelCascadeSummary.activeModelCount,
+    activeModelCount: activeModelCascade.length,
     shutdownModelExcludedCount: modelCascadeSummary.shutdownModelExcludedCount,
     malformedModelExcludedCount: modelCascadeSummary.malformedModelExcludedCount,
     duplicateModelExcludedCount: modelCascadeSummary.duplicateModelExcludedCount,
@@ -10249,21 +10610,25 @@ function getGmailSalesGroundingConfig_(aiConfig) {
     modelValidationDetails: modelCascadeSummary.modelValidationDetails,
     providerConfigurationValid,
     apiKey: aiConfig.apiKey,
-    maxCandidatesPerRun: Math.max(1, Math.min(10, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_CANDIDATES_PER_RUN') || '10'))),
+    maxCandidatesPerRun,
     maxSearchQueriesPerDay: Math.max(1, Math.min(30, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_SEARCH_QUERIES_PER_DAY') || '30'))),
     maxPromptRequestsPerDay: promptRequestLimit,
     maxDailyCostYen: Math.max(0, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_DAILY_COST_YEN') || '100')),
     minOfficialConfidence: Math.max(0.98, Number(props.getProperty('GMAIL_SALES_GROUNDING_MIN_OFFICIAL_CONFIDENCE') || '0.98')),
     maxResultsPerCandidate: Math.max(1, Math.min(5, Number(props.getProperty('GMAIL_SALES_GROUNDING_MAX_RESULTS_PER_CANDIDATE') || '5'))),
+    freeTierMode: recovery.freeTierMode,
+    groundingFallbackOnly: recovery.groundingFallbackOnly,
+    groundingModelCascadeSuppressed: recovery.groundingModelCascadeSuppressed,
     version: String(props.getProperty('GMAIL_SALES_GROUNDING_VERSION') || GMAIL_SALES_GROUNDING_VERSION_DEFAULT)
   };
 }
 
 function getGmailSalesGeminiOperationalConfig_() {
   const props = PropertiesService.getScriptProperties();
-  const tierRaw = String(props.getProperty('GEMINI_OPERATIONAL_TIER') || '').trim().toLowerCase();
+  const tierRaw = String(props.getProperty('GEMINI_OPERATIONAL_TIER') || props.getProperty('GMAIL_SALES_OPERATIONAL_TIER') || '').trim().toLowerCase();
   const allowed = ['free', 'paid_tier_1', 'unknown'];
-  const operationalTier = allowed.indexOf(tierRaw) !== -1 ? tierRaw : 'unknown';
+  const normalizedRaw = tierRaw === 'paid' ? 'paid_tier_1' : tierRaw;
+  const operationalTier = allowed.indexOf(normalizedRaw) !== -1 ? normalizedRaw : 'unknown';
   const configured = Number(props.getProperty('GMAIL_SALES_GROUNDING_DAILY_PROMPT_LIMIT') ||
     props.getProperty('GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY') ||
     props.getProperty('GMAIL_SALES_GROUNDING_MAX_SEARCH_QUERIES_PER_DAY') ||
@@ -10278,6 +10643,35 @@ function getGmailSalesGeminiOperationalConfig_() {
     configuredGroundingDailyPromptLimit: configuredLimit,
     effectiveGroundingDailyPromptLimit: effectiveLimit,
     paidTierRecommended: operationalTier !== 'paid_tier_1'
+  };
+}
+
+function getGmailSalesRecoveryOperationalConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const tierRaw = String(props.getProperty('GMAIL_SALES_OPERATIONAL_TIER') || props.getProperty('GEMINI_OPERATIONAL_TIER') || '').trim().toLowerCase();
+  const operationalTier = tierRaw === 'paid' || tierRaw === 'paid_tier_1' ? 'paid' : (tierRaw === 'free' ? 'free' : 'unknown');
+  const modeRaw = String(props.getProperty('GMAIL_SALES_RECOVERY_MODE') || 'free_tier').trim().toLowerCase();
+  const recoveryMode = ['free_tier', 'paid_tier', 'conservative'].indexOf(modeRaw) !== -1 ? modeRaw : 'free_tier';
+  const freeTierMode = recoveryMode !== 'paid_tier' && operationalTier !== 'paid';
+  const maxGroundingCandidatesPerDay = Math.max(0, Math.min(3, Number(props.getProperty('GMAIL_SALES_FREE_TIER_GROUNDING_MAX_CANDIDATES_PER_DAY') || '3')));
+  const maxGroundingCandidatesPerSafeStep = Math.max(1, Math.min(1, Number(props.getProperty('GMAIL_SALES_FREE_TIER_GROUNDING_MAX_CANDIDATES_PER_STEP') || '1')));
+  const groundingModelFailoverMax = freeTierMode
+    ? Math.max(1, Math.min(1, Number(props.getProperty('GMAIL_SALES_FREE_TIER_GROUNDING_MODEL_FAILOVER_MAX') || '1')))
+    : Math.max(1, Math.min(4, Number(props.getProperty('GMAIL_SALES_FREE_TIER_GROUNDING_MODEL_FAILOVER_MAX') || '4')));
+  return {
+    operationalTier,
+    recoveryMode,
+    freeTierMode,
+    groundingFallbackOnly: freeTierMode,
+    maxGroundingCandidatesPerDay,
+    maxGroundingCandidatesPerSafeStep,
+    groundingModelCascadeSuppressed: freeTierMode,
+    groundingModelFailoverMax,
+    groundingPromptReserve: Math.max(0, Math.min(30, Number(props.getProperty('GMAIL_SALES_FREE_TIER_GROUNDING_PROMPT_RESERVE') || '3'))),
+    freeTierGroundingEnabled: String(props.getProperty('GMAIL_SALES_FREE_TIER_GROUNDING_ENABLED') || 'true').toLowerCase() !== 'false',
+    legacyReferencePromotionPreferred: freeTierMode,
+    urlFetchEnrichmentPreferred: freeTierMode,
+    freeTierUrlFetchBatchSize: Math.max(1, Math.min(10, Number(props.getProperty('GMAIL_SALES_FREE_TIER_URL_FETCH_BATCH_SIZE') || '5')))
   };
 }
 

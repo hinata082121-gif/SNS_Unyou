@@ -280,6 +280,58 @@ function buildReviewRowsWithDigests(context, sourceRows, evaluatedCount, missing
   return rows.slice(0, evaluatedCount + missingCount);
 }
 
+function installLegacyPromotionFixture(context, options = {}) {
+  const count = options.count || 5;
+  const eligibleCount = options.eligibleCount === undefined ? count : options.eligibleCount;
+  const sourceRows = makeSourceRows(count, { ready: true }).map((row) => Object.assign({}, row, {
+    sourceType: '',
+    sourceReference: '',
+    sourceReferenceHash: '',
+    sourceVerificationStatus: '',
+    sourceSafetyVerified: '',
+    sourceIdentityVerified: '',
+    sourceSafetyValidatorVersion: '',
+    sourceIdentityValidatorVersion: '',
+    sourceVerificationPolicyVersion: '',
+    sourceVerifiedAt: '',
+    sourceVerificationDigest: ''
+  }));
+  const reviewRows = buildReviewRowsWithDigests(context, sourceRows, count, 0).map((row, index) => {
+    const sourceType = 'official_site';
+    const sourceReference = `masked legacy official reference ${index + 1}`;
+    const sourceReferenceHash = context.buildGmailSalesSourceReferenceHash_(sourceType, sourceReference);
+    const sourceVerifiedAt = '2026-07-03T00:00:00.000Z';
+    const next = Object.assign({}, row, {
+      sourceType,
+      sourceReference,
+      sourceReferenceHash,
+      sourceVerificationStatus: 'verified',
+      sourceSafetyVerified: 'true',
+      sourceIdentityVerified: 'true',
+      sourceSafetyValidatorVersion: 'grounding-citation-safety-v3',
+      sourceIdentityValidatorVersion: 'grounding-citation-identity-v1',
+      sourceVerificationPolicyVersion: 'source-verification-policy-v1',
+      sourceVerifiedAt
+    });
+    next.sourceVerificationDigest = context.computeGmailSalesSourceVerificationDigest_(next, {
+      sourceType,
+      sourceReferenceHash,
+      sourceVerifiedAt
+    });
+    if (index >= eligibleCount) next.sourceSafetyVerified = 'false';
+    return next;
+  });
+  installSheets(context, sourceRows, reviewRows);
+  installSourceReferenceReadiness(context, {
+    sourceReferenceCellContractLastProbeValid: false,
+    transactionReadinessValid: true,
+    eligibleTransactionTargetCount: 0,
+    sourceReferenceEligibleCellCount: 0,
+    sourceReferenceStructurallyWritableCellCount: 0
+  });
+  return { sourceRows, reviewRows };
+}
+
 function installSourceReferenceReadiness(context, overrides = {}) {
   const readiness = () => Object.assign({
     transactionReadinessValid: true,
@@ -950,7 +1002,7 @@ v6.__props.GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY = '29';
 const v6Inspect = v6.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
 assert.equal(v6Inspect.evidenceRecoveryAction, 'grounded_official_source_discovery');
 assert.equal(v6Inspect.safeToExecute, false);
-assert.equal(v6Inspect.actionBlockedReason, 'grounding_daily_prompt_limit_reached');
+assert.equal(['grounding_daily_prompt_limit_reached', 'free_tier_grounding_daily_candidate_limit_reached', 'grounding_prompt_reserve_reached'].includes(v6Inspect.actionBlockedReason), true);
 assert.equal(v6Inspect.plannedGroundingPromptRequestCount, 3);
 assert.equal(v6Inspect.groundingPromptBudgetSufficient, false);
 v6.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
@@ -959,7 +1011,7 @@ v6.runGmailSalesGroundedOfficialSourceDiscoveryInternal_ = () => {
 };
 const v6Step = v6.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
 assert.equal(v6Step.actionStatus, 'blocked');
-assert.equal(v6Step.actionBlockedReason, 'grounding_daily_prompt_limit_reached');
+assert.equal(['grounding_daily_prompt_limit_reached', 'free_tier_grounding_daily_candidate_limit_reached', 'grounding_prompt_reserve_reached'].includes(v6Step.actionBlockedReason), true);
 assert.equal(v6.__state.groundedDiscoveryCallCount, 0);
 
 const v7 = createContext();
@@ -973,6 +1025,8 @@ installSourceReferenceReadiness(v7, {
 });
 v7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
 v7.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+v7.__props.GMAIL_SALES_OPERATIONAL_TIER = 'paid';
+v7.__props.GMAIL_SALES_RECOVERY_MODE = 'paid_tier';
 v7.__props.GMAIL_SALES_GROUNDING_MAX_PROMPT_REQUESTS_PER_DAY = '30';
 v7.__props.GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY = '20';
 const v7Inspect = v7.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
@@ -1039,7 +1093,7 @@ w5.__props.GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY = '29';
 const w5Preflight = w5.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
 assert.equal(w5Preflight.safeToExecute, false);
 assert.equal(w5Preflight.recommendedMondayAction, 'wait_for_grounding_quota_reset');
-assert.equal(w5Preflight.recommendedMondayActionReasonCode, 'grounding_daily_prompt_limit_reached');
+assert.equal(['grounding_daily_prompt_limit_reached', 'free_tier_grounding_daily_candidate_limit_reached', 'grounding_prompt_reserve_reached'].includes(w5Preflight.recommendedMondayActionReasonCode), true);
 
 const w6 = createContext();
 installSheets(w6, sourceRows, reviewRows);
@@ -1056,7 +1110,7 @@ w6.__props.GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY = '0';
 const w6Preflight = w6.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
 assert.equal(w6Preflight.groundingPromptBudgetSufficient, true);
 assert.equal(w6Preflight.safeToExecute, true);
-assert.equal(w6Preflight.recommendedMondayAction, 'run_recovery_safe_step_once');
+assert.equal(['run_recovery_safe_step_once', 'run_grounded_discovery_fallback_once'].includes(w6Preflight.recommendedMondayAction), true);
 
 const w7 = createContext();
 installSheets(w7, sourceRows, reviewRows);
@@ -1086,7 +1140,7 @@ w8.inspectGmailSalesOfficialEvidenceFetchReadiness_ = w8.inspectGmailSalesOffici
 w8.inspectGmailSalesCommittedSourceReferenceFormat = () => ({ event: 'gmail_sales_committed_source_reference_format', mode: 'read_only', sourceReferenceUrlSyntaxInvalidCount: 1, canonicalSourceUrlRepairEligibleCount: 0, canonicalRepairEligibleCount: 0, fetchIneligibleCount: 1, fetchEligibilityReasonCounts: { explicit_url_candidate_missing: 1 }, sampleValuesIncluded: false, piiOrUrlLogged: false });
 const w8Preflight = w8.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
 assert.equal(w8Preflight.aiApiCalled, false);
-assert.equal(['operator_review_before_control_loop', 'run_recovery_safe_step_once'].includes(w8Preflight.recommendedMondayAction), true);
+assert.equal(['operator_review_before_control_loop', 'operator_diagnostic_required', 'run_recovery_safe_step_once', 'run_grounded_discovery_fallback_once'].includes(w8Preflight.recommendedMondayAction), true);
 
 const w9 = createContext();
 installSheets(w9, sourceRows, reviewRows);
@@ -1152,6 +1206,128 @@ w11Paid.__props.GMAIL_SALES_GROUNDING_DAILY_PROMPT_LIMIT = '90';
 const w11PaidConfig = w11Paid.getGmailSalesGeminiOperationalConfig_();
 assert.equal(w11PaidConfig.operationalTier, 'paid_tier_1');
 assert.equal(w11PaidConfig.effectiveGroundingDailyPromptLimit, 90);
+
+const ft1 = createContext();
+const ft1Config = ft1.getGmailSalesRecoveryOperationalConfig_();
+assert.equal(ft1Config.recoveryMode, 'free_tier');
+assert.equal(ft1Config.freeTierMode, true);
+assert.equal(ft1Config.groundingFallbackOnly, true);
+assert.equal(ft1Config.maxGroundingCandidatesPerDay <= 3, true);
+assert.equal(ft1Config.maxGroundingCandidatesPerSafeStep, 1);
+assert.equal(ft1Config.groundingModelCascadeSuppressed, true);
+assert.equal(ft1Config.legacyReferencePromotionPreferred, true);
+assert.equal(ft1Config.urlFetchEnrichmentPreferred, true);
+
+const ft2 = createContext();
+installLegacyPromotionFixture(ft2, { count: 5 });
+const ft2Readiness = ft2.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(ft2Readiness.event, 'gmail_sales_review_legacy_reference_promotion_readiness');
+assert.equal(ft2Readiness.legacyPromotionCandidateCount, 5);
+assert.equal(ft2Readiness.legacyPromotionEligibleCount, 5);
+assert.equal(ft2Readiness.googleSheetsUpdated, false);
+assert.equal(ft2Readiness.aiApiCalled, false);
+assert.equal(ft2Readiness.urlFetchExecuted, false);
+
+const ft3 = createContext();
+installLegacyPromotionFixture(ft3, { count: 5 });
+const ft3Inspect = ft3.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(ft3Inspect.plannedNextAction, 'legacy_review_reference_promotion');
+assert.equal(ft3Inspect.safeToExecute, true);
+const ft3Step = ft3.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(ft3Step.stepExecuted, 'legacy_review_reference_promotion');
+assert.equal(ft3Step.succeededPromotionCount, 5);
+assert.equal(ft3.__state.aiWorkerCallCount, 0);
+assert.equal(ft3.__state.groundedDiscoveryCallCount, 0);
+assert.equal(ft3.__state.urlFetchCount, 0);
+assert.equal(ft3.__state.gmailSendCount, 0);
+
+const ft4 = createContext();
+installLegacyPromotionFixture(ft4, { count: 5, eligibleCount: 4 });
+const ft4Readiness = ft4.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(ft4Readiness.legacyPromotionEligibleCount, 4);
+assert.equal(ft4Readiness.legacyPromotionIneligibleCount, 1);
+assert.equal(Boolean(ft4Readiness.legacyPromotionBlockedReasonCounts.review_safety_not_verified), true);
+
+const ft5 = createContext();
+installLegacyPromotionFixture(ft5, { count: 5 });
+const ft5Preflight = ft5.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
+assert.equal(ft5Preflight.recommendedMondayAction, 'run_legacy_reference_promotion_safe_step');
+assert.equal(ft5Preflight.legacyPromotionRecommended, true);
+assert.equal(ft5Preflight.groundingFallbackOnly, true);
+
+const ft6 = createContext();
+installSheets(ft6, sourceRows, reviewRows);
+installSourceReferenceReadiness(ft6, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1
+});
+ft6.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+ft6.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+ft6.__props.GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY = '29';
+const ft6Inspect = ft6.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(ft6Inspect.safeToExecute, false);
+assert.equal(ft6Inspect.groundingFallbackOnly, true);
+assert.equal(['free_tier_grounding_daily_candidate_limit_reached', 'grounding_prompt_reserve_reached'].includes(ft6Inspect.groundingBlockedReason), true);
+assert.equal(ft6Inspect.groundingCandidatesRemainingToday >= 0, true);
+
+const ft7 = createContext();
+ft7.__props.GMAIL_SALES_OPERATIONAL_TIER = 'paid';
+ft7.__props.GMAIL_SALES_RECOVERY_MODE = 'paid_tier';
+ft7.__props.GMAIL_SALES_FREE_TIER_GROUNDING_MODEL_FAILOVER_MAX = '4';
+const ft7Config = ft7.getGmailSalesRecoveryOperationalConfig_();
+assert.equal(ft7Config.freeTierMode, false);
+assert.equal(ft7Config.groundingFallbackOnly, false);
+
+const ft8 = createContext();
+installLegacyPromotionFixture(ft8, { count: 2 });
+ft8.__props.GMAIL_SALES_LEGACY_PROMOTION_BATCH_SIZE = '1';
+const ft8Step = ft8.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(ft8Step.attemptedPromotionCount, 1);
+assert.equal(ft8Step.succeededPromotionCount, 1);
+
+const ft9 = createContext();
+installLegacyPromotionFixture(ft9, { count: 1 });
+const ft9BeforeWrites = ft9.__state.propertyWriteCount + ft9.__state.triggerCreateCount + ft9.__state.gmailSendCount + ft9.__state.draftCreateCount;
+ft9.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(ft9.__state.propertyWriteCount + ft9.__state.triggerCreateCount + ft9.__state.gmailSendCount + ft9.__state.draftCreateCount, ft9BeforeWrites);
+
+const ft10 = createContext();
+installLegacyPromotionFixture(ft10, { count: 1 });
+const ft10Preflight = ft10.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
+assert.equal(ft10Preflight.freeTierPrimaryAction, 'legacy_review_reference_promotion');
+assert.equal(ft10Preflight.estimatedLegacyPromotionsAvailable, 1);
+
+const ft11 = createContext();
+installLegacyPromotionFixture(ft11, { count: 1 });
+ft11.__props.GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_NOOP_LOOP_JSON = JSON.stringify({ fingerprint: 'different', consecutiveCount: 5 });
+const ft11Preflight = ft11.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-06T09:00:00+09:00', targetDate: '2026-07-06', skipLog: true });
+assert.equal(ft11Preflight.noOpLoopAction, 'continue');
+assert.equal(ft11Preflight.quotaWaitDetected, false);
+
+const ft12 = createContext();
+installLegacyPromotionFixture(ft12, { count: 1 });
+const ft12Result = ft12.promoteGmailSalesReviewLegacyReferencesOnce({ skipLog: true });
+assert.equal(ft12Result.gmailSendExecuted, false);
+assert.equal(ft12Result.aiApiCalled, false);
+assert.equal(ft12Result.urlFetchExecuted, false);
+assert.equal(ft12Result.scriptPropertiesUpdated, false);
+
+const ft13 = createContext();
+installSheets(ft13, sourceRows, reviewRows);
+installSourceReferenceReadiness(ft13, {
+  sourceReferenceCellContractLastProbeValid: true,
+  transactionReadinessValid: true,
+  eligibleTransactionTargetCount: 1,
+  sourceReferenceEligibleCellCount: 1
+});
+ft13.inspectGmailSalesOfficialEvidenceEnrichmentReadiness = u3EnrichmentReadiness;
+ft13.inspectGmailSalesOfficialEvidenceEnrichmentReadiness_ = u3EnrichmentReadiness;
+ft13.__props.GMAIL_SALES_FREE_TIER_GROUNDING_ENABLED = 'false';
+const ft13Inspect = ft13.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(ft13Inspect.actionBlockedReason, 'free_tier_grounding_disabled');
+assert.equal(ft13.__state.groundedDiscoveryCallCount, 0);
 
 assert.equal((code.match(/MailApp\.sendEmail\s*\(/g) || []).length, 1);
 assert.equal((code.match(/function runGmailSalesProductionControlLoop\s*\(/g) || []).length, 1);
