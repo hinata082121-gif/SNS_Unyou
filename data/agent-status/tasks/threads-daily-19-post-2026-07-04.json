@@ -1,0 +1,49 @@
+{
+  "id": "threads-daily-19-post-2026-07-04",
+  "agent": "Hermes",
+  "avatar": "pr-writer",
+  "title": "Threads 19:00 共感・導線投稿 2026-07-04",
+  "category": "threads_daily_post",
+  "status": "success",
+  "phase": "posted_and_recorded",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-07-04T19:02:06+09:00",
+  "updatedAt": "2026-07-04T19:02:06+09:00",
+  "summary": "2026-07-04 19:00枠のThreads投稿は、publishEnabled=true / dryRun=false / apiConfigured=true の安全条件下で投稿済みログを確認した。共感・問いかけと軽い導線を含む19:00向け投稿として記録し、投稿本文全文・API秘密情報・個人情報はAgent Statusに保存していない。無料SNS診断の明示導線は次回改善対象として扱う。",
+  "artifacts": [
+    "data/threads/post-plans/2026-07-04.json",
+    "data/threads/published/2026-07-04-19.json",
+    "data/agent-status/tasks/threads-daily-19-post-2026-07-04.json"
+  ],
+  "metrics": {
+    "scheduledTime": "19:00",
+    "executionTime": "2026-07-04T19:02:06+09:00",
+    "postPlanDate": "2026-07-04",
+    "postPlanSlot": "19:00",
+    "publishEnabled": true,
+    "dryRun": false,
+    "apiConfigured": true,
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": true,
+    "alreadyPublished": false,
+    "blockedReason": "",
+    "includesSoftCta": true,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false,
+    "realThreadsApiCallCount": 1,
+    "sensitiveDataLogged": false
+  },
+  "nextAction": "次回19:00枠も、投稿前にthreads:post:validateを通し、共感・悩み・問いかけを含む500文字以内の投稿のみを使用する。特に無料SNS診断への自然な導線を明示的に含める。既に投稿済みログがある場合は再投稿せずblockedとして記録する。",
+  "safeToAct": false,
+  "notes": [
+    "初期確認として git status -sb / git status --short / npm run threads:post:validate / npm run agent:status:validate / npm run agent:office:render を実行した。",
+    "npm run threads:post:validate は ok=true で、禁止表現・長文・重複・個人情報ログなしを確認した。",
+    "data/threads/published/2026-07-04-19.json で published=true / postIdPresent=true を確認した。",
+    "投稿本文全文、Threads APIトークン、Metaアクセストークン、User ID等の秘密情報はAgent Statusに保存していない。",
+    "自動返信・自動いいね・自動フォローは実行していない。",
+    "Gmail送信、Google Sheets更新、Apps Scriptトリガー操作は実行していない。"
+  ]
+}
