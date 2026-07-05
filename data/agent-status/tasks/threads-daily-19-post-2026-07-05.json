@@ -1,0 +1,49 @@
+{
+  "id": "threads-daily-19-post-2026-07-05",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 19:00 共感・導線投稿",
+  "category": "threads_daily_post",
+  "status": "needs_review",
+  "phase": "投稿済みログ確認・安全検査済み・無料診断導線不足を記録",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-07-05T20:41:19+09:00",
+  "updatedAt": "2026-07-05T20:41:19+09:00",
+  "summary": "2026-07-05 19:00枠のThreads投稿は、公開許可=true、dry-run=false、API接続設定有効判定の状態で投稿済みログを確認した。安全検査は通過し、投稿本文全文・API秘密情報・個人情報はAgent Statusへ保存していない。一方で、当該投稿ログでは無料SNS診断への自然な導線が含まれないため、次回以降の19:00枠では共感・問いかけ・軽い無料診断CTAを必ず含める改善対象として needs_review に記録する。",
+  "metrics": {
+    "cron": "0 19 * * *",
+    "scheduledTime": "19:00",
+    "executionTime": "2026-07-05T20:41:19+09:00",
+    "postPlanDate": "2026-07-05",
+    "postPlanSlot": "19:00",
+    "publishEnabled": true,
+    "dryRun": false,
+    "apiConfigured": true,
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": true,
+    "blockedReason": "",
+    "includesSoftCta": false,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "次回19:00枠では、投稿前に無料SNS診断への軽い導線があるかを必ず確認し、共感・悩み・問いかけ・無料診断CTAを500文字以内で自然に接続する。既に投稿済みの場合は再投稿せず、重複投稿を避けてAgent Statusへ記録する。",
+  "safeToAct": true,
+  "notes": [
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md を優先確認したが当日分はなく、data/threads/post-plans/2026-07-05.json の19:00枠と投稿済みログを確認",
+    "投稿テーマは地域サービスの頼みやすさ。本文全文はAgent Statusへ保存していない",
+    "npm run threads:post:validate は ok=true",
+    "data/threads/published/2026-07-05-19.json で published=true、publishEnabled=true、dryRun=false、apiConfigured=true を確認",
+    "無料SNS診断へのソフトCTAが含まれないため needs_review として記録",
+    "自動返信・自動いいね・自動フォローは実行していない",
+    "Gmail送信、Google Sheets更新、Apps Scriptトリガー操作は実行していない",
+    "秘密情報、メールアドレス、営業先名、返信本文は表示・保存・コミットしていない"
+  ],
+  "artifacts": [
+    "data/agent-status/tasks/threads-daily-19-post-2026-07-05.json",
+    "data/threads/post-plans/2026-07-05.json",
+    "data/threads/published/2026-07-05-19.json"
+  ]
+}
