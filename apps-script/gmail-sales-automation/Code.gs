@@ -5618,6 +5618,24 @@ function inspectGmailSalesLegacySourceTypeCompatibility(options) {
     reviewSourceReferencePresentCount: 0,
     reviewSourceTypePresentCount: 0,
     reviewSourceTypeMissingCount: 0,
+    reviewHeaderCount: (reviewData.headers || []).length,
+    reviewSourceReferenceHeaderResolved: (reviewData.headers || []).indexOf('sourceReference') !== -1,
+    reviewSourceReferenceColumnIndex: (reviewData.headers || []).indexOf('sourceReference') + 1,
+    reviewSourceReferenceHashHeaderResolved: (reviewData.headers || []).indexOf('sourceReferenceHash') !== -1,
+    reviewSourceReferenceHashColumnIndex: (reviewData.headers || []).indexOf('sourceReferenceHash') + 1,
+    reviewSourceTypeHeaderResolved: (reviewData.headers || []).indexOf('sourceType') !== -1,
+    reviewSourceTypeColumnIndex: (reviewData.headers || []).indexOf('sourceType') + 1,
+    reviewSourceTypeColumnDistinctFromSourceReferenceColumn: (reviewData.headers || []).indexOf('sourceType') !== (reviewData.headers || []).indexOf('sourceReference'),
+    reviewSourceTypeColumnDistinctFromHashColumn: (reviewData.headers || []).indexOf('sourceType') !== (reviewData.headers || []).indexOf('sourceReferenceHash'),
+    reviewSourceTypeValueClassCounts: {},
+    reviewSourceReferenceValueClassCounts: {},
+    sourceTypeLooksLikeUrlCount: 0,
+    sourceTypeLooksLikeEmailCount: 0,
+    sourceTypeLooksLikeSchemeCount: 0,
+    sourceTypeLooksLikeEnumCount: 0,
+    sourceTypeLooksMisfiledCount: 0,
+    possibleHeaderContractMismatch: false,
+    recommendedHeaderAction: 'none',
     legacySourceTypeRawDistinctCount: 0,
     legacySourceTypeRawCounts: {},
     legacySourceTypeNormalizedCounts: {},
@@ -5633,9 +5651,20 @@ function inspectGmailSalesLegacySourceTypeCompatibility(options) {
     sourceReferenceHashMismatchCount: 0,
     sourceRowDigestMatchCount: 0,
     sourceRowDigestMismatchCount: 0,
+    reviewOnlyCompatibilityCandidateCount: 0,
+    sourceBackedCompatibilityCandidateCount: 0,
+    reviewOnlyPromotionEligibleAfterTypeNormalizationCount: 0,
+    reviewOnlyPromotionEligibleAfterLocalReverificationCount: 0,
     deterministicLocalReverificationCandidateCount: 0,
     deterministicLocalReverificationEligibleCount: 0,
     deterministicLocalReverificationBlockedReasonCounts: {},
+    sourceReferenceClassifierAttemptedCount: 0,
+    sourceReferenceClassifierSucceededCount: 0,
+    sourceReferenceClassifierFailedCount: 0,
+    sourceReferenceClassCounts: {},
+    sourceReferenceClassifierBlockedReasonCounts: {},
+    sourceTypeDerivedFromSourceReferenceCount: 0,
+    promotionEligibleViaSourceReferenceClassificationCount: 0,
     promotionEligibleAfterTypeNormalizationCount: 0,
     promotionEligibleAfterLocalReverificationCount: 0,
     recommendedNextAction: 'inspect_legacy_source_type_compatibility',
@@ -5651,6 +5680,15 @@ function inspectGmailSalesLegacySourceTypeCompatibility(options) {
     const review = item.row || {};
     const sourceReference = String(review.sourceReference || '').trim();
     const rawType = String(review.sourceType || '').trim();
+    const rawTypeClass = classifyGmailSalesLegacyReferenceValueClass_(rawType);
+    const referenceClass = classifyGmailSalesLegacyReferenceValueClass_(sourceReference);
+    incrementCount_(result.reviewSourceTypeValueClassCounts, rawTypeClass);
+    incrementCount_(result.reviewSourceReferenceValueClassCounts, referenceClass);
+    if (rawTypeClass === 'url_like') result.sourceTypeLooksLikeUrlCount += 1;
+    if (rawTypeClass === 'email_like') result.sourceTypeLooksLikeEmailCount += 1;
+    if (rawTypeClass === 'scheme_like') result.sourceTypeLooksLikeSchemeCount += 1;
+    if (rawTypeClass === 'enum_like') result.sourceTypeLooksLikeEnumCount += 1;
+    if (rawTypeClass === 'url_like' || rawTypeClass === 'email_like' || rawTypeClass === 'scheme_like') result.sourceTypeLooksMisfiledCount += 1;
     if (sourceReference) result.reviewSourceReferencePresentCount += 1;
     if (rawType) result.reviewSourceTypePresentCount += 1;
     else result.reviewSourceTypeMissingCount += 1;
@@ -5670,6 +5708,9 @@ function inspectGmailSalesLegacySourceTypeCompatibility(options) {
     }
     if (String(review.sourceReferenceHash || '').trim()) result.sourceReferenceHashPresentOnReviewCount += 1;
     const sourceItem = sourceByKey[String(review.sourceRowKey || '').trim()];
+    const isReviewOnly = Boolean(sourceReference && sourceItem && !String(((sourceItem || {}).row || {}).sourceReference || '').trim());
+    if (isReviewOnly) result.reviewOnlyCompatibilityCandidateCount += 1;
+    else if (sourceReference && sourceItem) result.sourceBackedCompatibilityCandidateCount += 1;
     if (sourceItem) {
       const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
       if (String(review.sourceRowDigest || '').trim() && queue.include && String(queue.row.sourceRowDigest || '') === String(review.sourceRowDigest || '').trim()) result.sourceRowDigestMatchCount += 1;
@@ -5682,17 +5723,41 @@ function inspectGmailSalesLegacySourceTypeCompatibility(options) {
     const reviewHash = String(review.sourceReferenceHash || '').trim();
     if (reviewHash && (reviewHash === normalizedHash || reviewHash === rawHash)) result.sourceReferenceHashMatchedCount += 1;
     else if (reviewHash || sourceReference) result.sourceReferenceHashMismatchCount += 1;
+    const classifier = classifyGmailSalesLegacySourceReference_(sourceReference, { sourceItem, reviewItem: item });
+    if (sourceReference && !normalized.ok) {
+      result.sourceReferenceClassifierAttemptedCount += 1;
+      if (classifier.ok) {
+        result.sourceReferenceClassifierSucceededCount += 1;
+        result.sourceTypeDerivedFromSourceReferenceCount += 1;
+      } else {
+        result.sourceReferenceClassifierFailedCount += 1;
+        incrementCount_(result.sourceReferenceClassifierBlockedReasonCounts, classifier.reasonCode || 'source_reference_classifier_failed');
+      }
+    }
+    if (sourceReference) incrementCount_(result.sourceReferenceClassCounts, classifier.referenceClass || 'unknown');
     const local = verifyGmailSalesLegacySourceReferenceLocally_({ sourceItem, reviewItem: item, normalizedType: normalized });
     if (sourceReference) result.deterministicLocalReverificationCandidateCount += 1;
     if (local.ok) {
       result.deterministicLocalReverificationEligibleCount += 1;
       result.promotionEligibleAfterLocalReverificationCount += 1;
+      if (isReviewOnly) result.reviewOnlyPromotionEligibleAfterLocalReverificationCount += 1;
+      if (classifier.ok && classifier.derivedFromSourceReference) result.promotionEligibleViaSourceReferenceClassificationCount += 1;
     } else {
       (local.reasonCodes || [local.reasonCode || 'local_reverification_blocked']).forEach((reason) => incrementCount_(result.deterministicLocalReverificationBlockedReasonCounts, reason));
     }
-    if (normalized.ok && local.ok) result.promotionEligibleAfterTypeNormalizationCount += 1;
+    if (normalized.ok && local.ok) {
+      result.promotionEligibleAfterTypeNormalizationCount += 1;
+      if (isReviewOnly) result.reviewOnlyPromotionEligibleAfterTypeNormalizationCount += 1;
+    }
   });
   result.legacySourceTypeRawDistinctCount = Object.keys(result.legacySourceTypeRawCounts).length;
+  result.possibleHeaderContractMismatch = Boolean(
+    !result.reviewSourceTypeColumnDistinctFromSourceReferenceColumn ||
+    !result.reviewSourceTypeColumnDistinctFromHashColumn ||
+    result.sourceTypeLooksMisfiledCount > 0 ||
+    (result.reviewSourceTypePresentCount > 0 && result.sourceTypeLooksLikeEnumCount === 0)
+  );
+  result.recommendedHeaderAction = result.possibleHeaderContractMismatch ? 'inspect_review_source_type_column_values' : 'none';
   if (result.promotionEligibleAfterLocalReverificationCount > 0) result.recommendedNextAction = 'run_legacy_reference_promotion_safe_step';
   else if (result.legacySourceTypeNormalizationIneligibleCount > 0) result.recommendedNextAction = 'inspect_unsupported_legacy_source_types';
   if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
@@ -5704,6 +5769,76 @@ function safeLegacySourceTypeCountKey_(value) {
   if (!raw) return '';
   if (/@/.test(raw) || /https?:\/\//i.test(raw)) return 'redacted_source_type_value';
   return normalizeTextForComparison_(raw).replace(/[\s-]+/g, '_').slice(0, 80) || 'blank';
+}
+
+function classifyGmailSalesLegacyReferenceValueClass_(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'blank';
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw)) return 'email_like';
+  if (/^https?:\/\//i.test(raw)) return 'url_like';
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) return 'scheme_like';
+  const normalized = normalizeTextForComparison_(raw).replace(/[\s-]+/g, '_');
+  if (/^[a-z][a-z0-9_]{0,80}$/.test(normalized)) return 'enum_like';
+  return 'other_redacted';
+}
+
+function classifyGmailSalesLegacySourceReference_(sourceReference, rowContext) {
+  const context = rowContext || {};
+  const sourceItem = context.sourceItem;
+  const reviewItem = context.reviewItem;
+  const sourceRow = sourceItem && sourceItem.row || {};
+  const review = reviewItem && reviewItem.row || {};
+  const reference = String(sourceReference || '').trim();
+  const result = {
+    ok: false,
+    normalizedSourceType: '',
+    referenceClass: 'unknown',
+    reasonCode: '',
+    derivedFromSourceReference: false
+  };
+  if (!reference) return Object.assign(result, { referenceClass: 'blank', reasonCode: 'source_reference_missing_on_review' });
+  const lower = reference.toLowerCase();
+  const rawType = normalizeTextForComparison_(review.sourceType || sourceRow.sourceType || '').replace(/[\s-]+/g, '_');
+  const socialRawTypes = { instagram: true, facebook: true, x: true, twitter: true, linkedin: true, youtube: true, tiktok: true, social: true, social_profile: true, sns: true };
+  if (socialRawTypes[rawType]) return Object.assign(result, { referenceClass: 'social_profile', reasonCode: 'social_network' });
+  const schemeMatch = lower.match(/^([a-z][a-z0-9+.-]*):/);
+  const rejectedSchemes = { mailto: true, tel: true, sms: true, line: true, javascript: true, data: true, file: true, ftp: true, chrome: true };
+  if (schemeMatch && rejectedSchemes[schemeMatch[1]]) return Object.assign(result, { referenceClass: 'unsupported_scheme', reasonCode: 'unsupported_scheme' });
+  const safety = classifyGroundingCitationUrlSafety_(reference);
+  if (!safety.ok) {
+    const reason = safety.reasonCode || 'unsafe_url';
+    const referenceClass = reason === 'business_directory' || reason === 'map_listing' ? 'business_directory'
+      : (reason === 'social_network' ? 'social_profile'
+        : (reason === 'private_ip' || reason === 'localhost' ? 'private_personal' : (reason === 'unsupported_scheme' ? 'unsupported_scheme' : 'unsafe_url')));
+    return Object.assign(result, { referenceClass, reasonCode: reason });
+  }
+  if (sourceRow.unsubscribe === true || String(sourceRow.unsubscribe || '').toLowerCase() === 'true') return Object.assign(result, { referenceClass: 'official_website', reasonCode: 'suppression_present' });
+  if (sourceRow.doNotContact === true || String(sourceRow.doNotContact || '').toLowerCase() === 'true') return Object.assign(result, { referenceClass: 'official_website', reasonCode: 'do_not_contact' });
+  if (shouldSkipRecipient_(sourceRow)) return Object.assign(result, { referenceClass: 'official_website', reasonCode: 'already_sent_or_prior_history' });
+  if (String(sourceRow.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown) return Object.assign(result, { referenceClass: 'official_website', reasonCode: 'delivery_unknown' });
+  if (isLikelyPersonalEmail_(sourceRow.email || sourceRow.contactEmail || '') ||
+      normalizeBooleanCell_(sourceRow.privatePersonalContactFlag) ||
+      normalizeBooleanCell_(sourceRow.privatePersonal) ||
+      normalizeBooleanCell_(review.privatePersonalContactFlag) ||
+      normalizeBooleanCell_(review.privatePersonal)) {
+    return Object.assign(result, { referenceClass: 'private_personal', reasonCode: 'private_personal_contact' });
+  }
+  if (String(sourceRow.sourceType || review.sourceType || '').toLowerCase().indexOf('guessed') !== -1 ||
+      normalizeBooleanCell_(sourceRow.guessed) ||
+      normalizeBooleanCell_(review.guessed)) {
+    return Object.assign(result, { referenceClass: 'official_website', reasonCode: 'guessed_contact' });
+  }
+  if (String(sourceRow.solicitationRestricted || review.solicitationRestricted || '').toLowerCase() === 'true') return Object.assign(result, { referenceClass: 'official_website', reasonCode: 'solicitation_restricted' });
+  const path = String(safety.path || safety.url || '').toLowerCase();
+  const isContact = /(^|\/)(contact|contacts|inquiry|inquiries|toiawase|support|company\/contact)(\/|$|\?)/.test(path);
+  const normalizedSourceType = isContact && isSupportedOfficialEvidenceSourceType_('official_contact_page') ? 'official_contact_page' : 'official_website';
+  return {
+    ok: true,
+    normalizedSourceType,
+    referenceClass: isContact ? 'official_contact_page' : 'official_website',
+    reasonCode: 'derived_from_safe_source_reference',
+    derivedFromSourceReference: true
+  };
 }
 
 function normalizeGmailSalesLegacySourceType_(rawSourceType, sourceReference, context) {
@@ -5763,13 +5898,22 @@ function analyzeGmailSalesLegacyPromotionCandidate_(sourceItem, reviewItem, capa
   const review = reviewItem && reviewItem.row || {};
   const reviewReference = String(review.sourceReference || '').trim();
   const rawType = String(review.sourceType || '').trim();
-  const normalized = normalizeGmailSalesLegacySourceType_(rawType, reviewReference, { sourceRow, reviewRow: review });
+  const normalizedRaw = normalizeGmailSalesLegacySourceType_(rawType, reviewReference, { sourceRow, reviewRow: review });
+  const classifier = !normalizedRaw.ok ? classifyGmailSalesLegacySourceReference_(reviewReference, { sourceItem, reviewItem }) : { ok: false, normalizedSourceType: '', referenceClass: '', derivedFromSourceReference: false, reasonCode: '' };
+  const normalized = normalizedRaw.ok ? normalizedRaw : (classifier.ok ? {
+    ok: true,
+    normalizedSourceType: classifier.normalizedSourceType,
+    reasonCode: classifier.reasonCode || 'derived_from_safe_source_reference',
+    usedFallbackDerivation: true,
+    sourceReferenceClassifierUsed: true,
+    referenceClass: classifier.referenceClass
+  } : normalizedRaw);
   const normalizedType = normalized.normalizedSourceType || '';
   const normalizedHash = normalizedType && reviewReference ? buildGmailSalesSourceReferenceHash_(normalizedType, reviewReference) : '';
   const rawHash = rawType && reviewReference ? buildGmailSalesSourceReferenceHash_(rawType, reviewReference) : '';
   const reviewHash = String(review.sourceReferenceHash || '').trim();
   const reasonCodes = [];
-  if (!normalized.ok) reasonCodes.push(normalized.reasonCode || 'unsupported_source_type');
+  if (!normalizedRaw.ok && !classifier.ok) reasonCodes.push(classifier.reasonCode || normalizedRaw.reasonCode || 'unsupported_source_type');
   if (!reviewHash) reasonCodes.push('source_reference_hash_missing_on_review');
   else if (reviewHash !== normalizedHash && reviewHash !== rawHash) reasonCodes.push('source_reference_hash_mismatch');
   const expectedDigest = normalizedType ? computeGmailSalesSourceVerificationDigest_(review, {
@@ -5825,6 +5969,10 @@ function analyzeGmailSalesLegacyPromotionCandidate_(sourceItem, reviewItem, capa
     localReverificationAttempted: Boolean(reviewReference),
     localReverificationOk: Boolean(local.ok),
     promoteViaLocalReverification,
+    sourceReferenceClassifierAttempted: Boolean(!normalizedRaw.ok && reviewReference),
+    sourceReferenceClassifierOk: Boolean(classifier.ok),
+    sourceReferenceClass: classifier.referenceClass || (normalized.referenceClass || ''),
+    sourceTypeDerivedFromSourceReference: Boolean(!normalizedRaw.ok && classifier.ok),
     prepared
   };
 }
@@ -5835,12 +5983,21 @@ function verifyGmailSalesLegacySourceReferenceLocally_(rowContext) {
   const reviewItem = context.reviewItem;
   const sourceRow = sourceItem && sourceItem.row || {};
   const review = reviewItem && reviewItem.row || {};
-  const normalized = context.normalizedType || normalizeGmailSalesLegacySourceType_(review.sourceType, review.sourceReference, { sourceRow, reviewRow: review });
+  const normalizedRaw = context.normalizedType || normalizeGmailSalesLegacySourceType_(review.sourceType, review.sourceReference, { sourceRow, reviewRow: review });
+  const classifier = !normalizedRaw.ok ? classifyGmailSalesLegacySourceReference_(review.sourceReference, { sourceItem, reviewItem }) : { ok: false, normalizedSourceType: '', reasonCode: '', referenceClass: '' };
+  const normalized = normalizedRaw.ok ? normalizedRaw : (classifier.ok ? {
+    ok: true,
+    normalizedSourceType: classifier.normalizedSourceType,
+    reasonCode: classifier.reasonCode || 'derived_from_safe_source_reference',
+    usedFallbackDerivation: true,
+    sourceReferenceClassifierUsed: true,
+    referenceClass: classifier.referenceClass
+  } : normalizedRaw);
   const reasonCodes = [];
   const reference = String(review.sourceReference || '').trim();
   if (!sourceItem) reasonCodes.push('source_row_not_found');
   if (!reference) reasonCodes.push('source_reference_missing_on_review');
-  if (!normalized.ok) reasonCodes.push(normalized.reasonCode || 'unsupported_source_type');
+  if (!normalizedRaw.ok && !classifier.ok) reasonCodes.push(classifier.reasonCode || normalizedRaw.reasonCode || 'unsupported_source_type');
   const safety = classifyGroundingCitationUrlSafety_(reference);
   if (!safety.ok) reasonCodes.push(safety.reasonCode || 'unsafe_source_reference');
   if (safety.ok && String(safety.scheme || '').toLowerCase() !== 'https') reasonCodes.push('unsupported_url_scheme');
@@ -5912,11 +6069,21 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
     legacyLocalReverificationFailedCount: 0,
     legacyPromotionViaExistingVerificationCount: 0,
     legacyPromotionViaLocalReverificationCount: 0,
+    legacyPromotionViaSourceReferenceClassificationCount: 0,
     legacyPromotionNormalizedSourceTypeCounts: {},
+    sourceReferenceClassifierAttemptedCount: 0,
+    sourceReferenceClassifierSucceededCount: 0,
+    sourceReferenceClassifierFailedCount: 0,
+    sourceReferenceClassCounts: {},
+    sourceReferenceClassifierBlockedReasonCounts: {},
+    sourceTypeDerivedFromSourceReferenceCount: 0,
+    promotionEligibleViaSourceReferenceClassificationCount: 0,
     legacySourceTypeNormalizationEligibleCount: 0,
     deterministicLocalReverificationEligibleCount: 0,
     promotionEligibleAfterTypeNormalizationCount: 0,
     promotionEligibleAfterLocalReverificationCount: 0,
+    reviewOnlyPromotionEligibleAfterTypeNormalizationCount: 0,
+    reviewOnlyPromotionEligibleAfterLocalReverificationCount: 0,
     sourceReferenceHashPresentOnReviewCount: 0,
     sourceReferenceHashMissingOnReviewCount: 0,
     reviewSafetyVerifiedTrueCount: 0,
@@ -5989,16 +6156,36 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
           stats.legacySourceTypeUnsupportedCount += 1;
         }
         if (analysis.localReverificationAttempted) stats.legacyLocalReverificationAttemptedCount += 1;
+        if (analysis.sourceReferenceClassifierAttempted) {
+          stats.sourceReferenceClassifierAttemptedCount += 1;
+          if (analysis.sourceReferenceClassifierOk) {
+            stats.sourceReferenceClassifierSucceededCount += 1;
+            stats.sourceTypeDerivedFromSourceReferenceCount += 1;
+          } else {
+            stats.sourceReferenceClassifierFailedCount += 1;
+            const classifierReason = (analysis.reasonCodes || []).indexOf('unsupported_source_type') === -1 ? (analysis.reasonCodes || [])[0] : 'unsupported_source_type';
+            incrementCount_(stats.sourceReferenceClassifierBlockedReasonCounts, classifierReason || 'source_reference_classifier_failed');
+          }
+        }
+        if (analysis.sourceReferenceClass) incrementCount_(stats.sourceReferenceClassCounts, analysis.sourceReferenceClass);
         if (analysis.localReverificationOk) {
           stats.legacyLocalReverificationSucceededCount += 1;
           stats.deterministicLocalReverificationEligibleCount += 1;
           stats.promotionEligibleAfterLocalReverificationCount += 1;
+          stats.reviewOnlyPromotionEligibleAfterLocalReverificationCount += 1;
         } else if (analysis.localReverificationAttempted) {
           stats.legacyLocalReverificationFailedCount += 1;
         }
         if (analysis.existingVerificationOk) stats.legacyPromotionViaExistingVerificationCount += 1;
         if (analysis.promoteViaLocalReverification) stats.legacyPromotionViaLocalReverificationCount += 1;
-        if (analysis.normalizedSourceType && (analysis.existingVerificationOk || analysis.localReverificationOk)) stats.promotionEligibleAfterTypeNormalizationCount += 1;
+        if (analysis.sourceTypeDerivedFromSourceReference && analysis.promoteViaLocalReverification) {
+          stats.legacyPromotionViaSourceReferenceClassificationCount += 1;
+          stats.promotionEligibleViaSourceReferenceClassificationCount += 1;
+        }
+        if (analysis.normalizedSourceType && (analysis.existingVerificationOk || analysis.localReverificationOk)) {
+          stats.promotionEligibleAfterTypeNormalizationCount += 1;
+          stats.reviewOnlyPromotionEligibleAfterTypeNormalizationCount += 1;
+        }
         if (duplicateJoinKeyCount > 0 || duplicateReviewCandidateTokenCount > 0 || duplicateReviewSourceDigestCount > 0) reasons.push('duplicate_join_or_digest');
         if (analysis.ok && reasons.filter((reason) => reason !== 'review_safety_not_verified' &&
             reason !== 'review_identity_not_verified' &&
@@ -6007,7 +6194,7 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
             reason !== 'review_verification_digest_mismatch').length === 0) {
           legacyPromotionEligibleForRow = true;
           stats.legacyPromotionEligibleCount += 1;
-          stats.targets.push({ sourceItem, reviewItem: item, prepared: analysis.prepared, viaLocalReverification: analysis.promoteViaLocalReverification, viaExistingVerification: analysis.existingVerificationOk });
+          stats.targets.push({ sourceItem, reviewItem: item, prepared: analysis.prepared, viaLocalReverification: analysis.promoteViaLocalReverification, viaExistingVerification: analysis.existingVerificationOk, viaSourceReferenceClassification: analysis.sourceTypeDerivedFromSourceReference });
         }
       }
     }
@@ -6057,6 +6244,7 @@ function promoteGmailSalesReviewLegacyReferencesWorker_(options) {
     legacyPromotionFailedCount: 0,
     legacyPromotionViaExistingVerificationCount: 0,
     legacyPromotionViaLocalReverificationCount: 0,
+    legacyPromotionViaSourceReferenceClassificationCount: 0,
     rolledBackPromotionCount: 0,
     rollbackSucceededCount: 0,
     rollbackFailedCount: 0,
@@ -6086,6 +6274,7 @@ function promoteGmailSalesReviewLegacyReferencesWorker_(options) {
       result.legacyPromotionSucceededCount += 1;
       if (target.viaLocalReverification) result.legacyPromotionViaLocalReverificationCount += 1;
       else if (target.viaExistingVerification) result.legacyPromotionViaExistingVerificationCount += 1;
+      if (target.viaSourceReferenceClassification) result.legacyPromotionViaSourceReferenceClassificationCount += 1;
       result.readBackMatchedCount += 1;
     } else {
       result.failedPromotionCount += 1;
@@ -6126,6 +6315,14 @@ function buildGmailSalesLegacyReferencePromotionResult_(status, overrides) {
     legacyPromotionFailedCount: 0,
     legacyPromotionViaExistingVerificationCount: 0,
     legacyPromotionViaLocalReverificationCount: 0,
+    legacyPromotionViaSourceReferenceClassificationCount: 0,
+    sourceReferenceClassifierAttemptedCount: 0,
+    sourceReferenceClassifierSucceededCount: 0,
+    sourceReferenceClassifierFailedCount: 0,
+    sourceReferenceClassCounts: {},
+    sourceReferenceClassifierBlockedReasonCounts: {},
+    sourceTypeDerivedFromSourceReferenceCount: 0,
+    promotionEligibleViaSourceReferenceClassificationCount: 0,
     gmailSendExecuted: false,
     gmailDraftCreated: false,
     googleSheetsUpdated: false,
@@ -7444,11 +7641,19 @@ function runGmailSalesAutomatedEvidenceRecoveryStepWorker_(options) {
       legacyPromotionFailedCount: Number(actionResult.legacyPromotionFailedCount || actionResult.failedPromotionCount || 0),
       legacyPromotionViaExistingVerificationCount: Number(actionResult.legacyPromotionViaExistingVerificationCount || 0),
       legacyPromotionViaLocalReverificationCount: Number(actionResult.legacyPromotionViaLocalReverificationCount || 0),
+      legacyPromotionViaSourceReferenceClassificationCount: Number(actionResult.legacyPromotionViaSourceReferenceClassificationCount || 0),
       legacySourceTypeNormalizedCount: Number(actionResult.legacySourceTypeNormalizedCount || 0),
       legacySourceTypeUnsupportedCount: Number(actionResult.legacySourceTypeUnsupportedCount || 0),
       legacyLocalReverificationAttemptedCount: Number(actionResult.legacyLocalReverificationAttemptedCount || 0),
       legacyLocalReverificationSucceededCount: Number(actionResult.legacyLocalReverificationSucceededCount || 0),
       legacyLocalReverificationFailedCount: Number(actionResult.legacyLocalReverificationFailedCount || 0),
+      sourceReferenceClassifierAttemptedCount: Number(actionResult.sourceReferenceClassifierAttemptedCount || 0),
+      sourceReferenceClassifierSucceededCount: Number(actionResult.sourceReferenceClassifierSucceededCount || 0),
+      sourceReferenceClassifierFailedCount: Number(actionResult.sourceReferenceClassifierFailedCount || 0),
+      sourceReferenceClassCounts: actionResult.sourceReferenceClassCounts || {},
+      sourceReferenceClassifierBlockedReasonCounts: actionResult.sourceReferenceClassifierBlockedReasonCounts || {},
+      sourceTypeDerivedFromSourceReferenceCount: Number(actionResult.sourceTypeDerivedFromSourceReferenceCount || 0),
+      promotionEligibleViaSourceReferenceClassificationCount: Number(actionResult.promotionEligibleViaSourceReferenceClassificationCount || 0),
       evidenceEnrichmentEligibleCount: Number(actionResult.evidenceEnrichmentEligibleCount || 0),
       fetchEligibleCount: Number(actionResult.fetchEligibleCount || 0),
       fetchReadinessValid: Boolean(actionResult.fetchReadinessValid),
@@ -7607,14 +7812,17 @@ function planGmailSalesEvidenceRecoveryAction_(status, readiness) {
   const recoveryConfig = getGmailSalesRecoveryOperationalConfig_();
   const legacyAvailableCount = Math.max(
     Number(legacy.legacyPromotionEligibleCount || 0),
+    Number(legacy.reviewOnlyPromotionEligibleAfterLocalReverificationCount || 0),
+    Number(legacy.promotionEligibleViaSourceReferenceClassificationCount || 0),
     Number(legacy.legacySourceTypeNormalizationEligibleCount || 0),
     Number(legacy.deterministicLocalReverificationEligibleCount || 0),
     Number(legacy.promotionEligibleAfterTypeNormalizationCount || 0),
     Number(legacy.promotionEligibleAfterLocalReverificationCount || 0)
   );
   if (legacyAvailableCount > 0) {
-    const reasonCode = Number(legacy.legacyPromotionEligibleCount || 0) > 0 ? 'legacy_reference_promotion_available'
-      : (Number(legacy.promotionEligibleAfterLocalReverificationCount || 0) > 0 ? 'legacy_local_reverification_available' : 'legacy_source_type_normalization_available');
+    const reasonCode = Number(legacy.promotionEligibleViaSourceReferenceClassificationCount || 0) > 0 ? 'legacy_source_reference_classification_available'
+      : (Number(legacy.legacyPromotionEligibleCount || 0) > 0 ? 'legacy_reference_promotion_available'
+      : (Number(legacy.promotionEligibleAfterLocalReverificationCount || 0) > 0 ? 'legacy_local_reverification_available' : 'legacy_source_type_normalization_available'));
     return Object.assign(
       buildGmailSalesEvidenceRecoveryActionPlan_('legacy_review_reference_promotion', reasonCode, 'run_legacy_reference_promotion_safe_step', 'none', 'sheet_update', true),
       {
@@ -7888,14 +8096,26 @@ function summarizeGmailSalesLegacyReferencePromotionReadiness_(readiness) {
     legacyLocalReverificationFailedCount: Number(value.legacyLocalReverificationFailedCount || 0),
     legacyPromotionViaExistingVerificationCount: Number(value.legacyPromotionViaExistingVerificationCount || 0),
     legacyPromotionViaLocalReverificationCount: Number(value.legacyPromotionViaLocalReverificationCount || 0),
+    legacyPromotionViaSourceReferenceClassificationCount: Number(value.legacyPromotionViaSourceReferenceClassificationCount || 0),
     legacyPromotionNormalizedSourceTypeCounts: value.legacyPromotionNormalizedSourceTypeCounts || {},
+    sourceReferenceClassifierAttemptedCount: Number(value.sourceReferenceClassifierAttemptedCount || 0),
+    sourceReferenceClassifierSucceededCount: Number(value.sourceReferenceClassifierSucceededCount || 0),
+    sourceReferenceClassifierFailedCount: Number(value.sourceReferenceClassifierFailedCount || 0),
+    sourceReferenceClassCounts: value.sourceReferenceClassCounts || {},
+    sourceReferenceClassifierBlockedReasonCounts: value.sourceReferenceClassifierBlockedReasonCounts || {},
+    sourceTypeDerivedFromSourceReferenceCount: Number(value.sourceTypeDerivedFromSourceReferenceCount || 0),
+    promotionEligibleViaSourceReferenceClassificationCount: Number(value.promotionEligibleViaSourceReferenceClassificationCount || 0),
     legacySourceTypeNormalizationEligibleCount: Number(value.legacySourceTypeNormalizationEligibleCount || 0),
     deterministicLocalReverificationEligibleCount: Number(value.deterministicLocalReverificationEligibleCount || 0),
     promotionEligibleAfterTypeNormalizationCount: Number(value.promotionEligibleAfterTypeNormalizationCount || 0),
     promotionEligibleAfterLocalReverificationCount: Number(value.promotionEligibleAfterLocalReverificationCount || 0),
+    reviewOnlyPromotionEligibleAfterTypeNormalizationCount: Number(value.reviewOnlyPromotionEligibleAfterTypeNormalizationCount || 0),
+    reviewOnlyPromotionEligibleAfterLocalReverificationCount: Number(value.reviewOnlyPromotionEligibleAfterLocalReverificationCount || 0),
     reviewOnlyLegacyReferenceCount: Number(value.reviewOnlyLegacyReferenceCount || 0),
     estimatedLegacyPromotionsAvailable: Math.max(
       Number(value.legacyPromotionEligibleCount || 0),
+      Number(value.reviewOnlyPromotionEligibleAfterLocalReverificationCount || 0),
+      Number(value.promotionEligibleViaSourceReferenceClassificationCount || 0),
       Number(value.promotionEligibleAfterLocalReverificationCount || 0),
       Number(value.promotionEligibleAfterTypeNormalizationCount || 0)
     )
@@ -8172,10 +8392,20 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     legacyLocalReverificationFailedCount: 0,
     legacyPromotionViaExistingVerificationCount: 0,
     legacyPromotionViaLocalReverificationCount: 0,
+    legacyPromotionViaSourceReferenceClassificationCount: 0,
+    sourceReferenceClassifierAttemptedCount: 0,
+    sourceReferenceClassifierSucceededCount: 0,
+    sourceReferenceClassifierFailedCount: 0,
+    sourceReferenceClassCounts: {},
+    sourceReferenceClassifierBlockedReasonCounts: {},
+    sourceTypeDerivedFromSourceReferenceCount: 0,
+    promotionEligibleViaSourceReferenceClassificationCount: 0,
     legacySourceTypeNormalizationEligibleCount: 0,
     deterministicLocalReverificationEligibleCount: 0,
     promotionEligibleAfterTypeNormalizationCount: 0,
     promotionEligibleAfterLocalReverificationCount: 0,
+    reviewOnlyPromotionEligibleAfterTypeNormalizationCount: 0,
+    reviewOnlyPromotionEligibleAfterLocalReverificationCount: 0,
     legacyPromotionAttemptedCount: 0,
     legacyPromotionSucceededCount: 0,
     legacyPromotionFailedCount: 0,

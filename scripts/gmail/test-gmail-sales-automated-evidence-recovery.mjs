@@ -241,7 +241,8 @@ function installSheets(context, sourceRows, reviewRows = []) {
     'aiPolicyVersion', 'aiPromptVersion', 'aiEvidenceDigest', 'aiVerifiedAt', 'aiReasonCodes', 'aiRiskFlags',
     'aiAutoApproved', 'aiRequiresHumanReview', 'lastAiEvaluatedEvidenceDigest', 'contactBasisType',
     'contactBasisRecordedAt', 'contactBasisSourceType', 'contactBasisSourceReferenceHash', 'name',
-    'publicSource', 'sentStatus', 'replyStatus', 'sendState', 'doNotContact', 'unsubscribe'
+    'publicSource', 'sentStatus', 'replyStatus', 'sendState', 'doNotContact', 'unsubscribe',
+    'privatePersonalContactFlag', 'guessed', 'solicitationRestricted'
   ]));
   const sourceSheet = new FakeSheet('Source', headers, sourceRows, context.__state);
   const reviewSheet = new FakeSheet('Review', headers, reviewRows, context.__state);
@@ -256,6 +257,12 @@ function installSheets(context, sourceRows, reviewRows = []) {
     reviewTabName: 'Review'
   });
   return { headers, sourceSheet, reviewSheet };
+}
+
+function setSheetValueByHeader(sheet, rowIndex, headerName, value) {
+  const columnIndex = sheet.values[0].indexOf(headerName) + 1;
+  assert.equal(columnIndex > 0, true);
+  sheet.setCell(rowIndex, columnIndex, value);
 }
 
 function buildReviewRowsWithDigests(context, sourceRows, evaluatedCount, missingCount) {
@@ -1249,7 +1256,7 @@ installLegacyPromotionFixture(ft4, { count: 5, sourceTypes: ['official_site', 'o
 const ft4Readiness = ft4.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
 assert.equal(ft4Readiness.legacyPromotionEligibleCount, 4);
 assert.equal(ft4Readiness.legacyPromotionIneligibleCount, 1);
-assert.equal(Boolean(ft4Readiness.legacyPromotionBlockedReasonCounts.unsupported_source_type), true);
+assert.equal(Boolean(ft4Readiness.legacyPromotionBlockedReasonCounts.social_network), true);
 
 const ft5 = createContext();
 installLegacyPromotionFixture(ft5, { count: 5 });
@@ -1360,7 +1367,7 @@ installLegacyPromotionFixture(fx3, {
 });
 const fx3Readiness = fx3.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
 assert.equal(fx3Readiness.legacyPromotionEligibleCount, 0);
-assert.equal(Boolean(fx3Readiness.legacyPromotionAllBlockedReasonCounts.unsupported_source_type), true);
+assert.equal(Boolean(fx3Readiness.legacyPromotionAllBlockedReasonCounts.social_network), true);
 assert.equal(Boolean(fx3Readiness.legacyPromotionAllBlockedReasonCounts.review_validator_version_stale), true);
 
 const fx4 = createContext();
@@ -1441,6 +1448,157 @@ fx9.inspectGmailSalesCommittedSourceReferenceFormat = () => ({
 });
 const fx9Status = fx9.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
 assert.equal(fx9Status.plannedNextAction, 'legacy_review_reference_promotion');
+
+const fy1 = createContext();
+const fy1Types = Array.from({ length: 65 }, (_, index) => ['https:', '', `misfiled-${index + 1}.example.invalid`].join('/'));
+installLegacyPromotionFixture(fy1, {
+  count: 65,
+  sourceTypes: fy1Types,
+  currentVerification: false
+});
+const fy1Diagnostic = fy1.inspectGmailSalesLegacySourceTypeCompatibility({ skipLog: false });
+assert.equal(fy1Diagnostic.sourceTypeLooksMisfiledCount > 0, true);
+assert.equal(fy1Diagnostic.possibleHeaderContractMismatch, true);
+assert.equal(fy1Diagnostic.sourceReferenceClassifierSucceededCount, 65);
+assert.equal(fy1.__state.logs.some((entry) => /example\.invalid/.test(entry)), false);
+
+const fy2 = createContext();
+installLegacyPromotionFixture(fy2, {
+  count: 1,
+  sourceTypes: [['https:', '', 'raw-type-fy2.example.invalid'].join('/')],
+  currentVerification: false
+});
+const fy2Readiness = fy2.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fy2Readiness.sourceReferenceClassifierSucceededCount, 1);
+assert.equal(fy2Readiness.sourceTypeDerivedFromSourceReferenceCount, 1);
+assert.equal(fy2Readiness.legacyPromotionNormalizedSourceTypeCounts.official_contact_page, 1);
+assert.equal(fy2Readiness.legacyPromotionEligibleCount, 1);
+
+const fy3 = createContext();
+installLegacyPromotionFixture(fy3, {
+  count: 1,
+  sourceTypes: [['https:', '', 'raw-type-fy3.example.invalid'].join('/')],
+  sourceReferences: [['https:', '', 'legacy-fy3.example.invalid', 'inquiry'].join('/')],
+  currentVerification: false
+});
+const fy3Readiness = fy3.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fy3Readiness.sourceReferenceClassCounts.official_contact_page, 1);
+assert.equal(fy3Readiness.legacyPromotionEligibleCount, 1);
+
+const fy4 = createContext();
+installLegacyPromotionFixture(fy4, {
+  count: 5,
+  sourceTypes: fy1Types.slice(0, 5),
+  sourceReferences: [
+    'mailto:safe-redacted',
+    'tel:0000000000',
+    'javascript:void(0)',
+    ['https:', '', 'localhost'].join('/'),
+    ['https:', '', '127.0.0.1'].join('/')
+  ],
+  currentVerification: false
+});
+const fy4Readiness = fy4.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fy4Readiness.legacyPromotionEligibleCount, 0);
+assert.equal(Boolean(fy4Readiness.legacyPromotionAllBlockedReasonCounts.unsupported_scheme), true);
+assert.equal(Boolean(fy4Readiness.legacyPromotionAllBlockedReasonCounts.localhost), true);
+assert.equal(Boolean(fy4Readiness.legacyPromotionAllBlockedReasonCounts.private_ip), true);
+
+const fy5 = createContext();
+installLegacyPromotionFixture(fy5, {
+  count: 1,
+  sourceTypes: [['https:', '', 'raw-type-fy5.example.invalid'].join('/')],
+  sourceReferences: [['https:', '', 'yelp.com', 'biz', 'masked'].join('/')],
+  currentVerification: false
+});
+const fy5Readiness = fy5.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fy5Readiness.legacyPromotionEligibleCount, 0);
+assert.equal(Boolean(fy5Readiness.legacyPromotionAllBlockedReasonCounts.business_directory), true);
+
+const fy6 = createContext();
+installLegacyPromotionFixture(fy6, {
+  count: 1,
+  sourceTypes: [['https:', '', 'raw-type-fy6.example.invalid'].join('/')],
+  currentVerification: false
+});
+setSheetValueByHeader(fy6.__sourceSheet, 2, 'privatePersonalContactFlag', 'true');
+const fy6Readiness = fy6.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fy6Readiness.legacyPromotionEligibleCount, 0);
+assert.equal(Boolean(fy6Readiness.legacyPromotionAllBlockedReasonCounts.private_personal_contact), true);
+
+const fy7 = createContext();
+const fy7Refs = Array.from({ length: 66 }, (_, index) => index < 6 ? ['https:', '', `legacy-fy7-${index + 1}.example.invalid`, 'contact'].join('/') : `mailto:redacted-${index + 1}`);
+installLegacyPromotionFixture(fy7, {
+  count: 66,
+  sourceTypes: Array.from({ length: 66 }, (_, index) => ['https:', '', `raw-type-fy7-${index + 1}.example.invalid`].join('/')),
+  sourceReferences: fy7Refs,
+  currentVerification: false
+});
+setSheetValueByHeader(fy7.__sourceSheet, 2, 'sourceReference', fy7Refs[0]);
+const fy7Compat = fy7.inspectGmailSalesLegacySourceTypeCompatibility({ skipLog: true });
+const fy7Ready = fy7.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+const fy7Plan = fy7.planGmailSalesEvidenceRecoveryAction_({}, { legacyPromotionReadiness: fy7Ready });
+assert.equal(fy7Compat.reviewOnlyCompatibilityCandidateCount, 65);
+assert.equal(fy7Compat.reviewOnlyPromotionEligibleAfterLocalReverificationCount, 5);
+assert.equal(fy7Ready.legacyPromotionEligibleCount, 5);
+assert.equal(fy7Ready.promotionEligibleViaSourceReferenceClassificationCount, 5);
+assert.equal(fy7Plan.evidenceRecoveryAction, 'legacy_review_reference_promotion');
+assert.equal(fy7Plan.evidenceRecoveryActionReasonCode, 'legacy_source_reference_classification_available');
+
+const fy8 = createContext();
+installLegacyPromotionFixture(fy8, {
+  count: 5,
+  sourceTypes: Array.from({ length: 5 }, (_, index) => ['https:', '', `raw-type-fy8-${index + 1}.example.invalid`].join('/')),
+  currentVerification: false
+});
+const fy8Step = fy8.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(fy8Step.stepExecuted, 'legacy_review_reference_promotion');
+assert.equal(fy8Step.legacyPromotionAttemptedCount, 5);
+assert.equal(fy8Step.legacyPromotionSucceededCount, 5);
+assert.equal(fy8Step.legacyPromotionViaSourceReferenceClassificationCount, 5);
+assert.equal(Boolean(fy8Step.aiApiCalled), false);
+assert.equal(Boolean(fy8Step.urlFetchExecuted), false);
+assert.equal(Boolean(fy8Step.gmailSendExecuted), false);
+assert.equal(Boolean(fy8Step.triggerChanged), false);
+
+const fy9 = createContext();
+installLegacyPromotionFixture(fy9, {
+  count: 5,
+  sourceTypes: Array.from({ length: 5 }, (_, index) => ['https:', '', `raw-type-fy9-${index + 1}.example.invalid`].join('/')),
+  currentVerification: false
+});
+const fy9Sunday = fy9.inspectGmailSalesMondayRecoveryPreflight({ now: '2026-07-05T09:00:00+09:00', targetDate: '2026-07-05', skipLog: true });
+assert.equal(fy9Sunday.todayRecommendedAction, 'wait_for_next_business_day');
+assert.equal(fy9Sunday.nextBusinessDayRecoveryAction, 'legacy_review_reference_promotion');
+assert.equal(fy9Sunday.mondayExpectedPrimaryAction, 'legacy_review_reference_promotion');
+
+const fy10 = createContext();
+installLegacyPromotionFixture(fy10, {
+  count: 5,
+  sourceTypes: Array.from({ length: 5 }, (_, index) => ['https:', '', `raw-type-fy10-${index + 1}.example.invalid`].join('/')),
+  currentVerification: false
+});
+fy10.__props.GMAIL_SALES_GROUNDING_PROMPT_REQUEST_COUNT_TODAY = '30';
+const fy10Status = fy10.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(fy10Status.plannedNextAction, 'legacy_review_reference_promotion');
+assert.equal(fy10Status.safeToExecute, true);
+
+const fy11 = createContext();
+installLegacyPromotionFixture(fy11, {
+  count: 3,
+  sourceTypes: Array.from({ length: 3 }, (_, index) => ['https:', '', `raw-type-fy11-${index + 1}.example.invalid`].join('/')),
+  sourceReferences: [
+    'mailto:redacted',
+    ['https:', '', 'yelp.com', 'biz', 'masked'].join('/'),
+    ['https:', '', 'legacy-fy11.example.invalid', 'contact'].join('/')
+  ],
+  currentVerification: false
+});
+setSheetValueByHeader(fy11.__sourceSheet, 4, 'privatePersonalContactFlag', 'true');
+const fy11Ready = fy11.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
+assert.equal(fy11Ready.legacyPromotionEligibleCount, 0);
+assert.equal(fy11Ready.legacyPromotionViaSourceReferenceClassificationCount, 0);
+assert.equal(/approvedBasisType:\s*['"]manual_legal_reviewed['"]/.test(code), false);
 
 assert.equal((code.match(/MailApp\.sendEmail\s*\(/g) || []).length, 1);
 assert.equal((code.match(/function runGmailSalesProductionControlLoop\s*\(/g) || []).length, 1);
