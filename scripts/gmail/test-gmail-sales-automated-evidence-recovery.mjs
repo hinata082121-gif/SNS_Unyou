@@ -897,6 +897,22 @@ function setAiProviderCooldown(context, untilIso = '2099-01-01T00:00:00.000Z') {
   context.__props.GMAIL_SALES_AI_PROVIDER_COOLDOWN_FAILURE_COUNT = '1';
 }
 
+function seedHistoricalAi429Summary(context, overrides = {}) {
+  context.__props.GMAIL_SALES_AI_LAST_RUN_SUMMARY_JSON = JSON.stringify(Object.assign({
+    event: 'gmail_sales_ai_contact_basis_verification',
+    runId: 'historical-ai-429',
+    completedAt: '2026-07-03T00:00:00.000Z',
+    estimatedCostYen: 1,
+    aiBatchRequestCount: 1,
+    aiProviderRequestSuccessCount: 0,
+    aiProviderRequestFailureCount: 1,
+    aiProviderCandidateResponseCount: 0,
+    aiProviderRateLimitedRequestCount: 1,
+    aiProviderRateLimitedDigestCount: 5,
+    rejectionReasonCounts: { ai_provider_http_429: 5 }
+  }, overrides));
+}
+
 const v1 = createContext();
 installAiPendingFixture(v1);
 seedRecoveryUsage(v1, [
@@ -1688,6 +1704,86 @@ assert.equal(g4297Operation.failedProviderRequestCostYen, 1);
 assert.equal(g4297Operation.successfulEvaluationCostYen, 0);
 assert.equal(g4297Operation.aiProviderFailedRequestCount, 1);
 assert.equal(g4297Operation.aiProviderRateLimitedRequestCount, 1);
+
+const g429b1 = createContext();
+installFiveAiPendingRows(g429b1);
+seedHistoricalAi429Summary(g429b1);
+const g429b1Inspect = g429b1.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(g429b1Inspect.aiProviderLastRunSummaryFound, true);
+assert.equal(g429b1Inspect.aiProviderLastRunHadHttp429, true);
+assert.equal(g429b1Inspect.aiProviderLastRunRateLimitedDigestCount, 5);
+assert.equal(g429b1Inspect.aiProviderLastRunRequestFailureCount, 1);
+assert.equal(g429b1Inspect.aiProviderLastRunRequestSuccessCount, 0);
+assert.equal(g429b1Inspect.aiProviderLastRunCandidateResponseCount, 0);
+assert.equal(g429b1Inspect.aiProviderRateLimitedToday, true);
+assert.equal(g429b1Inspect.aiProviderCooldownInferredFromLastRunSummary, true);
+assert.equal(g429b1Inspect.aiProviderLastFailureCategory, 'ai_provider_http_429');
+assert.equal(g429b1Inspect.aiPendingBlockedByCooldown, true);
+assert.equal(g429b1Inspect.aiRetrySafeToExecute, false);
+assert.equal(g429b1Inspect.plannedNextAction, 'wait_for_ai_provider_cooldown');
+assert.equal(g429b1Inspect.operatorShouldWaitReason, 'wait_for_ai_provider_cooldown');
+
+const g429b2 = createContext();
+installLegacyPromotionFixture(g429b2, {
+  count: 5,
+  sourceTypes: Array.from({ length: 5 }, (_, index) => ['https:', '', `raw-type-g429b2-${index + 1}.example.invalid`].join('/')),
+  currentVerification: false
+});
+for (let rowIndex = 2; rowIndex <= 6; rowIndex += 1) setSheetValueByHeader(g429b2.__sourceSheet, rowIndex, 'businessContactEvidence', 'updated official inquiry evidence');
+seedHistoricalAi429Summary(g429b2);
+const g429b2Inspect = g429b2.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(g429b2Inspect.aiProviderRateLimitedToday, true);
+assert.equal(g429b2Inspect.plannedNextAction, 'legacy_review_reference_promotion');
+assert.equal(g429b2Inspect.plannedNextActionReasonCode, 'ai_recent_rate_limit_non_ai_recovery_available');
+assert.equal(g429b2Inspect.plannedExpectedApiClass, 'none');
+assert.equal(g429b2Inspect.plannedExpectedWriteClass, 'sheet_update');
+assert.equal(g429b2Inspect.plannedSafeToExecute, true);
+assert.equal(g429b2Inspect.operatorRecommendedNextFunctionReason, 'ai_recent_rate_limit_but_legacy_promotion_available');
+
+const g429b3 = createContext();
+installLegacyPromotionFixture(g429b3, {
+  count: 5,
+  sourceTypes: Array.from({ length: 5 }, (_, index) => ['https:', '', `raw-type-g429b3-${index + 1}.example.invalid`].join('/')),
+  currentVerification: false
+});
+for (let rowIndex = 2; rowIndex <= 6; rowIndex += 1) setSheetValueByHeader(g429b3.__sourceSheet, rowIndex, 'businessContactEvidence', 'updated official inquiry evidence');
+seedHistoricalAi429Summary(g429b3);
+const g429b3Step = g429b3.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(g429b3Step.executedAction, 'legacy_review_reference_promotion');
+assert.equal(g429b3Step.executedExpectedApiClass, 'none');
+assert.equal(g429b3Step.aiApiCalled, false);
+assert.equal(g429b3.__state.aiWorkerCallCount, 0);
+assert.equal(g429b3.__state.urlFetchCount, 0);
+
+const g429b4 = createContext();
+installFiveAiPendingRows(g429b4);
+seedHistoricalAi429Summary(g429b4, { runId: 'ai-old-ledger' });
+seedRecoveryUsage(g429b4, [
+  { operationId: 'ai-old-ledger', event: 'gmail_sales_ai_contact_basis_verification', completedAt: '2026-07-03T00:00:00.000Z', estimatedCostYen: 1 }
+]);
+const g429b4Usage = g429b4.summarizeGmailSalesRecoveryDailyUsage_(g429b4.getGmailSalesAiConfig_());
+assert.equal(g429b4Usage.cumulativeEstimatedCostYen, 1);
+assert.equal(g429b4Usage.attemptedCostYen, 1);
+assert.equal(g429b4Usage.successfulEvaluationCostYen, 0);
+assert.equal(g429b4Usage.failedProviderRequestCostYen, 1);
+assert.equal(g429b4Usage.aiProviderAttemptedRequestCount, 1);
+assert.equal(g429b4Usage.aiProviderSuccessfulRequestCount, 0);
+assert.equal(g429b4Usage.aiProviderFailedRequestCount, 1);
+assert.equal(g429b4Usage.aiProviderRateLimitedRequestCount, 1);
+assert.equal(g429b4Usage.providerFailureBackfilledOperationCount, 1);
+assert.equal(g429b4Usage.providerFailureBackfillSource, 'summary');
+assert.equal(g429b4Usage.aiProviderLastRunSummaryFound, true);
+assert.equal(g429b4Usage.aiProviderLastRunSummaryMatchedLedger, true);
+assert.equal(g429b4Usage.aiProviderFailureAccountingComplete, true);
+
+const g429b5 = createContext();
+installFiveAiPendingRows(g429b5);
+seedHistoricalAi429Summary(g429b5, { completedAt: '2026-07-02T00:00:00.000Z' });
+const g429b5Inspect = g429b5.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(g429b5Inspect.aiProviderRateLimitedToday, false);
+assert.equal(g429b5Inspect.aiProviderCooldownInferredFromLastRunSummary, false);
+assert.equal(g429b5Inspect.plannedNextAction, 'ai_contact_basis_verification');
+assert.equal(g429b5Inspect.aiRetrySafeToExecute, true);
 
 assert.equal(g4292.__state.gmailSendCount, 0);
 assert.equal(g4292.__state.draftCreateCount, 0);

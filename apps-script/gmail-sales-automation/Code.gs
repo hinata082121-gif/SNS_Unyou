@@ -7492,6 +7492,41 @@ function runGmailSalesAutomatedEvidenceRecoveryStepWorker_(options) {
     }));
   }
   if (nextState === GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.aiReviewPending) {
+    if ((before.aiProviderCooldownActive === true || before.aiProviderRateLimitedToday === true) &&
+        Number(before.changedDigestEligibleCount || 0) > 0) {
+      const usage = summarizeGmailSalesRecoveryDailyUsage_(getGmailSalesAiConfig_());
+      const planned = buildGmailSalesPlannedRecoveryActionSummary_(before);
+      return buildGmailSalesAutomatedEvidenceRecoveryResult_('blocked', Object.assign({}, before, usage, {
+        mode: 'safe_step',
+        checkpointState: nextState,
+        nextAction: nextState,
+        stepExecuted: 'ai_contact_basis_verification',
+        executedAction: 'ai_contact_basis_verification',
+        executedActionReasonCode: 'ai_review_pending',
+        executedActionStatus: 'blocked',
+        executedActionBlockedReason: before.aiProviderRateLimitedToday === true ? 'ai_recent_rate_limit_wait_required' : 'ai_provider_cooldown_active',
+        executedActionCostYen: 0,
+        executedExpectedApiClass: 'gemini_ai_review',
+        executedExpectedWriteClass: 'none',
+        actionStatus: 'blocked',
+        actionBlockedReason: before.aiProviderRateLimitedToday === true ? 'ai_recent_rate_limit_wait_required' : 'ai_provider_cooldown_active',
+        actionCostYen: 0,
+        actionEstimatedCostYen: 0,
+        plannedNextAction: planned.plannedNextAction,
+        plannedNextActionReasonCode: planned.plannedNextActionReasonCode,
+        plannedExpectedApiClass: planned.plannedExpectedApiClass,
+        plannedExpectedWriteClass: planned.plannedExpectedWriteClass,
+        plannedSafeToExecute: planned.plannedSafeToExecute,
+        aiPendingBlockedByCooldown: true,
+        aiRetrySafeToExecute: false,
+        aiRetryRecommendedAction: 'wait_for_ai_provider_cooldown',
+        aiApiCalled: false,
+        gmailSendExecuted: false,
+        gmailDraftCreated: false,
+        googleSheetsUpdated: false,
+        triggerChanged: false
+      }));
+    }
     const usage = summarizeGmailSalesRecoveryDailyUsage_(getGmailSalesAiConfig_());
     const plannedCost = estimateGmailSalesRecoveryActionCostYen_({ expectedApiClass: 'gemini_ai_review' });
     if (plannedCost > Number(usage.budgetRemainingYen || 0)) {
@@ -7838,7 +7873,9 @@ function planGmailSalesEvidenceRecoveryAction_(status, readiness) {
     Number(legacy.promotionEligibleAfterLocalReverificationCount || 0)
   );
   if (legacyAvailableCount > 0) {
-    const reasonCode = status && status.aiProviderCooldownActive === true ? 'ai_cooldown_non_ai_recovery_available'
+    const rateLimited = status && (status.aiProviderCooldownActive === true || status.aiProviderRateLimitedToday === true);
+    const inferredRecent429 = status && status.aiProviderRateLimitedToday === true && status.aiProviderCooldownInferredFromLastRunSummary === true;
+    const reasonCode = rateLimited ? (inferredRecent429 ? 'ai_recent_rate_limit_non_ai_recovery_available' : 'ai_cooldown_non_ai_recovery_available')
       : (Number(legacy.promotionEligibleViaSourceReferenceClassificationCount || 0) > 0 ? 'legacy_source_reference_classification_available'
       : (Number(legacy.legacyPromotionEligibleCount || 0) > 0 ? 'legacy_reference_promotion_available'
       : (Number(legacy.promotionEligibleAfterLocalReverificationCount || 0) > 0 ? 'legacy_local_reverification_available' : 'legacy_source_type_normalization_available')));
@@ -7944,17 +7981,23 @@ function inspectGmailSalesAiProviderCooldown_() {
   const now = new Date();
   const untilDate = untilRaw ? new Date(untilRaw) : null;
   const active = Boolean(untilDate && !Number.isNaN(untilDate.getTime()) && untilDate.getTime() > now.getTime());
+  const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(now, Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const inferred = inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate);
+  const inferredActive = inferred.aiProviderRateLimitedToday === true;
+  const effectiveActive = active || inferredActive;
   const remainingMinutes = active ? Math.ceil((untilDate.getTime() - now.getTime()) / 60000) : 0;
-  return {
-    aiProviderCooldownActive: active,
-    aiProviderCooldownReason: String(props.getProperty(GMAIL_SALES_AI_PROVIDER_COOLDOWN_REASON_PROPERTY) || ''),
+  const explicitReason = String(props.getProperty(GMAIL_SALES_AI_PROVIDER_COOLDOWN_REASON_PROPERTY) || '');
+  const explicitLastAt = String(props.getProperty(GMAIL_SALES_AI_PROVIDER_COOLDOWN_LAST_AT_PROPERTY) || '');
+  return Object.assign({}, inferred, {
+    aiProviderCooldownActive: effectiveActive,
+    aiProviderCooldownReason: explicitReason || (inferredActive ? 'ai_provider_http_429' : ''),
     aiProviderCooldownUntil: untilRaw,
     aiProviderCooldownUntilJst: untilRaw ? Utilities.formatDate(new Date(untilRaw), Session.getScriptTimeZone() || 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ssXXX") : '',
     aiProviderCooldownRemainingMinutes: remainingMinutes,
     aiProviderCooldownFailureCount: Number(props.getProperty(GMAIL_SALES_AI_PROVIDER_COOLDOWN_FAILURE_COUNT_PROPERTY) || 0),
-    aiProviderLastFailureCategory: String(props.getProperty(GMAIL_SALES_AI_PROVIDER_COOLDOWN_REASON_PROPERTY) || ''),
-    aiProviderLastFailureAt: String(props.getProperty(GMAIL_SALES_AI_PROVIDER_COOLDOWN_LAST_AT_PROPERTY) || '')
-  };
+    aiProviderLastFailureCategory: explicitReason || (inferredActive ? 'ai_provider_http_429' : ''),
+    aiProviderLastFailureAt: explicitLastAt || (inferredActive ? inferred.aiProviderLastFailureAt : '')
+  });
 }
 
 function recordGmailSalesAiProviderCooldown_(provider, reasonCode, operation) {
@@ -7980,11 +8023,12 @@ function getGmailSalesPlannedGroundingPromptRequestCount_() {
 function buildGmailSalesPlannedRecoveryActionSummary_(status) {
   const state = planGmailSalesAutomatedEvidenceRecoveryNextAction_(status || {});
   if (state === GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.aiReviewPending) {
-    if (status && status.aiProviderCooldownActive === true) {
+    if (status && (status.aiProviderCooldownActive === true || status.aiProviderRateLimitedToday === true)) {
       if (Number(status.legacyPromotionEligibleCount || 0) > 0 || Number(status.promotionEligibleViaSourceReferenceClassificationCount || 0) > 0) {
+        const inferredRecent429 = status.aiProviderRateLimitedToday === true && status.aiProviderCooldownInferredFromLastRunSummary === true;
         return {
           plannedNextAction: 'legacy_review_reference_promotion',
-          plannedNextActionReasonCode: 'ai_cooldown_non_ai_recovery_available',
+          plannedNextActionReasonCode: inferredRecent429 ? 'ai_recent_rate_limit_non_ai_recovery_available' : 'ai_cooldown_non_ai_recovery_available',
           plannedExpectedApiClass: 'none',
           plannedExpectedWriteClass: 'sheet_update',
           plannedSafeToExecute: true,
@@ -7997,7 +8041,7 @@ function buildGmailSalesPlannedRecoveryActionSummary_(status) {
       }
       return {
         plannedNextAction: 'wait_for_ai_provider_cooldown',
-        plannedNextActionReasonCode: 'ai_provider_cooldown_active',
+        plannedNextActionReasonCode: status.aiProviderRateLimitedToday === true ? 'ai_recent_rate_limit_wait_required' : 'ai_provider_cooldown_active',
         plannedExpectedApiClass: 'gemini_ai_review',
         plannedExpectedWriteClass: 'none',
         plannedSafeToExecute: false,
@@ -8327,10 +8371,12 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
   const coverage = inspectGmailSalesContactBasisCoverage_({});
   const manifestStatus = inspectGmailSalesAutomatedEvidenceManifestStatus_();
   const aiCooldown = inspectGmailSalesAiProviderCooldown_();
+  const aiBlockedByCooldown = (aiCooldown.aiProviderCooldownActive === true || aiCooldown.aiProviderRateLimitedToday === true) &&
+    Number(result.changedDigestEligibleCount || 0) > 0;
   Object.assign(result, aiCooldown, {
-    aiPendingBlockedByCooldown: aiCooldown.aiProviderCooldownActive && Number(result.changedDigestEligibleCount || 0) > 0,
-    aiRetrySafeToExecute: !aiCooldown.aiProviderCooldownActive,
-    aiRetryRecommendedAction: aiCooldown.aiProviderCooldownActive ? 'wait_for_ai_provider_cooldown' : 'run_ai_contact_basis_verification'
+    aiPendingBlockedByCooldown: aiBlockedByCooldown,
+    aiRetrySafeToExecute: !aiBlockedByCooldown,
+    aiRetryRecommendedAction: aiBlockedByCooldown ? 'wait_for_ai_provider_cooldown' : 'run_ai_contact_basis_verification'
   });
   result.readyInventoryCount = Number(coverage.eligibleAfterBasisCheckCount || 0);
   result.shortfallToThirty = Math.max(0, gmailDailyExpectedCount_() - result.readyInventoryCount);
@@ -8361,7 +8407,7 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
       recoveryPlan);
     Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
   }
-  if (result.aiProviderCooldownActive && Number(result.changedDigestEligibleCount || 0) > 0) {
+  if ((result.aiProviderCooldownActive || result.aiProviderRateLimitedToday) && Number(result.changedDigestEligibleCount || 0) > 0) {
     result.aiPendingBlockedByCooldown = true;
     result.aiRetrySafeToExecute = false;
     result.aiRetryRecommendedAction = String(result.plannedNextAction || '') === 'legacy_review_reference_promotion'
@@ -8369,11 +8415,11 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
       : 'wait_for_ai_provider_cooldown';
   }
   result.operatorRecommendedNextFunction = result.plannedSafeToExecute === true ? 'runGmailSalesAutomatedEvidenceRecoveryStepOnce' : '';
-  result.operatorRecommendedNextFunctionReason = result.aiProviderCooldownActive && result.operatorRecommendedNextFunction
-    ? 'ai_cooldown_but_legacy_promotion_available'
+  result.operatorRecommendedNextFunctionReason = (result.aiProviderCooldownActive || result.aiProviderRateLimitedToday) && result.operatorRecommendedNextFunction
+    ? (result.aiProviderCooldownInferredFromLastRunSummary ? 'ai_recent_rate_limit_but_legacy_promotion_available' : 'ai_cooldown_but_legacy_promotion_available')
     : (result.operatorRecommendedNextFunction ? (result.plannedNextActionReasonCode || 'safe_step_available') : '');
   result.operatorShouldRunSafeStepNow = Boolean(result.operatorRecommendedNextFunction);
-  result.operatorShouldWaitReason = result.operatorShouldRunSafeStepNow ? '' : (result.aiProviderCooldownActive ? 'wait_for_ai_provider_cooldown' : '');
+  result.operatorShouldWaitReason = result.operatorShouldRunSafeStepNow ? '' : ((result.aiProviderCooldownActive || result.aiProviderRateLimitedToday) ? 'wait_for_ai_provider_cooldown' : '');
   result.manifestReady = manifestStatus.manifestReady;
   result.manifestExists = manifestStatus.manifestExists;
   result.manifestCount = manifestStatus.manifestCount;
@@ -8386,11 +8432,11 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
   result.nextAction = result.checkpointState;
   if (!String(result.plannedNextAction || '').trim()) Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
   result.operatorRecommendedNextFunction = result.plannedSafeToExecute === true ? 'runGmailSalesAutomatedEvidenceRecoveryStepOnce' : '';
-  result.operatorRecommendedNextFunctionReason = result.aiProviderCooldownActive && result.operatorRecommendedNextFunction
-    ? 'ai_cooldown_but_legacy_promotion_available'
+  result.operatorRecommendedNextFunctionReason = (result.aiProviderCooldownActive || result.aiProviderRateLimitedToday) && result.operatorRecommendedNextFunction
+    ? (result.aiProviderCooldownInferredFromLastRunSummary ? 'ai_recent_rate_limit_but_legacy_promotion_available' : 'ai_cooldown_but_legacy_promotion_available')
     : (result.operatorRecommendedNextFunction ? (result.plannedNextActionReasonCode || 'safe_step_available') : '');
   result.operatorShouldRunSafeStepNow = Boolean(result.operatorRecommendedNextFunction);
-  result.operatorShouldWaitReason = result.operatorShouldRunSafeStepNow ? '' : (result.aiProviderCooldownActive ? 'wait_for_ai_provider_cooldown' : '');
+  result.operatorShouldWaitReason = result.operatorShouldRunSafeStepNow ? '' : ((result.aiProviderCooldownActive || result.aiProviderRateLimitedToday) ? 'wait_for_ai_provider_cooldown' : '');
   if (result.emptyDigestButReadyCount > 0) result.blockedReasons.push('empty_digest_but_ready');
   if (result.shortfallToThirty > 0) result.blockedReasons.push('ready_inventory_below_30');
   result.status = result.blockedReasons.length > 0 ? 'blocked' : 'pass';
@@ -8659,7 +8705,7 @@ function planGmailSalesAutomatedEvidenceRecoveryNextAction_(status) {
   if (Number(status && status.readyInventoryCount || 0) >= gmailDailyExpectedCount_()) return GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.manifestBuildPending;
   if (Number(status && status.basisApplyPendingCount || 0) > 0) return GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.basisApplyPending;
   if (Number(status && status.changedDigestEligibleCount || 0) > 0 &&
-      status && status.aiProviderCooldownActive === true &&
+      status && (status.aiProviderCooldownActive === true || status.aiProviderRateLimitedToday === true) &&
       (Number(status.legacyPromotionEligibleCount || 0) > 0 || Number(status.promotionEligibleViaSourceReferenceClassificationCount || 0) > 0)) {
     return GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.evidencePackageReady;
   }
@@ -15452,6 +15498,36 @@ function readGmailSalesAiLastRunSummary_() {
   }
 }
 
+function inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate) {
+  const summary = readGmailSalesAiLastRunSummary_();
+  const completedAt = String(summary.completedAt || summary.updatedAt || summary.at || '').trim();
+  const summaryDate = getGmailSalesRecoveryUsageOperationDate_(summary, targetDate || '');
+  const reasons = summary.rejectionReasonCounts || summary.aiProviderFailureReasonCounts || {};
+  const rateLimitedDigestCount = Number(reasons.ai_provider_http_429 || reasons.rate_limited || summary.aiProviderRateLimitedDigestCount || 0);
+  const requestFailureCount = Number(summary.aiProviderRequestFailureCount || summary.aiProviderFailedRequestCount || 0);
+  const requestSuccessCount = Number(summary.aiProviderRequestSuccessCount || summary.aiProviderSuccessfulRequestCount || 0);
+  const candidateResponseCount = Number(summary.aiProviderCandidateResponseCount || 0);
+  const has429 = rateLimitedDigestCount > 0 ||
+    (Number(summary.aiProviderRateLimitedRequestCount || 0) > 0) ||
+    (requestFailureCount > 0 && requestSuccessCount === 0 && candidateResponseCount === 0 &&
+      String(summary.blockedReason || summary.status || '').indexOf('429') !== -1);
+  const normalizedTarget = normalizeDateText_(targetDate);
+  const rateLimitedToday = Boolean(has429 && normalizedTarget && summaryDate === normalizedTarget);
+  return {
+    aiProviderLastRunSummaryFound: Boolean(completedAt || Object.keys(summary || {}).length > 0),
+    aiProviderLastRunHadHttp429: Boolean(has429),
+    aiProviderLastRunRateLimitedDigestCount: rateLimitedDigestCount,
+    aiProviderLastRunRequestFailureCount: requestFailureCount,
+    aiProviderLastRunRequestSuccessCount: requestSuccessCount,
+    aiProviderLastRunCandidateResponseCount: candidateResponseCount,
+    aiProviderRateLimitedToday: rateLimitedToday,
+    aiProviderRateLimitedTargetDate: rateLimitedToday ? summaryDate : '',
+    aiProviderCooldownInferredFromLastRunSummary: rateLimitedToday,
+    aiProviderLastFailureCategory: rateLimitedToday ? 'ai_provider_http_429' : '',
+    aiProviderLastFailureAt: rateLimitedToday ? completedAt : ''
+  };
+}
+
 function recordGmailSalesRecoveryUsageOperation_(operation) {
   const cost = Number(operation && operation.estimatedCostYen || 0);
   const operationId = buildGmailSalesRecoveryUsageOperationId_(operation);
@@ -15532,6 +15608,7 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
   const limit = Number((config || {}).maxDailyCostYen || 0);
   const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
   const collection = collectGmailSalesRecoveryUsageOperations_(targetDate);
+  const inferredRateLimit = inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate);
   const operations = collection.operations || {};
   const seen = {};
   let cumulative = 0;
@@ -15584,7 +15661,12 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     aiProviderAttemptedRequestCount,
     aiProviderSuccessfulRequestCount,
     aiProviderFailedRequestCount,
-    aiProviderRateLimitedRequestCount
+    aiProviderRateLimitedRequestCount,
+    providerFailureBackfilledOperationCount: Number(collection.providerFailureBackfilledOperationCount || 0),
+    providerFailureBackfillSource: String(collection.providerFailureBackfillSource || ''),
+    aiProviderLastRunSummaryFound: inferredRateLimit.aiProviderLastRunSummaryFound,
+    aiProviderLastRunSummaryMatchedLedger: collection.aiProviderLastRunSummaryMatchedLedger === true,
+    aiProviderFailureAccountingComplete: collection.aiProviderFailureAccountingComplete !== false
   };
 }
 
@@ -15594,6 +15676,34 @@ function collectGmailSalesRecoveryUsageOperations_(targetDate) {
   let backfilledOperationCount = 0;
   let ledgerOperationCount = 0;
   let duplicateOperationSkippedCount = 0;
+  let providerFailureBackfilledOperationCount = 0;
+  let providerFailureBackfillSource = '';
+  let aiProviderLastRunSummaryMatchedLedger = false;
+  const enrichAiProviderFailureAccounting = (entry, source) => {
+    const result = Object.assign({}, entry || {});
+    const type = normalizeGmailSalesRecoveryUsageOperationType_(result);
+    if (type !== 'ai_contact_basis_verification') return { entry: result, backfilled: false };
+    const reasons = result.rejectionReasonCounts || result.aiProviderFailureReasonCounts || {};
+    const rateLimitedDigestCount = Number(reasons.ai_provider_http_429 || reasons.rate_limited || result.aiProviderRateLimitedDigestCount || 0);
+    const requestFailureCount = Number(result.aiProviderRequestFailureCount || result.aiProviderFailedRequestCount || 0);
+    const requestSuccessCount = Number(result.aiProviderRequestSuccessCount || result.aiProviderSuccessfulRequestCount || 0);
+    const candidateResponseCount = Number(result.aiProviderCandidateResponseCount || 0);
+    const has429 = rateLimitedDigestCount > 0 || Number(result.aiProviderRateLimitedRequestCount || 0) > 0;
+    const missingFailureAccounting = Number(result.failedProviderRequestCostYen || 0) <= 0 ||
+      Number(result.aiProviderFailedRequestCount || result.aiProviderRequestFailureCount || 0) <= 0 ||
+      Number(result.aiProviderRateLimitedRequestCount || 0) <= 0;
+    if (!has429 || !missingFailureAccounting) return { entry: result, backfilled: false };
+    const cost = Math.max(0, Number(result.estimatedCostYen || 0));
+    result.attemptedCostYen = Number(result.attemptedCostYen || cost || 0);
+    result.successfulEvaluationCostYen = Number(result.successfulEvaluationCostYen || (requestSuccessCount > 0 ? cost : 0) || 0);
+    result.failedProviderRequestCostYen = Number(result.failedProviderRequestCostYen || (requestSuccessCount === 0 && candidateResponseCount === 0 ? cost : 0) || 0);
+    result.aiProviderAttemptedRequestCount = Number(result.aiProviderAttemptedRequestCount || result.aiBatchRequestCount || Math.max(1, requestFailureCount + requestSuccessCount) || 1);
+    result.aiProviderSuccessfulRequestCount = Number(result.aiProviderSuccessfulRequestCount || requestSuccessCount || 0);
+    result.aiProviderFailedRequestCount = Number(result.aiProviderFailedRequestCount || requestFailureCount || 1);
+    result.aiProviderRateLimitedRequestCount = Number(result.aiProviderRateLimitedRequestCount || 1);
+    result.providerFailureBackfillSource = source || 'summary';
+    return { entry: result, backfilled: true };
+  };
   const addOperation = (operation, source) => {
     const cost = Math.max(0, Number(operation && operation.estimatedCostYen || 0));
     if (cost <= 0) return;
@@ -15604,22 +15714,37 @@ function collectGmailSalesRecoveryUsageOperations_(targetDate) {
     if (!id) return;
     if (seen[id]) {
       duplicateOperationSkippedCount += 1;
+      const existing = operations[id] || {};
+      const enrichedCandidate = enrichAiProviderFailureAccounting(Object.assign({}, existing, operation), source);
+      if (enrichedCandidate.backfilled &&
+          (Number(existing.failedProviderRequestCostYen || 0) <= 0 || Number(existing.aiProviderRateLimitedRequestCount || 0) <= 0)) {
+        operations[id] = Object.assign({}, existing, enrichedCandidate.entry, { source: existing.source || source || '' });
+        providerFailureBackfilledOperationCount += 1;
+        providerFailureBackfillSource = providerFailureBackfillSource || (source || 'summary');
+        if (source === 'summary') aiProviderLastRunSummaryMatchedLedger = true;
+      }
       return;
     }
     seen[id] = true;
+    const enriched = enrichAiProviderFailureAccounting(operation, source);
+    if (enriched.backfilled) {
+      providerFailureBackfilledOperationCount += 1;
+      providerFailureBackfillSource = providerFailureBackfillSource || (source || 'summary');
+    }
+    const enrichedOperation = enriched.entry || operation;
     operations[id] = {
       operationId: id,
-      event: String(operation.event || ''),
-      operationType: normalizeGmailSalesRecoveryUsageOperationType_(operation),
+      event: String(enrichedOperation.event || ''),
+      operationType: normalizeGmailSalesRecoveryUsageOperationType_(enrichedOperation),
       completedAt: completedAt || targetDate + 'T00:00:00.000Z',
       estimatedCostYen: cost,
-      attemptedCostYen: Number(operation.attemptedCostYen || cost || 0),
-      successfulEvaluationCostYen: Number(operation.successfulEvaluationCostYen || 0),
-      failedProviderRequestCostYen: Number(operation.failedProviderRequestCostYen || 0),
-      aiProviderAttemptedRequestCount: Number(operation.aiProviderAttemptedRequestCount || 0),
-      aiProviderSuccessfulRequestCount: Number(operation.aiProviderSuccessfulRequestCount || 0),
-      aiProviderFailedRequestCount: Number(operation.aiProviderFailedRequestCount || 0),
-      aiProviderRateLimitedRequestCount: Number(operation.aiProviderRateLimitedRequestCount || 0),
+      attemptedCostYen: Number(enrichedOperation.attemptedCostYen || cost || 0),
+      successfulEvaluationCostYen: Number(enrichedOperation.successfulEvaluationCostYen || 0),
+      failedProviderRequestCostYen: Number(enrichedOperation.failedProviderRequestCostYen || 0),
+      aiProviderAttemptedRequestCount: Number(enrichedOperation.aiProviderAttemptedRequestCount || 0),
+      aiProviderSuccessfulRequestCount: Number(enrichedOperation.aiProviderSuccessfulRequestCount || 0),
+      aiProviderFailedRequestCount: Number(enrichedOperation.aiProviderFailedRequestCount || 0),
+      aiProviderRateLimitedRequestCount: Number(enrichedOperation.aiProviderRateLimitedRequestCount || 0),
       source: source || ''
     };
     if (source === 'ledger') ledgerOperationCount += 1;
@@ -15652,7 +15777,16 @@ function collectGmailSalesRecoveryUsageOperations_(targetDate) {
       estimatedCostYen: groundingDelta
     }, 'summary');
   }
-  return { operations, backfilledOperationCount, ledgerOperationCount, duplicateOperationSkippedCount };
+  return {
+    operations,
+    backfilledOperationCount,
+    ledgerOperationCount,
+    duplicateOperationSkippedCount,
+    providerFailureBackfilledOperationCount,
+    providerFailureBackfillSource,
+    aiProviderLastRunSummaryMatchedLedger,
+    aiProviderFailureAccountingComplete: true
+  };
 }
 
 function buildGmailSalesRecoveryUsageOperationId_(operation) {
