@@ -1785,6 +1785,64 @@ assert.equal(g429b5Inspect.aiProviderCooldownInferredFromLastRunSummary, false);
 assert.equal(g429b5Inspect.plannedNextAction, 'ai_contact_basis_verification');
 assert.equal(g429b5Inspect.aiRetrySafeToExecute, true);
 
+const g429b6 = createContext();
+installFiveAiPendingRows(g429b6);
+const g429b6Inspect = g429b6.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
+[
+  'aiProviderRateLimitedToday',
+  'aiProviderCooldownInferredFromLastRunSummary',
+  'aiProviderLastRunHadHttp429',
+  'aiProviderLastRunSummaryFound',
+  'aiProviderRateLimitedTargetDate',
+  'aiProviderLastRunRateLimitedDigestCount',
+  'aiProviderLastRunRequestFailureCount',
+  'aiProviderLastRunRequestSuccessCount',
+  'aiProviderLastRunCandidateResponseCount',
+  'providerFailureBackfilledOperationCount',
+  'providerFailureBackfillSource',
+  'aiProviderLastRunSummaryMatchedLedger',
+  'aiProviderFailureAccountingComplete'
+].forEach((fieldName) => {
+  assert.equal(code.indexOf(fieldName) >= 0, true);
+});
+[
+  'ai_recent_rate_limit_non_ai_recovery_available',
+  'ai_recent_rate_limit_but_legacy_promotion_available',
+  'wait_for_ai_provider_cooldown'
+].forEach((reasonCode) => {
+  assert.equal(code.indexOf(reasonCode) >= 0, true);
+});
+[
+  'aiProviderRateLimitedToday',
+  'aiProviderCooldownInferredFromLastRunSummary',
+  'aiProviderLastRunHadHttp429',
+  'aiProviderLastRunSummaryFound',
+  'aiProviderRateLimitedTargetDate',
+  'aiProviderLastRunRateLimitedDigestCount',
+  'aiProviderLastRunRequestFailureCount',
+  'aiProviderLastRunRequestSuccessCount',
+  'aiProviderLastRunCandidateResponseCount'
+].forEach((fieldName) => {
+  assert.equal(Object.prototype.hasOwnProperty.call(g429b6Inspect, fieldName), true);
+});
+[
+  'providerFailureBackfilledOperationCount',
+  'providerFailureBackfillSource',
+  'aiProviderLastRunSummaryFound',
+  'aiProviderLastRunSummaryMatchedLedger',
+  'aiProviderFailureAccountingComplete',
+  'attemptedCostYen',
+  'successfulEvaluationCostYen',
+  'failedProviderRequestCostYen',
+  'aiProviderAttemptedRequestCount',
+  'aiProviderSuccessfulRequestCount',
+  'aiProviderFailedRequestCount',
+  'aiProviderRateLimitedRequestCount'
+].forEach((fieldName) => {
+  assert.equal(Object.prototype.hasOwnProperty.call(g429b6Usage, fieldName), true);
+});
+
 assert.equal(g4292.__state.gmailSendCount, 0);
 assert.equal(g4292.__state.draftCreateCount, 0);
 assert.equal(g4292.__state.triggerCreateCount, 0);

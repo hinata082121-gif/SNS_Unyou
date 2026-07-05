@@ -250,6 +250,28 @@ const GMAIL_SALES_AI_PROVIDER_COOLDOWN_PROVIDER_PROPERTY = 'GMAIL_SALES_AI_PROVI
 const GMAIL_SALES_AI_PROVIDER_COOLDOWN_OPERATION_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_COOLDOWN_OPERATION';
 const GMAIL_SALES_AI_PROVIDER_COOLDOWN_LAST_AT_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_COOLDOWN_LAST_AT';
 const GMAIL_SALES_AI_PROVIDER_COOLDOWN_FAILURE_COUNT_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_COOLDOWN_FAILURE_COUNT';
+const GMAIL_SALES_AI_HISTORICAL_429_INFERENCE_FIELD_NAMES = [
+  'aiProviderRateLimitedToday',
+  'aiProviderCooldownInferredFromLastRunSummary',
+  'aiProviderLastRunHadHttp429',
+  'aiProviderLastRunSummaryFound',
+  'aiProviderRateLimitedTargetDate',
+  'aiProviderLastRunRateLimitedDigestCount',
+  'aiProviderLastRunRequestFailureCount',
+  'aiProviderLastRunRequestSuccessCount',
+  'aiProviderLastRunCandidateResponseCount'
+];
+const GMAIL_SALES_AI_PROVIDER_FAILURE_ACCOUNTING_FIELD_NAMES = [
+  'providerFailureBackfilledOperationCount',
+  'providerFailureBackfillSource',
+  'aiProviderLastRunSummaryMatchedLedger',
+  'aiProviderFailureAccountingComplete'
+];
+const GMAIL_SALES_AI_RECENT_RATE_LIMIT_REASON_CODES = [
+  'ai_recent_rate_limit_non_ai_recovery_available',
+  'ai_recent_rate_limit_but_legacy_promotion_available',
+  'wait_for_ai_provider_cooldown'
+];
 const GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_NOOP_LOOP_PROPERTY = 'GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_NOOP_LOOP_JSON';
 const GMAIL_SALES_SOURCE_REFERENCE_CELL_PROBE_CACHE_KEY = 'gmail_sales_source_reference_cell_contract_last_probe';
 const GMAIL_SALES_GROUNDING_VERSION_DEFAULT = 'official-source-discovery-v1';
@@ -15498,8 +15520,29 @@ function readGmailSalesAiLastRunSummary_() {
   }
 }
 
+function buildGmailSalesAiHistorical429InferenceDefaults_() {
+  const defaults = {
+    aiProviderLastRunSummaryFound: false,
+    aiProviderLastRunHadHttp429: false,
+    aiProviderLastRunRateLimitedDigestCount: 0,
+    aiProviderLastRunRequestFailureCount: 0,
+    aiProviderLastRunRequestSuccessCount: 0,
+    aiProviderLastRunCandidateResponseCount: 0,
+    aiProviderRateLimitedToday: false,
+    aiProviderRateLimitedTargetDate: '',
+    aiProviderCooldownInferredFromLastRunSummary: false,
+    aiProviderLastFailureCategory: '',
+    aiProviderLastFailureAt: ''
+  };
+  GMAIL_SALES_AI_HISTORICAL_429_INFERENCE_FIELD_NAMES.forEach((fieldName) => {
+    if (defaults[fieldName] === undefined) defaults[fieldName] = '';
+  });
+  return defaults;
+}
+
 function inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate) {
   const summary = readGmailSalesAiLastRunSummary_();
+  const defaults = buildGmailSalesAiHistorical429InferenceDefaults_();
   const completedAt = String(summary.completedAt || summary.updatedAt || summary.at || '').trim();
   const summaryDate = getGmailSalesRecoveryUsageOperationDate_(summary, targetDate || '');
   const reasons = summary.rejectionReasonCounts || summary.aiProviderFailureReasonCounts || {};
@@ -15513,7 +15556,7 @@ function inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate) {
       String(summary.blockedReason || summary.status || '').indexOf('429') !== -1);
   const normalizedTarget = normalizeDateText_(targetDate);
   const rateLimitedToday = Boolean(has429 && normalizedTarget && summaryDate === normalizedTarget);
-  return {
+  return Object.assign({}, defaults, {
     aiProviderLastRunSummaryFound: Boolean(completedAt || Object.keys(summary || {}).length > 0),
     aiProviderLastRunHadHttp429: Boolean(has429),
     aiProviderLastRunRateLimitedDigestCount: rateLimitedDigestCount,
@@ -15525,7 +15568,7 @@ function inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate) {
     aiProviderCooldownInferredFromLastRunSummary: rateLimitedToday,
     aiProviderLastFailureCategory: rateLimitedToday ? 'ai_provider_http_429' : '',
     aiProviderLastFailureAt: rateLimitedToday ? completedAt : ''
-  };
+  });
 }
 
 function recordGmailSalesRecoveryUsageOperation_(operation) {
@@ -15609,6 +15652,7 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
   const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
   const collection = collectGmailSalesRecoveryUsageOperations_(targetDate);
   const inferredRateLimit = inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate);
+  const providerFailureDefaults = buildGmailSalesAiProviderFailureAccountingDefaults_();
   const operations = collection.operations || {};
   const seen = {};
   let cumulative = 0;
@@ -15642,7 +15686,7 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     const completedAt = String(entry.completedAt || '');
     if (completedAt && (!lastOperationAt || completedAt > lastOperationAt)) lastOperationAt = completedAt;
   });
-  return {
+  return Object.assign({}, providerFailureDefaults, {
     targetDate,
     dailyCostLimitYen: limit,
     cumulativeEstimatedCostYen: cumulative,
@@ -15667,7 +15711,20 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     aiProviderLastRunSummaryFound: inferredRateLimit.aiProviderLastRunSummaryFound,
     aiProviderLastRunSummaryMatchedLedger: collection.aiProviderLastRunSummaryMatchedLedger === true,
     aiProviderFailureAccountingComplete: collection.aiProviderFailureAccountingComplete !== false
+  });
+}
+
+function buildGmailSalesAiProviderFailureAccountingDefaults_() {
+  const defaults = {
+    providerFailureBackfilledOperationCount: 0,
+    providerFailureBackfillSource: '',
+    aiProviderLastRunSummaryMatchedLedger: false,
+    aiProviderFailureAccountingComplete: true
   };
+  GMAIL_SALES_AI_PROVIDER_FAILURE_ACCOUNTING_FIELD_NAMES.forEach((fieldName) => {
+    if (defaults[fieldName] === undefined) defaults[fieldName] = '';
+  });
+  return defaults;
 }
 
 function collectGmailSalesRecoveryUsageOperations_(targetDate) {
