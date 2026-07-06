@@ -913,6 +913,16 @@ function seedHistoricalAi429Summary(context, overrides = {}) {
   }, overrides));
 }
 
+function applyTodayTargetDate(context) {
+  const today = context.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  context.getConfig_ = () => ({ currentJstDate: today });
+  return today;
+}
+
+function minutesAgoIso(minutes) {
+  return new Date(Date.now() - (Number(minutes || 0) * 60000)).toISOString();
+}
+
 const v1 = createContext();
 installAiPendingFixture(v1);
 seedRecoveryUsage(v1, [
@@ -1707,7 +1717,8 @@ assert.equal(g4297Operation.aiProviderRateLimitedRequestCount, 1);
 
 const g429b1 = createContext();
 installFiveAiPendingRows(g429b1);
-seedHistoricalAi429Summary(g429b1);
+applyTodayTargetDate(g429b1);
+seedHistoricalAi429Summary(g429b1, { completedAt: minutesAgoIso(120) });
 const g429b1Inspect = g429b1.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
 assert.equal(g429b1Inspect.aiProviderLastRunSummaryFound, true);
 assert.equal(g429b1Inspect.aiProviderLastRunHadHttp429, true);
@@ -1720,6 +1731,8 @@ assert.equal(g429b1Inspect.aiProviderCooldownInferredFromLastRunSummary, true);
 assert.equal(g429b1Inspect.aiProviderLastFailureCategory, 'ai_provider_http_429');
 assert.equal(g429b1Inspect.aiPendingBlockedByCooldown, true);
 assert.equal(g429b1Inspect.aiRetrySafeToExecute, false);
+assert.equal(g429b1Inspect.aiProviderRetryProbeEligible, false);
+assert.equal(g429b1Inspect.aiProviderRetryProbeBlockedReason, 'cooldown_elapsed_below_minimum');
 assert.equal(g429b1Inspect.plannedNextAction, 'wait_for_ai_provider_cooldown');
 assert.equal(g429b1Inspect.operatorShouldWaitReason, 'wait_for_ai_provider_cooldown');
 
@@ -1784,6 +1797,75 @@ assert.equal(g429b5Inspect.aiProviderRateLimitedToday, false);
 assert.equal(g429b5Inspect.aiProviderCooldownInferredFromLastRunSummary, false);
 assert.equal(g429b5Inspect.plannedNextAction, 'ai_contact_basis_verification');
 assert.equal(g429b5Inspect.aiRetrySafeToExecute, true);
+
+const g429c1 = createContext();
+installSheets(g429c1, makeSourceRows(38), []);
+applyTodayTargetDate(g429c1);
+seedHistoricalAi429Summary(g429c1, { completedAt: minutesAgoIso(361) });
+const g429c1Inspect = g429c1.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(g429c1Inspect.aiProviderRetryProbeEligible, true);
+assert.equal(g429c1Inspect.aiProviderSameDayRetryAllowed, true);
+assert.equal(g429c1Inspect.aiRetrySafeToExecute, true);
+assert.equal(g429c1Inspect.plannedNextAction, 'ai_contact_basis_verification');
+assert.equal(g429c1Inspect.plannedNextActionReasonCode, 'ai_retry_probe_after_cooldown_elapsed');
+assert.equal(g429c1Inspect.plannedExpectedApiClass, 'gemini_ai_review');
+assert.equal(g429c1Inspect.plannedExpectedWriteClass, 'sheet_update');
+assert.equal(g429c1Inspect.plannedSafeToExecute, true);
+assert.equal(g429c1Inspect.operatorRecommendedNextFunctionReason, 'ai_retry_probe_after_cooldown_elapsed');
+assert.equal(g429c1Inspect.operatorShouldRunSafeStepNow, true);
+
+const g429c2 = createContext();
+installSheets(g429c2, makeSourceRows(38), []);
+applyTodayTargetDate(g429c2);
+seedHistoricalAi429Summary(g429c2, { completedAt: minutesAgoIso(361) });
+const g429c2Step = g429c2.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(g429c2Step.stepExecuted, 'ai_contact_basis_verification');
+assert.equal(g429c2Step.aiApiCalled, true);
+assert.equal(g429c2Step.aiBatchRequestCount, 1);
+assert.equal(g429c2Step.aiProviderCandidateResponseCount, 5);
+assert.equal(g429c2Step.aiProviderRetryProbeCandidateLimit, 5);
+assert.equal(g429c2Step.aiProviderRetryProbeCandidateCount, 5);
+assert.equal(g429c2.__state.gmailSendCount, 0);
+assert.equal(g429c2.__state.draftCreateCount, 0);
+assert.equal(g429c2.__state.triggerCreateCount, 0);
+
+const g429c3 = createContext();
+installFiveAiPendingRows(g429c3);
+const g429c3Date = applyTodayTargetDate(g429c3);
+seedHistoricalAi429Summary(g429c3, { completedAt: minutesAgoIso(361) });
+g429c3.recordGmailSalesRecoveryUsageOperation_({
+  operationId: 'retry-probe-used',
+  event: 'gmail_sales_ai_contact_basis_verification',
+  completedAt: new Date().toISOString(),
+  targetDate: g429c3Date,
+  estimatedCostYen: 1,
+  aiProviderRetryProbeAttemptCount: 1,
+  aiProviderRetryProbeCostYen: 1
+});
+const g429c3Inspect = g429c3.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(g429c3Inspect.aiProviderRetryProbeAlreadyUsedToday, true);
+assert.equal(g429c3Inspect.aiProviderRetryProbeEligible, false);
+assert.equal(g429c3Inspect.aiRetrySafeToExecute, false);
+assert.equal(g429c3Inspect.plannedNextAction, 'wait_for_ai_provider_cooldown');
+
+const g429c4 = createContext();
+g429c4.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+g429c4.__props.GMAIL_SALES_AI_API_KEY = 'configured-key-value-for-test';
+g429c4.UrlFetchApp.fetch = () => { g429c4.__state.urlFetchCount += 1; return { getResponseCode: () => 429, getContentText: () => '{}' }; };
+installFiveAiPendingRows(g429c4);
+applyTodayTargetDate(g429c4);
+seedHistoricalAi429Summary(g429c4, { completedAt: minutesAgoIso(361) });
+const g429c4Step = g429c4.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(g429c4Step.executedAction, 'ai_contact_basis_verification');
+assert.equal(g429c4Step.executedActionStatus, 'provider_blocked');
+assert.equal(g429c4Step.aiProviderRetryProbeAttemptCountToday, 1);
+assert.equal(g429c4Step.aiProviderRetryProbe429CountToday, 1);
+assert.equal(g429c4Step.aiProviderHardCooldownForTargetDate, true);
+assert.equal(g429c4Step.aiProviderHardCooldownReason, 'ai_retry_probe_http_429');
+const g429c4After = g429c4.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(g429c4After.aiProviderHardCooldownForTargetDate, true);
+assert.equal(g429c4After.aiRetrySafeToExecute, false);
+assert.equal(g429c4After.operatorShouldRunSafeStepNow, false);
 
 const g429b6 = createContext();
 installFiveAiPendingRows(g429b6);
