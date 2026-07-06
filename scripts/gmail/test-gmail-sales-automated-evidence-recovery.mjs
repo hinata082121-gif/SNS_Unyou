@@ -913,6 +913,27 @@ function seedHistoricalAi429Summary(context, overrides = {}) {
   }, overrides));
 }
 
+function seedPermissionErrorAiSummary(context, overrides = {}) {
+  context.__props.GMAIL_SALES_AI_LAST_RUN_SUMMARY_JSON = JSON.stringify(Object.assign({
+    event: 'gmail_sales_ai_contact_basis_verification',
+    runId: 'historical-ai-permission-error',
+    completedAt: new Date().toISOString(),
+    estimatedCostYen: 1,
+    attemptedCostYen: 1,
+    successfulEvaluationCostYen: 0,
+    failedProviderRequestCostYen: 1,
+    aiBatchRequestCount: 1,
+    aiProviderRequestSuccessCount: 0,
+    aiProviderRequestFailureCount: 1,
+    aiProviderCandidateResponseCount: 0,
+    aiProviderFailureReasonCounts: { ai_provider_exception_permission_error: 1 },
+    rejectionReasonCounts: { ai_provider_exception_permission_error: 5 },
+    aiProviderPermissionErrorRequestCount: 1,
+    aiProviderPermissionErrorDigestCount: 5,
+    aiProviderNonRetryableFailureCostYen: 1
+  }, overrides));
+}
+
 function applyTodayTargetDate(context) {
   const today = context.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
   context.getConfig_ = () => ({ currentJstDate: today });
@@ -1867,6 +1888,76 @@ assert.equal(g429c4After.aiProviderHardCooldownForTargetDate, true);
 assert.equal(g429c4After.aiRetrySafeToExecute, false);
 assert.equal(g429c4After.operatorShouldRunSafeStepNow, false);
 
+const gperm1 = createContext();
+installFiveAiPendingRows(gperm1);
+applyTodayTargetDate(gperm1);
+seedPermissionErrorAiSummary(gperm1);
+const gperm1Inspect = gperm1.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(gperm1Inspect.aiProviderLastRunHadPermissionError, true);
+assert.equal(gperm1Inspect.aiProviderPermissionBlockedForTargetDate, true);
+assert.equal(gperm1Inspect.aiProviderPermissionFixRequired, true);
+assert.equal(gperm1Inspect.aiProviderPermissionRetrySafeToExecute, false);
+assert.equal(gperm1Inspect.aiRetrySafeToExecute, false);
+assert.equal(gperm1Inspect.plannedNextAction, 'wait_for_ai_provider_permission_fix');
+assert.equal(gperm1Inspect.plannedNextActionReasonCode, 'ai_provider_permission_error_requires_fix');
+assert.equal(gperm1Inspect.plannedSafeToExecute, false);
+assert.equal(gperm1Inspect.operatorShouldRunSafeStepNow, false);
+assert.equal(gperm1Inspect.operatorShouldWaitReason, 'ai_provider_permission_error_requires_fix');
+
+const gperm2 = createContext();
+installFiveAiPendingRows(gperm2);
+applyTodayTargetDate(gperm2);
+seedPermissionErrorAiSummary(gperm2);
+const gperm2Step = gperm2.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(gperm2Step.executedAction, '');
+assert.equal(gperm2Step.executedActionStatus, 'blocked');
+assert.equal(gperm2Step.executedActionBlockedReason, 'ai_provider_permission_error_requires_fix');
+assert.equal(gperm2Step.actionStatus, 'blocked');
+assert.equal(gperm2Step.actionBlockedReason, 'ai_provider_permission_error_requires_fix');
+assert.equal(gperm2Step.aiApiCalled, false);
+assert.equal(gperm2Step.googleSheetsUpdated, false);
+assert.equal(gperm2.__state.urlFetchCount, 0);
+assert.equal(gperm2.__state.gmailSendCount, 0);
+assert.equal(gperm2.__state.draftCreateCount, 0);
+assert.equal(gperm2.__state.triggerCreateCount, 0);
+
+const gperm3 = createContext();
+installFiveAiPendingRows(gperm3);
+applyTodayTargetDate(gperm3);
+seedPermissionErrorAiSummary(gperm3);
+const gperm3Usage = gperm3.summarizeGmailSalesRecoveryDailyUsage_(gperm3.getGmailSalesAiConfig_());
+assert.equal(gperm3Usage.aiProviderPermissionErrorRequestCount >= 1, true);
+assert.equal(gperm3Usage.aiProviderPermissionErrorDigestCount >= 5, true);
+assert.equal(gperm3Usage.aiProviderPermissionBlockedForTargetDate, true);
+assert.equal(gperm3Usage.aiProviderPermissionFixRequired, true);
+assert.equal(gperm3Usage.aiProviderNonRetryableFailureCostYen >= 1, true);
+assert.equal(gperm3Usage.aiProviderHardCooldownForTargetDate, false);
+
+const gperm4 = createContext();
+gperm4.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gperm4.__props.GMAIL_SALES_AI_API_KEY = 'configured-key-value-for-test';
+gperm4.UrlFetchApp.fetch = () => { gperm4.__state.urlFetchCount += 1; return { getResponseCode: () => 403, getContentText: () => '{}' }; };
+installFiveAiPendingRows(gperm4);
+applyTodayTargetDate(gperm4);
+seedHistoricalAi429Summary(gperm4, { completedAt: minutesAgoIso(361) });
+const gperm4Step = gperm4.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(gperm4Step.executedAction, 'ai_contact_basis_verification');
+assert.equal(gperm4Step.executedActionStatus, 'provider_blocked');
+assert.equal(gperm4Step.executedActionBlockedReason, 'ai_provider_permission_error_requires_fix');
+assert.equal(gperm4Step.aiProviderPermissionErrorRequestCount, 1);
+assert.equal(gperm4Step.aiProviderPermissionErrorDigestCount, 5);
+assert.equal(gperm4Step.aiProviderPermissionBlockedForTargetDate, true);
+assert.equal(gperm4Step.aiProviderHardCooldownForTargetDate, false);
+const gperm4After = gperm4.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(gperm4After.aiProviderPermissionBlockedForTargetDate, true);
+assert.equal(gperm4After.aiRetrySafeToExecute, false);
+assert.equal(gperm4After.plannedNextAction, 'wait_for_ai_provider_permission_fix');
+assert.equal(gperm4After.operatorShouldRunSafeStepNow, false);
+assert.equal(gperm4After.operatorShouldWaitReason, 'ai_provider_permission_error_requires_fix');
+assert.equal(gperm4.__state.gmailSendCount, 0);
+assert.equal(gperm4.__state.draftCreateCount, 0);
+assert.equal(gperm4.__state.triggerCreateCount, 0);
+
 const g429b6 = createContext();
 installFiveAiPendingRows(g429b6);
 const g429b6Inspect = g429b6.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
@@ -1881,6 +1972,9 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderLastRunRequestFailureCount',
   'aiProviderLastRunRequestSuccessCount',
   'aiProviderLastRunCandidateResponseCount',
+  'aiProviderLastRunHadPermissionError',
+  'aiProviderPermissionBlockedForTargetDate',
+  'aiProviderPermissionFixRequired',
   'providerFailureBackfilledOperationCount',
   'providerFailureBackfillSource',
   'aiProviderLastRunSummaryMatchedLedger',
@@ -1904,7 +1998,12 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderLastRunRateLimitedDigestCount',
   'aiProviderLastRunRequestFailureCount',
   'aiProviderLastRunRequestSuccessCount',
-  'aiProviderLastRunCandidateResponseCount'
+  'aiProviderLastRunCandidateResponseCount',
+  'aiProviderPermissionErrorRequestCount',
+  'aiProviderPermissionErrorDigestCount',
+  'aiProviderPermissionBlockedForTargetDate',
+  'aiProviderPermissionFixRequired',
+  'aiProviderNonRetryableFailureCostYen'
 ].forEach((fieldName) => {
   assert.equal(Object.prototype.hasOwnProperty.call(g429b6Inspect, fieldName), true);
 });
@@ -1920,7 +2019,12 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderAttemptedRequestCount',
   'aiProviderSuccessfulRequestCount',
   'aiProviderFailedRequestCount',
-  'aiProviderRateLimitedRequestCount'
+  'aiProviderRateLimitedRequestCount',
+  'aiProviderPermissionErrorRequestCount',
+  'aiProviderPermissionErrorDigestCount',
+  'aiProviderPermissionBlockedForTargetDate',
+  'aiProviderPermissionFixRequired',
+  'aiProviderNonRetryableFailureCostYen'
 ].forEach((fieldName) => {
   assert.equal(Object.prototype.hasOwnProperty.call(g429b6Usage, fieldName), true);
 });
