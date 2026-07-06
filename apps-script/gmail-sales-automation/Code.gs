@@ -277,6 +277,8 @@ const GMAIL_SALES_AI_RECENT_RATE_LIMIT_REASON_CODES = [
 const GMAIL_SALES_AI_RETRY_PROBE_MIN_RETRY_MINUTES = 360;
 const GMAIL_SALES_AI_RETRY_PROBE_MAX_ATTEMPTS_PER_DAY = 1;
 const GMAIL_SALES_AI_RETRY_PROBE_MAX_CANDIDATES = 5;
+const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_PERMISSION_REPAIR_PROBE_JSON';
+const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY = 1;
 const GMAIL_SALES_AI_NON_RETRYABLE_PERMISSION_FAILURE_CODES = [
   'ai_provider_exception_permission_error',
   'permission_error',
@@ -8188,6 +8190,21 @@ function buildGmailSalesPlannedRecoveryActionSummary_(status) {
         groundingPromptBudgetSufficient: true
       };
     }
+    if (status && status.aiProviderPermissionRepairVerified === true &&
+        Number(status.changedDigestEligibleCount || status.aiPendingCount || 0) > 0) {
+      return {
+        plannedNextAction: 'ai_contact_basis_verification',
+        plannedNextActionReasonCode: 'ai_permission_repair_verified',
+        plannedExpectedApiClass: 'gemini_ai_review',
+        plannedExpectedWriteClass: 'sheet_update',
+        plannedSafeToExecute: true,
+        groundingPromptRequestCountToday: 0,
+        dailyPromptRequestLimit: 0,
+        remainingGroundingPromptRequestCountToday: 0,
+        plannedGroundingPromptRequestCount: 0,
+        groundingPromptBudgetSufficient: true
+      };
+    }
     if (status && status.aiProviderRetryProbeEligible === true) {
       return {
         plannedNextAction: 'ai_contact_basis_verification',
@@ -8565,6 +8582,11 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
     aiProviderPermissionBlockedReason: String(usage.aiProviderPermissionBlockedReason || aiPermission.aiProviderPermissionBlockedReason || ''),
     aiProviderPermissionFixRequired: usage.aiProviderPermissionFixRequired === true || aiPermission.aiProviderPermissionFixRequired === true,
     aiProviderPermissionRetrySafeToExecute: !(usage.aiProviderPermissionBlockedForTargetDate === true || aiPermission.aiProviderPermissionBlockedForTargetDate === true),
+    aiProviderPermissionRepairVerified: usage.aiProviderPermissionRepairVerified === true || aiPermission.aiProviderPermissionRepairVerified === true,
+    aiProviderPermissionRepairVerifiedAt: String(usage.aiProviderPermissionRepairVerifiedAt || aiPermission.aiProviderPermissionRepairVerifiedAt || ''),
+    aiProviderRepairProbeAttemptCountToday: Number(usage.aiProviderRepairProbeAttemptCountToday || aiPermission.aiProviderRepairProbeAttemptCountToday || 0),
+    aiProviderRepairProbeSuccessfulRequestCount: Number(usage.aiProviderRepairProbeSuccessfulRequestCount || aiPermission.aiProviderRepairProbeSuccessfulRequestCount || 0),
+    aiProviderRepairProbeFailedRequestCount: Number(usage.aiProviderRepairProbeFailedRequestCount || aiPermission.aiProviderRepairProbeFailedRequestCount || 0),
     aiProviderNonRetryableFailureCostYen: Number(usage.aiProviderNonRetryableFailureCostYen || 0)
   });
   result.readyInventoryCount = Number(coverage.eligibleAfterBasisCheckCount || 0);
@@ -8744,6 +8766,12 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     aiProviderPermissionBlockedAt: '',
     aiProviderPermissionFixRequired: false,
     aiProviderPermissionRetrySafeToExecute: true,
+    aiProviderPermissionRepairVerified: false,
+    aiProviderPermissionRepairVerifiedAt: '',
+    aiProviderRepairProbeAttemptCountToday: 0,
+    aiProviderRepairProbeSuccessfulRequestCount: 0,
+    aiProviderRepairProbeFailedRequestCount: 0,
+    aiProviderRepairProbeMaxAttemptsPerDay: GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY,
     aiProviderNonRetryableFailureCostYen: 0,
     aiPendingBlockedByCooldown: false,
     aiRetrySafeToExecute: true,
@@ -15864,16 +15892,233 @@ function inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate) {
     requestFailureCount > 0 &&
     candidateResponseCount === 0
   );
+  const repair = readGmailSalesAiProviderPermissionRepairProbeState_(normalizedTarget);
+  const repairVerified = repair.aiProviderPermissionRepairVerified === true && repair.targetDate === normalizedTarget;
+  const effectiveBlockedForTarget = blockedForTarget && !repairVerified;
   return Object.assign({}, permission, {
-    aiProviderPermissionBlockedForTargetDate: blockedForTarget,
-    aiProviderPermissionBlockedReason: blockedForTarget ? 'ai_provider_permission_error_requires_fix' : '',
-    aiProviderPermissionBlockedAt: blockedForTarget ? completedAt : '',
-    aiProviderPermissionFixRequired: blockedForTarget,
-    aiProviderPermissionRetrySafeToExecute: !blockedForTarget,
+    aiProviderPermissionBlockedForTargetDate: effectiveBlockedForTarget,
+    aiProviderPermissionBlockedReason: effectiveBlockedForTarget ? 'ai_provider_permission_error_requires_fix' : '',
+    aiProviderPermissionBlockedAt: effectiveBlockedForTarget ? completedAt : '',
+    aiProviderPermissionFixRequired: effectiveBlockedForTarget,
+    aiProviderPermissionRetrySafeToExecute: !effectiveBlockedForTarget,
+    aiProviderPermissionRepairVerified: repairVerified,
+    aiProviderPermissionRepairVerifiedAt: repairVerified ? String(repair.aiProviderPermissionRepairVerifiedAt || '') : '',
+    aiProviderRepairProbeAttemptCountToday: Number(repair.aiProviderRepairProbeAttemptCountToday || 0),
+    aiProviderRepairProbeSuccessfulRequestCount: Number(repair.aiProviderRepairProbeSuccessfulRequestCount || 0),
+    aiProviderRepairProbeFailedRequestCount: Number(repair.aiProviderRepairProbeFailedRequestCount || 0),
     aiProviderLastRunRequestFailureCount: requestFailureCount,
     aiProviderLastRunRequestSuccessCount: requestSuccessCount,
     aiProviderLastRunCandidateResponseCount: candidateResponseCount
   });
+}
+
+function readGmailSalesAiProviderPermissionRepairProbeState_(targetDate) {
+  const normalizedTarget = normalizeDateText_(targetDate || getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  let parsed = {};
+  try {
+    parsed = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_PROPERTY) || '{}')) || {};
+  } catch (error) {
+    parsed = {};
+  }
+  const state = parsed && typeof parsed === 'object' ? parsed : {};
+  const sameTarget = String(state.targetDate || '') === normalizedTarget;
+  const attempted = sameTarget ? Number(state.aiProviderRepairProbeAttemptCountToday || state.attemptCount || 0) : 0;
+  const successful = sameTarget ? Number(state.aiProviderRepairProbeSuccessfulRequestCount || 0) : 0;
+  const failed = sameTarget ? Number(state.aiProviderRepairProbeFailedRequestCount || 0) : 0;
+  return {
+    targetDate: normalizedTarget,
+    aiProviderRepairProbeAttemptCountToday: attempted,
+    aiProviderRepairProbeSuccessfulRequestCount: successful,
+    aiProviderRepairProbeFailedRequestCount: failed,
+    aiProviderPermissionRepairVerified: sameTarget && state.aiProviderPermissionRepairVerified === true,
+    aiProviderPermissionRepairVerifiedAt: sameTarget ? String(state.aiProviderPermissionRepairVerifiedAt || '') : '',
+    aiProviderRepairProbeLastStatus: sameTarget ? String(state.status || '') : '',
+    aiProviderRepairProbeLastReasonCode: sameTarget ? String(state.reasonCode || '') : ''
+  };
+}
+
+function writeGmailSalesAiProviderPermissionRepairProbeState_(state) {
+  PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_PROPERTY, JSON.stringify(state || {}));
+  return state;
+}
+
+function inspectGmailSalesAiProviderPermissionRepairReadiness(options) {
+  const config = getGmailSalesAiConfig_();
+  const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const permission = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
+  const repair = readGmailSalesAiProviderPermissionRepairProbeState_(targetDate);
+  const failures = [];
+  if (config.provider !== 'gemini') failures.push('provider_not_gemini');
+  if (!config.model) failures.push('model_missing');
+  if (!config.apiKeyConfigured) failures.push('api_key_missing');
+  if (permission.aiProviderPermissionBlockedForTargetDate !== true && permission.aiProviderPermissionRepairVerified !== true) failures.push('permission_block_not_active');
+  if (repair.aiProviderRepairProbeAttemptCountToday >= GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY) failures.push('repair_probe_already_used_today');
+  if (permission.aiProviderPermissionRepairVerified === true) failures.push('permission_repair_already_verified');
+  const result = {
+    event: 'gmail_sales_ai_provider_permission_repair_readiness',
+    mode: 'read_only',
+    status: failures.length === 0 ? 'pass' : 'blocked',
+    provider: config.provider,
+    modelConfigured: Boolean(config.model),
+    apiKeyPresent: config.apiKeyConfigured === true,
+    aiProviderPermissionBlockedForTargetDate: permission.aiProviderPermissionBlockedForTargetDate === true,
+    aiProviderPermissionBlockedReason: String(permission.aiProviderPermissionBlockedReason || ''),
+    aiProviderPermissionFixRequired: permission.aiProviderPermissionFixRequired === true,
+    aiProviderLastRunHadPermissionError: permission.aiProviderLastRunHadPermissionError === true,
+    aiProviderLastRunPermissionErrorCount: Number(permission.aiProviderLastRunPermissionErrorCount || 0),
+    aiProviderLastRunProviderFailureCategory: String(permission.aiProviderLastRunProviderFailureCategory || ''),
+    aiProviderRetryProbeAttemptCountToday: Number(summarizeGmailSalesRecoveryDailyUsage_(config).aiProviderRetryProbeAttemptCountToday || 0),
+    aiProviderRepairProbeAttemptCountToday: Number(repair.aiProviderRepairProbeAttemptCountToday || 0),
+    aiProviderRepairProbeMaxAttemptsPerDay: GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY,
+    aiProviderRepairProbeEligible: failures.length === 0,
+    aiProviderRepairProbeBlockedReason: failures[0] || '',
+    aiProviderPermissionRepairVerified: permission.aiProviderPermissionRepairVerified === true,
+    aiProviderPermissionRepairVerifiedAt: String(permission.aiProviderPermissionRepairVerifiedAt || ''),
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false
+  };
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function runGmailSalesAiProviderPermissionRepairProbeOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    const blocked = buildGmailSalesAiProviderPermissionRepairProbeResult_('blocked', {
+      blockedReason: 'safe_rest_required'
+    });
+    logGmailSalesJsonResult_(blocked);
+    return blocked;
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    const locked = buildGmailSalesAiProviderPermissionRepairProbeResult_('blocked', {
+      blockedReason: 'lock_unavailable'
+    });
+    logGmailSalesJsonResult_(locked);
+    return locked;
+  }
+  try {
+    const readiness = inspectGmailSalesAiProviderPermissionRepairReadiness({ skipLog: true });
+    if (readiness.aiProviderRepairProbeEligible !== true) {
+      const blocked = buildGmailSalesAiProviderPermissionRepairProbeResult_('blocked', Object.assign({}, readiness, {
+        blockedReason: readiness.aiProviderRepairProbeBlockedReason || 'repair_probe_not_eligible',
+        aiApiCalled: false,
+        scriptPropertiesUpdated: false
+      }));
+      logGmailSalesJsonResult_(blocked);
+      return blocked;
+    }
+    const config = getGmailSalesAiConfig_();
+    const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+    const now = new Date().toISOString();
+    const probe = callGmailSalesGeminiPermissionRepairProbe_(config);
+    const success = probe.ok === true;
+    const state = {
+      targetDate,
+      status: success ? 'pass' : 'blocked',
+      reasonCode: success ? '' : (probe.reasonCode || 'ai_provider_permission_repair_probe_failed'),
+      completedAt: now,
+      aiProviderRepairProbeAttemptCountToday: 1,
+      aiProviderRepairProbeSuccessfulRequestCount: success ? 1 : 0,
+      aiProviderRepairProbeFailedRequestCount: success ? 0 : 1,
+      aiProviderPermissionRepairVerified: success,
+      aiProviderPermissionRepairVerifiedAt: success ? now : ''
+    };
+    writeGmailSalesAiProviderPermissionRepairProbeState_(state);
+    const result = buildGmailSalesAiProviderPermissionRepairProbeResult_(success ? 'pass' : 'blocked', {
+      targetDate,
+      blockedReason: success ? '' : state.reasonCode,
+      aiProviderRepairProbeAttemptCountToday: 1,
+      aiProviderRepairProbeSuccessfulRequestCount: state.aiProviderRepairProbeSuccessfulRequestCount,
+      aiProviderRepairProbeFailedRequestCount: state.aiProviderRepairProbeFailedRequestCount,
+      aiProviderPermissionRepairVerified: success,
+      aiProviderPermissionRepairVerifiedAt: state.aiProviderPermissionRepairVerifiedAt,
+      aiProviderPermissionBlockedForTargetDate: !success,
+      aiProviderPermissionFixRequired: !success,
+      aiProviderPermissionRetrySafeToExecute: success,
+      aiRetrySafeToExecute: success,
+      aiApiCalled: true,
+      scriptPropertiesUpdated: true
+    });
+    logGmailSalesJsonResult_(result);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function buildGmailSalesAiProviderPermissionRepairProbeResult_(status, overrides) {
+  return Object.assign({
+    event: 'gmail_sales_ai_provider_permission_repair_probe',
+    mode: 'write',
+    status,
+    targetDate: normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd')),
+    blockedReason: '',
+    aiProviderRepairProbeAttemptCountToday: 0,
+    aiProviderRepairProbeSuccessfulRequestCount: 0,
+    aiProviderRepairProbeFailedRequestCount: 0,
+    aiProviderRepairProbeMaxAttemptsPerDay: GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY,
+    aiProviderPermissionRepairVerified: false,
+    aiProviderPermissionRepairVerifiedAt: '',
+    aiProviderPermissionBlockedForTargetDate: true,
+    aiProviderPermissionFixRequired: true,
+    aiProviderPermissionRetrySafeToExecute: false,
+    aiRetrySafeToExecute: false,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false
+  }, overrides || {});
+}
+
+function callGmailSalesGeminiPermissionRepairProbe_(config) {
+  if (!config || config.provider !== 'gemini') return { ok: false, reasonCode: 'provider_not_gemini' };
+  if (!config.model) return { ok: false, reasonCode: 'model_missing' };
+  if (!config.apiKeyConfigured) return { ok: false, reasonCode: 'api_key_missing' };
+  const prompt = 'Return exactly this JSON: {"ok":true}';
+  try {
+    const model = encodeURIComponent(config.model || 'gemini-2.5-flash-lite');
+    const response = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': config.apiKey },
+      payload: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
+    });
+    const statusCode = typeof response.getResponseCode === 'function' ? response.getResponseCode() : 0;
+    if (statusCode < 200 || statusCode >= 300) return { ok: false, reasonCode: 'ai_provider_http_' + statusCode };
+    const body = String(typeof response.getContentText === 'function' ? response.getContentText() : '');
+    let parsed;
+    try {
+      parsed = JSON.parse(body);
+    } catch (error) {
+      return { ok: false, reasonCode: 'ai_provider_json_invalid' };
+    }
+    const text = String(parsed.output_text ||
+      (((parsed.output || [])[0] || {}).content || []).map((part) => part.text || '').join('') ||
+      (((((parsed.candidates || [])[0] || {}).content || {}).parts || [])[0] || {}).text ||
+      '');
+    let answer;
+    try {
+      answer = JSON.parse(text);
+    } catch (error) {
+      return { ok: false, reasonCode: 'ai_provider_decision_json_invalid' };
+    }
+    return answer && answer.ok === true
+      ? { ok: true, reasonCode: '' }
+      : { ok: false, reasonCode: 'ai_provider_probe_unexpected_response' };
+  } catch (error) {
+    return { ok: false, reasonCode: 'ai_provider_exception_' + safeErrorCode_(error) };
+  }
 }
 
 function recordGmailSalesRecoveryUsageOperation_(operation) {
@@ -15984,6 +16229,8 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
   const collection = collectGmailSalesRecoveryUsageOperations_(targetDate);
   const inferredRateLimit = inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate);
   const inferredPermissionBlock = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
+  const repair = readGmailSalesAiProviderPermissionRepairProbeState_(targetDate);
+  const repairVerified = repair.aiProviderPermissionRepairVerified === true;
   const providerFailureDefaults = buildGmailSalesAiProviderFailureAccountingDefaults_();
   const operations = collection.operations || {};
   const seen = {};
@@ -16047,9 +16294,14 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     aiProviderRetryProbeFailedRequestCount: Number(collection.aiProviderRetryProbeFailedRequestCount || 0),
     aiProviderPermissionErrorRequestCount: Number(collection.aiProviderPermissionErrorRequestCount || 0),
     aiProviderPermissionErrorDigestCount: Number(collection.aiProviderPermissionErrorDigestCount || 0),
-    aiProviderPermissionBlockedForTargetDate: collection.aiProviderPermissionBlockedForTargetDate === true || inferredPermissionBlock.aiProviderPermissionBlockedForTargetDate === true,
-    aiProviderPermissionBlockedReason: String(collection.aiProviderPermissionBlockedReason || inferredPermissionBlock.aiProviderPermissionBlockedReason || ''),
-    aiProviderPermissionFixRequired: collection.aiProviderPermissionFixRequired === true || inferredPermissionBlock.aiProviderPermissionFixRequired === true,
+    aiProviderPermissionBlockedForTargetDate: !repairVerified && (collection.aiProviderPermissionBlockedForTargetDate === true || inferredPermissionBlock.aiProviderPermissionBlockedForTargetDate === true),
+    aiProviderPermissionBlockedReason: repairVerified ? '' : String(collection.aiProviderPermissionBlockedReason || inferredPermissionBlock.aiProviderPermissionBlockedReason || ''),
+    aiProviderPermissionFixRequired: !repairVerified && (collection.aiProviderPermissionFixRequired === true || inferredPermissionBlock.aiProviderPermissionFixRequired === true),
+    aiProviderPermissionRepairVerified: repairVerified,
+    aiProviderPermissionRepairVerifiedAt: String(repair.aiProviderPermissionRepairVerifiedAt || ''),
+    aiProviderRepairProbeAttemptCountToday: Number(collection.aiProviderRepairProbeAttemptCountToday || repair.aiProviderRepairProbeAttemptCountToday || 0),
+    aiProviderRepairProbeSuccessfulRequestCount: Number(collection.aiProviderRepairProbeSuccessfulRequestCount || repair.aiProviderRepairProbeSuccessfulRequestCount || 0),
+    aiProviderRepairProbeFailedRequestCount: Number(collection.aiProviderRepairProbeFailedRequestCount || repair.aiProviderRepairProbeFailedRequestCount || 0),
     aiProviderNonRetryableFailureCostYen: Number(collection.aiProviderNonRetryableFailureCostYen || 0),
     providerFailureBackfilledOperationCount: Number(collection.providerFailureBackfilledOperationCount || 0),
     providerFailureBackfillSource: String(collection.providerFailureBackfillSource || ''),
@@ -16070,6 +16322,11 @@ function buildGmailSalesAiProviderFailureAccountingDefaults_() {
     aiProviderPermissionBlockedForTargetDate: false,
     aiProviderPermissionBlockedReason: '',
     aiProviderPermissionFixRequired: false,
+    aiProviderPermissionRepairVerified: false,
+    aiProviderPermissionRepairVerifiedAt: '',
+    aiProviderRepairProbeAttemptCountToday: 0,
+    aiProviderRepairProbeSuccessfulRequestCount: 0,
+    aiProviderRepairProbeFailedRequestCount: 0,
     aiProviderNonRetryableFailureCostYen: 0
   };
   GMAIL_SALES_AI_PROVIDER_FAILURE_ACCOUNTING_FIELD_NAMES.forEach((fieldName) => {
@@ -16100,6 +16357,9 @@ function collectGmailSalesRecoveryUsageOperations_(targetDate) {
   let aiProviderPermissionBlockedReason = '';
   let aiProviderPermissionFixRequired = false;
   let aiProviderNonRetryableFailureCostYen = 0;
+  let aiProviderRepairProbeAttemptCountToday = 0;
+  let aiProviderRepairProbeSuccessfulRequestCount = 0;
+  let aiProviderRepairProbeFailedRequestCount = 0;
   const enrichAiProviderFailureAccounting = (entry, source) => {
     const result = Object.assign({}, entry || {});
     const type = normalizeGmailSalesRecoveryUsageOperationType_(result);
@@ -16229,6 +16489,10 @@ function collectGmailSalesRecoveryUsageOperations_(targetDate) {
   addOperation(Object.assign({}, readGmailSalesAiLastRunSummary_(), { event: 'gmail_sales_ai_contact_basis_verification' }), 'summary');
   addOperation(Object.assign({}, readGmailSalesGroundingLastRunSummary_(), { event: 'gmail_sales_grounded_official_source_discovery' }), 'summary');
   const groundingUsage = getGmailSalesGroundingUsageForJstDate_(targetDate);
+  const repairProbe = readGmailSalesAiProviderPermissionRepairProbeState_(targetDate);
+  aiProviderRepairProbeAttemptCountToday = Number(repairProbe.aiProviderRepairProbeAttemptCountToday || 0);
+  aiProviderRepairProbeSuccessfulRequestCount = Number(repairProbe.aiProviderRepairProbeSuccessfulRequestCount || 0);
+  aiProviderRepairProbeFailedRequestCount = Number(repairProbe.aiProviderRepairProbeFailedRequestCount || 0);
   const groundingCostAlreadyCounted = Object.keys(operations).reduce((sum, key) => {
     const entry = operations[key] || {};
     return normalizeGmailSalesRecoveryUsageOperationType_(entry) === 'grounded_official_source_discovery'
@@ -16271,6 +16535,11 @@ function collectGmailSalesRecoveryUsageOperations_(targetDate) {
     aiProviderPermissionBlockedForTargetDate,
     aiProviderPermissionBlockedReason,
     aiProviderPermissionFixRequired,
+    aiProviderPermissionRepairVerified: repairProbe.aiProviderPermissionRepairVerified === true,
+    aiProviderPermissionRepairVerifiedAt: String(repairProbe.aiProviderPermissionRepairVerifiedAt || ''),
+    aiProviderRepairProbeAttemptCountToday,
+    aiProviderRepairProbeSuccessfulRequestCount,
+    aiProviderRepairProbeFailedRequestCount,
     aiProviderNonRetryableFailureCostYen
   };
 }
