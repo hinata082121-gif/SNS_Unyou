@@ -1,0 +1,167 @@
+{
+  "id": "agent-office-reflection-audit-result-2026-07-07",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "ICHI Agent Office 反映監査・未反映検知 2026-07-07",
+  "category": "agent_office_monitoring",
+  "status": "needs_review",
+  "phase": "当日自動化タスクのAgent Office反映監査完了・未反映/blocked/needs_reviewあり",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-07-07T20:13:15+09:00",
+  "updatedAt": "2026-07-07T20:13:15+09:00",
+  "summary": "2026-07-07当日予定の安全なAgent Statusのみを監査。17:00返信/翌日準備、17:20翌日outbox、17:30返信確認の当日反映が見つからない。12:30送信結果確認と14:00失敗・不足確認はblocked。Gmail自動送信はneeds_review。月木リスト更新、金曜市場分析、金曜営業メール改善は火曜のため対象外。営業先名、メールアドレス、返信本文、Gmailスレッド全文、秘密情報は表示していない。",
+  "artifacts": [
+    "data/agent-status/tasks/agent-office-reflection-audit-result-2026-07-07.json",
+    "docs/agent-office-reflection-audit-log/2026-07-07.md"
+  ],
+  "metrics": {
+    "executionDate": "2026-07-07",
+    "auditCompletedAt": "2026-07-07T20:13:15+09:00",
+    "weekday": "Tuesday",
+    "expectedTaskCount": 6,
+    "observedTaskCount": 3,
+    "missingCount": 3,
+    "staleCount": 0,
+    "runningStuckCount": 0,
+    "blockedCount": 2,
+    "needsReviewCount": 1,
+    "notDueCount": 3,
+    "agentOfficeSafeJsonUpdated": true,
+    "agentOfficeRenderRequired": true,
+    "safeStatusOnly": true,
+    "gmailProductionSendExecuted": false,
+    "dailyGmailSalesSendExecuted": false,
+    "autoReplyEnabled": false,
+    "appsScriptTriggerChanged": false,
+    "sheetsSentStatusUpdated": false,
+    "instagramActionExecuted": false,
+    "liveGmailReadExecuted": false,
+    "secretFilesRead": false,
+    "sensitiveContentDisplayed": false,
+    "gitAddDotExecuted": false,
+    "findings": [
+      {
+        "target": "gmail-daily-sales-send-2026-07-07",
+        "label": "Gmail自動送信",
+        "state": "needs_review",
+        "status": "needs_review",
+        "updatedAt": "2026-07-07T03:10:06.140Z",
+        "safeCounts": {
+          "targetSendCount": 30,
+          "processed": 0,
+          "sentCount": 0,
+          "failedCount": 0,
+          "skippedCount": 30,
+          "safeToSendAgain": false
+        },
+        "nextAction": "2026-07-07分の送信結果ログを安全な件数だけ確認し、再送信せずneeds_review/blockedを解消する。"
+      },
+      {
+        "target": "gmail-post-send-check-2026-07-07",
+        "label": "12:30送信結果確認",
+        "state": "blocked",
+        "status": "blocked",
+        "updatedAt": "2026-07-07T12:32:59+09:00",
+        "safeCounts": {
+          "sendExecuted": false,
+          "processed": 0,
+          "failed": 0,
+          "skipped": 30,
+          "replyCountsKnown": false,
+          "safetyResetConfirmed": false
+        },
+        "nextAction": "人間が安全設定とGmail返信有無を目視確認する。Preflight未確認のため本番送信・再送信は行わない。"
+      },
+      {
+        "target": "gmail-recovery-check-2026-07-07",
+        "label": "14:00失敗・不足確認",
+        "state": "blocked",
+        "status": "blocked",
+        "updatedAt": "2026-07-07T14:01:28+09:00",
+        "safeCounts": {
+          "processed": 0,
+          "sentCount": 0,
+          "failedCount": 0,
+          "skippedCount": 30,
+          "processedBelowThreshold": true,
+          "availableForNextSend": 87,
+          "candidateRefillNeededForMinimum": false,
+          "candidateRefillPlanNeedsHumanReview": true,
+          "replyCheckExecutedForToday": false
+        },
+        "nextAction": "人間がPreflight、ready行、同一sendBatchId未送信、安全設定、返信有無を確認するまでblockedを継続する。Hermesは本番送信・再送信・送信済み更新を行わない。"
+      },
+      {
+        "target": "gmail-evening-readiness-check-2026-07-07",
+        "label": "17:00返信/翌日準備",
+        "state": "missing",
+        "status": "missing",
+        "updatedAt": null,
+        "safeCounts": {},
+        "nextAction": "17:00返信/翌日準備の安全なAgent Statusを作成し、返信確認要否・翌日準備状況を件数だけ記録する。"
+      },
+      {
+        "target": "gmail-next-day-outbox-2026-07-08",
+        "label": "17:20翌日outbox",
+        "state": "missing",
+        "status": "missing",
+        "updatedAt": null,
+        "safeCounts": {},
+        "nextAction": "2026-07-08分の翌日outbox準備結果を安全な件数だけAgent Statusへ記録する。2026-07-07分outboxの既存ファイルは翌日分の代替として扱わない。"
+      },
+      {
+        "target": "gmail-reply-check-record-2026-07-07",
+        "label": "17:30返信確認",
+        "state": "missing",
+        "status": "missing",
+        "updatedAt": null,
+        "safeCounts": {},
+        "nextAction": "17:30返信確認の安全なAgent Statusを作成し、返信有無を件数だけ記録する。返信本文・メールアドレス・営業先名は記録しない。"
+      },
+      {
+        "target": "gmail-list-refresh-2026-07-07",
+        "label": "月木リスト更新",
+        "state": "not_due",
+        "status": "skipped",
+        "updatedAt": null,
+        "safeCounts": {},
+        "nextAction": "火曜のため通常スケジュール対象外。次回の木曜または月曜に確認する。"
+      },
+      {
+        "target": "market-analysis-friday-2026-07-07",
+        "label": "金曜市場分析",
+        "state": "not_due",
+        "status": "skipped",
+        "updatedAt": null,
+        "safeCounts": {},
+        "nextAction": "火曜のため通常スケジュール対象外。次回金曜に確認する。"
+      },
+      {
+        "target": "gmail-weekly-email-improvement-result-2026-07-07",
+        "label": "金曜営業メール改善",
+        "state": "not_due",
+        "status": "skipped",
+        "updatedAt": null,
+        "safeCounts": {},
+        "nextAction": "火曜のため通常スケジュール対象外。次回金曜に確認する。"
+      }
+    ]
+  },
+  "nextAction": "未反映3件は安全なAgent Statusとして補正する。blocked2件とneeds_review1件は人間確認を優先し、Gmail送信・自動返信・Apps Script操作・Instagram操作は行わない。",
+  "safeToAct": false,
+  "notes": [
+    "data/agent-status/tasks の安全な状態のみ確認",
+    "Gmail本番送信なし",
+    "runDailyGmailSalesSend() 実行なし",
+    "自動返信なし",
+    "Apps Scriptトリガー操作なし",
+    "Google Sheets送信済み更新なし",
+    "Instagram操作なし",
+    "本番メールテンプレート自動差し替えなし",
+    "メールアドレス、営業先名、返信本文、Gmailスレッド全文は表示・保存していない",
+    "秘密情報ファイルは読んでいない",
+    "data/gmail本体、data/prospects、docs/reports/sales、tmpはGit追加対象にしない",
+    "git add . は使用しない"
+  ]
+}
