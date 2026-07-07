@@ -995,6 +995,28 @@ function seedUrlFetchAuthorizationVerified(context) {
   });
 }
 
+function seedGeminiQuotaBillingDiagnosticState(context, overrides = {}) {
+  const targetDate = context.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  context.__props.GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_JSON = JSON.stringify(Object.assign({
+    targetDate,
+    aiProviderDiagnosticProbeAttemptCountToday: 3,
+    aiProviderDiagnosticProbeLastAt: '2026-07-03T00:00:00.000Z',
+    aiProviderDiagnosticProbeLastHttpStatus: 429,
+    aiProviderDiagnosticProbeLastGoogleApiErrorStatus: 'RESOURCE_EXHAUSTED',
+    aiProviderDiagnosticProbeLastGoogleApiErrorReason: '',
+    aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: 'billing_or_quota_project_required',
+    aiProviderDiagnosticProbeLastRecommendedFix: 'verify_billing_or_project_quota_requirements',
+    aiProviderDiagnosticProbeLastTransportExceptionCategory: '',
+    aiProviderDiagnosticProbeLastTransportExceptionMessageCategory: '',
+    aiProviderDiagnosticProbeLastBlockedReason: 'gemini_api_error_response',
+    aiProviderDiagnosticProbeLastEndpointPathSanitized: '/v1beta/models/{model}:generateContent',
+    aiProviderDiagnosticProbeLastAuthPlacement: 'header',
+    aiProviderDiagnosticProbeLastResponseJsonParseSucceeded: true,
+    aiProviderDiagnosticProbeSuccessfulRequestCount: 0,
+    aiProviderDiagnosticProbeFailedRequestCount: 3
+  }, overrides));
+}
+
 function applyTodayTargetDate(context) {
   const today = context.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
   context.getConfig_ = () => ({ currentJstDate: today });
@@ -2436,6 +2458,73 @@ assert.equal(gdiagPlannerBlocked.__state.urlFetchCount, 0);
 assert.equal(gdiagPlannerBlocked.__state.gmailSendCount, 0);
 assert.equal(gdiagPlannerBlocked.__state.draftCreateCount, 0);
 assert.equal(gdiagPlannerBlocked.__state.triggerCreateCount, 0);
+
+const gquota1 = createContext();
+gquota1.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gquota1.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+gquota1.__props.GMAIL_SALES_AI_API_KEY = diagnosticSecret;
+applyTodayTargetDate(gquota1);
+seedUrlFetchAuthorizationVerified(gquota1);
+seedPermissionErrorAiSummary(gquota1);
+seedGeminiQuotaBillingDiagnosticState(gquota1);
+installFiveAiPendingRows(gquota1);
+const gquota1Usage = gquota1.inspectGmailSalesRecoveryUsageLedger();
+assert.equal(gquota1Usage.urlFetchAuthorizationVerified, true);
+assert.equal(gquota1Usage.aiProviderQuotaBillingBlockedForTargetDate, true);
+assert.equal(gquota1Usage.aiProviderQuotaBillingBlockedReason, 'ai_provider_quota_or_billing_required');
+assert.equal(gquota1Usage.aiProviderQuotaBillingFixRequired, true);
+assert.equal(gquota1Usage.aiProviderQuotaBillingRetrySafeToExecute, false);
+assert.equal(gquota1Usage.aiProviderLastRunHadResourceExhausted, true);
+assert.equal(gquota1Usage.aiProviderLastResourceExhaustedHttpStatus, 429);
+assert.equal(gquota1Usage.aiProviderLastResourceExhaustedStatus, 'RESOURCE_EXHAUSTED');
+assert.equal(gquota1Usage.aiProviderQuotaBillingRecommendedAction, 'verify_billing_quota_usage_tier_or_wait_for_rate_limit_reset');
+assert.equal(gquota1Usage.aiProviderQuotaBillingBlockSource, 'gemini_diagnostics_probe');
+const gquota1Status = gquota1.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(gquota1Status.aiProviderPermissionBlockedForTargetDate, true);
+assert.equal(gquota1Status.aiProviderQuotaBillingBlockedForTargetDate, true);
+assert.equal(gquota1Status.plannedNextAction, 'wait_for_ai_provider_quota_or_billing_fix');
+assert.equal(gquota1Status.plannedNextActionReasonCode, 'ai_provider_quota_or_billing_required');
+assert.equal(gquota1Status.plannedExpectedApiClass, 'gemini_ai_review');
+assert.equal(gquota1Status.plannedExpectedWriteClass, 'none');
+assert.equal(gquota1Status.plannedSafeToExecute, false);
+assert.equal(gquota1Status.aiRetrySafeToExecute, false);
+assert.equal(gquota1Status.operatorRecommendedNextFunction, '');
+assert.equal(gquota1Status.operatorShouldRunSafeStepNow, false);
+assert.equal(gquota1Status.operatorShouldWaitReason, 'ai_provider_quota_or_billing_required');
+const gquota1Step = gquota1.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(gquota1Step.status, 'blocked');
+assert.equal(gquota1Step.actionBlockedReason, 'ai_provider_quota_or_billing_required');
+assert.equal(gquota1Step.executedActionStatus, 'blocked');
+assert.equal(gquota1Step.aiApiCalled, false);
+assert.equal(gquota1.__state.urlFetchCount, 0);
+assert.equal(gquota1.__state.gmailSendCount, 0);
+assert.equal(gquota1.__state.draftCreateCount, 0);
+assert.equal(gquota1.__state.triggerCreateCount, 0);
+assert.equal(JSON.stringify(gquota1.__state.logs).includes(diagnosticSecret), false);
+
+const gquotaReadiness = gquota1.inspectGmailSalesGeminiPermissionDiagnosticsReadiness({ skipLog: true });
+assert.equal(gquotaReadiness.status, 'blocked');
+assert.equal(gquotaReadiness.aiProviderDiagnosticProbeEligible, false);
+assert.equal(gquotaReadiness.aiProviderDiagnosticProbeBlockedReason, 'ai_provider_quota_or_billing_required');
+assert.equal(gquotaReadiness.aiProviderQuotaBillingBlockedForTargetDate, true);
+assert.equal(gquotaReadiness.aiProviderQuotaBillingRecommendedAction, 'verify_billing_quota_usage_tier_or_wait_for_rate_limit_reset');
+const gquotaRepairReadiness = gquota1.inspectGmailSalesAiProviderPermissionRepairReadiness({ skipLog: true });
+assert.equal(gquotaRepairReadiness.status, 'blocked');
+assert.equal(gquotaRepairReadiness.aiProviderRepairProbeEligible, false);
+assert.equal(gquotaRepairReadiness.aiProviderRepairProbeBlockedReason, 'ai_provider_quota_or_billing_required');
+assert.equal(gquotaRepairReadiness.aiProviderPermissionRetrySafeToExecute, false);
+const gquotaStatusReadOnly = gquota1.inspectGmailSalesAiProviderQuotaBillingStatus({ skipLog: true });
+assert.equal(gquotaStatusReadOnly.event, 'gmail_sales_ai_provider_quota_billing_status');
+assert.equal(gquotaStatusReadOnly.mode, 'read_only');
+assert.equal(gquotaStatusReadOnly.status, 'blocked');
+assert.equal(gquotaStatusReadOnly.aiProviderQuotaBillingBlockedForTargetDate, true);
+assert.equal(gquotaStatusReadOnly.aiProviderDiagnosticProbeAttemptCountToday, 3);
+assert.equal(gquotaStatusReadOnly.aiProviderDiagnosticProbeEligible, false);
+assert.equal(gquotaStatusReadOnly.gmailSendExecuted, false);
+assert.equal(gquotaStatusReadOnly.googleSheetsUpdated, false);
+assert.equal(gquotaStatusReadOnly.scriptPropertiesUpdated, false);
+assert.equal(gquotaStatusReadOnly.aiApiCalled, false);
+assert.equal(gquota1.__state.urlFetchCount, 0);
 
 const gdiag1 = installGeminiDiagnosticContext(makeGoogleApiError('PERMISSION_DENIED', 403, 'SERVICE_DISABLED', {
   service: 'generativelanguage.googleapis.com',
