@@ -1,0 +1,46 @@
+{
+  "date": "2026-07-07",
+  "strategyVersion": "casual-viral-formats-v1",
+  "posts": [
+    {
+      "date": "2026-07-07",
+      "time": "11:00",
+      "theme": "黒板メニュー",
+      "text": "黒板メニューは、名前より一言コメントが効くことがあります。今日は軽め、しっかりめ、初めてならこれ。選ぶ理由が見えると強いです。 言い方を少し変えるだけで、見え方はちゃんと変わります。",
+      "cta": "",
+      "contentPillar": "sns_tip",
+      "format": "sns_tip",
+      "hookType": "usable_tip",
+      "tone": "casual_practical",
+      "targetIndustry": "飲食店",
+      "hasQuestion": false,
+      "hasDirectSalesCta": false,
+      "slotRole": "useful_midday_idea",
+      "contentKey": "sns_tip-082",
+      "media": {
+        "type": "none",
+        "items": []
+      }
+    },
+    {
+      "date": "2026-07-07",
+      "time": "19:00",
+      "theme": "予約導線の見直し",
+      "text": "投稿は続けているのに予約につながりにくい時、投稿内容だけでなく、プロフィールから予約までの道順で迷いが起きていることがあります。リンク、固定投稿、料金の目安。どこで止まりそうか一度だけ見直すのも大事です。",
+      "cta": "気になる方は、無料SNS診断で導線だけ気軽に確認できます。",
+      "contentPillar": "participation",
+      "format": "specific_question",
+      "hookType": "soft_question",
+      "tone": "conversational",
+      "targetIndustry": "小規模店舗",
+      "hasQuestion": false,
+      "hasDirectSalesCta": false,
+      "slotRole": "evening_conversation",
+      "contentKey": "soft_cta-route-review-20260707-19",
+      "media": {
+        "type": "none",
+        "items": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "id": "threads-daily-19-post-2026-07-07",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 19:00 共感・導線投稿",
+  "category": "threads_daily_post",
+  "status": "blocked",
+  "phase": "投稿案準備・安全検査済み、実投稿は時間枠外で停止",
+  "progress": 85,
+  "priority": "high",
+  "createdAt": "2026-07-07T20:19:48+09:00",
+  "updatedAt": "2026-07-07T20:19:48+09:00",
+  "summary": "2026-07-07 19:00枠のThreads共感・導線投稿は、当日投稿計画を確認し、無料SNS診断への軽い導線を含む安全な投稿案として準備した。安全検査は通過し、公開許可は有効、dry-runは無効、API接続設定も有効判定。ただし実行時刻が19:00枠の許可ウィンドウ外だったため、投稿コマンドはoutside_slot_windowで停止し、投稿は行っていない。投稿本文全文・API秘密情報・個人情報はAgent Statusへ保存していない。",
+  "metrics": {
+    "cron": "0 19 * * *",
+    "scheduledTime": "19:00",
+    "executionTime": "2026-07-07T20:19:48+09:00",
+    "postPlanDate": "2026-07-07",
+    "postPlanSlot": "19:00",
+    "publishEnabled": true,
+    "dryRun": false,
+    "apiConfigured": true,
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": false,
+    "blockedReason": "outside_slot_window",
+    "includesSoftCta": true,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "次回19:00枠では18:55-19:30 JSTの許可ウィンドウ内で実行し、投稿済みガードと安全検査を通過した場合のみ公開する。時間枠外の場合は再投稿せずblockedとして記録する。",
+  "safeToAct": true,
+  "notes": [
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md を優先確認したが、当日分は data/threads/post-plans/2026-07-07.json の19:00枠を使用",
+    "投稿テーマは予約導線の見直しと無料SNS診断への軽い接続。本文全文はAgent Statusへ保存していない",
+    "npm run threads:post:validate は ok=true",
+    "npm run threads:post:19 は outside_slot_window で停止し、投稿していない",
+    "自動返信・自動いいね・自動フォローは実行していない",
+    "Gmail送信、Google Sheets更新、Apps Scriptトリガー操作は実行していない",
+    "秘密情報、メールアドレス、営業先名、返信本文は表示・保存・コミットしていない"
+  ],
+  "artifacts": [
+    "data/agent-status/tasks/threads-daily-19-post-2026-07-07.json",
+    "data/threads/post-plans/2026-07-07.json",
+    "data/threads/published/2026-07-07-19.json"
+  ]
+}
