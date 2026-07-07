@@ -2319,6 +2319,14 @@ assert.equal(gdiag1Readiness.modelNameSanitized, 'gemini-2.5-flash-lite');
 assert.equal(gdiag1Readiness.apiKeyPresent, true);
 assert.equal(gdiag1Readiness.apiKeyValueLogged, false);
 assert.equal(gdiag1Readiness.endpointHostSanitized, 'generativelanguage.googleapis.com');
+assert.equal(gdiag1Readiness.endpointVersion, 'v1beta');
+assert.equal(gdiag1Readiness.generateContentMethodConfigured, true);
+assert.equal(gdiag1Readiness.authPlacement, 'header');
+assert.equal(gdiag1Readiness.authValueLogged, false);
+assert.equal(gdiag1Readiness.requestUsesApiKeyQuery, false);
+assert.equal(gdiag1Readiness.requestUsesAuthorizationHeader, false);
+assert.equal(gdiag1Readiness.requestPayloadFixedDiagnosticPrompt, true);
+assert.equal(gdiag1Readiness.requestPayloadContainsBusinessData, false);
 assert.equal(gdiag1Readiness.permissionBlockActive, true);
 assert.equal(gdiag1Readiness.aiProviderDiagnosticProbeEligible, true);
 assert.equal(gdiag1Readiness.aiProviderDiagnosticProbeMaxAttemptsPerDay, 3);
@@ -2328,7 +2336,26 @@ const gdiag1Probe = gdiag1.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
 assert.equal(gdiag1Probe.event, 'gmail_sales_gemini_permission_diagnostics_probe');
 assert.equal(gdiag1Probe.status, 'blocked');
 assert.equal(gdiag1Probe.aiApiCalled, true);
+assert.equal(gdiag1Probe.blockedReason, 'gemini_api_error_response');
 assert.equal(gdiag1Probe.httpStatus, 403);
+assert.equal(gdiag1Probe.transportExceptionPresent, false);
+assert.equal(gdiag1Probe.fetchReturnedResponse, true);
+assert.equal(gdiag1Probe.fetchResponseCodeAvailable, true);
+assert.equal(gdiag1Probe.responseTextAvailable, true);
+assert.equal(gdiag1Probe.responseJsonParseAttempted, true);
+assert.equal(gdiag1Probe.responseJsonParseSucceeded, true);
+assert.equal(gdiag1Probe.responseJsonParseErrorCategory, '');
+assert.equal(gdiag1Probe.requestUrlLogged, false);
+assert.equal(gdiag1Probe.endpointPathSanitized, '/v1beta/models/{model}:generateContent');
+assert.equal(gdiag1Probe.endpointPathSanitized.includes(diagnosticSecret), false);
+assert.equal(gdiag1Probe.requestMethod, 'post');
+assert.equal(gdiag1Probe.muteHttpExceptionsEnabled, true);
+assert.equal(gdiag1Probe.contentTypeConfigured, true);
+assert.equal(gdiag1Probe.payloadShapeValid, true);
+assert.equal(gdiag1Probe.payloadSizeBytesApprox > 0, true);
+assert.equal(gdiag1Probe.authPlacement, 'header');
+assert.equal(gdiag1Probe.authValueLogged, false);
+assert.equal(gdiag1Probe.requestPayloadFixedDiagnosticPrompt, true);
 assert.equal(gdiag1Probe.googleApiErrorStatus, 'PERMISSION_DENIED');
 assert.equal(gdiag1Probe.googleApiErrorReason, 'SERVICE_DISABLED');
 assert.equal(gdiag1Probe.googleApiErrorService, 'generativelanguage.googleapis.com');
@@ -2357,7 +2384,63 @@ assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastGoogleApiErrorStatus, 'PER
 assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastGoogleApiErrorReason, 'SERVICE_DISABLED');
 assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastPermissionDiagnosisCategory, 'generative_language_api_disabled');
 assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastRecommendedFix, 'enable_generative_language_api_for_key_project');
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastBlockedReason, 'gemini_api_error_response');
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastEndpointPathSanitized, '/v1beta/models/{model}:generateContent');
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastAuthPlacement, 'header');
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastResponseJsonParseSucceeded, true);
 assert.equal(gdiag1Usage.aiProviderDiagnosticProbeFailedRequestCount, 1);
+
+const gdiagException = installGeminiDiagnosticContext({}, 0);
+gdiagException.UrlFetchApp.fetch = () => {
+  gdiagException.__state.urlFetchCount += 1;
+  throw new Error(`Permission denied for https://generativelanguage.googleapis.com/v1beta/models/x:generateContent?key=${diagnosticSecret}`);
+};
+const gdiagExceptionProbe = gdiagException.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiagExceptionProbe.status, 'blocked');
+assert.equal(gdiagExceptionProbe.blockedReason, 'transport_exception_before_http_response');
+assert.equal(gdiagExceptionProbe.httpStatus, 0);
+assert.equal(gdiagExceptionProbe.transportExceptionPresent, true);
+assert.equal(gdiagExceptionProbe.transportExceptionCategory, 'urlfetch_permission_denied');
+assert.equal(gdiagExceptionProbe.transportExceptionMessageCategory, 'urlfetch_permission_denied');
+assert.equal(gdiagExceptionProbe.permissionDiagnosisCategory, 'transport_exception_before_http_response');
+assert.equal(gdiagExceptionProbe.permissionDiagnosisRecommendedFix, 'inspect_apps_script_urlfetch_transport_and_endpoint_configuration');
+assert.equal(gdiagExceptionProbe.fetchReturnedResponse, false);
+assert.equal(gdiagExceptionProbe.responseBodyLogged, false);
+assert.equal(gdiagExceptionProbe.apiKeyLogged, false);
+assert.equal(gdiagExceptionProbe.requestUrlLogged, false);
+assert.equal(JSON.stringify(gdiagException.__state.logs).includes(diagnosticSecret), false);
+assert.equal(JSON.stringify(gdiagException.__state.logs).includes('generativelanguage.googleapis.com/v1beta/models/x'), false);
+
+const gdiagNoResponse = installGeminiDiagnosticContext({}, 0);
+gdiagNoResponse.UrlFetchApp.fetch = () => {
+  gdiagNoResponse.__state.urlFetchCount += 1;
+  return {};
+};
+const gdiagNoResponseProbe = gdiagNoResponse.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiagNoResponseProbe.status, 'blocked');
+assert.equal(gdiagNoResponseProbe.blockedReason, 'no_http_response_available');
+assert.equal(gdiagNoResponseProbe.httpStatus, 0);
+assert.equal(gdiagNoResponseProbe.transportExceptionPresent, false);
+assert.equal(gdiagNoResponseProbe.transportExceptionCategory, 'no_exception_response_missing');
+assert.equal(gdiagNoResponseProbe.permissionDiagnosisCategory, 'malformed_request_before_http_response');
+
+const gdiagMalformed = installGeminiDiagnosticContext({}, 403);
+gdiagMalformed.UrlFetchApp.fetch = (url, options) => {
+  gdiagMalformed.__state.urlFetchCount += 1;
+  gdiagMalformed.__state.lastFetch = { url, options };
+  return {
+    getResponseCode: () => 403,
+    getContentText: () => 'not-json'
+  };
+};
+const gdiagMalformedProbe = gdiagMalformed.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiagMalformedProbe.status, 'blocked');
+assert.equal(gdiagMalformedProbe.blockedReason, 'gemini_api_error_response');
+assert.equal(gdiagMalformedProbe.httpStatus, 403);
+assert.equal(gdiagMalformedProbe.responseTextAvailable, true);
+assert.equal(gdiagMalformedProbe.responseJsonParseAttempted, true);
+assert.equal(gdiagMalformedProbe.responseJsonParseSucceeded, false);
+assert.equal(gdiagMalformedProbe.responseJsonParseErrorCategory, 'response_json_parse_failed');
 
 const gdiag2 = installGeminiDiagnosticContext(makeGoogleApiError('PERMISSION_DENIED', 403, 'API_KEY_SERVICE_BLOCKED', {
   service: 'generativelanguage.googleapis.com',
@@ -2476,6 +2559,7 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderDiagnosticProbeAttemptCountToday',
   'aiProviderDiagnosticProbeLastPermissionDiagnosisCategory',
   'aiProviderDiagnosticProbeLastRecommendedFix',
+  'aiProviderDiagnosticProbeLastBlockedReason',
   'aiProviderNonRetryableFailureCostYen'
 ].forEach((fieldName) => {
   assert.equal(Object.prototype.hasOwnProperty.call(g429b6Inspect, fieldName), true);
@@ -2513,6 +2597,12 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderDiagnosticProbeLastGoogleApiErrorReason',
   'aiProviderDiagnosticProbeLastPermissionDiagnosisCategory',
   'aiProviderDiagnosticProbeLastRecommendedFix',
+  'aiProviderDiagnosticProbeLastTransportExceptionCategory',
+  'aiProviderDiagnosticProbeLastTransportExceptionMessageCategory',
+  'aiProviderDiagnosticProbeLastBlockedReason',
+  'aiProviderDiagnosticProbeLastEndpointPathSanitized',
+  'aiProviderDiagnosticProbeLastAuthPlacement',
+  'aiProviderDiagnosticProbeLastResponseJsonParseSucceeded',
   'aiProviderDiagnosticProbeSuccessfulRequestCount',
   'aiProviderDiagnosticProbeFailedRequestCount',
   'aiProviderNonRetryableFailureCostYen'
