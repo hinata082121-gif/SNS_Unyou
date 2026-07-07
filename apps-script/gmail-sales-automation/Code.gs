@@ -279,11 +279,13 @@ const GMAIL_SALES_AI_RETRY_PROBE_MAX_ATTEMPTS_PER_DAY = 1;
 const GMAIL_SALES_AI_RETRY_PROBE_MAX_CANDIDATES = 5;
 const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_PERMISSION_REPAIR_PROBE_JSON';
 const GMAIL_SALES_AI_API_KEY_REPLACEMENT_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_SECRET_REPLACEMENT_JSON';
+const GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_PROPERTY = 'GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_JSON';
 const GMAIL_SALES_AI_SECRET_REPAIR_SHEET_NAME = '__ICHI_SECRET_REPAIR__';
 const GMAIL_SALES_AI_API_KEY_PROPERTY_NAME = 'GMAIL_SALES_AI_API_KEY';
 const GMAIL_SALES_AI_MODEL_PROPERTY_NAME = 'GMAIL_SALES_AI_MODEL';
 const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY = 3;
 const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_EPOCH = 1;
+const GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTIC_PROBE_MAX_ATTEMPTS_PER_DAY = 3;
 const GMAIL_SALES_AI_NON_RETRYABLE_PERMISSION_FAILURE_CODES = [
   'ai_provider_exception_permission_error',
   'permission_error',
@@ -8596,6 +8598,9 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
     aiProviderRepairProbeAttemptCountForCurrentEpoch: Number(usage.aiProviderRepairProbeAttemptCountForCurrentEpoch || 0),
     aiProviderRepairProbeSuccessfulRequestCount: Number(usage.aiProviderRepairProbeSuccessfulRequestCount || aiPermission.aiProviderRepairProbeSuccessfulRequestCount || 0),
     aiProviderRepairProbeFailedRequestCount: Number(usage.aiProviderRepairProbeFailedRequestCount || aiPermission.aiProviderRepairProbeFailedRequestCount || 0),
+    aiProviderDiagnosticProbeAttemptCountToday: Number(usage.aiProviderDiagnosticProbeAttemptCountToday || 0),
+    aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: String(usage.aiProviderDiagnosticProbeLastPermissionDiagnosisCategory || ''),
+    aiProviderDiagnosticProbeLastRecommendedFix: String(usage.aiProviderDiagnosticProbeLastRecommendedFix || ''),
     aiProviderNonRetryableFailureCostYen: Number(usage.aiProviderNonRetryableFailureCostYen || 0)
   });
   result.readyInventoryCount = Number(coverage.eligibleAfterBasisCheckCount || 0);
@@ -8786,6 +8791,9 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     aiProviderRepairProbeFailedRequestCount: 0,
     aiProviderRepairProbeMaxAttemptsPerDay: GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY,
     aiProviderRepairProbeMaxAttemptsPerEpoch: GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_EPOCH,
+    aiProviderDiagnosticProbeAttemptCountToday: 0,
+    aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: '',
+    aiProviderDiagnosticProbeLastRecommendedFix: '',
     aiProviderNonRetryableFailureCostYen: 0,
     aiPendingBlockedByCooldown: false,
     aiRetrySafeToExecute: true,
@@ -16223,6 +16231,299 @@ function buildGmailSalesAiProviderApiKeyReplacementResult_(status, overrides) {
   }, overrides || {});
 }
 
+function readGmailSalesGeminiPermissionDiagnosticsState_(targetDate) {
+  const normalizedTarget = normalizeDateText_(targetDate || getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  let parsed = {};
+  try {
+    parsed = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_PROPERTY) || '{}')) || {};
+  } catch (error) {
+    parsed = {};
+  }
+  const state = parsed && typeof parsed === 'object' ? parsed : {};
+  const sameTarget = String(state.targetDate || '') === normalizedTarget;
+  return {
+    targetDate: normalizedTarget,
+    aiProviderDiagnosticProbeAttemptCountToday: sameTarget ? Number(state.aiProviderDiagnosticProbeAttemptCountToday || 0) : 0,
+    aiProviderDiagnosticProbeLastAt: sameTarget ? String(state.aiProviderDiagnosticProbeLastAt || '') : '',
+    aiProviderDiagnosticProbeLastHttpStatus: sameTarget ? Number(state.aiProviderDiagnosticProbeLastHttpStatus || 0) : 0,
+    aiProviderDiagnosticProbeLastGoogleApiErrorStatus: sameTarget ? String(state.aiProviderDiagnosticProbeLastGoogleApiErrorStatus || '') : '',
+    aiProviderDiagnosticProbeLastGoogleApiErrorReason: sameTarget ? String(state.aiProviderDiagnosticProbeLastGoogleApiErrorReason || '') : '',
+    aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: sameTarget ? String(state.aiProviderDiagnosticProbeLastPermissionDiagnosisCategory || '') : '',
+    aiProviderDiagnosticProbeLastRecommendedFix: sameTarget ? String(state.aiProviderDiagnosticProbeLastRecommendedFix || '') : '',
+    aiProviderDiagnosticProbeSuccessfulRequestCount: sameTarget ? Number(state.aiProviderDiagnosticProbeSuccessfulRequestCount || 0) : 0,
+    aiProviderDiagnosticProbeFailedRequestCount: sameTarget ? Number(state.aiProviderDiagnosticProbeFailedRequestCount || 0) : 0
+  };
+}
+
+function writeGmailSalesGeminiPermissionDiagnosticsState_(state) {
+  PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_PROPERTY, JSON.stringify(state || {}));
+  return state;
+}
+
+function sanitizeGmailSalesAiModelNameForLog_(model) {
+  return String(model || '').trim().replace(/[^A-Za-z0-9._:/@+-]/g, '').slice(0, 120);
+}
+
+function inspectGmailSalesGeminiPermissionDiagnosticsReadiness(options) {
+  const config = getGmailSalesAiConfig_();
+  const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const permission = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
+  const diagnostics = readGmailSalesGeminiPermissionDiagnosticsState_(targetDate);
+  const failures = [];
+  if (config.provider !== 'gemini') failures.push('provider_not_gemini');
+  if (!config.model) failures.push('model_missing');
+  if (!config.apiKeyConfigured) failures.push('api_key_missing');
+  if (diagnostics.aiProviderDiagnosticProbeAttemptCountToday >= GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTIC_PROBE_MAX_ATTEMPTS_PER_DAY) failures.push('diagnostic_probe_daily_limit_reached');
+  const result = {
+    event: 'gmail_sales_gemini_permission_diagnostics_readiness',
+    mode: 'read_only',
+    status: failures.length === 0 ? 'pass' : 'blocked',
+    targetDate,
+    provider: config.provider,
+    modelConfigured: Boolean(config.model),
+    modelNamePresent: Boolean(config.model),
+    modelNameSanitized: sanitizeGmailSalesAiModelNameForLog_(config.model),
+    apiKeyPresent: config.apiKeyConfigured === true,
+    apiKeySourcePropertyNameFound: true,
+    apiKeyValueLogged: false,
+    endpointConfigured: true,
+    endpointHostSanitized: 'generativelanguage.googleapis.com',
+    permissionBlockActive: permission.aiProviderPermissionBlockedForTargetDate === true,
+    aiProviderPermissionBlockedForTargetDate: permission.aiProviderPermissionBlockedForTargetDate === true,
+    aiProviderPermissionFixRequired: permission.aiProviderPermissionFixRequired === true,
+    aiProviderLastRunHadPermissionError: permission.aiProviderLastRunHadPermissionError === true,
+    aiProviderLastRunProviderFailureCategory: String(permission.aiProviderLastRunProviderFailureCategory || ''),
+    aiProviderPermissionErrorRequestCount: Number(permission.aiProviderLastRunRequestFailureCount || 0),
+    aiProviderPermissionErrorDigestCount: Number(permission.aiProviderLastRunPermissionErrorCount || 0),
+    aiProviderDiagnosticProbeAttemptCountToday: Number(diagnostics.aiProviderDiagnosticProbeAttemptCountToday || 0),
+    aiProviderDiagnosticProbeMaxAttemptsPerDay: GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTIC_PROBE_MAX_ATTEMPTS_PER_DAY,
+    aiProviderDiagnosticProbeEligible: failures.length === 0,
+    aiProviderDiagnosticProbeBlockedReason: failures[0] || '',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false
+  };
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function runGmailSalesGeminiPermissionDiagnosticsProbeOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    const blocked = buildGmailSalesGeminiPermissionDiagnosticsProbeResult_('blocked', {
+      blockedReason: 'safe_rest_required'
+    });
+    logGmailSalesJsonResult_(blocked);
+    return blocked;
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    const locked = buildGmailSalesGeminiPermissionDiagnosticsProbeResult_('blocked', {
+      blockedReason: 'lock_unavailable'
+    });
+    logGmailSalesJsonResult_(locked);
+    return locked;
+  }
+  try {
+    const readiness = inspectGmailSalesGeminiPermissionDiagnosticsReadiness({ skipLog: true });
+    if (readiness.aiProviderDiagnosticProbeEligible !== true) {
+      const blocked = buildGmailSalesGeminiPermissionDiagnosticsProbeResult_('blocked', Object.assign({}, readiness, {
+        blockedReason: readiness.aiProviderDiagnosticProbeBlockedReason || 'diagnostic_probe_not_eligible',
+        aiApiCalled: false,
+        scriptPropertiesUpdated: false
+      }));
+      logGmailSalesJsonResult_(blocked);
+      return blocked;
+    }
+    const config = getGmailSalesAiConfig_();
+    const targetDate = readiness.targetDate;
+    const previous = readGmailSalesGeminiPermissionDiagnosticsState_(targetDate);
+    const probe = callGmailSalesGeminiPermissionDiagnosticsProbe_(config);
+    const success = probe.permissionDiagnosisCategory === 'success';
+    const now = new Date().toISOString();
+    const state = {
+      targetDate,
+      aiProviderDiagnosticProbeAttemptCountToday: Number(previous.aiProviderDiagnosticProbeAttemptCountToday || 0) + 1,
+      aiProviderDiagnosticProbeLastAt: now,
+      aiProviderDiagnosticProbeLastHttpStatus: Number(probe.httpStatus || 0),
+      aiProviderDiagnosticProbeLastGoogleApiErrorStatus: String(probe.googleApiErrorStatus || ''),
+      aiProviderDiagnosticProbeLastGoogleApiErrorReason: String(probe.googleApiErrorReason || ''),
+      aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: String(probe.permissionDiagnosisCategory || ''),
+      aiProviderDiagnosticProbeLastRecommendedFix: String(probe.permissionDiagnosisRecommendedFix || ''),
+      aiProviderDiagnosticProbeSuccessfulRequestCount: Number(previous.aiProviderDiagnosticProbeSuccessfulRequestCount || 0) + (success ? 1 : 0),
+      aiProviderDiagnosticProbeFailedRequestCount: Number(previous.aiProviderDiagnosticProbeFailedRequestCount || 0) + (success ? 0 : 1)
+    };
+    writeGmailSalesGeminiPermissionDiagnosticsState_(state);
+    const result = buildGmailSalesGeminiPermissionDiagnosticsProbeResult_(success ? 'pass' : 'blocked', Object.assign({}, probe, {
+      targetDate,
+      modelNameSanitized: readiness.modelNameSanitized,
+      endpointHostSanitized: readiness.endpointHostSanitized,
+      aiProviderDiagnosticProbeAttemptCountToday: state.aiProviderDiagnosticProbeAttemptCountToday,
+      aiProviderDiagnosticProbeMaxAttemptsPerDay: GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTIC_PROBE_MAX_ATTEMPTS_PER_DAY,
+      aiApiCalled: true,
+      scriptPropertiesUpdated: true
+    }));
+    logGmailSalesJsonResult_(result);
+    return result;
+  } catch (error) {
+    const result = buildGmailSalesGeminiPermissionDiagnosticsProbeResult_('fail', {
+      blockedReason: 'diagnostic_probe_exception',
+      permissionDiagnosisCategory: 'auth_permission_error_unknown',
+      permissionDiagnosisRecommendedFix: getGmailSalesGeminiPermissionDiagnosisRecommendedFix_('auth_permission_error_unknown')
+    });
+    logGmailSalesJsonResult_(result);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function buildGmailSalesGeminiPermissionDiagnosticsProbeResult_(status, overrides) {
+  return Object.assign({
+    event: 'gmail_sales_gemini_permission_diagnostics_probe',
+    mode: 'write',
+    status,
+    blockedReason: '',
+    targetDate: normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd')),
+    provider: 'gemini',
+    modelNameSanitized: '',
+    endpointHostSanitized: 'generativelanguage.googleapis.com',
+    aiProviderDiagnosticProbeAttemptCountToday: 0,
+    aiProviderDiagnosticProbeMaxAttemptsPerDay: GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTIC_PROBE_MAX_ATTEMPTS_PER_DAY,
+    aiApiCalled: false,
+    httpStatus: 0,
+    googleApiErrorStatus: '',
+    googleApiErrorCode: 0,
+    googleApiErrorReason: '',
+    googleApiErrorDomain: '',
+    googleApiErrorService: '',
+    googleApiErrorMethod: '',
+    googleApiErrorMetadataKeys: [],
+    permissionDiagnosisCategory: '',
+    permissionDiagnosisRecommendedFix: '',
+    responseBodyLogged: false,
+    apiKeyLogged: false,
+    requestPayloadContainsBusinessData: false,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false
+  }, overrides || {});
+}
+
+function callGmailSalesGeminiPermissionDiagnosticsProbe_(config) {
+  if (!config || config.provider !== 'gemini') return buildGmailSalesGeminiPermissionProbeAnalysis_(0, {});
+  const prompt = 'Return exactly this JSON: {"ok":true}';
+  try {
+    const model = encodeURIComponent(config.model || 'gemini-2.5-flash-lite');
+    const response = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: { 'x-goog-api-key': config.apiKey },
+      payload: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
+    });
+    const httpStatus = typeof response.getResponseCode === 'function' ? response.getResponseCode() : 0;
+    let parsed = {};
+    try {
+      parsed = JSON.parse(String(typeof response.getContentText === 'function' ? response.getContentText() : '') || '{}') || {};
+    } catch (error) {
+      parsed = {};
+    }
+    return buildGmailSalesGeminiPermissionProbeAnalysis_(httpStatus, parsed);
+  } catch (error) {
+    return Object.assign(buildGmailSalesGeminiPermissionProbeAnalysis_(0, {}), {
+      permissionDiagnosisCategory: 'auth_permission_error_unknown',
+      permissionDiagnosisRecommendedFix: getGmailSalesGeminiPermissionDiagnosisRecommendedFix_('auth_permission_error_unknown')
+    });
+  }
+}
+
+function buildGmailSalesGeminiPermissionProbeAnalysis_(httpStatus, parsedBody) {
+  const error = (parsedBody && parsedBody.error && typeof parsedBody.error === 'object') ? parsedBody.error : {};
+  const details = Array.isArray(error.details) ? error.details : [];
+  const metadataKeys = {};
+  let reason = '';
+  let domain = '';
+  let service = '';
+  let method = '';
+  details.forEach((detail) => {
+    if (!reason && detail && detail.reason) reason = String(detail.reason || '');
+    if (!domain && detail && detail.domain) domain = String(detail.domain || '');
+    const metadata = detail && detail.metadata && typeof detail.metadata === 'object' ? detail.metadata : {};
+    Object.keys(metadata).forEach((key) => { metadataKeys[key] = true; });
+    if (!service && metadata.service) service = String(metadata.service || '');
+    if (!method && metadata.method) method = String(metadata.method || '');
+  });
+  const status = String(error.status || '');
+  const code = Number(error.code || httpStatus || 0);
+  const messageLower = String(error.message || '').toLowerCase();
+  const haystack = [
+    status,
+    code,
+    reason,
+    domain,
+    service,
+    method,
+    Object.keys(metadataKeys).join(' '),
+    messageLower
+  ].join(' ').toLowerCase();
+  const category = classifyGmailSalesGeminiPermissionDiagnosis_(httpStatus, status, code, haystack);
+  return {
+    httpStatus: Number(httpStatus || 0),
+    googleApiErrorStatus: status,
+    googleApiErrorCode: code,
+    googleApiErrorReason: reason,
+    googleApiErrorDomain: domain,
+    googleApiErrorService: service,
+    googleApiErrorMethod: method,
+    googleApiErrorMetadataKeys: Object.keys(metadataKeys).sort(),
+    permissionDiagnosisCategory: category,
+    permissionDiagnosisRecommendedFix: getGmailSalesGeminiPermissionDiagnosisRecommendedFix_(category)
+  };
+}
+
+function classifyGmailSalesGeminiPermissionDiagnosis_(httpStatus, status, code, text) {
+  const combined = String(text || '').toLowerCase();
+  const statusText = String(status || '').toLowerCase();
+  if (Number(httpStatus || 0) >= 200 && Number(httpStatus || 0) < 300) return 'success';
+  if (combined.indexOf('service_disabled') !== -1 || combined.indexOf('api has not been used') !== -1 || combined.indexOf('disabled') !== -1 && combined.indexOf('generativelanguage') !== -1) {
+    return combined.indexOf('generativelanguage') !== -1 ? 'generative_language_api_disabled' : 'api_not_enabled';
+  }
+  if (combined.indexOf('api_key_service_blocked') !== -1 || combined.indexOf('api key service blocked') !== -1 || combined.indexOf('api key restriction') !== -1 || combined.indexOf('key restricted') !== -1) return 'api_key_restricted';
+  if (combined.indexOf('api key not valid') !== -1 || combined.indexOf('invalid api key') !== -1 || combined.indexOf('api_key_invalid') !== -1 || statusText === 'unauthenticated' || Number(code || 0) === 401) return 'api_key_invalid_or_revoked';
+  if (combined.indexOf('model') !== -1 && (combined.indexOf('not found') !== -1 || combined.indexOf('not permitted') !== -1 || combined.indexOf('permission') !== -1 || combined.indexOf('not available') !== -1)) return 'model_not_available_or_not_permitted';
+  if (combined.indexOf('organization') !== -1 || combined.indexOf('orgpolicy') !== -1 || combined.indexOf('organization_policy') !== -1 || combined.indexOf('policy') !== -1 && combined.indexOf('denied') !== -1) return 'organization_policy_blocked';
+  if (combined.indexOf('billing') !== -1 || combined.indexOf('quota project') !== -1 || combined.indexOf('consumer') !== -1 && combined.indexOf('project') !== -1) return 'billing_or_quota_project_required';
+  if (combined.indexOf('location') !== -1 || combined.indexOf('region') !== -1 || combined.indexOf('quota_location') !== -1) return 'location_or_region_restricted';
+  if (statusText === 'permission_denied' || Number(code || 0) === 403) return 'permission_denied_unknown';
+  if (statusText === 'unauthenticated' || statusText.indexOf('permission') !== -1) return 'auth_permission_error_unknown';
+  return 'non_permission_error';
+}
+
+function getGmailSalesGeminiPermissionDiagnosisRecommendedFix_(category) {
+  return {
+    api_not_enabled: 'enable_generative_language_api_for_key_project',
+    generative_language_api_disabled: 'enable_generative_language_api_for_key_project',
+    api_key_invalid_or_revoked: 'create_new_ai_studio_auth_key',
+    api_key_restricted: 'remove_or_correct_api_key_restrictions_for_apps_script',
+    model_not_available_or_not_permitted: 'switch_to_supported_public_model_gemini_2_5_flash_lite',
+    organization_policy_blocked: 'use_personal_google_account_or_unrestricted_project',
+    billing_or_quota_project_required: 'verify_billing_or_project_quota_requirements',
+    location_or_region_restricted: 'use_supported_region_or_project',
+    permission_denied_unknown: 'inspect_google_ai_studio_and_cloud_project_permissions',
+    auth_permission_error_unknown: 'inspect_google_ai_studio_and_cloud_project_permissions',
+    non_permission_error: 'inspect_google_ai_studio_and_cloud_project_permissions',
+    success: 'diagnostics_success_no_permission_error_detected'
+  }[String(category || '')] || 'inspect_google_ai_studio_and_cloud_project_permissions';
+}
+
 function inspectGmailSalesAiProviderPermissionRepairReadiness(options) {
   const config = getGmailSalesAiConfig_();
   const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
@@ -16529,6 +16830,7 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
   const inferredPermissionBlock = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
   const repair = readGmailSalesAiProviderPermissionRepairProbeState_(targetDate);
   const replacement = readGmailSalesAiProviderApiKeyReplacementState_(targetDate);
+  const diagnostics = readGmailSalesGeminiPermissionDiagnosticsState_(targetDate);
   const repairVerified = repair.aiProviderPermissionRepairVerified === true;
   const providerFailureDefaults = buildGmailSalesAiProviderFailureAccountingDefaults_();
   const operations = collection.operations || {};
@@ -16605,6 +16907,15 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     aiProviderRepairProbeAttemptCountForCurrentEpoch: Number(repair.aiProviderRepairProbeAttemptCountForCurrentEpoch || 0),
     aiProviderRepairProbeSuccessfulRequestCount: Number(collection.aiProviderRepairProbeSuccessfulRequestCount || repair.aiProviderRepairProbeSuccessfulRequestCount || 0),
     aiProviderRepairProbeFailedRequestCount: Number(collection.aiProviderRepairProbeFailedRequestCount || repair.aiProviderRepairProbeFailedRequestCount || 0),
+    aiProviderDiagnosticProbeAttemptCountToday: Number(diagnostics.aiProviderDiagnosticProbeAttemptCountToday || 0),
+    aiProviderDiagnosticProbeLastAt: String(diagnostics.aiProviderDiagnosticProbeLastAt || ''),
+    aiProviderDiagnosticProbeLastHttpStatus: Number(diagnostics.aiProviderDiagnosticProbeLastHttpStatus || 0),
+    aiProviderDiagnosticProbeLastGoogleApiErrorStatus: String(diagnostics.aiProviderDiagnosticProbeLastGoogleApiErrorStatus || ''),
+    aiProviderDiagnosticProbeLastGoogleApiErrorReason: String(diagnostics.aiProviderDiagnosticProbeLastGoogleApiErrorReason || ''),
+    aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: String(diagnostics.aiProviderDiagnosticProbeLastPermissionDiagnosisCategory || ''),
+    aiProviderDiagnosticProbeLastRecommendedFix: String(diagnostics.aiProviderDiagnosticProbeLastRecommendedFix || ''),
+    aiProviderDiagnosticProbeSuccessfulRequestCount: Number(diagnostics.aiProviderDiagnosticProbeSuccessfulRequestCount || 0),
+    aiProviderDiagnosticProbeFailedRequestCount: Number(diagnostics.aiProviderDiagnosticProbeFailedRequestCount || 0),
     aiProviderNonRetryableFailureCostYen: Number(collection.aiProviderNonRetryableFailureCostYen || 0),
     providerFailureBackfilledOperationCount: Number(collection.providerFailureBackfilledOperationCount || 0),
     providerFailureBackfillSource: String(collection.providerFailureBackfillSource || ''),
@@ -16634,6 +16945,15 @@ function buildGmailSalesAiProviderFailureAccountingDefaults_() {
     aiProviderRepairProbeAttemptCountForCurrentEpoch: 0,
     aiProviderRepairProbeSuccessfulRequestCount: 0,
     aiProviderRepairProbeFailedRequestCount: 0,
+    aiProviderDiagnosticProbeAttemptCountToday: 0,
+    aiProviderDiagnosticProbeLastAt: '',
+    aiProviderDiagnosticProbeLastHttpStatus: 0,
+    aiProviderDiagnosticProbeLastGoogleApiErrorStatus: '',
+    aiProviderDiagnosticProbeLastGoogleApiErrorReason: '',
+    aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: '',
+    aiProviderDiagnosticProbeLastRecommendedFix: '',
+    aiProviderDiagnosticProbeSuccessfulRequestCount: 0,
+    aiProviderDiagnosticProbeFailedRequestCount: 0,
     aiProviderNonRetryableFailureCostYen: 0
   };
   GMAIL_SALES_AI_PROVIDER_FAILURE_ACCOUNTING_FIELD_NAMES.forEach((fieldName) => {

@@ -142,10 +142,27 @@ function createContext() {
     if (String(pattern || '').includes("yyyy-MM-dd'T'HH:mm:ssXXX")) return `${yyyyMMdd}T${normalizedHour}:${parts.minute}:${parts.second}${offset}`;
     return yyyyMMdd;
   }
+  function fixedJstNoonMs() {
+    const jstDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+    return Date.parse(`${jstDate}T12:00:00+09:00`);
+  }
+  class FixedDate extends Date {
+    constructor(...args) {
+      super(...(args.length ? args : [fixedJstNoonMs()]));
+    }
+    static now() { return fixedJstNoonMs(); }
+    static parse(value) { return Date.parse(value); }
+    static UTC(...args) { return Date.UTC(...args); }
+  }
 
   const context = {
     console,
-    Date,
+    Date: FixedDate,
     JSON,
     Math,
     Number,
@@ -969,7 +986,13 @@ function applyTodayTargetDate(context) {
 }
 
 function minutesAgoIso(minutes) {
-  return new Date(Date.now() - (Number(minutes || 0) * 60000)).toISOString();
+  const jstDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
+  return new Date(Date.parse(`${jstDate}T12:00:00+09:00`) - (Number(minutes || 0) * 60000)).toISOString();
 }
 
 const v1 = createContext();
@@ -2245,6 +2268,148 @@ assert.equal(gkey6.__state.gmailSendCount, 0);
 assert.equal(gkey6.__state.draftCreateCount, 0);
 assert.equal(gkey6.__state.triggerCreateCount, 0);
 
+const diagnosticSecret = ['diagnostic', 'secret', 'placeholder', '0123456789'].join('-');
+function makeGoogleApiError(status, code, reason, metadata = {}, message = 'provider error') {
+  return {
+    error: {
+      code,
+      status,
+      message,
+      details: [{
+        '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+        reason,
+        domain: 'googleapis.com',
+        metadata
+      }]
+    }
+  };
+}
+function installGeminiDiagnosticContext(responseBody, httpStatus = 403) {
+  const context = createContext();
+  context.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+  context.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+  context.__props.GMAIL_SALES_AI_API_KEY = diagnosticSecret;
+  applyTodayTargetDate(context);
+  seedPermissionErrorAiSummary(context);
+  context.__state.lastFetch = null;
+  context.UrlFetchApp.fetch = (url, options) => {
+    context.__state.urlFetchCount += 1;
+    context.__state.lastFetch = { url, options };
+    return {
+      getResponseCode: () => httpStatus,
+      getContentText: () => JSON.stringify(responseBody)
+    };
+  };
+  return context;
+}
+
+const gdiag1 = installGeminiDiagnosticContext(makeGoogleApiError('PERMISSION_DENIED', 403, 'SERVICE_DISABLED', {
+  service: 'generativelanguage.googleapis.com',
+  method: 'google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent',
+  activationUrl: 'https://example.invalid/activate',
+  consumer: 'projects/redacted'
+}));
+const gdiag1ReadinessWrites = gdiag1.__state.propertyWriteCount + gdiag1.__state.sheetWriteCount + gdiag1.__state.urlFetchCount;
+const gdiag1Readiness = gdiag1.inspectGmailSalesGeminiPermissionDiagnosticsReadiness({ skipLog: true });
+assert.equal(gdiag1Readiness.event, 'gmail_sales_gemini_permission_diagnostics_readiness');
+assert.equal(gdiag1Readiness.mode, 'read_only');
+assert.equal(gdiag1Readiness.status, 'pass');
+assert.equal(gdiag1Readiness.provider, 'gemini');
+assert.equal(gdiag1Readiness.modelNameSanitized, 'gemini-2.5-flash-lite');
+assert.equal(gdiag1Readiness.apiKeyPresent, true);
+assert.equal(gdiag1Readiness.apiKeyValueLogged, false);
+assert.equal(gdiag1Readiness.endpointHostSanitized, 'generativelanguage.googleapis.com');
+assert.equal(gdiag1Readiness.permissionBlockActive, true);
+assert.equal(gdiag1Readiness.aiProviderDiagnosticProbeEligible, true);
+assert.equal(gdiag1Readiness.aiProviderDiagnosticProbeMaxAttemptsPerDay, 3);
+assert.equal(gdiag1.__state.propertyWriteCount + gdiag1.__state.sheetWriteCount + gdiag1.__state.urlFetchCount, gdiag1ReadinessWrites);
+
+const gdiag1Probe = gdiag1.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiag1Probe.event, 'gmail_sales_gemini_permission_diagnostics_probe');
+assert.equal(gdiag1Probe.status, 'blocked');
+assert.equal(gdiag1Probe.aiApiCalled, true);
+assert.equal(gdiag1Probe.httpStatus, 403);
+assert.equal(gdiag1Probe.googleApiErrorStatus, 'PERMISSION_DENIED');
+assert.equal(gdiag1Probe.googleApiErrorReason, 'SERVICE_DISABLED');
+assert.equal(gdiag1Probe.googleApiErrorService, 'generativelanguage.googleapis.com');
+assert.equal(gdiag1Probe.googleApiErrorMethod, 'google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent');
+assert.deepEqual(gdiag1Probe.googleApiErrorMetadataKeys.sort(), ['activationUrl', 'consumer', 'method', 'service']);
+assert.equal(gdiag1Probe.permissionDiagnosisCategory, 'generative_language_api_disabled');
+assert.equal(gdiag1Probe.permissionDiagnosisRecommendedFix, 'enable_generative_language_api_for_key_project');
+assert.equal(gdiag1Probe.responseBodyLogged, false);
+assert.equal(gdiag1Probe.apiKeyLogged, false);
+assert.equal(gdiag1Probe.requestPayloadContainsBusinessData, false);
+const gdiag1Payload = JSON.parse(gdiag1.__state.lastFetch.options.payload);
+assert.equal(gdiag1Payload.contents[0].parts[0].text, 'Return exactly this JSON: {"ok":true}');
+assert.equal(JSON.stringify(gdiag1Payload).includes('candidate'), false);
+assert.equal(JSON.stringify(gdiag1Payload).includes('evidence'), false);
+assert.equal(JSON.stringify(gdiag1Payload).includes('digest'), false);
+assert.equal(JSON.stringify(gdiag1Payload).includes('email'), false);
+assert.equal(JSON.stringify(gdiag1Payload).includes('body'), false);
+assert.equal(JSON.stringify(gdiag1Payload).includes('snippet'), false);
+assert.equal(JSON.stringify(gdiag1.__state.logs).includes(diagnosticSecret), false);
+assert.equal(JSON.stringify(gdiag1.__state.logs).includes('activationUrl'), true);
+assert.equal(JSON.stringify(gdiag1.__state.logs).includes('https://example.invalid/activate'), false);
+const gdiag1Usage = gdiag1.inspectGmailSalesRecoveryUsageLedger();
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeAttemptCountToday, 1);
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastHttpStatus, 403);
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastGoogleApiErrorStatus, 'PERMISSION_DENIED');
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastGoogleApiErrorReason, 'SERVICE_DISABLED');
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastPermissionDiagnosisCategory, 'generative_language_api_disabled');
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeLastRecommendedFix, 'enable_generative_language_api_for_key_project');
+assert.equal(gdiag1Usage.aiProviderDiagnosticProbeFailedRequestCount, 1);
+
+const gdiag2 = installGeminiDiagnosticContext(makeGoogleApiError('PERMISSION_DENIED', 403, 'API_KEY_SERVICE_BLOCKED', {
+  service: 'generativelanguage.googleapis.com',
+  method: 'google.ai.generativelanguage.v1beta.GenerativeService.GenerateContent'
+}, 'API key service blocked by key restrictions'));
+const gdiag2Probe = gdiag2.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiag2Probe.permissionDiagnosisCategory, 'api_key_restricted');
+assert.equal(gdiag2Probe.permissionDiagnosisRecommendedFix, 'remove_or_correct_api_key_restrictions_for_apps_script');
+
+const gdiag3 = installGeminiDiagnosticContext(makeGoogleApiError('UNAUTHENTICATED', 401, 'API_KEY_INVALID', {}, 'API key not valid'));
+const gdiag3Probe = gdiag3.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiag3Probe.permissionDiagnosisCategory, 'api_key_invalid_or_revoked');
+assert.equal(gdiag3Probe.permissionDiagnosisRecommendedFix, 'create_new_ai_studio_auth_key');
+
+const gdiag4 = installGeminiDiagnosticContext(makeGoogleApiError('NOT_FOUND', 404, 'MODEL_NOT_FOUND', {}, 'Model is not found or not available'), 404);
+const gdiag4Probe = gdiag4.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiag4Probe.permissionDiagnosisCategory, 'model_not_available_or_not_permitted');
+assert.equal(gdiag4Probe.permissionDiagnosisRecommendedFix, 'switch_to_supported_public_model_gemini_2_5_flash_lite');
+
+const gdiag5 = installGeminiDiagnosticContext(makeGoogleApiError('PERMISSION_DENIED', 403, 'ORG_RESTRICTION', {}, 'Request denied by organization policy'));
+const gdiag5Probe = gdiag5.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiag5Probe.permissionDiagnosisCategory, 'organization_policy_blocked');
+assert.equal(gdiag5Probe.permissionDiagnosisRecommendedFix, 'use_personal_google_account_or_unrestricted_project');
+
+const gdiag6 = installGeminiDiagnosticContext({ candidates: [{ content: { parts: [{ text: '{"ok":true}' }] } }] }, 200);
+installFiveAiPendingRows(gdiag6);
+const gdiag6Probe = gdiag6.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiag6Probe.status, 'pass');
+assert.equal(gdiag6Probe.permissionDiagnosisCategory, 'success');
+assert.equal(gdiag6Probe.permissionDiagnosisRecommendedFix, 'diagnostics_success_no_permission_error_detected');
+const gdiag6After = gdiag6.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(gdiag6After.plannedNextAction, 'wait_for_ai_provider_permission_fix');
+assert.equal(gdiag6After.plannedSafeToExecute, false);
+assert.equal(gdiag6.__state.sheetWriteCount, 0);
+assert.equal(gdiag6.__state.gmailSendCount, 0);
+assert.equal(gdiag6.__state.draftCreateCount, 0);
+assert.equal(gdiag6.__state.triggerCreateCount, 0);
+
+const gdiag7 = installGeminiDiagnosticContext(makeGoogleApiError('PERMISSION_DENIED', 403, 'SERVICE_DISABLED', {
+  service: 'generativelanguage.googleapis.com'
+}));
+gdiag7.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+gdiag7.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+gdiag7.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+const gdiag7Blocked = gdiag7.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiag7Blocked.status, 'blocked');
+assert.equal(gdiag7Blocked.blockedReason, 'diagnostic_probe_daily_limit_reached');
+assert.equal(gdiag7.__state.urlFetchCount, 3);
+assert.equal(gdiag7.__state.gmailSendCount, 0);
+assert.equal(gdiag7.__state.draftCreateCount, 0);
+assert.equal(gdiag7.__state.triggerCreateCount, 0);
+
 const g429b6 = createContext();
 installFiveAiPendingRows(g429b6);
 const g429b6Inspect = g429b6.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
@@ -2266,6 +2431,9 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'runGmailSalesAiProviderPermissionRepairProbeOnce',
   'inspectGmailSalesAiProviderApiKeyReplacementReadiness',
   'runGmailSalesAiProviderApiKeyReplacementFromSheetOnce',
+  'inspectGmailSalesGeminiPermissionDiagnosticsReadiness',
+  'runGmailSalesGeminiPermissionDiagnosticsProbeOnce',
+  'gmail_sales_gemini_permission_diagnostics_probe',
   '__ICHI_SECRET_REPAIR__',
   'ai_permission_repair_verified',
   'providerFailureBackfilledOperationCount',
@@ -2305,6 +2473,9 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderRepairProbeAttemptCountForCurrentEpoch',
   'aiProviderRepairProbeSuccessfulRequestCount',
   'aiProviderRepairProbeFailedRequestCount',
+  'aiProviderDiagnosticProbeAttemptCountToday',
+  'aiProviderDiagnosticProbeLastPermissionDiagnosisCategory',
+  'aiProviderDiagnosticProbeLastRecommendedFix',
   'aiProviderNonRetryableFailureCostYen'
 ].forEach((fieldName) => {
   assert.equal(Object.prototype.hasOwnProperty.call(g429b6Inspect, fieldName), true);
@@ -2335,6 +2506,15 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderRepairProbeAttemptCountForCurrentEpoch',
   'aiProviderRepairProbeSuccessfulRequestCount',
   'aiProviderRepairProbeFailedRequestCount',
+  'aiProviderDiagnosticProbeAttemptCountToday',
+  'aiProviderDiagnosticProbeLastAt',
+  'aiProviderDiagnosticProbeLastHttpStatus',
+  'aiProviderDiagnosticProbeLastGoogleApiErrorStatus',
+  'aiProviderDiagnosticProbeLastGoogleApiErrorReason',
+  'aiProviderDiagnosticProbeLastPermissionDiagnosisCategory',
+  'aiProviderDiagnosticProbeLastRecommendedFix',
+  'aiProviderDiagnosticProbeSuccessfulRequestCount',
+  'aiProviderDiagnosticProbeFailedRequestCount',
   'aiProviderNonRetryableFailureCostYen'
 ].forEach((fieldName) => {
   assert.equal(Object.prototype.hasOwnProperty.call(g429b6Usage, fieldName), true);
