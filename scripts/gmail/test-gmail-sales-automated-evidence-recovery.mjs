@@ -69,6 +69,24 @@ class FakeSheet {
   }
 }
 
+class FakeSpreadsheet {
+  constructor(sheets = []) {
+    this.sheets = {};
+    sheets.forEach((sheet) => {
+      this.sheets[sheet.getName()] = sheet;
+    });
+  }
+  getSheetByName(name) {
+    return this.sheets[name] || null;
+  }
+  insertSheet(name) {
+    const state = Object.values(this.sheets)[0]?.state || { sheetWriteCount: 0 };
+    const sheet = new FakeSheet(name, ['A', 'B', 'C'], [], state);
+    this.sheets[name] = sheet;
+    return sheet;
+  }
+}
+
 function createContext() {
   const cache = {};
   const props = {
@@ -166,7 +184,8 @@ function createContext() {
     },
     SpreadsheetApp: {
       flush: () => { state.flushCount += 1; },
-      ProtectionType: { RANGE: 'RANGE' }
+      ProtectionType: { RANGE: 'RANGE' },
+      openById: () => context.__spreadsheet
     },
     ScriptApp: {
       newTrigger: () => { state.triggerCreateCount += 1; return { timeBased: () => ({ everyMinutes: () => ({ create: () => ({}) }) }) }; },
@@ -246,17 +265,26 @@ function installSheets(context, sourceRows, reviewRows = []) {
   ]));
   const sourceSheet = new FakeSheet('Source', headers, sourceRows, context.__state);
   const reviewSheet = new FakeSheet('Review', headers, reviewRows, context.__state);
+  const spreadsheet = new FakeSpreadsheet([sourceSheet, reviewSheet]);
   context.__sourceSheet = sourceSheet;
   context.__reviewSheet = reviewSheet;
+  context.__spreadsheet = spreadsheet;
   context.getGmailSalesContactBasisReviewContext_ = () => ({
     ok: true,
     config: {},
-    spreadsheet: {},
+    spreadsheet,
     sourceSheet,
     reviewSheet,
     reviewTabName: 'Review'
   });
-  return { headers, sourceSheet, reviewSheet };
+  return { headers, sourceSheet, reviewSheet, spreadsheet };
+}
+
+function installSecretRepairSheet(context, apiKeyValue = '', modelValue = '') {
+  if (!context.__spreadsheet) installSheets(context, makeSourceRows(1), []);
+  const sheet = new FakeSheet('__ICHI_SECRET_REPAIR__', ['A', 'B', 'C'], [{ B: apiKeyValue }, { B: modelValue }], context.__state);
+  context.__spreadsheet.sheets.__ICHI_SECRET_REPAIR__ = sheet;
+  return sheet;
 }
 
 function setSheetValueByHeader(sheet, rowIndex, headerName, value) {
@@ -1972,7 +2000,8 @@ assert.equal(gperm5Readiness.provider, 'gemini');
 assert.equal(gperm5Readiness.modelConfigured, true);
 assert.equal(gperm5Readiness.apiKeyPresent, true);
 assert.equal(gperm5Readiness.aiProviderRepairProbeEligible, true);
-assert.equal(gperm5Readiness.aiProviderRepairProbeMaxAttemptsPerDay, 1);
+assert.equal(gperm5Readiness.aiProviderRepairProbeMaxAttemptsPerDay, 3);
+assert.equal(gperm5Readiness.aiProviderRepairProbeMaxAttemptsPerEpoch, 1);
 assert.equal(gperm5Readiness.gmailSendExecuted, false);
 assert.equal(gperm5Readiness.googleSheetsUpdated, false);
 assert.equal(gperm5Readiness.aiApiCalled, false);
@@ -2046,7 +2075,7 @@ assert.equal(gperm7Probe.aiProviderPermissionBlockedForTargetDate, true);
 assert.equal(gperm7Probe.aiProviderPermissionFixRequired, true);
 const gperm7Second = gperm7.runGmailSalesAiProviderPermissionRepairProbeOnce();
 assert.equal(gperm7Second.status, 'blocked');
-assert.equal(gperm7Second.blockedReason, 'repair_probe_already_used_today');
+assert.equal(gperm7Second.blockedReason, 'repair_probe_already_used_for_current_epoch');
 assert.equal(gperm7.__state.urlFetchCount, 1);
 const gperm7After = gperm7.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
 assert.equal(gperm7After.plannedNextAction, 'wait_for_ai_provider_permission_fix');
@@ -2059,6 +2088,162 @@ assert.equal(gperm7After.googleSheetsUpdated, false);
 assert.equal(gperm7.__state.gmailSendCount, 0);
 assert.equal(gperm7.__state.draftCreateCount, 0);
 assert.equal(gperm7.__state.triggerCreateCount, 0);
+
+const replacementSecret = ['valid', 'replacement', 'placeholder', '0123456789'].join('-');
+
+const gkey1 = createContext();
+gkey1.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gkey1.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+gkey1.__props.GMAIL_SALES_AI_API_KEY = 'old-placeholder-value';
+installFiveAiPendingRows(gkey1);
+applyTodayTargetDate(gkey1);
+seedPermissionErrorAiSummary(gkey1);
+const gkey1Readiness = gkey1.inspectGmailSalesAiProviderApiKeyReplacementReadiness({ skipLog: true });
+assert.equal(gkey1Readiness.status, 'blocked');
+assert.equal(gkey1Readiness.secretInputSheetPresent, false);
+assert.equal(gkey1Readiness.aiProviderApiKeyReplacementBlockedReason, 'secret_input_sheet_missing');
+assert.equal(gkey1Readiness.willCreateNewApiKeyProperty, false);
+assert.equal(gkey1Readiness.gmailSendExecuted, false);
+assert.equal(gkey1Readiness.scriptPropertiesUpdated, false);
+
+const gkey2 = createContext();
+gkey2.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gkey2.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+gkey2.__props.GMAIL_SALES_AI_API_KEY = 'old-placeholder-value';
+installFiveAiPendingRows(gkey2);
+installSecretRepairSheet(gkey2, '', '');
+applyTodayTargetDate(gkey2);
+seedPermissionErrorAiSummary(gkey2);
+const gkey2Result = gkey2.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
+assert.equal(gkey2Result.status, 'blocked');
+assert.equal(gkey2Result.blockedReason, 'api_key_input_empty');
+assert.equal(gkey2Result.apiKeyReplaced, false);
+assert.equal(gkey2Result.scriptPropertiesUpdated, false);
+assert.equal(gkey2.__props.GMAIL_SALES_AI_API_KEY, 'old-placeholder-value');
+
+const gkey3 = createContext();
+gkey3.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gkey3.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+gkey3.__props.GMAIL_SALES_AI_API_KEY = 'old-placeholder-value';
+installFiveAiPendingRows(gkey3);
+const gkey3Sheet = installSecretRepairSheet(gkey3, 'bad key with spaces', 'gemini-2.5-flash-lite');
+applyTodayTargetDate(gkey3);
+seedPermissionErrorAiSummary(gkey3);
+const gkey3BeforeWrites = gkey3.__state.propertyWriteCount;
+const gkey3Result = gkey3.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
+assert.equal(gkey3Result.status, 'blocked');
+assert.equal(gkey3Result.blockedReason, 'api_key_input_invalid');
+assert.equal(gkey3Result.apiKeyReplaced, false);
+assert.equal(gkey3Result.secretInputCleared, true);
+assert.equal(gkey3Result.googleSheetsUpdated, true);
+assert.equal(gkey3Result.scriptPropertiesUpdated, false);
+assert.equal(gkey3.__state.propertyWriteCount, gkey3BeforeWrites);
+assert.equal(gkey3.__props.GMAIL_SALES_AI_API_KEY, 'old-placeholder-value');
+assert.equal(gkey3Sheet.getCell(2, 2), '');
+assert.equal(gkey3Sheet.getCell(3, 2), '');
+
+const gkey4 = createContext();
+gkey4.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gkey4.__props.GMAIL_SALES_AI_MODEL = 'gemini-1.5-flash';
+gkey4.__props.GMAIL_SALES_AI_API_KEY = 'old-placeholder-value';
+installFiveAiPendingRows(gkey4);
+const gkey4Sheet = installSecretRepairSheet(gkey4, replacementSecret, 'gemini-2.5-flash-lite');
+applyTodayTargetDate(gkey4);
+seedPermissionErrorAiSummary(gkey4);
+const gkey4KeysBefore = Object.keys(gkey4.__props).filter((key) => key.indexOf('API_KEY') !== -1).sort();
+const gkey4Result = gkey4.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
+assert.equal(gkey4Result.status, 'pass');
+assert.equal(gkey4Result.apiKeyReplaced, true);
+assert.equal(gkey4Result.modelReplaced, true);
+assert.equal(gkey4Result.secretInputCleared, true);
+assert.equal(gkey4Result.googleSheetsUpdated, true);
+assert.equal(gkey4Result.scriptPropertiesUpdated, true);
+assert.equal(gkey4Result.aiProviderPermissionFixRequired, true);
+assert.equal(gkey4Result.aiProviderPermissionRepairVerified, false);
+assert.equal(gkey4.__props.GMAIL_SALES_AI_API_KEY, replacementSecret);
+assert.equal(gkey4.__props.GMAIL_SALES_AI_MODEL, 'gemini-2.5-flash-lite');
+assert.deepEqual(Object.keys(gkey4.__props).filter((key) => key.indexOf('API_KEY') !== -1).sort(), gkey4KeysBefore);
+assert.equal(gkey4Sheet.getCell(2, 2), '');
+assert.equal(gkey4Sheet.getCell(3, 2), '');
+assert.equal(JSON.stringify(gkey4.__state.logs).includes(replacementSecret), false);
+const gkey4After = gkey4.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(gkey4After.plannedNextAction, 'wait_for_ai_provider_permission_fix');
+assert.equal(gkey4After.aiRetrySafeToExecute, false);
+const gkey4RepairReadiness = gkey4.inspectGmailSalesAiProviderPermissionRepairReadiness({ skipLog: true });
+assert.equal(gkey4RepairReadiness.aiProviderApiKeyReplacementCountToday >= 1, true);
+assert.equal(gkey4RepairReadiness.aiProviderApiKeyReplacementEpoch, 1);
+assert.equal(gkey4RepairReadiness.aiProviderRepairProbeAttemptCountForCurrentEpoch, 0);
+assert.equal(gkey4RepairReadiness.aiProviderRepairProbeEligible, true);
+
+const gkey5 = createContext();
+gkey5.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gkey5.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+gkey5.__props.GMAIL_SALES_AI_API_KEY = 'old-placeholder-value';
+gkey5.UrlFetchApp.fetch = () => {
+  gkey5.__state.urlFetchCount += 1;
+  return { getResponseCode: () => 403, getContentText: () => '{}' };
+};
+installFiveAiPendingRows(gkey5);
+installSecretRepairSheet(gkey5, replacementSecret, '');
+applyTodayTargetDate(gkey5);
+seedPermissionErrorAiSummary(gkey5);
+const gkey5Replace1 = gkey5.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
+assert.equal(gkey5Replace1.aiProviderApiKeyReplacementEpoch, 1);
+const gkey5Probe1 = gkey5.runGmailSalesAiProviderPermissionRepairProbeOnce();
+assert.equal(gkey5Probe1.status, 'blocked');
+assert.equal(gkey5Probe1.aiProviderRepairProbeAttemptCountForCurrentEpoch, 1);
+const gkey5Probe2 = gkey5.runGmailSalesAiProviderPermissionRepairProbeOnce();
+assert.equal(gkey5Probe2.status, 'blocked');
+assert.equal(gkey5Probe2.blockedReason, 'repair_probe_already_used_for_current_epoch');
+assert.equal(gkey5.__state.urlFetchCount, 1);
+installSecretRepairSheet(gkey5, replacementSecret, '');
+const gkey5Replace2 = gkey5.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
+assert.equal(gkey5Replace2.aiProviderApiKeyReplacementEpoch, 2);
+const gkey5Readiness2 = gkey5.inspectGmailSalesAiProviderPermissionRepairReadiness({ skipLog: true });
+assert.equal(gkey5Readiness2.aiProviderRepairProbeAttemptCountForCurrentEpoch, 0);
+assert.equal(gkey5Readiness2.aiProviderRepairProbeEligible, true);
+const gkey5Probe3 = gkey5.runGmailSalesAiProviderPermissionRepairProbeOnce();
+assert.equal(gkey5Probe3.status, 'blocked');
+installSecretRepairSheet(gkey5, replacementSecret, '');
+gkey5.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
+const gkey5Probe4 = gkey5.runGmailSalesAiProviderPermissionRepairProbeOnce();
+assert.equal(gkey5Probe4.status, 'blocked');
+assert.equal(gkey5Probe4.aiProviderRepairProbeAttemptCountToday, 3);
+installSecretRepairSheet(gkey5, replacementSecret, '');
+gkey5.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
+const gkey5Limit = gkey5.inspectGmailSalesAiProviderPermissionRepairReadiness({ skipLog: true });
+assert.equal(gkey5Limit.aiProviderRepairProbeEligible, false);
+assert.equal(gkey5Limit.aiProviderRepairProbeBlockedReason, 'repair_probe_daily_limit_reached');
+assert.equal(gkey5.__state.gmailSendCount, 0);
+assert.equal(gkey5.__state.draftCreateCount, 0);
+assert.equal(gkey5.__state.triggerCreateCount, 0);
+
+const gkey6 = createContext();
+gkey6.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gkey6.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+gkey6.__props.GMAIL_SALES_AI_API_KEY = 'old-placeholder-value';
+gkey6.UrlFetchApp.fetch = () => {
+  gkey6.__state.urlFetchCount += 1;
+  return {
+    getResponseCode: () => 200,
+    getContentText: () => JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"ok":true}' }] } }] })
+  };
+};
+installFiveAiPendingRows(gkey6);
+installSecretRepairSheet(gkey6, replacementSecret, '');
+applyTodayTargetDate(gkey6);
+seedPermissionErrorAiSummary(gkey6);
+gkey6.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
+const gkey6Probe = gkey6.runGmailSalesAiProviderPermissionRepairProbeOnce();
+assert.equal(gkey6Probe.status, 'pass');
+const gkey6After = gkey6.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(gkey6After.plannedNextAction, 'ai_contact_basis_verification');
+assert.equal(gkey6After.plannedNextActionReasonCode, 'ai_permission_repair_verified');
+assert.equal(gkey6After.operatorShouldRunSafeStepNow, true);
+assert.equal(JSON.stringify(gkey6.__state.logs).includes(replacementSecret), false);
+assert.equal(gkey6.__state.gmailSendCount, 0);
+assert.equal(gkey6.__state.draftCreateCount, 0);
+assert.equal(gkey6.__state.triggerCreateCount, 0);
 
 const g429b6 = createContext();
 installFiveAiPendingRows(g429b6);
@@ -2079,6 +2264,9 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderPermissionFixRequired',
   'inspectGmailSalesAiProviderPermissionRepairReadiness',
   'runGmailSalesAiProviderPermissionRepairProbeOnce',
+  'inspectGmailSalesAiProviderApiKeyReplacementReadiness',
+  'runGmailSalesAiProviderApiKeyReplacementFromSheetOnce',
+  '__ICHI_SECRET_REPAIR__',
   'ai_permission_repair_verified',
   'providerFailureBackfilledOperationCount',
   'providerFailureBackfillSource',
@@ -2110,7 +2298,11 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderPermissionFixRequired',
   'aiProviderPermissionRepairVerified',
   'aiProviderPermissionRepairVerifiedAt',
+  'aiProviderApiKeyReplacementCountToday',
+  'aiProviderApiKeyReplacementLastAt',
+  'aiProviderApiKeyReplacementEpoch',
   'aiProviderRepairProbeAttemptCountToday',
+  'aiProviderRepairProbeAttemptCountForCurrentEpoch',
   'aiProviderRepairProbeSuccessfulRequestCount',
   'aiProviderRepairProbeFailedRequestCount',
   'aiProviderNonRetryableFailureCostYen'
@@ -2136,7 +2328,11 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderPermissionFixRequired',
   'aiProviderPermissionRepairVerified',
   'aiProviderPermissionRepairVerifiedAt',
+  'aiProviderApiKeyReplacementCountToday',
+  'aiProviderApiKeyReplacementLastAt',
+  'aiProviderApiKeyReplacementEpoch',
   'aiProviderRepairProbeAttemptCountToday',
+  'aiProviderRepairProbeAttemptCountForCurrentEpoch',
   'aiProviderRepairProbeSuccessfulRequestCount',
   'aiProviderRepairProbeFailedRequestCount',
   'aiProviderNonRetryableFailureCostYen'
