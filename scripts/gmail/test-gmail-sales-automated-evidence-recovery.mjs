@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const code = readFileSync('apps-script/gmail-sales-automation/Code.gs', 'utf8');
+const appsScriptManifest = JSON.parse(readFileSync('apps-script/gmail-sales-automation/appsscript.json', 'utf8'));
 
 class FakeRange {
   constructor(sheet, row, col, numRows = 1, numCols = 1, state) {
@@ -977,6 +978,21 @@ function seedPermissionErrorAiSummary(context, overrides = {}) {
     aiProviderPermissionErrorDigestCount: 5,
     aiProviderNonRetryableFailureCostYen: 1
   }, overrides));
+}
+
+function seedUrlFetchAuthorizationVerified(context) {
+  const targetDate = context.Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  context.__props.GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_JSON = JSON.stringify({
+    targetDate,
+    urlFetchAuthorizationProbeAttemptCountToday: 1,
+    urlFetchAuthorizationProbeLastAt: '2026-07-03T00:00:00.000Z',
+    urlFetchAuthorizationProbeLastHttpStatus: 204,
+    urlFetchAuthorizationProbeLastTransportExceptionCategory: '',
+    urlFetchAuthorizationProbeSuccessfulRequestCount: 1,
+    urlFetchAuthorizationProbeFailedRequestCount: 0,
+    urlFetchAuthorizationVerified: true,
+    urlFetchAuthorizationVerifiedAt: '2026-07-03T00:00:00.000Z'
+  });
 }
 
 function applyTodayTargetDate(context) {
@@ -1990,6 +2006,7 @@ gperm4.__props.GMAIL_SALES_AI_API_KEY = 'configured-key-value-for-test';
 gperm4.UrlFetchApp.fetch = () => { gperm4.__state.urlFetchCount += 1; return { getResponseCode: () => 403, getContentText: () => '{}' }; };
 installFiveAiPendingRows(gperm4);
 applyTodayTargetDate(gperm4);
+seedUrlFetchAuthorizationVerified(gperm4);
 seedHistoricalAi429Summary(gperm4, { completedAt: minutesAgoIso(361) });
 const gperm4Step = gperm4.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
 assert.equal(gperm4Step.executedAction, 'ai_contact_basis_verification');
@@ -2015,6 +2032,7 @@ gperm5.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
 gperm5.__props.GMAIL_SALES_AI_API_KEY = 'configured-key-value-for-test';
 installFiveAiPendingRows(gperm5);
 applyTodayTargetDate(gperm5);
+seedUrlFetchAuthorizationVerified(gperm5);
 seedPermissionErrorAiSummary(gperm5);
 const gperm5Readiness = gperm5.inspectGmailSalesAiProviderPermissionRepairReadiness({ skipLog: true });
 assert.equal(gperm5Readiness.event, 'gmail_sales_ai_provider_permission_repair_readiness');
@@ -2042,6 +2060,7 @@ gperm6.UrlFetchApp.fetch = () => {
 };
 installFiveAiPendingRows(gperm6);
 applyTodayTargetDate(gperm6);
+seedUrlFetchAuthorizationVerified(gperm6);
 seedPermissionErrorAiSummary(gperm6);
 const gperm6Probe = gperm6.runGmailSalesAiProviderPermissionRepairProbeOnce();
 assert.equal(gperm6Probe.status, 'pass');
@@ -2087,6 +2106,7 @@ gperm7.UrlFetchApp.fetch = () => {
 };
 installFiveAiPendingRows(gperm7);
 applyTodayTargetDate(gperm7);
+seedUrlFetchAuthorizationVerified(gperm7);
 seedPermissionErrorAiSummary(gperm7);
 const gperm7Probe = gperm7.runGmailSalesAiProviderPermissionRepairProbeOnce();
 assert.equal(gperm7Probe.status, 'blocked');
@@ -2172,6 +2192,7 @@ gkey4.__props.GMAIL_SALES_AI_API_KEY = 'old-placeholder-value';
 installFiveAiPendingRows(gkey4);
 const gkey4Sheet = installSecretRepairSheet(gkey4, replacementSecret, 'gemini-2.5-flash-lite');
 applyTodayTargetDate(gkey4);
+seedUrlFetchAuthorizationVerified(gkey4);
 seedPermissionErrorAiSummary(gkey4);
 const gkey4KeysBefore = Object.keys(gkey4.__props).filter((key) => key.indexOf('API_KEY') !== -1).sort();
 const gkey4Result = gkey4.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
@@ -2209,6 +2230,7 @@ gkey5.UrlFetchApp.fetch = () => {
 installFiveAiPendingRows(gkey5);
 installSecretRepairSheet(gkey5, replacementSecret, '');
 applyTodayTargetDate(gkey5);
+seedUrlFetchAuthorizationVerified(gkey5);
 seedPermissionErrorAiSummary(gkey5);
 const gkey5Replace1 = gkey5.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
 assert.equal(gkey5Replace1.aiProviderApiKeyReplacementEpoch, 1);
@@ -2255,6 +2277,7 @@ gkey6.UrlFetchApp.fetch = () => {
 installFiveAiPendingRows(gkey6);
 installSecretRepairSheet(gkey6, replacementSecret, '');
 applyTodayTargetDate(gkey6);
+seedUrlFetchAuthorizationVerified(gkey6);
 seedPermissionErrorAiSummary(gkey6);
 gkey6.runGmailSalesAiProviderApiKeyReplacementFromSheetOnce();
 const gkey6Probe = gkey6.runGmailSalesAiProviderPermissionRepairProbeOnce();
@@ -2289,6 +2312,7 @@ function installGeminiDiagnosticContext(responseBody, httpStatus = 403) {
   context.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
   context.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
   context.__props.GMAIL_SALES_AI_API_KEY = diagnosticSecret;
+  seedUrlFetchAuthorizationVerified(context);
   applyTodayTargetDate(context);
   seedPermissionErrorAiSummary(context);
   context.__state.lastFetch = null;
@@ -2302,6 +2326,116 @@ function installGeminiDiagnosticContext(responseBody, httpStatus = 403) {
   };
   return context;
 }
+
+const manifestScopes = Array.isArray(appsScriptManifest.oauthScopes) ? appsScriptManifest.oauthScopes : [];
+assert.equal(manifestScopes.includes('https://www.googleapis.com/auth/script.external_request'), true);
+assert.equal(manifestScopes.includes('https://www.googleapis.com/auth/gmail.modify'), true);
+assert.equal(manifestScopes.includes('https://www.googleapis.com/auth/gmail.send'), true);
+assert.equal(manifestScopes.includes('https://www.googleapis.com/auth/spreadsheets'), true);
+assert.equal(manifestScopes.includes('https://www.googleapis.com/auth/script.scriptapp'), true);
+assert.equal(manifestScopes.filter((scope) => scope === 'https://www.googleapis.com/auth/script.external_request').length, 1);
+
+const urlAuthReadiness = createContext();
+const urlAuthReadinessWrites = urlAuthReadiness.__state.propertyWriteCount + urlAuthReadiness.__state.sheetWriteCount + urlAuthReadiness.__state.urlFetchCount;
+const urlAuthReadinessResult = urlAuthReadiness.inspectGmailSalesUrlFetchAuthorizationReadiness({ skipLog: true });
+assert.equal(urlAuthReadinessResult.event, 'gmail_sales_urlfetch_authorization_readiness');
+assert.equal(urlAuthReadinessResult.mode, 'read_only');
+assert.equal(urlAuthReadinessResult.urlFetchScopeRequired, 'https://www.googleapis.com/auth/script.external_request');
+assert.equal(urlAuthReadinessResult.urlFetchScopeDeclaredInManifest, true);
+assert.equal(urlAuthReadinessResult.manifestOauthScopesPresent, true);
+assert.equal(urlAuthReadinessResult.externalRequestScopePresent, true);
+assert.equal(urlAuthReadinessResult.authorizationProbeMaxAttemptsPerDay, 3);
+assert.equal(urlAuthReadinessResult.urlFetchExecuted, false);
+assert.equal(urlAuthReadiness.__state.propertyWriteCount + urlAuthReadiness.__state.sheetWriteCount + urlAuthReadiness.__state.urlFetchCount, urlAuthReadinessWrites);
+
+const urlAuthPass = createContext();
+urlAuthPass.__state.lastFetch = null;
+urlAuthPass.UrlFetchApp.fetch = (url, options) => {
+  urlAuthPass.__state.urlFetchCount += 1;
+  urlAuthPass.__state.lastFetch = { url, options };
+  return { getResponseCode: () => 204, getContentText: () => '' };
+};
+const urlAuthPassProbe = urlAuthPass.runGmailSalesUrlFetchAuthorizationProbeOnce();
+assert.equal(urlAuthPassProbe.event, 'gmail_sales_urlfetch_authorization_probe');
+assert.equal(urlAuthPassProbe.status, 'pass');
+assert.equal(urlAuthPassProbe.urlFetchExecuted, true);
+assert.equal(urlAuthPassProbe.httpStatus, 204);
+assert.equal(urlAuthPassProbe.transportExceptionPresent, false);
+assert.equal(urlAuthPassProbe.fetchReturnedResponse, true);
+assert.equal(urlAuthPassProbe.fetchResponseCodeAvailable, true);
+assert.equal(urlAuthPassProbe.responseBodyLogged, false);
+assert.equal(urlAuthPassProbe.requestUrlLogged, false);
+assert.equal(urlAuthPassProbe.endpointHostSanitized, 'www.gstatic.com');
+assert.equal(urlAuthPassProbe.endpointPathSanitized, '/generate_204');
+assert.equal(urlAuthPassProbe.authorizationProbeAttemptCountToday, 1);
+assert.equal(urlAuthPassProbe.authorizationProbeSuccessfulRequestCount, 1);
+assert.equal(urlAuthPassProbe.authorizationProbeFailedRequestCount, 0);
+assert.equal(urlAuthPassProbe.urlFetchAuthorizationVerified, true);
+assert.equal(urlAuthPassProbe.scriptPropertiesUpdated, true);
+assert.equal(urlAuthPassProbe.aiApiCalled, false);
+assert.equal(urlAuthPass.__state.lastFetch.url, 'https://www.gstatic.com/generate_204');
+assert.equal(urlAuthPass.__state.lastFetch.options.method, 'get');
+assert.equal(urlAuthPass.__state.lastFetch.options.muteHttpExceptions, true);
+assert.equal(JSON.stringify(urlAuthPass.__state.logs).includes('https://www.gstatic.com/generate_204'), false);
+const urlAuthPassUsage = urlAuthPass.inspectGmailSalesRecoveryUsageLedger();
+assert.equal(urlAuthPassUsage.urlFetchAuthorizationProbeAttemptCountToday, 1);
+assert.equal(urlAuthPassUsage.urlFetchAuthorizationProbeLastHttpStatus, 204);
+assert.equal(urlAuthPassUsage.urlFetchAuthorizationVerified, true);
+
+const urlAuthDenied = createContext();
+urlAuthDenied.UrlFetchApp.fetch = () => {
+  urlAuthDenied.__state.urlFetchCount += 1;
+  throw new Error('Permission denied for external request');
+};
+const urlAuthDeniedProbe = urlAuthDenied.runGmailSalesUrlFetchAuthorizationProbeOnce();
+assert.equal(urlAuthDeniedProbe.status, 'blocked');
+assert.equal(urlAuthDeniedProbe.blockedReason, 'urlfetch_permission_denied');
+assert.equal(urlAuthDeniedProbe.transportExceptionPresent, true);
+assert.equal(urlAuthDeniedProbe.transportExceptionCategory, 'urlfetch_permission_denied');
+assert.equal(urlAuthDeniedProbe.urlFetchAuthorizationVerified, false);
+assert.equal(urlAuthDeniedProbe.responseBodyLogged, false);
+assert.equal(urlAuthDeniedProbe.requestUrlLogged, false);
+assert.equal(urlAuthDeniedProbe.aiApiCalled, false);
+
+const gdiagUrlAuthRequired = createContext();
+gdiagUrlAuthRequired.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gdiagUrlAuthRequired.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+gdiagUrlAuthRequired.__props.GMAIL_SALES_AI_API_KEY = diagnosticSecret;
+applyTodayTargetDate(gdiagUrlAuthRequired);
+seedPermissionErrorAiSummary(gdiagUrlAuthRequired);
+const gdiagUrlAuthRequiredReadiness = gdiagUrlAuthRequired.inspectGmailSalesGeminiPermissionDiagnosticsReadiness({ skipLog: true });
+assert.equal(gdiagUrlAuthRequiredReadiness.status, 'blocked');
+assert.equal(gdiagUrlAuthRequiredReadiness.aiProviderDiagnosticProbeEligible, false);
+assert.equal(gdiagUrlAuthRequiredReadiness.aiProviderDiagnosticProbeBlockedReason, 'urlfetch_authorization_required');
+assert.equal(gdiagUrlAuthRequiredReadiness.urlFetchAuthorizationRequired, true);
+assert.equal(gdiagUrlAuthRequiredReadiness.urlFetchAuthorizationVerified, false);
+assert.equal(gdiagUrlAuthRequiredReadiness.urlFetchAuthorizationRecommendedAction, 'run_urlfetch_authorization_probe_after_oauth_reauthorization');
+const gdiagUrlAuthRequiredProbe = gdiagUrlAuthRequired.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(gdiagUrlAuthRequiredProbe.status, 'blocked');
+assert.equal(gdiagUrlAuthRequiredProbe.blockedReason, 'urlfetch_authorization_required');
+assert.equal(gdiagUrlAuthRequired.__state.urlFetchCount, 0);
+
+const gdiagPlannerBlocked = createContext();
+gdiagPlannerBlocked.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+gdiagPlannerBlocked.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+gdiagPlannerBlocked.__props.GMAIL_SALES_AI_API_KEY = diagnosticSecret;
+applyTodayTargetDate(gdiagPlannerBlocked);
+seedPermissionErrorAiSummary(gdiagPlannerBlocked);
+installFiveAiPendingRows(gdiagPlannerBlocked);
+const gdiagPlannerBlockedStatus = gdiagPlannerBlocked.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(gdiagPlannerBlockedStatus.plannedNextAction, 'wait_for_urlfetch_authorization');
+assert.equal(gdiagPlannerBlockedStatus.plannedNextActionReasonCode, 'urlfetch_authorization_required');
+assert.equal(gdiagPlannerBlockedStatus.plannedExpectedApiClass, 'gemini_ai_review');
+assert.equal(gdiagPlannerBlockedStatus.plannedExpectedWriteClass, 'none');
+assert.equal(gdiagPlannerBlockedStatus.plannedSafeToExecute, false);
+assert.equal(gdiagPlannerBlockedStatus.aiRetrySafeToExecute, false);
+assert.equal(gdiagPlannerBlockedStatus.operatorRecommendedNextFunction, '');
+assert.equal(gdiagPlannerBlockedStatus.operatorShouldRunSafeStepNow, false);
+assert.equal(gdiagPlannerBlockedStatus.operatorShouldWaitReason, 'urlfetch_authorization_required');
+assert.equal(gdiagPlannerBlocked.__state.urlFetchCount, 0);
+assert.equal(gdiagPlannerBlocked.__state.gmailSendCount, 0);
+assert.equal(gdiagPlannerBlocked.__state.draftCreateCount, 0);
+assert.equal(gdiagPlannerBlocked.__state.triggerCreateCount, 0);
 
 const gdiag1 = installGeminiDiagnosticContext(makeGoogleApiError('PERMISSION_DENIED', 403, 'SERVICE_DISABLED', {
   service: 'generativelanguage.googleapis.com',

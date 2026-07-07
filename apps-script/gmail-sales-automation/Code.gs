@@ -280,12 +280,15 @@ const GMAIL_SALES_AI_RETRY_PROBE_MAX_CANDIDATES = 5;
 const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_PERMISSION_REPAIR_PROBE_JSON';
 const GMAIL_SALES_AI_API_KEY_REPLACEMENT_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_SECRET_REPLACEMENT_JSON';
 const GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_PROPERTY = 'GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_JSON';
+const GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_PROPERTY = 'GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_JSON';
 const GMAIL_SALES_AI_SECRET_REPAIR_SHEET_NAME = '__ICHI_SECRET_REPAIR__';
 const GMAIL_SALES_AI_API_KEY_PROPERTY_NAME = 'GMAIL_SALES_AI_API_KEY';
 const GMAIL_SALES_AI_MODEL_PROPERTY_NAME = 'GMAIL_SALES_AI_MODEL';
 const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY = 3;
 const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_EPOCH = 1;
 const GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTIC_PROBE_MAX_ATTEMPTS_PER_DAY = 3;
+const GMAIL_SALES_URLFETCH_AUTHORIZATION_SCOPE = 'https://www.googleapis.com/auth/script.external_request';
+const GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_MAX_ATTEMPTS_PER_DAY = 3;
 const GMAIL_SALES_AI_NON_RETRYABLE_PERMISSION_FAILURE_CODES = [
   'ai_provider_exception_permission_error',
   'permission_error',
@@ -8602,6 +8605,13 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
     aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: String(usage.aiProviderDiagnosticProbeLastPermissionDiagnosisCategory || ''),
     aiProviderDiagnosticProbeLastRecommendedFix: String(usage.aiProviderDiagnosticProbeLastRecommendedFix || ''),
     aiProviderDiagnosticProbeLastBlockedReason: String(usage.aiProviderDiagnosticProbeLastBlockedReason || ''),
+    urlFetchAuthorizationRequired: config.provider === 'gemini',
+    urlFetchAuthorizationProbeAttemptCountToday: Number(usage.urlFetchAuthorizationProbeAttemptCountToday || 0),
+    urlFetchAuthorizationProbeLastAt: String(usage.urlFetchAuthorizationProbeLastAt || ''),
+    urlFetchAuthorizationProbeLastHttpStatus: Number(usage.urlFetchAuthorizationProbeLastHttpStatus || 0),
+    urlFetchAuthorizationProbeLastTransportExceptionCategory: String(usage.urlFetchAuthorizationProbeLastTransportExceptionCategory || ''),
+    urlFetchAuthorizationVerified: usage.urlFetchAuthorizationVerified === true,
+    urlFetchAuthorizationVerifiedAt: String(usage.urlFetchAuthorizationVerifiedAt || ''),
     aiProviderNonRetryableFailureCostYen: Number(usage.aiProviderNonRetryableFailureCostYen || 0)
   });
   result.readyInventoryCount = Number(coverage.eligibleAfterBasisCheckCount || 0);
@@ -8679,6 +8689,18 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
     Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
   }
   if (!String(result.plannedNextAction || '').trim()) Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
+  if (result.urlFetchAuthorizationRequired === true && result.urlFetchAuthorizationVerified !== true && Number(result.changedDigestEligibleCount || 0) > 0) {
+    result.plannedNextAction = 'wait_for_urlfetch_authorization';
+    result.plannedNextActionReasonCode = 'urlfetch_authorization_required';
+    result.plannedExpectedApiClass = 'gemini_ai_review';
+    result.plannedExpectedWriteClass = 'none';
+    result.plannedSafeToExecute = false;
+    result.safeToExecute = false;
+    result.aiPendingBlockedByCooldown = false;
+    result.aiRetrySafeToExecute = false;
+    result.aiProviderPermissionRetrySafeToExecute = false;
+    result.aiRetryRecommendedAction = 'wait_for_urlfetch_authorization';
+  }
   result.operatorRecommendedNextFunction = result.plannedSafeToExecute === true ? 'runGmailSalesAutomatedEvidenceRecoveryStepOnce' : '';
   result.operatorRecommendedNextFunctionReason = result.aiProviderRetryProbeEligible === true
     ? 'ai_retry_probe_after_cooldown_elapsed'
@@ -8692,6 +8714,12 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
     result.operatorRecommendedNextFunctionReason = '';
     result.operatorShouldRunSafeStepNow = false;
     result.operatorShouldWaitReason = 'ai_provider_permission_error_requires_fix';
+  }
+  if (result.urlFetchAuthorizationRequired === true && result.urlFetchAuthorizationVerified !== true && Number(result.changedDigestEligibleCount || 0) > 0) {
+    result.operatorRecommendedNextFunction = '';
+    result.operatorRecommendedNextFunctionReason = '';
+    result.operatorShouldRunSafeStepNow = false;
+    result.operatorShouldWaitReason = 'urlfetch_authorization_required';
   }
   if (result.emptyDigestButReadyCount > 0) result.blockedReasons.push('empty_digest_but_ready');
   if (result.shortfallToThirty > 0) result.blockedReasons.push('ready_inventory_below_30');
@@ -8796,6 +8824,13 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     aiProviderDiagnosticProbeLastPermissionDiagnosisCategory: '',
     aiProviderDiagnosticProbeLastRecommendedFix: '',
     aiProviderDiagnosticProbeLastBlockedReason: '',
+    urlFetchAuthorizationRequired: false,
+    urlFetchAuthorizationProbeAttemptCountToday: 0,
+    urlFetchAuthorizationProbeLastAt: '',
+    urlFetchAuthorizationProbeLastHttpStatus: 0,
+    urlFetchAuthorizationProbeLastTransportExceptionCategory: '',
+    urlFetchAuthorizationVerified: false,
+    urlFetchAuthorizationVerifiedAt: '',
     aiProviderNonRetryableFailureCostYen: 0,
     aiPendingBlockedByCooldown: false,
     aiRetrySafeToExecute: true,
@@ -16268,6 +16303,204 @@ function writeGmailSalesGeminiPermissionDiagnosticsState_(state) {
   return state;
 }
 
+function readGmailSalesUrlFetchAuthorizationProbeState_(targetDate) {
+  const normalizedTarget = normalizeDateText_(targetDate || getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  let parsed = {};
+  try {
+    parsed = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_PROPERTY) || '{}')) || {};
+  } catch (error) {
+    parsed = {};
+  }
+  const state = parsed && typeof parsed === 'object' ? parsed : {};
+  const sameTarget = String(state.targetDate || '') === normalizedTarget;
+  return {
+    targetDate: normalizedTarget,
+    urlFetchAuthorizationProbeAttemptCountToday: sameTarget ? Number(state.urlFetchAuthorizationProbeAttemptCountToday || 0) : 0,
+    urlFetchAuthorizationProbeLastAt: sameTarget ? String(state.urlFetchAuthorizationProbeLastAt || '') : '',
+    urlFetchAuthorizationProbeLastHttpStatus: sameTarget ? Number(state.urlFetchAuthorizationProbeLastHttpStatus || 0) : 0,
+    urlFetchAuthorizationProbeLastTransportExceptionCategory: sameTarget ? String(state.urlFetchAuthorizationProbeLastTransportExceptionCategory || '') : '',
+    urlFetchAuthorizationProbeSuccessfulRequestCount: sameTarget ? Number(state.urlFetchAuthorizationProbeSuccessfulRequestCount || 0) : 0,
+    urlFetchAuthorizationProbeFailedRequestCount: sameTarget ? Number(state.urlFetchAuthorizationProbeFailedRequestCount || 0) : 0,
+    urlFetchAuthorizationVerified: sameTarget ? state.urlFetchAuthorizationVerified === true : false,
+    urlFetchAuthorizationVerifiedAt: sameTarget ? String(state.urlFetchAuthorizationVerifiedAt || '') : ''
+  };
+}
+
+function writeGmailSalesUrlFetchAuthorizationProbeState_(state) {
+  PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_PROPERTY, JSON.stringify(state || {}));
+  return state;
+}
+
+function inspectGmailSalesUrlFetchAuthorizationReadiness(options) {
+  const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const state = readGmailSalesUrlFetchAuthorizationProbeState_(targetDate);
+  const blockedReasons = [];
+  if (Number(state.urlFetchAuthorizationProbeAttemptCountToday || 0) >= GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_MAX_ATTEMPTS_PER_DAY) {
+    blockedReasons.push('authorization_probe_daily_limit_reached');
+  }
+  const result = {
+    event: 'gmail_sales_urlfetch_authorization_readiness',
+    mode: 'read_only',
+    status: blockedReasons.length === 0 ? 'pass' : 'blocked',
+    targetDate,
+    urlFetchScopeRequired: GMAIL_SALES_URLFETCH_AUTHORIZATION_SCOPE,
+    urlFetchScopeDeclaredInManifest: true,
+    manifestOauthScopesPresent: true,
+    manifestOauthScopeCount: 5,
+    externalRequestScopePresent: true,
+    authorizationProbeAttemptCountToday: Number(state.urlFetchAuthorizationProbeAttemptCountToday || 0),
+    authorizationProbeMaxAttemptsPerDay: GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_MAX_ATTEMPTS_PER_DAY,
+    authorizationProbeEligible: blockedReasons.length === 0,
+    authorizationProbeBlockedReason: blockedReasons[0] || '',
+    urlFetchAuthorizationVerified: state.urlFetchAuthorizationVerified === true,
+    urlFetchAuthorizationVerifiedAt: String(state.urlFetchAuthorizationVerifiedAt || ''),
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  };
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function runGmailSalesUrlFetchAuthorizationProbeOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    const blocked = buildGmailSalesUrlFetchAuthorizationProbeResult_('blocked', {
+      blockedReason: 'safe_rest_required'
+    });
+    logGmailSalesJsonResult_(blocked);
+    return blocked;
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    const locked = buildGmailSalesUrlFetchAuthorizationProbeResult_('blocked', {
+      blockedReason: 'lock_unavailable'
+    });
+    logGmailSalesJsonResult_(locked);
+    return locked;
+  }
+  try {
+    const readiness = inspectGmailSalesUrlFetchAuthorizationReadiness({ skipLog: true });
+    if (readiness.authorizationProbeEligible !== true) {
+      const blocked = buildGmailSalesUrlFetchAuthorizationProbeResult_('blocked', {
+        targetDate: readiness.targetDate,
+        blockedReason: readiness.authorizationProbeBlockedReason || 'authorization_probe_not_eligible',
+        authorizationProbeAttemptCountToday: readiness.authorizationProbeAttemptCountToday,
+        scriptPropertiesUpdated: false
+      });
+      logGmailSalesJsonResult_(blocked);
+      return blocked;
+    }
+    const targetDate = readiness.targetDate;
+    const previous = readGmailSalesUrlFetchAuthorizationProbeState_(targetDate);
+    const probe = callGmailSalesUrlFetchAuthorizationProbe_();
+    const success = probe.urlFetchAuthorizationVerified === true;
+    const now = new Date().toISOString();
+    const nextState = {
+      targetDate,
+      urlFetchAuthorizationProbeAttemptCountToday: Number(previous.urlFetchAuthorizationProbeAttemptCountToday || 0) + 1,
+      urlFetchAuthorizationProbeLastAt: now,
+      urlFetchAuthorizationProbeLastHttpStatus: Number(probe.httpStatus || 0),
+      urlFetchAuthorizationProbeLastTransportExceptionCategory: String(probe.transportExceptionCategory || ''),
+      urlFetchAuthorizationProbeSuccessfulRequestCount: Number(previous.urlFetchAuthorizationProbeSuccessfulRequestCount || 0) + (success ? 1 : 0),
+      urlFetchAuthorizationProbeFailedRequestCount: Number(previous.urlFetchAuthorizationProbeFailedRequestCount || 0) + (success ? 0 : 1),
+      urlFetchAuthorizationVerified: success,
+      urlFetchAuthorizationVerifiedAt: success ? now : String(previous.urlFetchAuthorizationVerifiedAt || '')
+    };
+    writeGmailSalesUrlFetchAuthorizationProbeState_(nextState);
+    const result = buildGmailSalesUrlFetchAuthorizationProbeResult_(success ? 'pass' : 'blocked', Object.assign({}, probe, {
+      targetDate,
+      authorizationProbeAttemptCountToday: nextState.urlFetchAuthorizationProbeAttemptCountToday,
+      authorizationProbeSuccessfulRequestCount: nextState.urlFetchAuthorizationProbeSuccessfulRequestCount,
+      authorizationProbeFailedRequestCount: nextState.urlFetchAuthorizationProbeFailedRequestCount,
+      urlFetchAuthorizationVerifiedAt: nextState.urlFetchAuthorizationVerifiedAt,
+      scriptPropertiesUpdated: true
+    }));
+    logGmailSalesJsonResult_(result);
+    return result;
+  } catch (error) {
+    const result = buildGmailSalesUrlFetchAuthorizationProbeResult_('fail', {
+      blockedReason: 'authorization_probe_exception'
+    });
+    logGmailSalesJsonResult_(result);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function callGmailSalesUrlFetchAuthorizationProbe_() {
+  try {
+    const response = UrlFetchApp.fetch('https://www.gstatic.com/generate_204', {
+      method: 'get',
+      muteHttpExceptions: true
+    });
+    const httpStatus = typeof response.getResponseCode === 'function' ? Number(response.getResponseCode() || 0) : 0;
+    const success = httpStatus >= 200 && httpStatus < 300;
+    return {
+      blockedReason: success ? '' : (httpStatus ? 'urlfetch_authorization_probe_http_non_2xx' : 'no_http_response_available'),
+      urlFetchExecuted: true,
+      httpStatus,
+      transportExceptionPresent: false,
+      transportExceptionCategory: httpStatus ? '' : 'no_exception_response_missing',
+      transportExceptionMessageCategory: '',
+      fetchReturnedResponse: Boolean(response),
+      fetchResponseCodeAvailable: typeof response.getResponseCode === 'function',
+      urlFetchAuthorizationVerified: success
+    };
+  } catch (error) {
+    const transport = classifyGmailSalesGeminiDiagnosticsTransportException_(error);
+    return {
+      blockedReason: transport.category === 'urlfetch_permission_denied' ? 'urlfetch_permission_denied' : 'transport_exception_before_http_response',
+      urlFetchExecuted: true,
+      httpStatus: 0,
+      transportExceptionPresent: true,
+      transportExceptionCategory: transport.category,
+      transportExceptionMessageCategory: transport.messageCategory,
+      fetchReturnedResponse: false,
+      fetchResponseCodeAvailable: false,
+      urlFetchAuthorizationVerified: false
+    };
+  }
+}
+
+function buildGmailSalesUrlFetchAuthorizationProbeResult_(status, overrides) {
+  return Object.assign({
+    event: 'gmail_sales_urlfetch_authorization_probe',
+    mode: 'write',
+    status,
+    blockedReason: '',
+    targetDate: normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd')),
+    urlFetchExecuted: false,
+    httpStatus: 0,
+    transportExceptionPresent: false,
+    transportExceptionCategory: '',
+    transportExceptionMessageCategory: '',
+    fetchReturnedResponse: false,
+    fetchResponseCodeAvailable: false,
+    responseBodyLogged: false,
+    requestUrlLogged: false,
+    endpointHostSanitized: 'www.gstatic.com',
+    endpointPathSanitized: '/generate_204',
+    authorizationProbeAttemptCountToday: 0,
+    authorizationProbeMaxAttemptsPerDay: GMAIL_SALES_URLFETCH_AUTHORIZATION_PROBE_MAX_ATTEMPTS_PER_DAY,
+    authorizationProbeSuccessfulRequestCount: 0,
+    authorizationProbeFailedRequestCount: 0,
+    urlFetchAuthorizationVerified: false,
+    urlFetchAuthorizationVerifiedAt: '',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false
+  }, overrides || {});
+}
+
 function sanitizeGmailSalesAiModelNameForLog_(model) {
   return String(model || '').trim().replace(/[^A-Za-z0-9._:/@+-]/g, '').slice(0, 120);
 }
@@ -16278,10 +16511,12 @@ function inspectGmailSalesGeminiPermissionDiagnosticsReadiness(options) {
   const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
   const permission = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
   const diagnostics = readGmailSalesGeminiPermissionDiagnosticsState_(targetDate);
+  const urlFetchAuthorization = readGmailSalesUrlFetchAuthorizationProbeState_(targetDate);
   const failures = [];
   if (config.provider !== 'gemini') failures.push('provider_not_gemini');
   if (!config.model) failures.push('model_missing');
   if (!config.apiKeyConfigured) failures.push('api_key_missing');
+  if (urlFetchAuthorization.urlFetchAuthorizationVerified !== true) failures.push('urlfetch_authorization_required');
   if (diagnostics.aiProviderDiagnosticProbeAttemptCountToday >= GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTIC_PROBE_MAX_ATTEMPTS_PER_DAY) failures.push('diagnostic_probe_daily_limit_reached');
   const result = {
     event: 'gmail_sales_gemini_permission_diagnostics_readiness',
@@ -16305,6 +16540,11 @@ function inspectGmailSalesGeminiPermissionDiagnosticsReadiness(options) {
     requestUsesAuthorizationHeader: request.requestUsesAuthorizationHeader,
     requestPayloadContainsBusinessData: false,
     requestPayloadFixedDiagnosticPrompt: true,
+    urlFetchAuthorizationRequired: true,
+    urlFetchAuthorizationVerified: urlFetchAuthorization.urlFetchAuthorizationVerified === true,
+    urlFetchAuthorizationVerifiedAt: String(urlFetchAuthorization.urlFetchAuthorizationVerifiedAt || ''),
+    urlFetchAuthorizationProbeAttemptCountToday: Number(urlFetchAuthorization.urlFetchAuthorizationProbeAttemptCountToday || 0),
+    urlFetchAuthorizationRecommendedAction: urlFetchAuthorization.urlFetchAuthorizationVerified === true ? '' : 'run_urlfetch_authorization_probe_after_oauth_reauthorization',
     permissionBlockActive: permission.aiProviderPermissionBlockedForTargetDate === true,
     aiProviderPermissionBlockedForTargetDate: permission.aiProviderPermissionBlockedForTargetDate === true,
     aiProviderPermissionFixRequired: permission.aiProviderPermissionFixRequired === true,
@@ -16998,6 +17238,7 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
   const repair = readGmailSalesAiProviderPermissionRepairProbeState_(targetDate);
   const replacement = readGmailSalesAiProviderApiKeyReplacementState_(targetDate);
   const diagnostics = readGmailSalesGeminiPermissionDiagnosticsState_(targetDate);
+  const urlFetchAuthorization = readGmailSalesUrlFetchAuthorizationProbeState_(targetDate);
   const repairVerified = repair.aiProviderPermissionRepairVerified === true;
   const providerFailureDefaults = buildGmailSalesAiProviderFailureAccountingDefaults_();
   const operations = collection.operations || {};
@@ -17089,6 +17330,12 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     aiProviderDiagnosticProbeLastResponseJsonParseSucceeded: diagnostics.aiProviderDiagnosticProbeLastResponseJsonParseSucceeded === true,
     aiProviderDiagnosticProbeSuccessfulRequestCount: Number(diagnostics.aiProviderDiagnosticProbeSuccessfulRequestCount || 0),
     aiProviderDiagnosticProbeFailedRequestCount: Number(diagnostics.aiProviderDiagnosticProbeFailedRequestCount || 0),
+    urlFetchAuthorizationProbeAttemptCountToday: Number(urlFetchAuthorization.urlFetchAuthorizationProbeAttemptCountToday || 0),
+    urlFetchAuthorizationProbeLastAt: String(urlFetchAuthorization.urlFetchAuthorizationProbeLastAt || ''),
+    urlFetchAuthorizationProbeLastHttpStatus: Number(urlFetchAuthorization.urlFetchAuthorizationProbeLastHttpStatus || 0),
+    urlFetchAuthorizationProbeLastTransportExceptionCategory: String(urlFetchAuthorization.urlFetchAuthorizationProbeLastTransportExceptionCategory || ''),
+    urlFetchAuthorizationVerified: urlFetchAuthorization.urlFetchAuthorizationVerified === true,
+    urlFetchAuthorizationVerifiedAt: String(urlFetchAuthorization.urlFetchAuthorizationVerifiedAt || ''),
     aiProviderNonRetryableFailureCostYen: Number(collection.aiProviderNonRetryableFailureCostYen || 0),
     providerFailureBackfilledOperationCount: Number(collection.providerFailureBackfilledOperationCount || 0),
     providerFailureBackfillSource: String(collection.providerFailureBackfillSource || ''),
@@ -17133,6 +17380,12 @@ function buildGmailSalesAiProviderFailureAccountingDefaults_() {
     aiProviderDiagnosticProbeLastResponseJsonParseSucceeded: false,
     aiProviderDiagnosticProbeSuccessfulRequestCount: 0,
     aiProviderDiagnosticProbeFailedRequestCount: 0,
+    urlFetchAuthorizationProbeAttemptCountToday: 0,
+    urlFetchAuthorizationProbeLastAt: '',
+    urlFetchAuthorizationProbeLastHttpStatus: 0,
+    urlFetchAuthorizationProbeLastTransportExceptionCategory: '',
+    urlFetchAuthorizationVerified: false,
+    urlFetchAuthorizationVerifiedAt: '',
     aiProviderNonRetryableFailureCostYen: 0
   };
   GMAIL_SALES_AI_PROVIDER_FAILURE_ACCOUNTING_FIELD_NAMES.forEach((fieldName) => {
