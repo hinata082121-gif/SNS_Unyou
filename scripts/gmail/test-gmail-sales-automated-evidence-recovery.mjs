@@ -99,7 +99,8 @@ function createContext() {
     GMAIL_SALES_AI_MAX_DAILY_COST_YEN: '100',
     GMAIL_SALES_AI_MAX_DAILY_REQUESTS: '100',
     GMAIL_SALES_AI_BATCH_SIZE: '8',
-    GMAIL_SALES_AI_MOCK_AUTO_APPROVAL_ENABLED: 'false'
+    GMAIL_SALES_AI_MOCK_AUTO_APPROVAL_ENABLED: 'false',
+    GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY: 'false'
   };
   const state = {
     lockAttempts: 0,
@@ -2739,13 +2740,18 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'runGmailSalesAiProviderApiKeyReplacementFromSheetOnce',
   'inspectGmailSalesGeminiPermissionDiagnosticsReadiness',
   'runGmailSalesGeminiPermissionDiagnosticsProbeOnce',
+  'inspectGmailSalesNoApiRecoveryStatus',
+  'runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce',
   'gmail_sales_gemini_permission_diagnostics_probe',
   '__ICHI_SECRET_REPAIR__',
   'ai_permission_repair_verified',
   'providerFailureBackfilledOperationCount',
   'providerFailureBackfillSource',
   'aiProviderLastRunSummaryMatchedLedger',
-  'aiProviderFailureAccountingComplete'
+  'aiProviderFailureAccountingComplete',
+  'paid_ai_api_disabled_by_policy',
+  'no_paid_ai_until_first_revenue',
+  'no_api_legacy_evidence_recovery'
 ].forEach((fieldName) => {
   assert.equal(code.indexOf(fieldName) >= 0, true);
 });
@@ -2828,10 +2834,130 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
   'aiProviderDiagnosticProbeLastResponseJsonParseSucceeded',
   'aiProviderDiagnosticProbeSuccessfulRequestCount',
   'aiProviderDiagnosticProbeFailedRequestCount',
-  'aiProviderNonRetryableFailureCostYen'
+  'aiProviderNonRetryableFailureCostYen',
+  'paidAiApiDisabledByPolicy',
+  'paidAiApiDisabledReason',
+  'noApiRecoveryRouteEnabled',
+  'noApiRecoveryAttemptCountToday',
+  'noApiRecoveryLastAt',
+  'noApiRecoveredCountToday',
+  'noApiRecoveredByBasis',
+  'noApiQuarantineCountToday',
+  'noApiShortfallToExact30',
+  'noApiLastBlockedReason',
+  'noApiAiApiCallPreventedCount'
 ].forEach((fieldName) => {
   assert.equal(Object.prototype.hasOwnProperty.call(g429b6Usage, fieldName), true);
 });
+
+const noapi1 = createContext();
+noapi1.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
+noapi1.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+noapi1.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+noapi1.__props.GMAIL_SALES_AI_API_KEY = 'x';
+installLegacyPromotionFixture(noapi1, {
+  count: 5,
+  sourceTypes: Array.from({ length: 5 }, (_, index) => ['https:', '', `raw-type-noapi-${index + 1}.example.invalid`].join('/')),
+  currentVerification: false
+});
+const noapi1Status = noapi1.inspectGmailSalesNoApiRecoveryStatus({ skipLog: true });
+assert.equal(noapi1Status.paidAiApiDisabledByPolicy, true);
+assert.equal(noapi1Status.paidAiApiDisabledReason, 'no_paid_ai_until_first_revenue');
+assert.equal(Array.isArray(noapi1Status.allowedAiApiProviders), true);
+assert.equal(noapi1Status.allowedAiApiProviders.length, 0);
+assert.equal(noapi1Status.geminiApiAllowed, false);
+assert.equal(noapi1Status.openAiApiAllowed, false);
+assert.equal(noapi1Status.externalLlmApiAllowed, false);
+assert.equal(noapi1Status.noApiRecoveryRouteEnabled, true);
+assert.equal(noapi1Status.noApiSource, 'sheets_legacy_and_local_evidence_only');
+assert.equal(noapi1Status.noApiRecoverableCandidateCount, 5);
+assert.equal(noapi1Status.noApiManualReviewedRecoverableCount, 0);
+assert.equal(noapi1Status.noApiQuarantineCount, 0);
+assert.equal(noapi1Status.exact30Satisfied, false);
+assert.equal(noapi1Status.noApiRecoverySafeToExecute, true);
+assert.equal(noapi1Status.plannedNextAction, 'no_api_legacy_evidence_recovery');
+assert.equal(noapi1Status.plannedNextActionReasonCode, 'no_paid_ai_api_policy_active');
+assert.equal(noapi1Status.plannedExpectedApiClass, 'none');
+assert.equal(noapi1Status.plannedExpectedWriteClass, 'sheets_review_recovery_only');
+assert.equal(noapi1Status.operatorRecommendedNextFunction, 'runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce');
+assert.equal(noapi1.__state.urlFetchCount, 0);
+assert.equal(noapi1.__state.gmailSendCount, 0);
+assert.equal(noapi1.__state.draftCreateCount, 0);
+assert.equal(noapi1.__state.triggerCreateCount, 0);
+
+const noapi2 = createContext();
+noapi2.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
+noapi2.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+noapi2.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+noapi2.__props.GMAIL_SALES_AI_API_KEY = 'x';
+installLegacyPromotionFixture(noapi2, {
+  count: 5,
+  sourceTypes: Array.from({ length: 5 }, (_, index) => ['https:', '', `raw-type-noapi-step-${index + 1}.example.invalid`].join('/')),
+  currentVerification: false
+});
+const noapi2Step = noapi2.runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce();
+assert.equal(noapi2Step.status, 'pass');
+assert.equal(noapi2Step.stepExecuted, 'no_api_legacy_evidence_recovery');
+assert.equal(noapi2Step.executedExpectedApiClass, 'none');
+assert.equal(noapi2Step.executedExpectedWriteClass, 'sheets_review_recovery_only');
+assert.equal(noapi2Step.aiApiCalled, false);
+assert.equal(noapi2Step.urlFetchExecuted, false);
+assert.equal(noapi2Step.legacyPromotionSucceededCount, 5);
+assert.equal(noapi2Step.noApiRecoveredCountToday, 5);
+assert.equal(noapi2.__state.urlFetchCount, 0);
+assert.equal(noapi2.__state.gmailSendCount, 0);
+assert.equal(noapi2.__state.draftCreateCount, 0);
+assert.equal(noapi2.__state.triggerCreateCount, 0);
+
+const noapi3 = createContext();
+noapi3.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
+noapi3.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+noapi3.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+noapi3.__props.GMAIL_SALES_AI_API_KEY = 'x';
+installFiveAiPendingRows(noapi3);
+applyTodayTargetDate(noapi3);
+seedUrlFetchAuthorizationVerified(noapi3);
+const noapi3Inspect = noapi3.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(noapi3Inspect.paidAiProviderBlocked, true);
+assert.equal(noapi3Inspect.plannedNextAction, 'wait_for_no_api_recoverable_inventory_or_manual_exception_review');
+assert.equal(noapi3Inspect.plannedNextActionReasonCode, 'no_api_recoverable_inventory_insufficient');
+assert.equal(noapi3Inspect.plannedExpectedApiClass, 'none');
+assert.equal(noapi3Inspect.plannedSafeToExecute, false);
+assert.equal(noapi3Inspect.aiRetrySafeToExecute, false);
+assert.equal(noapi3Inspect.operatorRecommendedNextFunction, '');
+const noapi3Step = noapi3.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
+assert.equal(noapi3Step.status, 'blocked');
+assert.equal(noapi3Step.executedActionBlockedReason, 'paid_ai_api_disabled_by_policy');
+assert.equal(noapi3Step.aiApiCalled, false);
+assert.equal(noapi3.__state.urlFetchCount, 0);
+assert.equal(noapi3.__state.gmailSendCount, 0);
+assert.equal(noapi3.__state.draftCreateCount, 0);
+assert.equal(noapi3.__state.triggerCreateCount, 0);
+
+const noapi4 = createContext();
+noapi4.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
+noapi4.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+noapi4.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+noapi4.__props.GMAIL_SALES_AI_API_KEY = 'x';
+applyTodayTargetDate(noapi4);
+seedUrlFetchAuthorizationVerified(noapi4);
+seedPermissionErrorAiSummary(noapi4);
+const noapi4Diag = noapi4.inspectGmailSalesGeminiPermissionDiagnosticsReadiness({ skipLog: true });
+assert.equal(noapi4Diag.status, 'blocked');
+assert.equal(noapi4Diag.aiProviderDiagnosticProbeBlockedReason, 'paid_ai_api_disabled_by_policy');
+const noapi4DiagProbe = noapi4.runGmailSalesGeminiPermissionDiagnosticsProbeOnce();
+assert.equal(noapi4DiagProbe.status, 'blocked');
+assert.equal(noapi4DiagProbe.blockedReason, 'paid_ai_api_disabled_by_policy');
+const noapi4Repair = noapi4.inspectGmailSalesAiProviderPermissionRepairReadiness({ skipLog: true });
+assert.equal(noapi4Repair.status, 'blocked');
+assert.equal(noapi4Repair.aiProviderRepairProbeBlockedReason, 'paid_ai_api_disabled_by_policy');
+const noapi4RepairProbe = noapi4.runGmailSalesAiProviderPermissionRepairProbeOnce();
+assert.equal(noapi4RepairProbe.status, 'blocked');
+assert.equal(noapi4RepairProbe.blockedReason, 'paid_ai_api_disabled_by_policy');
+assert.equal(noapi4.__state.urlFetchCount, 0);
+assert.equal(noapi4.__state.gmailSendCount, 0);
+assert.equal(noapi4.__state.draftCreateCount, 0);
+assert.equal(noapi4.__state.triggerCreateCount, 0);
 
 assert.equal(g4292.__state.gmailSendCount, 0);
 assert.equal(g4292.__state.draftCreateCount, 0);

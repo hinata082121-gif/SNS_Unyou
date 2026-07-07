@@ -277,6 +277,8 @@ const GMAIL_SALES_AI_RECENT_RATE_LIMIT_REASON_CODES = [
 const GMAIL_SALES_AI_RETRY_PROBE_MIN_RETRY_MINUTES = 360;
 const GMAIL_SALES_AI_RETRY_PROBE_MAX_ATTEMPTS_PER_DAY = 1;
 const GMAIL_SALES_AI_RETRY_PROBE_MAX_CANDIDATES = 5;
+const GMAIL_SALES_PAID_AI_API_DISABLED_PROPERTY = 'GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY';
+const GMAIL_SALES_NO_API_RECOVERY_STATE_PROPERTY = 'GMAIL_SALES_NO_API_RECOVERY_STATE_JSON';
 const GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_PERMISSION_REPAIR_PROBE_JSON';
 const GMAIL_SALES_AI_API_KEY_REPLACEMENT_PROPERTY = 'GMAIL_SALES_AI_PROVIDER_SECRET_REPLACEMENT_JSON';
 const GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_PROPERTY = 'GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTICS_JSON';
@@ -6391,6 +6393,185 @@ function buildGmailSalesLegacyReferencePromotionResult_(status, overrides) {
   }, overrides || {});
 }
 
+function inspectGmailSalesNoApiRecoveryStatus(options) {
+  const result = buildGmailSalesNoApiRecoveryStatus_();
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function readGmailSalesNoApiRecoveryState_(targetDate) {
+  const normalizedTarget = normalizeDateText_(targetDate || getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  let parsed = {};
+  try {
+    parsed = JSON.parse(String(PropertiesService.getScriptProperties().getProperty(GMAIL_SALES_NO_API_RECOVERY_STATE_PROPERTY) || '{}')) || {};
+  } catch (error) {
+    parsed = {};
+  }
+  const state = parsed && typeof parsed === 'object' ? parsed : {};
+  const sameTarget = String(state.targetDate || '') === normalizedTarget;
+  return {
+    targetDate: normalizedTarget,
+    noApiRecoveryAttemptCountToday: sameTarget ? Number(state.noApiRecoveryAttemptCountToday || 0) : 0,
+    noApiRecoveryLastAt: sameTarget ? String(state.noApiRecoveryLastAt || '') : '',
+    noApiRecoveredCountToday: sameTarget ? Number(state.noApiRecoveredCountToday || 0) : 0,
+    noApiRecoveredByBasis: sameTarget ? (state.noApiRecoveredByBasis || {}) : {},
+    noApiQuarantineCountToday: sameTarget ? Number(state.noApiQuarantineCountToday || 0) : 0,
+    noApiShortfallToExact30: sameTarget ? Number(state.noApiShortfallToExact30 || 0) : 0,
+    noApiLastBlockedReason: sameTarget ? String(state.noApiLastBlockedReason || '') : '',
+    noApiAiApiCallPreventedCount: sameTarget ? Number(state.noApiAiApiCallPreventedCount || 0) : 0
+  };
+}
+
+function writeGmailSalesNoApiRecoveryState_(state) {
+  PropertiesService.getScriptProperties().setProperty(GMAIL_SALES_NO_API_RECOVERY_STATE_PROPERTY, JSON.stringify(state || {}));
+  return state;
+}
+
+function buildGmailSalesNoApiRecoveryStatus_() {
+  const config = getGmailSalesAiConfig_();
+  const policy = getGmailSalesNoPaidAiApiPolicy_(config);
+  const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const state = readGmailSalesNoApiRecoveryState_(targetDate);
+  const collected = collectGmailSalesReviewLegacyReferencePromotionTargets_();
+  const coverage = inspectGmailSalesContactBasisCoverage_({});
+  const manifestStatus = inspectGmailSalesAutomatedEvidenceManifestStatus_();
+  const readyInventoryCount = Number(coverage.eligibleAfterBasisCheckCount || 0);
+  const noApiRecoverableCandidateCount = Number(collected.legacyPromotionEligibleCount || 0);
+  const noApiProjectedReadyInventoryCount = readyInventoryCount + noApiRecoverableCandidateCount;
+  const noApiShortfallToExact30 = Math.max(0, gmailDailyExpectedCount_() - noApiProjectedReadyInventoryCount);
+  const exact30Satisfied = noApiProjectedReadyInventoryCount >= gmailDailyExpectedCount_();
+  const safe = policy.noApiRecoveryRouteEnabled === true && noApiRecoverableCandidateCount > 0;
+  const blockedReason = safe ? '' : (policy.noApiRecoveryRouteEnabled === true ? 'no_api_recoverable_inventory_insufficient' : 'no_api_recovery_route_disabled');
+  return Object.assign({
+    event: 'gmail_sales_no_api_recovery_status',
+    mode: 'read_only',
+    status: safe ? 'pass' : 'blocked',
+    targetDate,
+    noApiSource: 'sheets_legacy_and_local_evidence_only',
+    readyInventoryCount,
+    manifestReady: manifestStatus.manifestReady === true,
+    aiPendingCount: 0,
+    exactThirtyRequiredCount: gmailDailyExpectedCount_(),
+    noApiRecoverableCandidateCount,
+    noApiStrictBasisRecoverableCount: noApiRecoverableCandidateCount,
+    noApiExistingRelationshipRecoverableCount: 0,
+    noApiExplicitOptInRecoverableCount: 0,
+    noApiManualReviewedRecoverableCount: 0,
+    noApiManualLegalReviewedRecoverableCount: 0,
+    noApiValidBusinessContactExceptionRecoverableCount: noApiRecoverableCandidateCount,
+    noApiQuarantineCount: Number(collected.legacyPromotionIneligibleCount || 0),
+    noApiProjectedReadyInventoryCount,
+    noApiShortfallToExact30,
+    exact30Satisfied,
+    noApiRecoverySafeToExecute: safe,
+    noApiRecoveryBlockedReason: blockedReason,
+    plannedNextAction: safe ? 'no_api_legacy_evidence_recovery' : 'wait_for_no_api_recoverable_inventory_or_manual_exception_review',
+    plannedNextActionReasonCode: safe ? 'no_paid_ai_api_policy_active' : 'no_api_recoverable_inventory_insufficient',
+    plannedExpectedApiClass: 'none',
+    plannedExpectedWriteClass: safe ? 'sheets_review_recovery_only' : 'none',
+    plannedSafeToExecute: safe,
+    operatorRecommendedNextFunction: safe ? 'runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce' : '',
+    operatorRecommendedNextFunctionReason: safe ? 'no_paid_ai_api_policy_active' : '',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  }, policy, state, summarizeGmailSalesLegacyReferencePromotionReadiness_(collected));
+}
+
+function runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    const blockedSafeRest = buildGmailSalesLegacyReferencePromotionResult_('blocked', Object.assign({}, buildGmailSalesNoApiRecoveryStatus_(), {
+      event: 'gmail_sales_no_api_legacy_evidence_recovery',
+      mode: 'safe_step',
+      blockedReason: 'safe_rest_required',
+      actionStatus: 'blocked',
+      actionBlockedReason: 'safe_rest_required'
+    }));
+    logGmailSalesJsonResult_(blockedSafeRest);
+    return blockedSafeRest;
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    const locked = buildGmailSalesLegacyReferencePromotionResult_('blocked', {
+      event: 'gmail_sales_no_api_legacy_evidence_recovery',
+      mode: 'safe_step',
+      blockedReason: 'lock_unavailable',
+      actionStatus: 'blocked',
+      actionBlockedReason: 'lock_unavailable'
+    });
+    logGmailSalesJsonResult_(locked);
+    return locked;
+  }
+  try {
+    const before = buildGmailSalesNoApiRecoveryStatus_();
+    const now = new Date().toISOString();
+    if (before.noApiRecoverySafeToExecute !== true) {
+      writeGmailSalesNoApiRecoveryState_(Object.assign({}, readGmailSalesNoApiRecoveryState_(before.targetDate), {
+        targetDate: before.targetDate,
+        noApiRecoveryAttemptCountToday: Number(before.noApiRecoveryAttemptCountToday || 0) + 1,
+        noApiRecoveryLastAt: now,
+        noApiShortfallToExact30: Number(before.noApiShortfallToExact30 || 0),
+        noApiLastBlockedReason: before.noApiRecoveryBlockedReason || 'no_api_recovery_not_safe',
+        noApiAiApiCallPreventedCount: Number(before.noApiAiApiCallPreventedCount || 0) + 1
+      }));
+      const blocked = buildGmailSalesLegacyReferencePromotionResult_('blocked', Object.assign({}, before, {
+        event: 'gmail_sales_no_api_legacy_evidence_recovery',
+        mode: 'safe_step',
+        stepExecuted: '',
+        executedAction: '',
+        actionStatus: 'blocked',
+        actionBlockedReason: before.noApiRecoveryBlockedReason || 'no_api_recovery_not_safe',
+        scriptPropertiesUpdated: true
+      }));
+      logGmailSalesJsonResult_(blocked);
+      return blocked;
+    }
+    const promotion = promoteGmailSalesReviewLegacyReferencesWorker_({
+      lockAlreadyHeld: true,
+      skipLog: true,
+      source: 'no_api_legacy_evidence_recovery'
+    });
+    const recovered = Number(promotion.legacyPromotionSucceededCount || promotion.succeededPromotionCount || 0);
+    const state = writeGmailSalesNoApiRecoveryState_({
+      targetDate: before.targetDate,
+      noApiRecoveryAttemptCountToday: Number(before.noApiRecoveryAttemptCountToday || 0) + 1,
+      noApiRecoveryLastAt: now,
+      noApiRecoveredCountToday: Number(before.noApiRecoveredCountToday || 0) + recovered,
+      noApiRecoveredByBasis: { valid_business_contact_exception: Number(before.noApiRecoveredByBasis && before.noApiRecoveredByBasis.valid_business_contact_exception || 0) + recovered },
+      noApiQuarantineCountToday: Number(before.noApiQuarantineCountToday || 0) + Number(promotion.legacyPromotionFailedCount || 0),
+      noApiShortfallToExact30: Math.max(0, gmailDailyExpectedCount_() - (Number(before.readyInventoryCount || 0) + recovered)),
+      noApiLastBlockedReason: recovered > 0 ? '' : 'no_api_recovery_no_rows_recovered',
+      noApiAiApiCallPreventedCount: Number(before.noApiAiApiCallPreventedCount || 0) + 1
+    });
+    const result = buildGmailSalesLegacyReferencePromotionResult_(promotion.status === 'pass' ? 'pass' : 'blocked', Object.assign({}, before, promotion, state, {
+      event: 'gmail_sales_no_api_legacy_evidence_recovery',
+      mode: 'safe_step',
+      stepExecuted: 'no_api_legacy_evidence_recovery',
+      executedAction: 'no_api_legacy_evidence_recovery',
+      executedActionReasonCode: 'no_paid_ai_api_policy_active',
+      executedActionStatus: promotion.status === 'pass' ? 'pass' : 'blocked',
+      executedActionBlockedReason: promotion.status === 'pass' ? '' : (promotion.blockedReason || 'legacy_reference_promotion_failed'),
+      executedExpectedApiClass: 'none',
+      executedExpectedWriteClass: 'sheets_review_recovery_only',
+      scriptPropertiesUpdated: true,
+      aiApiCalled: false,
+      urlFetchExecuted: false,
+      gmailSendExecuted: false,
+      gmailDraftCreated: false,
+      triggerChanged: false
+    }));
+    logGmailSalesJsonResult_(result);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function inspectGmailSalesSourceReferenceTransactionReadiness_(options) {
   const aiConfig = getGmailSalesAiConfig_();
   const grounding = getGmailSalesGroundingConfig_(aiConfig);
@@ -7544,6 +7725,44 @@ function runGmailSalesAutomatedEvidenceRecoveryStepWorker_(options) {
     }));
   }
   if (nextState === GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.aiReviewPending) {
+    if (before.paidAiProviderBlocked === true &&
+        Number(before.changedDigestEligibleCount || before.aiPendingCount || 0) > 0) {
+      const usage = summarizeGmailSalesRecoveryDailyUsage_(getGmailSalesAiConfig_());
+      const planned = buildGmailSalesPlannedRecoveryActionSummary_(before);
+      return buildGmailSalesAutomatedEvidenceRecoveryResult_('blocked', Object.assign({}, before, usage, {
+        mode: 'safe_step',
+        checkpointState: nextState,
+        nextAction: nextState,
+        stepExecuted: '',
+        executedAction: '',
+        executedActionReasonCode: 'ai_review_pending',
+        executedActionStatus: 'blocked',
+        executedActionBlockedReason: 'paid_ai_api_disabled_by_policy',
+        executedActionCostYen: 0,
+        executedExpectedApiClass: 'none',
+        executedExpectedWriteClass: planned.plannedExpectedWriteClass || 'none',
+        actionStatus: 'blocked',
+        actionBlockedReason: 'paid_ai_api_disabled_by_policy',
+        actionCostYen: 0,
+        actionEstimatedCostYen: 0,
+        plannedNextAction: planned.plannedNextAction,
+        plannedNextActionReasonCode: planned.plannedNextActionReasonCode,
+        plannedExpectedApiClass: planned.plannedExpectedApiClass,
+        plannedExpectedWriteClass: planned.plannedExpectedWriteClass,
+        plannedSafeToExecute: planned.plannedSafeToExecute,
+        safeToExecute: false,
+        aiPendingBlockedByCooldown: false,
+        aiRetrySafeToExecute: false,
+        aiProviderPermissionRetrySafeToExecute: false,
+        aiProviderQuotaBillingRetrySafeToExecute: false,
+        aiRetryRecommendedAction: planned.plannedSafeToExecute ? 'run_no_api_legacy_evidence_recovery' : 'wait_for_no_api_recoverable_inventory_or_manual_exception_review',
+        aiApiCalled: false,
+        gmailSendExecuted: false,
+        gmailDraftCreated: false,
+        googleSheetsUpdated: false,
+        triggerChanged: false
+      }));
+    }
     if (before.aiProviderQuotaBillingBlockedForTargetDate === true &&
         Number(before.changedDigestEligibleCount || before.aiPendingCount || 0) > 0) {
       const usage = summarizeGmailSalesRecoveryDailyUsage_(getGmailSalesAiConfig_());
@@ -8194,6 +8413,7 @@ function evaluateGmailSalesAiRetryProbeReadiness_(status, usage) {
     groundingBlockedReason.indexOf('reserve') !== -1 ||
     groundingBlockedReason.indexOf('disabled') !== -1;
   const failures = [];
+  if (status && status.paidAiProviderBlocked === true) failures.push('paid_ai_api_disabled_by_policy');
   if (String(status && status.recoveryMode || 'free_tier') !== 'free_tier') failures.push('recovery_mode_not_free_tier');
   if (String(status && status.checkpointState || '') !== GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.aiReviewPending) failures.push('not_ai_review_pending');
   if (Number(status && status.changedDigestEligibleCount || 0) <= 0) failures.push('no_changed_digest_candidate');
@@ -8223,6 +8443,22 @@ function getGmailSalesPlannedGroundingPromptRequestCount_() {
 function buildGmailSalesPlannedRecoveryActionSummary_(status) {
   const state = planGmailSalesAutomatedEvidenceRecoveryNextAction_(status || {});
   if (state === GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.aiReviewPending) {
+    if (status && status.paidAiProviderBlocked === true &&
+        Number(status.changedDigestEligibleCount || status.aiPendingCount || 0) > 0) {
+      const recoverable = Number(status.noApiRecoverableCandidateCount || status.legacyPromotionEligibleCount || status.promotionEligibleViaSourceReferenceClassificationCount || 0);
+      return {
+        plannedNextAction: recoverable > 0 ? 'no_api_legacy_evidence_recovery' : 'wait_for_no_api_recoverable_inventory_or_manual_exception_review',
+        plannedNextActionReasonCode: recoverable > 0 ? 'no_paid_ai_api_policy_active' : 'no_api_recoverable_inventory_insufficient',
+        plannedExpectedApiClass: 'none',
+        plannedExpectedWriteClass: recoverable > 0 ? 'sheets_review_recovery_only' : 'none',
+        plannedSafeToExecute: recoverable > 0,
+        groundingPromptRequestCountToday: 0,
+        dailyPromptRequestLimit: 0,
+        remainingGroundingPromptRequestCountToday: 0,
+        plannedGroundingPromptRequestCount: 0,
+        groundingPromptBudgetSufficient: true
+      };
+    }
     if (status && status.aiProviderQuotaBillingBlockedForTargetDate === true &&
         Number(status.changedDigestEligibleCount || status.aiPendingCount || 0) > 0) {
       return {
@@ -8631,8 +8867,10 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
   const manifestStatus = inspectGmailSalesAutomatedEvidenceManifestStatus_();
   const aiCooldown = inspectGmailSalesAiProviderCooldown_();
   const aiPermission = inferGmailSalesAiProviderPermissionBlockFromLastRun_(usage.targetDate || getConfig_().currentJstDate);
+  const paidAiPolicy = getGmailSalesNoPaidAiApiPolicy_(config);
   const aiBlockedByCooldown = (aiCooldown.aiProviderCooldownActive === true || aiCooldown.aiProviderRateLimitedToday === true) &&
     Number(result.changedDigestEligibleCount || 0) > 0;
+  Object.assign(result, paidAiPolicy);
   Object.assign(result, aiCooldown, {
     aiPendingBlockedByCooldown: aiBlockedByCooldown,
     aiRetrySafeToExecute: !aiBlockedByCooldown,
@@ -8706,6 +8944,25 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
       recoveryPlan);
     Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
   }
+  if (result.paidAiProviderBlocked === true && Number(result.changedDigestEligibleCount || 0) > 0) {
+    const noApi = buildGmailSalesNoApiRecoveryStatus_();
+    Object.assign(result, {
+      noApiRecoverableCandidateCount: Number(noApi.noApiRecoverableCandidateCount || 0),
+      noApiStrictBasisRecoverableCount: Number(noApi.noApiStrictBasisRecoverableCount || 0),
+      noApiExistingRelationshipRecoverableCount: Number(noApi.noApiExistingRelationshipRecoverableCount || 0),
+      noApiExplicitOptInRecoverableCount: Number(noApi.noApiExplicitOptInRecoverableCount || 0),
+      noApiManualLegalReviewedRecoverableCount: Number(noApi.noApiManualLegalReviewedRecoverableCount || 0),
+      noApiValidBusinessContactExceptionRecoverableCount: Number(noApi.noApiValidBusinessContactExceptionRecoverableCount || 0),
+      noApiProjectedReadyInventoryCount: Number(noApi.noApiProjectedReadyInventoryCount || 0),
+      noApiRecoverySafeToExecute: noApi.noApiRecoverySafeToExecute === true,
+      noApiRecoveryBlockedReason: String(noApi.noApiRecoveryBlockedReason || ''),
+      noApiShortfallToExact30: Number(noApi.noApiShortfallToExact30 || 0)
+    }, summarizeGmailSalesLegacyReferencePromotionReadiness_(noApi));
+    result.aiPendingBlockedByCooldown = false;
+    result.aiRetrySafeToExecute = false;
+    result.aiRetryRecommendedAction = noApi.noApiRecoverySafeToExecute ? 'run_no_api_legacy_evidence_recovery' : 'wait_for_no_api_recoverable_inventory_or_manual_exception_review';
+    Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
+  }
   if ((result.aiProviderCooldownActive || result.aiProviderRateLimitedToday) && Number(result.changedDigestEligibleCount || 0) > 0) {
     result.aiPendingBlockedByCooldown = true;
     result.aiRetrySafeToExecute = false;
@@ -8752,6 +9009,15 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
     Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
   }
   if (!String(result.plannedNextAction || '').trim()) Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
+  if (result.paidAiProviderBlocked === true && Number(result.changedDigestEligibleCount || 0) > 0) {
+    Object.assign(result, buildGmailSalesPlannedRecoveryActionSummary_(result));
+    result.plannedExpectedApiClass = 'none';
+    result.safeToExecute = false;
+    result.aiPendingBlockedByCooldown = false;
+    result.aiRetrySafeToExecute = false;
+    result.aiProviderPermissionRetrySafeToExecute = false;
+    result.aiProviderQuotaBillingRetrySafeToExecute = false;
+  }
   if (result.aiProviderQuotaBillingBlockedForTargetDate === true && Number(result.changedDigestEligibleCount || 0) > 0) {
     result.plannedNextAction = 'wait_for_ai_provider_quota_or_billing_fix';
     result.plannedNextActionReasonCode = 'ai_provider_quota_or_billing_required';
@@ -8802,6 +9068,12 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
     result.operatorRecommendedNextFunctionReason = '';
     result.operatorShouldRunSafeStepNow = false;
     result.operatorShouldWaitReason = 'ai_provider_quota_or_billing_required';
+  }
+  if (result.paidAiProviderBlocked === true && Number(result.changedDigestEligibleCount || 0) > 0) {
+    result.operatorRecommendedNextFunction = result.plannedSafeToExecute === true ? 'runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce' : '';
+    result.operatorRecommendedNextFunctionReason = result.operatorRecommendedNextFunction ? 'no_paid_ai_api_policy_active' : '';
+    result.operatorShouldRunSafeStepNow = Boolean(result.operatorRecommendedNextFunction);
+    result.operatorShouldWaitReason = result.operatorShouldRunSafeStepNow ? '' : 'no_api_recoverable_inventory_insufficient';
   }
   if (result.emptyDigestButReadyCount > 0) result.blockedReasons.push('empty_digest_but_ready');
   if (result.shortfallToThirty > 0) result.blockedReasons.push('ready_inventory_below_30');
@@ -8962,6 +9234,35 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     remainingGroundingPromptRequestCountToday: 0,
     plannedGroundingPromptRequestCount: 0,
     groundingPromptBudgetSufficient: true,
+    paidAiApiDisabledByPolicy: true,
+    paidAiApiDisabledReason: 'no_paid_ai_until_first_revenue',
+    allowedAiApiProviders: [],
+    geminiApiAllowed: false,
+    openAiApiAllowed: false,
+    externalLlmApiAllowed: false,
+    noApiRecoveryRouteEnabled: true,
+    paidAiProviderBlocked: false,
+    noApiSource: 'sheets_legacy_and_local_evidence_only',
+    noApiRecoverableCandidateCount: 0,
+    noApiStrictBasisRecoverableCount: 0,
+    noApiExistingRelationshipRecoverableCount: 0,
+    noApiExplicitOptInRecoverableCount: 0,
+    noApiManualReviewedRecoverableCount: 0,
+    noApiManualLegalReviewedRecoverableCount: 0,
+    noApiValidBusinessContactExceptionRecoverableCount: 0,
+    noApiQuarantineCount: 0,
+    noApiProjectedReadyInventoryCount: 0,
+    exact30Satisfied: false,
+    noApiRecoverySafeToExecute: false,
+    noApiRecoveryBlockedReason: '',
+    noApiRecoveryAttemptCountToday: 0,
+    noApiRecoveryLastAt: '',
+    noApiRecoveredCountToday: 0,
+    noApiRecoveredByBasis: {},
+    noApiQuarantineCountToday: 0,
+    noApiShortfallToExact30: 0,
+    noApiLastBlockedReason: '',
+    noApiAiApiCallPreventedCount: 0,
     noOpLoopDetected: false,
     noOpLoopConsecutiveCount: 0,
     operatorActionRequired: false,
@@ -14914,6 +15215,36 @@ function getGmailSalesAiConfig_() {
   };
 }
 
+function getGmailSalesNoPaidAiApiPolicy_(config) {
+  const props = PropertiesService.getScriptProperties();
+  const raw = String(props.getProperty(GMAIL_SALES_PAID_AI_API_DISABLED_PROPERTY) || '').trim().toLowerCase();
+  const disabled = raw === 'false' ? false : true;
+  const provider = String((config || getGmailSalesAiConfig_()).provider || '').toLowerCase();
+  return {
+    paidAiApiDisabledByPolicy: disabled,
+    paidAiApiDisabledReason: disabled ? 'no_paid_ai_until_first_revenue' : '',
+    allowedAiApiProviders: disabled ? [] : ['gemini', 'openai'],
+    geminiApiAllowed: !disabled,
+    openAiApiAllowed: !disabled,
+    externalLlmApiAllowed: !disabled,
+    noApiRecoveryRouteEnabled: true,
+    paidAiProviderBlocked: disabled && (provider === 'gemini' || provider === 'openai')
+  };
+}
+
+function buildGmailSalesPaidAiApiPolicyBlockedFields_(config) {
+  const policy = getGmailSalesNoPaidAiApiPolicy_(config);
+  return Object.assign({}, policy, {
+    blockedReason: 'paid_ai_api_disabled_by_policy',
+    aiApiCalled: false,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false
+  });
+}
+
 function buildGmailSalesAiContactBasisStatus_(context, config, sourceData, reviewData) {
   const schema = buildGmailSalesContactBasisReviewSchemaInspection_(context);
   const lastRun = readGmailSalesAiLastRunSummary_();
@@ -15398,6 +15729,23 @@ function validateGmailSalesAiPayloadMinimized_(payload) {
 }
 
 function callGmailSalesAiProvider_(config, payload) {
+  const policy = getGmailSalesNoPaidAiApiPolicy_(config);
+  if (policy.paidAiProviderBlocked) {
+    return {
+      status: 'blocked',
+      approvedBasisType: '',
+      confidence: 0,
+      reasonCodes: ['paid_ai_api_disabled_by_policy'],
+      riskFlags: ['no_paid_ai_until_first_revenue'],
+      requiresHumanReview: true,
+      evidenceDigest: payload.evidenceDigest,
+      sourceRowDigest: payload.sourceRowDigest,
+      candidateToken: payload.candidateToken,
+      paidAiApiDisabledByPolicy: true,
+      paidAiApiDisabledReason: policy.paidAiApiDisabledReason,
+      aiApiCalled: false
+    };
+  }
   if (config.provider === 'mock') {
     if (config.mockAutoApprovalEnabled && payload.suggestedBasisType === 'valid_business_contact_exception' && payload.businessContactEvidencePresent && !payload.privatePersonalContactFlag) {
       return {
@@ -15497,6 +15845,15 @@ function dispatchGmailSalesAiRequiredCandidates_(config, dispatchItems) {
 
 function callGmailSalesAiProviderBatch_(config, payloads) {
   const items = payloads || [];
+  const policy = getGmailSalesNoPaidAiApiPolicy_(config);
+  if (policy.paidAiProviderBlocked) {
+    return {
+      ok: false,
+      reasonCode: 'paid_ai_api_disabled_by_policy',
+      decisionsByToken: {},
+      invalidTokens: {}
+    };
+  }
   if (config.provider === 'mock') {
     const decisionsByToken = {};
     items.forEach((payload) => {
@@ -16690,6 +17047,7 @@ function sanitizeGmailSalesAiModelNameForLog_(model) {
 
 function inspectGmailSalesGeminiPermissionDiagnosticsReadiness(options) {
   const config = getGmailSalesAiConfig_();
+  const paidAiPolicy = getGmailSalesNoPaidAiApiPolicy_(config);
   const request = buildGmailSalesGeminiPermissionDiagnosticsRequest_(config);
   const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
   const permission = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
@@ -16697,13 +17055,14 @@ function inspectGmailSalesGeminiPermissionDiagnosticsReadiness(options) {
   const urlFetchAuthorization = readGmailSalesUrlFetchAuthorizationProbeState_(targetDate);
   const quotaBilling = inferGmailSalesAiProviderQuotaBillingBlock_(targetDate);
   const failures = [];
+  if (paidAiPolicy.paidAiProviderBlocked) failures.push('paid_ai_api_disabled_by_policy');
   if (config.provider !== 'gemini') failures.push('provider_not_gemini');
   if (!config.model) failures.push('model_missing');
   if (!config.apiKeyConfigured) failures.push('api_key_missing');
   if (urlFetchAuthorization.urlFetchAuthorizationVerified !== true) failures.push('urlfetch_authorization_required');
   if (quotaBilling.aiProviderQuotaBillingBlockedForTargetDate === true) failures.push('ai_provider_quota_or_billing_required');
   if (diagnostics.aiProviderDiagnosticProbeAttemptCountToday >= GMAIL_SALES_GEMINI_PERMISSION_DIAGNOSTIC_PROBE_MAX_ATTEMPTS_PER_DAY) failures.push('diagnostic_probe_daily_limit_reached');
-  const result = {
+  const result = Object.assign({
     event: 'gmail_sales_gemini_permission_diagnostics_readiness',
     mode: 'read_only',
     status: failures.length === 0 ? 'pass' : 'blocked',
@@ -16750,7 +17109,7 @@ function inspectGmailSalesGeminiPermissionDiagnosticsReadiness(options) {
     scriptPropertiesUpdated: false,
     triggerChanged: false,
     aiApiCalled: false
-  };
+  }, paidAiPolicy);
   if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
   return result;
 }
@@ -17122,12 +17481,14 @@ function getGmailSalesGeminiPermissionDiagnosisRecommendedFix_(category) {
 
 function inspectGmailSalesAiProviderPermissionRepairReadiness(options) {
   const config = getGmailSalesAiConfig_();
+  const paidAiPolicy = getGmailSalesNoPaidAiApiPolicy_(config);
   const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
   const permission = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
   const quotaBilling = inferGmailSalesAiProviderQuotaBillingBlock_(targetDate);
   const repair = readGmailSalesAiProviderPermissionRepairProbeState_(targetDate);
   const replacement = readGmailSalesAiProviderApiKeyReplacementState_(targetDate);
   const failures = [];
+  if (paidAiPolicy.paidAiProviderBlocked) failures.push('paid_ai_api_disabled_by_policy');
   if (config.provider !== 'gemini') failures.push('provider_not_gemini');
   if (!config.model) failures.push('model_missing');
   if (!config.apiKeyConfigured) failures.push('api_key_missing');
@@ -17136,7 +17497,7 @@ function inspectGmailSalesAiProviderPermissionRepairReadiness(options) {
   if (repair.aiProviderRepairProbeAttemptCountToday >= GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_DAY) failures.push('repair_probe_daily_limit_reached');
   if (repair.aiProviderRepairProbeAttemptCountForCurrentEpoch >= GMAIL_SALES_AI_PERMISSION_REPAIR_PROBE_MAX_ATTEMPTS_PER_EPOCH) failures.push('repair_probe_already_used_for_current_epoch');
   if (permission.aiProviderPermissionRepairVerified === true) failures.push('permission_repair_already_verified');
-  const result = {
+  const result = Object.assign({
     event: 'gmail_sales_ai_provider_permission_repair_readiness',
     mode: 'read_only',
     status: failures.length === 0 ? 'pass' : 'blocked',
@@ -17146,7 +17507,7 @@ function inspectGmailSalesAiProviderPermissionRepairReadiness(options) {
     aiProviderPermissionBlockedForTargetDate: permission.aiProviderPermissionBlockedForTargetDate === true,
     aiProviderPermissionBlockedReason: String(permission.aiProviderPermissionBlockedReason || ''),
     aiProviderPermissionFixRequired: permission.aiProviderPermissionFixRequired === true,
-    aiProviderPermissionRetrySafeToExecute: quotaBilling.aiProviderQuotaBillingBlockedForTargetDate === true ? false : permission.aiProviderPermissionRetrySafeToExecute !== false,
+    aiProviderPermissionRetrySafeToExecute: paidAiPolicy.paidAiProviderBlocked || quotaBilling.aiProviderQuotaBillingBlockedForTargetDate === true ? false : permission.aiProviderPermissionRetrySafeToExecute !== false,
     aiProviderQuotaBillingBlockedForTargetDate: quotaBilling.aiProviderQuotaBillingBlockedForTargetDate === true,
     aiProviderQuotaBillingBlockedReason: String(quotaBilling.aiProviderQuotaBillingBlockedReason || ''),
     aiProviderQuotaBillingRecommendedAction: String(quotaBilling.aiProviderQuotaBillingRecommendedAction || ''),
@@ -17171,7 +17532,7 @@ function inspectGmailSalesAiProviderPermissionRepairReadiness(options) {
     scriptPropertiesUpdated: false,
     triggerChanged: false,
     aiApiCalled: false
-  };
+  }, paidAiPolicy);
   if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
   return result;
 }
@@ -17427,6 +17788,8 @@ function readGmailSalesRecoveryUsageLedger_() {
 function summarizeGmailSalesRecoveryDailyUsage_(config) {
   const limit = Number((config || {}).maxDailyCostYen || 0);
   const targetDate = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const paidAiPolicy = getGmailSalesNoPaidAiApiPolicy_(config);
+  const noApiState = readGmailSalesNoApiRecoveryState_(targetDate);
   const collection = collectGmailSalesRecoveryUsageOperations_(targetDate);
   const inferredRateLimit = inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate);
   const inferredPermissionBlock = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
@@ -17470,7 +17833,7 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     const completedAt = String(entry.completedAt || '');
     if (completedAt && (!lastOperationAt || completedAt > lastOperationAt)) lastOperationAt = completedAt;
   });
-  return Object.assign({}, providerFailureDefaults, {
+  return Object.assign({}, providerFailureDefaults, paidAiPolicy, noApiState, {
     targetDate,
     dailyCostLimitYen: limit,
     cumulativeEstimatedCostYen: cumulative,
@@ -17602,7 +17965,18 @@ function buildGmailSalesAiProviderFailureAccountingDefaults_() {
     aiProviderLastResourceExhaustedAt: '',
     aiProviderQuotaBillingRecommendedAction: '',
     aiProviderQuotaBillingBlockSource: '',
-    aiProviderNonRetryableFailureCostYen: 0
+    aiProviderNonRetryableFailureCostYen: 0,
+    paidAiApiDisabledByPolicy: true,
+    paidAiApiDisabledReason: 'no_paid_ai_until_first_revenue',
+    noApiRecoveryRouteEnabled: true,
+    noApiRecoveryAttemptCountToday: 0,
+    noApiRecoveryLastAt: '',
+    noApiRecoveredCountToday: 0,
+    noApiRecoveredByBasis: {},
+    noApiQuarantineCountToday: 0,
+    noApiShortfallToExact30: 0,
+    noApiLastBlockedReason: '',
+    noApiAiApiCallPreventedCount: 0
   };
   GMAIL_SALES_AI_PROVIDER_FAILURE_ACCOUNTING_FIELD_NAMES.forEach((fieldName) => {
     if (defaults[fieldName] === undefined) defaults[fieldName] = '';
