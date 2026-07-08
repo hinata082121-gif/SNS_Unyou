@@ -161,6 +161,7 @@ const GMAIL_CONTACT_BASIS_ALLOWED_TYPES = [
   'manual_legal_reviewed'
 ];
 const GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID = 'no_api_http_https_public_org_page_v1';
+const GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID = 'no_api_source_row_relink_by_stable_identity_v1';
 const GMAIL_CONTACT_BASIS_REVIEW_TAB_PROPERTY = 'GMAIL_SALES_CONTACT_BASIS_REVIEW_TAB_NAME';
 const GMAIL_CONTACT_BASIS_REVIEW_TAB_DEFAULT = 'Gmail_Contact_Basis_Review';
 const GMAIL_CONTACT_BASIS_REVIEW_HEADERS = [
@@ -6030,6 +6031,142 @@ function evaluateGmailSalesNoApiHttpHttpsPublicOrgPageRule_(sourceItem, reviewIt
   };
 }
 
+function buildGmailSalesNoApiSourceRowRelinkIndexes_(sourceItems) {
+  const indexes = { byDigest: {}, byLeadIdHash: {} };
+  (sourceItems || []).forEach((item) => {
+    const row = item && item.row || {};
+    const queue = buildContactBasisReviewQueueRow_(item, new Date().toISOString());
+    const digest = String((queue.row || {}).sourceRowDigest || '').trim();
+    const lead = String(row.leadIdHash || (queue.row || {}).leadIdHash || '').trim();
+    if (digest) {
+      if (!indexes.byDigest[digest]) indexes.byDigest[digest] = [];
+      indexes.byDigest[digest].push(item);
+    }
+    if (lead) {
+      if (!indexes.byLeadIdHash[lead]) indexes.byLeadIdHash[lead] = [];
+      indexes.byLeadIdHash[lead].push(item);
+    }
+  });
+  return indexes;
+}
+
+function resolveGmailSalesNoApiSourceRowRelinkCandidate_(reviewItem, sourceIndexes) {
+  const review = reviewItem && reviewItem.row || {};
+  const digest = String(review.sourceRowDigest || '').trim();
+  const lead = String(review.leadIdHash || '').trim();
+  if (digest && sourceIndexes && sourceIndexes.byDigest && sourceIndexes.byDigest[digest] && sourceIndexes.byDigest[digest].length === 1) {
+    return { sourceItem: sourceIndexes.byDigest[digest][0], reasonCode: 'source_row_digest_match' };
+  }
+  if (lead && sourceIndexes && sourceIndexes.byLeadIdHash && sourceIndexes.byLeadIdHash[lead] && sourceIndexes.byLeadIdHash[lead].length === 1) {
+    return { sourceItem: sourceIndexes.byLeadIdHash[lead][0], reasonCode: 'lead_id_hash_match' };
+  }
+  return { sourceItem: null, reasonCode: digest || lead ? 'stable_identity_match_not_unique_or_missing' : 'stable_identity_signal_missing' };
+}
+
+function evaluateGmailSalesNoApiSourceRowRelinkRule_(reviewItem, originalSourceItem, sourceIndexes, options) {
+  const settings = options || {};
+  const review = reviewItem && reviewItem.row || {};
+  const sourceReference = String(review.sourceReference || '').trim();
+  const sanitized = sanitizeGmailSalesNoApiSourceReferenceSample_(sourceReference);
+  const parsed = parseGmailSalesHttpHttpsReferenceForNoApi_(sourceReference);
+  const resolved = resolveGmailSalesNoApiSourceRowRelinkCandidate_(reviewItem, sourceIndexes || {});
+  const sourceItem = resolved.sourceItem;
+  const sourceRow = sourceItem && sourceItem.row || {};
+  const signals = summarizeGmailSalesNoApiResidualSafetySignals_(reviewItem, sourceItem);
+  const stableCandidateHashPresent = Boolean(String(review.sourceRowDigest || review.sourceReferenceHash || review.leadIdHash || '').trim());
+  const stableIdentitySignalCount = [
+    review.sourceRowDigest || '',
+    review.sourceReferenceHash || '',
+    review.leadIdHash || '',
+    review.businessDisplayName || '',
+    sourceRow.name || sourceRow.businessDisplayName || '',
+    signals.sourceReferenceHost || '',
+    signals.emailDomain || ''
+  ].filter((value) => String(value || '').trim()).length;
+  const sourceRowRelinkSignalCount = [
+    stableCandidateHashPresent,
+    Boolean(String(review.businessDisplayName || sourceRow.name || sourceRow.businessDisplayName || '').trim()),
+    Boolean(signals.sourceReferenceHost),
+    Boolean(signals.emailDomain)
+  ].filter(Boolean).length;
+  const blockedReasons = [];
+  if (originalSourceItem) blockedReasons.push('source_row_already_found');
+  if (!sourceItem) blockedReasons.push(resolved.reasonCode || 'source_row_relink_target_not_found');
+  if (sourceItem && String(sourceRow.sourceReference || '').trim()) blockedReasons.push('source_row_already_has_source_reference');
+  if (sanitized.sourceReferenceType !== 'url_like') blockedReasons.push('source_reference_not_url_like');
+  if (!parsed.ok) blockedReasons.push(parsed.reasonCode || 'source_reference_not_public_org_page');
+  if (parsed.scheme !== 'http' && parsed.scheme !== 'https') blockedReasons.push('unsupported_scheme');
+  if (!signals.sourceReferenceHost) blockedReasons.push('source_reference_host_missing');
+  if (!stableCandidateHashPresent) blockedReasons.push('stable_candidate_hash_missing');
+  if (stableIdentitySignalCount < 3) blockedReasons.push('stable_identity_signal_insufficient');
+  if (sourceRowRelinkSignalCount < 2) blockedReasons.push('source_row_relink_signal_insufficient');
+  if (signals.privatePersonalContact) blockedReasons.push('private_personal_contact');
+  if (signals.freemailDomain) blockedReasons.push('freemail_domain');
+  if (parsed.reasonCode === 'business_directory') blockedReasons.push('business_directory');
+  if (signals.duplicateOrSuppressedOrDncOrCooldown) blockedReasons.push('duplicate_or_suppressed_or_dnc_or_cooldown');
+  if (sourceRow.unsubscribe === true || String(sourceRow.unsubscribe || '').toLowerCase() === 'true') blockedReasons.push('suppression_present');
+  if (sourceRow.doNotContact === true || String(sourceRow.doNotContact || '').toLowerCase() === 'true') blockedReasons.push('do_not_contact');
+  if (String(sourceRow.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown) blockedReasons.push('delivery_unknown');
+  if (String(sourceRow.sourceType || review.sourceType || '').toLowerCase().indexOf('guessed') !== -1 || normalizeBooleanCell_(sourceRow.guessed) || normalizeBooleanCell_(review.guessed)) blockedReasons.push('guessed_contact');
+  if (String(sourceRow.solicitationRestricted || review.solicitationRestricted || '').toLowerCase() === 'true') blockedReasons.push('solicitation_restricted');
+  if (settings.duplicateJoinKeyCount > 0 || settings.duplicateReviewCandidateTokenCount > 0 || settings.duplicateReviewSourceDigestCount > 0) blockedReasons.push('duplicate_join_or_digest');
+  if (settings.capability && !settings.capability.sourceCellWritableByStructure) blockedReasons.push('source_target_cell_not_writable');
+  const normalizedSourceType = parsed.ok && /contact|inquiry|toiawase|support/i.test(sourceReference) ? 'official_contact_page' : 'official_website';
+  const sourceVerifiedAt = new Date().toISOString();
+  const sourceReferenceHash = sourceReference ? buildGmailSalesSourceReferenceHash_(normalizedSourceType, sourceReference) : '';
+  const prepared = {
+    sourceReference,
+    sourceReferenceHash,
+    sourceType: normalizedSourceType,
+    sourceVerificationStatus: 'verified',
+    sourceSafetyVerified: 'true',
+    sourceIdentityVerified: 'true',
+    sourceSafetyValidatorVersion: GMAIL_SALES_GROUNDING_CITATION_SAFETY_VERSION,
+    sourceIdentityValidatorVersion: GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION,
+    sourceVerificationPolicyVersion: GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION,
+    sourceVerifiedAt,
+    sourceVerificationDigest: '',
+    contactBasisType: blockedReasons.length === 0 ? 'valid_business_contact_exception' : '',
+    contactBasisRecordedAt: blockedReasons.length === 0 ? sourceVerifiedAt : '',
+    optOutAvailable: blockedReasons.length === 0 ? 'true' : '',
+    lastVerifiedAt: blockedReasons.length === 0 ? sourceVerifiedAt : '',
+    suppressionCheckedAt: blockedReasons.length === 0 ? sourceVerifiedAt : '',
+    historyCheckedAt: blockedReasons.length === 0 ? sourceVerifiedAt : '',
+    recoveredFrom: blockedReasons.length === 0 ? 'source_row_relink_by_stable_identity' : '',
+    deterministicRuleId: blockedReasons.length === 0 ? GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID : '',
+    noApiDecisionReason: blockedReasons.length === 0 ? 'no_api_source_row_relink_eligible' : ''
+  };
+  prepared.sourceVerificationDigest = computeGmailSalesSourceVerificationDigest_(Object.assign({}, review, prepared), {
+    sourceType: prepared.sourceType,
+    sourceReferenceHash: prepared.sourceReferenceHash,
+    sourceVerifiedAt
+  });
+  return {
+    ok: blockedReasons.length === 0,
+    ruleId: GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID,
+    approvedBasisType: blockedReasons.length === 0 ? 'valid_business_contact_exception' : '',
+    reasonCode: blockedReasons.length === 0 ? 'no_api_source_row_relink_eligible' : (blockedReasons[0] || 'blocked'),
+    blockedReasons: uniqueArray_(blockedReasons),
+    sourceItem,
+    prepared,
+    sourceRowFound: Boolean(sourceItem),
+    sourceRowRelinkSignalsPresent: stableIdentitySignalCount >= 3 && sourceRowRelinkSignalCount >= 2,
+    stableCandidateHashPresent,
+    stableIdentitySignalCount,
+    sourceRowRelinkSignalCount,
+    sourceReferenceType: sanitized.sourceReferenceType,
+    sourceReferenceScheme: sanitized.sourceReferenceScheme,
+    sourceReferenceHost: sanitized.sourceReferenceHost || signals.sourceReferenceHost,
+    publicBusinessSignalFieldsPresent: signals.publicBusinessSignalFieldsPresent,
+    privatePersonalContact: signals.privatePersonalContact,
+    freemailDomain: signals.freemailDomain,
+    businessDirectory: parsed.reasonCode === 'business_directory',
+    domainHostMatch: signals.domainHostMatch,
+    duplicateOrSuppressedOrDncOrCooldown: signals.duplicateOrSuppressedOrDncOrCooldown,
+    recoveredFrom: 'source_row_relink_by_stable_identity'
+  };
+}
+
 function normalizeGmailSalesLegacySourceType_(rawSourceType, sourceReference, context) {
   const raw = normalizeTextForComparison_(rawSourceType || '').replace(/[\s-]+/g, '_');
   const aliases = {
@@ -6255,6 +6392,7 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
   (sourceData.items || []).forEach((item) => {
     sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
   });
+  const sourceRelinkIndexes = buildGmailSalesNoApiSourceRowRelinkIndexes_(sourceData.items || []);
   const stats = {
     sourceSheetPresent: Boolean(context.sourceSheet),
     reviewSheetPresent: Boolean(context.reviewSheet),
@@ -6298,6 +6436,11 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
     noApiHttpHttpsPublicOrgPageBlockedCount: 0,
     noApiHttpHttpsPublicOrgPageBlockedReasonCounts: {},
     noApiHttpHttpsPublicOrgPageRecoveredProjectedCount: 0,
+    noApiSourceRowRelinkCandidateCount: 0,
+    noApiSourceRowRelinkEligibleCount: 0,
+    noApiSourceRowRelinkBlockedCount: 0,
+    noApiSourceRowRelinkBlockedReasonCounts: {},
+    noApiSourceRowRelinkRecoveredProjectedCount: 0,
     legacySourceTypeNormalizationEligibleCount: 0,
     deterministicLocalReverificationEligibleCount: 0,
     promotionEligibleAfterTypeNormalizationCount: 0,
@@ -6352,6 +6495,49 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
         (missingSourceRule.blockedReasons || ['source_row_not_found']).forEach((reason) => {
           incrementCount_(stats.noApiHttpHttpsPublicOrgPageBlockedReasonCounts, reason || 'source_row_not_found');
         });
+      }
+      const relinkProbe = evaluateGmailSalesNoApiSourceRowRelinkRule_(item, null, sourceRelinkIndexes, {
+        duplicateJoinKeyCount,
+        duplicateReviewCandidateTokenCount,
+        duplicateReviewSourceDigestCount
+      });
+      if (relinkProbe.sourceReferenceType === 'url_like' || relinkProbe.reasonCode !== 'source_reference_not_url_like') {
+        stats.noApiSourceRowRelinkCandidateCount += 1;
+        if (relinkProbe.sourceItem && context.sourceSheet) {
+          const relinkCapability = inspectSourceReferenceCellCapability_(context.sourceSheet, relinkProbe.sourceItem.rowIndex, resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceReference').columnIndex);
+          const relinkRule = evaluateGmailSalesNoApiSourceRowRelinkRule_(item, null, sourceRelinkIndexes, {
+            duplicateJoinKeyCount,
+            duplicateReviewCandidateTokenCount,
+            duplicateReviewSourceDigestCount,
+            capability: relinkCapability
+          });
+          if (relinkRule.ok) {
+            legacyPromotionEligibleForRow = true;
+            stats.legacyPromotionEligibleCount += 1;
+            stats.noApiSourceRowRelinkEligibleCount += 1;
+            stats.noApiSourceRowRelinkRecoveredProjectedCount += 1;
+            stats.targets.push({
+              sourceItem: relinkRule.sourceItem,
+              reviewItem: item,
+              prepared: relinkRule.prepared,
+              viaLocalReverification: true,
+              viaExistingVerification: false,
+              viaSourceReferenceClassification: true,
+              viaSourceRowRelink: true,
+              noApiSourceRowRelinkRule: relinkRule
+            });
+          } else {
+            stats.noApiSourceRowRelinkBlockedCount += 1;
+            (relinkRule.blockedReasons || [relinkRule.reasonCode || 'blocked']).forEach((reason) => {
+              incrementCount_(stats.noApiSourceRowRelinkBlockedReasonCounts, reason || 'blocked');
+            });
+          }
+        } else {
+          stats.noApiSourceRowRelinkBlockedCount += 1;
+          (relinkProbe.blockedReasons || [relinkProbe.reasonCode || 'source_row_relink_target_not_found']).forEach((reason) => {
+            incrementCount_(stats.noApiSourceRowRelinkBlockedReasonCounts, reason || 'blocked');
+          });
+        }
       }
     } else {
       stats.sourceReviewJoinSucceededCount += 1;
@@ -6523,6 +6709,11 @@ function promoteGmailSalesReviewLegacyReferencesWorker_(options) {
         if (!result.noApiRecoveredByRuleId) result.noApiRecoveredByRuleId = {};
         result.noApiRecoveredByRuleId[target.noApiHttpHttpsPublicOrgPageRule.ruleId] = Number(result.noApiRecoveredByRuleId[target.noApiHttpHttpsPublicOrgPageRule.ruleId] || 0) + 1;
       }
+      if (target.noApiSourceRowRelinkRule && target.noApiSourceRowRelinkRule.ok) {
+        result.noApiSourceRowRelinkRecoveredCount = Number(result.noApiSourceRowRelinkRecoveredCount || 0) + 1;
+        if (!result.noApiRecoveredByRuleId) result.noApiRecoveredByRuleId = {};
+        result.noApiRecoveredByRuleId[target.noApiSourceRowRelinkRule.ruleId] = Number(result.noApiRecoveredByRuleId[target.noApiSourceRowRelinkRule.ruleId] || 0) + 1;
+      }
       result.readBackMatchedCount += 1;
     } else {
       result.failedPromotionCount += 1;
@@ -6572,6 +6763,7 @@ function buildGmailSalesLegacyReferencePromotionResult_(status, overrides) {
     sourceTypeDerivedFromSourceReferenceCount: 0,
     promotionEligibleViaSourceReferenceClassificationCount: 0,
     noApiHttpHttpsPublicOrgPageRecoveredCount: 0,
+    noApiSourceRowRelinkRecoveredCount: 0,
     noApiRecoveredByRuleId: {},
     gmailSendExecuted: false,
     gmailDraftCreated: false,
@@ -6636,6 +6828,11 @@ function summarizeGmailSalesNoApiRecoveryProjection_() {
     noApiHttpHttpsPublicOrgPageBlockedCount: Number(collected.noApiHttpHttpsPublicOrgPageBlockedCount || 0),
     noApiHttpHttpsPublicOrgPageBlockedReasonCounts: collected.noApiHttpHttpsPublicOrgPageBlockedReasonCounts || {},
     noApiHttpHttpsPublicOrgPageRecoveredProjectedCount: Number(collected.noApiHttpHttpsPublicOrgPageRecoveredProjectedCount || 0),
+    noApiSourceRowRelinkCandidateCount: Number(collected.noApiSourceRowRelinkCandidateCount || 0),
+    noApiSourceRowRelinkEligibleCount: Number(collected.noApiSourceRowRelinkEligibleCount || 0),
+    noApiSourceRowRelinkBlockedCount: Number(collected.noApiSourceRowRelinkBlockedCount || 0),
+    noApiSourceRowRelinkBlockedReasonCounts: collected.noApiSourceRowRelinkBlockedReasonCounts || {},
+    noApiSourceRowRelinkRecoveredProjectedCount: Number(collected.noApiSourceRowRelinkRecoveredProjectedCount || 0),
     collected
   };
 }
@@ -6677,6 +6874,11 @@ function buildGmailSalesNoApiRecoveryStatus_() {
     noApiHttpHttpsPublicOrgPageBlockedCount: projection.noApiHttpHttpsPublicOrgPageBlockedCount,
     noApiHttpHttpsPublicOrgPageBlockedReasonCounts: projection.noApiHttpHttpsPublicOrgPageBlockedReasonCounts,
     noApiHttpHttpsPublicOrgPageRecoveredProjectedCount: projection.noApiHttpHttpsPublicOrgPageRecoveredProjectedCount,
+    noApiSourceRowRelinkCandidateCount: projection.noApiSourceRowRelinkCandidateCount,
+    noApiSourceRowRelinkEligibleCount: projection.noApiSourceRowRelinkEligibleCount,
+    noApiSourceRowRelinkBlockedCount: projection.noApiSourceRowRelinkBlockedCount,
+    noApiSourceRowRelinkBlockedReasonCounts: projection.noApiSourceRowRelinkBlockedReasonCounts,
+    noApiSourceRowRelinkRecoveredProjectedCount: projection.noApiSourceRowRelinkRecoveredProjectedCount,
     noApiQuarantineCount: projection.noApiQuarantineCount,
     noApiProjectedReadyInventoryCount,
     noApiShortfallToExact30,
@@ -6904,6 +7106,11 @@ function buildGmailSalesNoApiRecoveryBlockerDrilldown_() {
   (sourceData.items || []).forEach((item) => {
     sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
   });
+  const sourceHeaderMap = context.sourceSheet ? buildExactSheetHeaderMap_(context.sourceSheet) : buildExactSheetHeaderMapFromHeaders_([]);
+  const sourceRelinkIndexes = buildGmailSalesNoApiSourceRowRelinkIndexes_(sourceData.items || []);
+  const duplicateJoinKeyCount = countDuplicateNonEmptyValues_((sourceData.items || []).map((item) => buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)));
+  const duplicateReviewCandidateTokenCount = countDuplicateNonEmptyValues_((reviewData.items || []).map((item) => buildGroundingCandidateToken_(item.row || {})));
+  const duplicateReviewSourceDigestCount = countDuplicateNonEmptyValues_((reviewData.items || []).map((item) => String((item.row || {}).sourceRowDigest || '').trim()));
   const stats = {
     unsupportedSchemeCount: 0,
     businessDirectoryCount: 0,
@@ -7046,12 +7253,18 @@ function buildGmailSalesNoApiResidualBlockerOpportunityDrilldown_() {
   (sourceData.items || []).forEach((item) => {
     sourceByKey[buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)] = item;
   });
+  const sourceHeaderMap = context.sourceSheet ? buildExactSheetHeaderMap_(context.sourceSheet) : buildExactSheetHeaderMapFromHeaders_([]);
+  const sourceRelinkIndexes = buildGmailSalesNoApiSourceRowRelinkIndexes_(sourceData.items || []);
+  const duplicateJoinKeyCount = countDuplicateNonEmptyValues_((sourceData.items || []).map((item) => buildGmailSalesContactSourceRowKey_(item.row, item.rowIndex)));
+  const duplicateReviewCandidateTokenCount = countDuplicateNonEmptyValues_((reviewData.items || []).map((item) => buildGroundingCandidateToken_(item.row || {})));
+  const duplicateReviewSourceDigestCount = countDuplicateNonEmptyValues_((reviewData.items || []).map((item) => String((item.row || {}).sourceRowDigest || '').trim()));
   const stats = {
     residualBlockedCandidateCount: 0,
     sourceRowNotFoundCount: 0,
     sourceRowRelinkOpportunityCount: 0,
     sourceRowRelinkBlockedCount: 0,
     sourceRowRelinkBlockedReasonCounts: {},
+    sourceRowRelinkEligibleCount: 0,
     businessDirectoryCount: 0,
     businessDirectoryStrictExceptionOpportunityCount: 0,
     businessDirectoryBlockedCount: 0,
@@ -7069,6 +7282,7 @@ function buildGmailSalesNoApiResidualBlockerOpportunityDrilldown_() {
   };
   const samples = {
     source_row_not_found: [],
+    source_row_relink_eligible: [],
     business_directory: [],
     unsupported_scheme: [],
     private_personal_contact: []
@@ -7097,28 +7311,47 @@ function buildGmailSalesNoApiResidualBlockerOpportunityDrilldown_() {
     if (uniqueReasons.indexOf('email_domain_host_mismatch') !== -1) stats.emailDomainHostMismatchCount += 1;
     if (uniqueReasons.indexOf('source_row_not_found') !== -1) {
       stats.sourceRowNotFoundCount += 1;
-      const blocked = [];
-      const stableCandidateHashPresent = Boolean(String(review.sourceRowDigest || review.sourceReferenceHash || review.leadIdHash || '').trim());
-      const relinkSignals = [
-        stableCandidateHashPresent,
-        Boolean(String(review.businessDisplayName || '').trim()),
-        Boolean(signals.emailDomain),
-        Boolean(signals.sourceReferenceHost)
-      ].filter(Boolean).length;
-      if (!stableCandidateHashPresent) blocked.push('stable_identity_signal_missing');
-      if (signals.privatePersonalContact) blocked.push('private_personal_contact');
-      if (signals.freemailDomain) blocked.push('freemail_domain');
-      if (signals.duplicateOrSuppressedOrDncOrCooldown) blocked.push('duplicate_or_suppressed_or_dnc_or_cooldown');
-      if (relinkSignals < 2) blocked.push('relink_signal_insufficient');
-      const opportunity = blocked.length === 0;
-      if (opportunity) stats.sourceRowRelinkOpportunityCount += 1;
+      const relinkProbe = evaluateGmailSalesNoApiSourceRowRelinkRule_(reviewItem, sourceItem, sourceRelinkIndexes, {
+        duplicateJoinKeyCount,
+        duplicateReviewCandidateTokenCount,
+        duplicateReviewSourceDigestCount
+      });
+      let relinkRule = relinkProbe;
+      if (relinkProbe.sourceItem && context.sourceSheet) {
+        const relinkCapability = inspectSourceReferenceCellCapability_(context.sourceSheet, relinkProbe.sourceItem.rowIndex, resolveExactHeaderMapEntry_(sourceHeaderMap, 'sourceReference').columnIndex);
+        relinkRule = evaluateGmailSalesNoApiSourceRowRelinkRule_(reviewItem, sourceItem, sourceRelinkIndexes, {
+          duplicateJoinKeyCount,
+          duplicateReviewCandidateTokenCount,
+          duplicateReviewSourceDigestCount,
+          capability: relinkCapability
+        });
+      }
+      const blocked = relinkRule.ok ? [] : (relinkRule.blockedReasons || [relinkRule.reasonCode || 'blocked']);
+      if (relinkRule.ok) {
+        stats.sourceRowRelinkOpportunityCount += 1;
+        stats.sourceRowRelinkEligibleCount += 1;
+        appendGmailSalesNoApiSample_(samples, 'source_row_relink_eligible', buildGmailSalesNoApiResidualSample_(reviewItem, relinkRule.sourceItem, uniqueReasons, 'eligible', [], GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID, {
+          eligibilityStatus: 'eligible',
+          eligibilityBlockedReasons: [],
+          deterministicRuleId: GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID,
+          stableCandidateHashPresent: relinkRule.stableCandidateHashPresent,
+          sourceRowRelinkSignalCount: relinkRule.sourceRowRelinkSignalCount,
+          stableIdentitySignalCount: relinkRule.stableIdentitySignalCount,
+          sourceRowRelinkSignalsPresent: relinkRule.sourceRowRelinkSignalsPresent
+        }));
+      }
       else {
         stats.sourceRowRelinkBlockedCount += 1;
         blocked.forEach((reason) => incrementCount_(stats.sourceRowRelinkBlockedReasonCounts, reason));
       }
-      appendGmailSalesNoApiSample_(samples, 'source_row_not_found', buildGmailSalesNoApiResidualSample_(reviewItem, sourceItem, uniqueReasons, opportunity ? 'opportunity' : 'blocked', blocked, 'no_api_source_row_relink_by_stable_identity_v1', {
-        stableCandidateHashPresent,
-        sourceRowRelinkSignalCount: relinkSignals
+      appendGmailSalesNoApiSample_(samples, 'source_row_not_found', buildGmailSalesNoApiResidualSample_(reviewItem, relinkRule.sourceItem || sourceItem, uniqueReasons, relinkRule.ok ? 'eligible' : 'blocked', blocked, GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID, {
+        eligibilityStatus: relinkRule.ok ? 'eligible' : 'blocked',
+        eligibilityBlockedReasons: blocked,
+        deterministicRuleId: GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID,
+        stableCandidateHashPresent: relinkRule.stableCandidateHashPresent,
+        sourceRowRelinkSignalCount: relinkRule.sourceRowRelinkSignalCount,
+        stableIdentitySignalCount: relinkRule.stableIdentitySignalCount,
+        sourceRowRelinkSignalsPresent: relinkRule.sourceRowRelinkSignalsPresent
       }));
     }
     if (uniqueReasons.indexOf('business_directory') !== -1) {
@@ -7193,6 +7426,10 @@ function buildGmailSalesNoApiResidualBlockerOpportunityDrilldown_() {
     sourceRowRelinkBlockedCount: stats.sourceRowRelinkBlockedCount,
     sourceRowRelinkBlockedReasonCounts: stats.sourceRowRelinkBlockedReasonCounts,
     sourceRowRelinkSampleSanitized: samples.source_row_not_found,
+    noApiSourceRowRelinkEligibilityRuleId: GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID,
+    noApiSourceRowRelinkWouldRecoverCount: stats.sourceRowRelinkEligibleCount,
+    noApiSourceRowRelinkStillShortfallToExact30: Math.max(0, gmailDailyExpectedCount_() - (Number(status.readyInventoryCount || 0) + stats.sourceRowRelinkEligibleCount)),
+    sourceRowRelinkEligibleSampleSanitized: samples.source_row_relink_eligible,
     businessDirectoryCount: stats.businessDirectoryCount,
     businessDirectoryStrictExceptionOpportunityCount: stats.businessDirectoryStrictExceptionOpportunityCount,
     businessDirectoryBlockedCount: stats.businessDirectoryBlockedCount,
@@ -7311,6 +7548,7 @@ function runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce() {
       executedExpectedApiClass: 'none',
       executedExpectedWriteClass: 'sheets_review_recovery_only',
       noApiRecoveredCount: recovered,
+      noApiSourceRowRelinkRecoveredCount: Number(promotion.noApiSourceRowRelinkRecoveredCount || 0),
       noApiRecoveredByRuleId: recoveredByRuleId,
       noApiStillShortfallToExact30: state.noApiShortfallToExact30,
       readyInventoryCountAfterRecovery: Number(before.readyInventoryCount || 0) + recovered,
@@ -18696,6 +18934,10 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     noApiHttpHttpsPublicOrgPageEligibleCount: Number(noApiProjection.noApiHttpHttpsPublicOrgPageEligibleCount || 0),
     noApiHttpHttpsPublicOrgPageRecoveredCountToday: Number((noApiState.noApiRecoveredByRuleId || {})[GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID] || 0),
     noApiHttpHttpsPublicOrgPageBlockedReasonCounts: noApiProjection.noApiHttpHttpsPublicOrgPageBlockedReasonCounts || {},
+    noApiSourceRowRelinkCandidateCount: Number(noApiProjection.noApiSourceRowRelinkCandidateCount || 0),
+    noApiSourceRowRelinkEligibleCount: Number(noApiProjection.noApiSourceRowRelinkEligibleCount || 0),
+    noApiSourceRowRelinkRecoveredCountToday: Number((noApiState.noApiRecoveredByRuleId || {})[GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID] || 0),
+    noApiSourceRowRelinkBlockedReasonCounts: noApiProjection.noApiSourceRowRelinkBlockedReasonCounts || {},
     noApiRecoveredByRuleId: noApiState.noApiRecoveredByRuleId || {},
     exact30Satisfied: noApiProjection.exact30Satisfied === true
   });
