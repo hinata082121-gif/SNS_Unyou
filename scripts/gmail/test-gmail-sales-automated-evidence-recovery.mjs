@@ -2756,6 +2756,7 @@ const g429b6Usage = g429b6.inspectGmailSalesRecoveryUsageLedger();
 ].forEach((fieldName) => {
   assert.equal(code.indexOf(fieldName) >= 0, true);
 });
+assert.equal(/^function inspectGmailSalesNoApiRecoveryBlockerDrilldown\(\) \{/m.test(code), true);
 [
   'ai_recent_rate_limit_non_ai_recovery_available',
   'ai_recent_rate_limit_but_legacy_promotion_available',
@@ -3021,7 +3022,7 @@ installLegacyPromotionFixture(noapi6, {
 setSheetValueByHeader(noapi6.__sourceSheet, 4, 'privatePersonalContactFlag', 'true');
 setSheetValueByHeader(noapi6.__reviewSheet, 5, 'sourceRowKey', 'missing-source-row-key');
 const noapi6BeforeWrites = noapi6.__state.propertyWriteCount + noapi6.__state.sheetWriteCount + noapi6.__state.urlFetchCount + noapi6.__state.gmailSendCount + noapi6.__state.draftCreateCount + noapi6.__state.triggerCreateCount;
-const noapi6Drilldown = noapi6.inspectGmailSalesNoApiRecoveryBlockerDrilldown({ skipLog: true });
+const noapi6Drilldown = noapi6.inspectGmailSalesNoApiRecoveryBlockerDrilldown();
 assert.equal(noapi6Drilldown.event, 'gmail_sales_no_api_recovery_blocker_drilldown');
 assert.equal(noapi6Drilldown.mode, 'read_only');
 assert.equal(noapi6Drilldown.paidAiApiDisabledByPolicy, true);
@@ -3047,6 +3048,12 @@ assert.equal(noapi6SamplesJson.includes('/biz/'), false);
 assert.equal(noapi6SamplesJson.includes('/contact'), false);
 assert.equal(noapi6SamplesJson.includes('masked-place'), false);
 assert.equal(noapi6SamplesJson.includes('mailto:masked-local'), false);
+const noapi6LogsJson = JSON.stringify(noapi6.__state.logs);
+assert.equal(noapi6LogsJson.includes('masked-local@'), false);
+assert.equal(noapi6LogsJson.includes('/biz/'), false);
+assert.equal(noapi6LogsJson.includes('/contact'), false);
+assert.equal(noapi6LogsJson.includes('masked-place'), false);
+assert.equal(noapi6LogsJson.includes('mailto:masked-local'), false);
 assert.equal(noapi6.__state.propertyWriteCount + noapi6.__state.sheetWriteCount + noapi6.__state.urlFetchCount + noapi6.__state.gmailSendCount + noapi6.__state.draftCreateCount + noapi6.__state.triggerCreateCount, noapi6BeforeWrites);
 assert.equal(noapi6Drilldown.gmailSendExecuted, false);
 assert.equal(noapi6Drilldown.gmailDraftCreated, false);

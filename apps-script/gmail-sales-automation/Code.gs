@@ -6499,7 +6499,11 @@ function buildGmailSalesNoApiRecoveryStatus_() {
   });
 }
 
-function inspectGmailSalesNoApiRecoveryBlockerDrilldown(options) {
+function inspectGmailSalesNoApiRecoveryBlockerDrilldown() {
+  return inspectGmailSalesNoApiRecoveryBlockerDrilldown_({});
+}
+
+function inspectGmailSalesNoApiRecoveryBlockerDrilldown_(options) {
   const result = buildGmailSalesNoApiRecoveryBlockerDrilldown_();
   if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
   return result;
