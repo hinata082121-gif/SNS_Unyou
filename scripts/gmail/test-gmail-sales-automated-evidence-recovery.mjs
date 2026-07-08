@@ -278,7 +278,9 @@ function installSheets(context, sourceRows, reviewRows = []) {
     'priorityRank', 'priorityReasonCode', 'aiVerificationStatus', 'aiProvider', 'aiModel', 'aiConfidence',
     'aiPolicyVersion', 'aiPromptVersion', 'aiEvidenceDigest', 'aiVerifiedAt', 'aiReasonCodes', 'aiRiskFlags',
     'aiAutoApproved', 'aiRequiresHumanReview', 'lastAiEvaluatedEvidenceDigest', 'contactBasisType',
-    'contactBasisRecordedAt', 'contactBasisSourceType', 'contactBasisSourceReferenceHash', 'name',
+    'contactBasisRecordedAt', 'lastVerifiedAt', 'suppressionCheckedAt', 'historyCheckedAt',
+    'contactBasisSourceType', 'contactBasisSourceReferenceHash', 'recoveredFrom', 'deterministicRuleId',
+    'noApiDecisionReason', 'email', 'contactEmail', 'name',
     'publicSource', 'sentStatus', 'replyStatus', 'sendState', 'doNotContact', 'unsubscribe',
     'privatePersonalContactFlag', 'guessed', 'solicitationRestricted'
   ]));
@@ -339,8 +341,9 @@ function installLegacyPromotionFixture(context, options = {}) {
   const eligibleCount = options.eligibleCount === undefined ? count : options.eligibleCount;
   const sourceTypes = options.sourceTypes || [];
   const sourceReferences = options.sourceReferences || [];
+  const sourceRowOverrides = options.sourceRowOverrides || [];
   const currentVerification = options.currentVerification !== false;
-  const sourceRows = makeSourceRows(count, { ready: true }).map((row) => Object.assign({}, row, {
+  const sourceRows = makeSourceRows(count, { ready: true }).map((row, index) => Object.assign({}, row, {
     sourceType: '',
     sourceReference: '',
     sourceReferenceHash: '',
@@ -352,7 +355,7 @@ function installLegacyPromotionFixture(context, options = {}) {
     sourceVerificationPolicyVersion: '',
     sourceVerifiedAt: '',
     sourceVerificationDigest: ''
-  }));
+  }, sourceRowOverrides[index] || {}));
   const reviewRows = buildReviewRowsWithDigests(context, sourceRows, count, 0).map((row, index) => {
     const sourceType = sourceTypes[index] || options.sourceType || 'official_site';
     const sourceReference = sourceReferences[index] || ['https:', '', `legacy-${index + 1}.example.invalid`, 'contact'].join('/');
@@ -1545,8 +1548,8 @@ installLegacyPromotionFixture(fx5, {
 });
 fx5.__sourceSheet.values[4][fx5.__sourceSheet.values[0].indexOf('unsubscribe')] = 'true';
 const fx5Readiness = fx5.inspectGmailSalesReviewLegacyReferencePromotionReadiness({ skipLog: true });
-assert.equal(fx5Readiness.legacyPromotionEligibleCount, 0);
-assert.equal(Boolean(fx5Readiness.legacyPromotionAllBlockedReasonCounts.unsupported_scheme), true);
+assert.equal(fx5Readiness.legacyPromotionEligibleCount, 1);
+assert.equal(fx5Readiness.noApiHttpHttpsPublicOrgPageEligibleCount, 1);
 assert.equal(Boolean(fx5Readiness.legacyPromotionAllBlockedReasonCounts.localhost), true);
 assert.equal(Boolean(fx5Readiness.legacyPromotionAllBlockedReasonCounts.private_ip), true);
 assert.equal(Boolean(fx5Readiness.legacyPromotionAllBlockedReasonCounts.suppression_present), true);
@@ -3062,6 +3065,74 @@ assert.equal(noapi6Drilldown.scriptPropertiesUpdated, false);
 assert.equal(noapi6Drilldown.triggerChanged, false);
 assert.equal(noapi6Drilldown.aiApiCalled, false);
 assert.equal(noapi6Drilldown.urlFetchExecuted, false);
+
+const noapi7 = createContext();
+noapi7.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
+installLegacyPromotionFixture(noapi7, {
+  count: 6,
+  sourceTypes: Array.from({ length: 6 }, (_, index) => `legacy-http-public-org-${index + 1}`),
+  sourceReferences: [
+    'http://public-one.example.invalid/contact',
+    'https://public-two.example.invalid/inquiry',
+    'http://freemail-public.example.invalid/contact',
+    ['https:', '', 'yelp.com', 'biz', 'masked-place'].join('/'),
+    'http://suppressed-public.example.invalid/contact',
+    'http://missing-public.example.invalid/contact'
+  ],
+  sourceRowOverrides: [
+    { email: 'info@public-one.example.invalid' },
+    { email: 'info@public-two.example.invalid' },
+    { email: 'masked@gmail.com' },
+    { email: 'info@directory.example.invalid' },
+    { email: 'info@suppressed-public.example.invalid', unsubscribe: 'true', doNotContact: 'true' },
+    { email: 'info@missing-public.example.invalid' }
+  ],
+  currentVerification: false
+});
+setSheetValueByHeader(noapi7.__reviewSheet, 6, 'sourceRowKey', 'missing-source-row-key');
+const noapi7Status = noapi7.inspectGmailSalesNoApiRecoveryStatus({ skipLog: true });
+assert.equal(noapi7Status.noApiHttpHttpsPublicOrgPageCandidateCount, 5);
+assert.equal(noapi7Status.noApiHttpHttpsPublicOrgPageEligibleCount, 2);
+assert.equal(noapi7Status.noApiHttpHttpsPublicOrgPageBlockedCount, 3);
+assert.equal(noapi7Status.noApiHttpHttpsPublicOrgPageBlockedReasonCounts.freemail_domain, 1);
+assert.equal(noapi7Status.noApiHttpHttpsPublicOrgPageBlockedReasonCounts.business_directory, 1);
+assert.equal(noapi7Status.noApiRecoverableCandidateCount, 2);
+assert.equal(noapi7Status.noApiValidBusinessContactExceptionRecoverableCount, 2);
+assert.equal(noapi7Status.noApiProjectedReadyInventoryCount, 2);
+assert.equal(noapi7Status.noApiShortfallToExact30, 28);
+assert.equal(noapi7Status.plannedNextAction, 'no_api_legacy_evidence_recovery');
+assert.equal(noapi7Status.operatorRecommendedNextFunction, 'runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce');
+const noapi7Drilldown = noapi7.inspectGmailSalesNoApiRecoveryBlockerDrilldown_({ skipLog: true });
+assert.equal(noapi7Drilldown.noApiHttpHttpsPublicOrgPageEligibilityRuleId, 'no_api_http_https_public_org_page_v1');
+assert.equal(noapi7Drilldown.noApiHttpHttpsPublicOrgPageWouldRecoverCount, 2);
+assert.equal(noapi7Drilldown.noApiHttpHttpsPublicOrgPageStillShortfallToExact30, 28);
+assert.equal(noapi7Drilldown.noApiHttpHttpsPublicOrgPageSampleSanitized.length <= 5, true);
+const noapi7SampleJson = JSON.stringify(noapi7Drilldown.noApiHttpHttpsPublicOrgPageSampleSanitized);
+assert.equal(noapi7SampleJson.includes('info@'), false);
+assert.equal(noapi7SampleJson.includes('/contact'), false);
+assert.equal(noapi7SampleJson.includes('/inquiry'), false);
+assert.equal(noapi7SampleJson.includes('/biz/'), false);
+assert.equal(noapi7SampleJson.includes('masked-place'), false);
+const noapi7Step = noapi7.runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce();
+assert.equal(noapi7Step.status, 'pass');
+assert.equal(noapi7Step.noApiRecoveredCount, 2);
+assert.equal(noapi7Step.noApiRecoveredByBasis.valid_business_contact_exception, 2);
+assert.equal(noapi7Step.noApiRecoveredByRuleId.no_api_http_https_public_org_page_v1, 2);
+assert.equal(noapi7Step.readyInventoryCountAfterRecovery, 2);
+assert.equal(noapi7Step.noApiStillShortfallToExact30, 28);
+assert.equal(noapi7Step.aiApiCalled, false);
+assert.equal(noapi7Step.urlFetchExecuted, false);
+assert.equal(noapi7Step.gmailSendExecuted, false);
+assert.equal(noapi7Step.gmailDraftCreated, false);
+assert.equal(noapi7Step.triggerChanged, false);
+assert.equal(String(noapi7.readSheetObjects_(noapi7.__sourceSheet).items[0].row.contactBasisType || ''), 'valid_business_contact_exception');
+assert.equal(String(noapi7.readSheetObjects_(noapi7.__sourceSheet).items[0].row.deterministicRuleId || ''), 'no_api_http_https_public_org_page_v1');
+assert.equal(String(noapi7.readSheetObjects_(noapi7.__sourceSheet).items[0].row.recoveredFrom || ''), 'strict_http_https_public_org_page_reference');
+assert.equal(/approvedBasisType:\s*['"]manual_legal_reviewed['"]/.test(code), false);
+assert.equal(noapi7.__state.urlFetchCount, 0);
+assert.equal(noapi7.__state.gmailSendCount, 0);
+assert.equal(noapi7.__state.draftCreateCount, 0);
+assert.equal(noapi7.__state.triggerCreateCount, 0);
 
 assert.equal(g4292.__state.gmailSendCount, 0);
 assert.equal(g4292.__state.draftCreateCount, 0);

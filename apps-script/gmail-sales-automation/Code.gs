@@ -160,6 +160,7 @@ const GMAIL_CONTACT_BASIS_ALLOWED_TYPES = [
   'valid_business_contact_exception',
   'manual_legal_reviewed'
 ];
+const GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID = 'no_api_http_https_public_org_page_v1';
 const GMAIL_CONTACT_BASIS_REVIEW_TAB_PROPERTY = 'GMAIL_SALES_CONTACT_BASIS_REVIEW_TAB_NAME';
 const GMAIL_CONTACT_BASIS_REVIEW_TAB_DEFAULT = 'Gmail_Contact_Basis_Review';
 const GMAIL_CONTACT_BASIS_REVIEW_HEADERS = [
@@ -5864,6 +5865,17 @@ function classifyGmailSalesLegacySourceReference_(sourceReference, rowContext) {
   const schemeMatch = lower.match(/^([a-z][a-z0-9+.-]*):/);
   const rejectedSchemes = { mailto: true, tel: true, sms: true, line: true, javascript: true, data: true, file: true, ftp: true, chrome: true };
   if (schemeMatch && rejectedSchemes[schemeMatch[1]]) return Object.assign(result, { referenceClass: 'unsupported_scheme', reasonCode: 'unsupported_scheme' });
+  const noApiPublicOrgPage = evaluateGmailSalesNoApiHttpHttpsPublicOrgPageRule_(sourceItem, reviewItem, {});
+  if (noApiPublicOrgPage.ok && noApiPublicOrgPage.scheme === 'http') {
+    return Object.assign(result, {
+      ok: true,
+      normalizedSourceType: noApiPublicOrgPage.normalizedSourceType,
+      referenceClass: 'public_org_page',
+      reasonCode: noApiPublicOrgPage.reasonCode,
+      derivedFromSourceReference: true,
+      deterministicRuleId: noApiPublicOrgPage.ruleId
+    });
+  }
   const safety = classifyGroundingCitationUrlSafety_(reference);
   if (!safety.ok) {
     const reason = safety.reasonCode || 'unsafe_url';
@@ -5898,6 +5910,123 @@ function classifyGmailSalesLegacySourceReference_(sourceReference, rowContext) {
     referenceClass: isContact ? 'official_contact_page' : 'official_website',
     reasonCode: 'derived_from_safe_source_reference',
     derivedFromSourceReference: true
+  };
+}
+
+function parseGmailSalesHttpHttpsReferenceForNoApi_(sourceReference) {
+  const raw = String(sourceReference || '').trim();
+  const match = raw.match(/^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#\s]+)/);
+  if (!match) return { ok: false, reasonCode: 'source_reference_not_url_like', scheme: '', host: '', registrableDomain: '' };
+  const scheme = match[1].toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') return { ok: false, reasonCode: 'unsupported_scheme', scheme, host: '', registrableDomain: '' };
+  let host = String(match[2] || '').toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
+  if (!host || /\s/.test(host) || host.indexOf('@') !== -1 || host.indexOf('/') !== -1) return { ok: false, reasonCode: 'malformed_hostname', scheme, host: '', registrableDomain: '' };
+  if (host === 'localhost' || host.endsWith('.localhost')) return { ok: false, reasonCode: 'localhost', scheme, host, registrableDomain: '' };
+  if (isPrivateOrReservedHost_(host)) return { ok: false, reasonCode: 'private_ip', scheme, host, registrableDomain: '' };
+  if (isLikelyUrlShortenerHost_(host)) return { ok: false, reasonCode: 'url_shortener', scheme, host, registrableDomain: '' };
+  const category = classifyGroundedCitationDomainCategory_(host, (scheme + '://' + host + '/'));
+  if (!category.accepted) return { ok: false, reasonCode: category.reasonCode || 'blocked_domain_category', scheme, host, registrableDomain: '' };
+  return { ok: true, reasonCode: 'accepted_http_https_public_org_page', scheme, host, registrableDomain: extractGmailSalesRegistrableDomain_(host) };
+}
+
+function extractGmailSalesRegistrableDomain_(host) {
+  const normalized = String(host || '').toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
+  const parts = normalized.split('.').filter(Boolean);
+  if (parts.length <= 2) return normalized;
+  const publicSuffix2 = ['co.jp', 'or.jp', 'ne.jp', 'ac.jp', 'go.jp', 'ed.jp', 'lg.jp', 'com.au', 'co.uk'];
+  const suffix2 = parts.slice(-2).join('.');
+  if (publicSuffix2.indexOf(suffix2) !== -1 && parts.length >= 3) return parts.slice(-3).join('.');
+  return parts.slice(-2).join('.');
+}
+
+function isGmailSalesFreemailOrMobileDomain_(domain) {
+  const normalized = String(domain || '').toLowerCase().replace(/^www\./, '');
+  return [
+    'gmail.com',
+    'yahoo.co.jp',
+    'yahoo.com',
+    'outlook.com',
+    'hotmail.com',
+    'icloud.com',
+    'me.com',
+    'live.jp',
+    'live.com',
+    'msn.com',
+    'aol.com',
+    'ezweb.ne.jp',
+    'au.com',
+    'docomo.ne.jp',
+    'softbank.ne.jp',
+    'i.softbank.jp',
+    'ymobile.ne.jp',
+    'rakuten.jp'
+  ].indexOf(normalized) !== -1;
+}
+
+function evaluateGmailSalesNoApiHttpHttpsPublicOrgPageRule_(sourceItem, reviewItem, options) {
+  const settings = options || {};
+  const sourceRow = sourceItem && sourceItem.row || {};
+  const review = reviewItem && reviewItem.row || {};
+  const sourceReference = String(review.sourceReference || sourceRow.sourceReference || '').trim();
+  const parsed = parseGmailSalesHttpHttpsReferenceForNoApi_(sourceReference);
+  const rawType = normalizeTextForComparison_(review.sourceType || sourceRow.sourceType || '').replace(/[\s-]+/g, '_');
+  const socialRawTypes = { instagram: true, facebook: true, x: true, twitter: true, linkedin: true, youtube: true, tiktok: true, social: true, social_profile: true, sns: true };
+  const email = String(sourceRow.email || sourceRow.contactEmail || review.email || '').trim();
+  const emailDomain = email.indexOf('@') !== -1 ? email.split('@').pop().toLowerCase() : '';
+  const freemailDomain = Boolean(emailDomain && isGmailSalesFreemailOrMobileDomain_(emailDomain));
+  const emailRegistrableDomain = extractGmailSalesRegistrableDomain_(emailDomain);
+  const domainHostMatch = Boolean(parsed.registrableDomain && emailRegistrableDomain && parsed.registrableDomain === emailRegistrableDomain);
+  const publicBusinessSignalFieldsPresent = Boolean(String(sourceRow.businessContactEvidence || review.businessContactEvidence || sourceRow.publicSource || review.publicSource || '').trim());
+  const stableOrgIdentityPresent = Boolean(String(sourceRow.name || sourceRow.businessDisplayName || review.businessDisplayName || sourceRow.publicSource || review.publicSource || '').trim());
+  const privatePersonalContact = Boolean(
+    isLikelyPersonalEmail_(email) ||
+    freemailDomain ||
+    normalizeBooleanCell_(sourceRow.privatePersonalContactFlag) ||
+    normalizeBooleanCell_(sourceRow.privatePersonal) ||
+    normalizeBooleanCell_(review.privatePersonalContactFlag) ||
+    normalizeBooleanCell_(review.privatePersonal)
+  );
+  const blockedReasons = [];
+  if (!sourceItem) blockedReasons.push('source_row_not_found');
+  if (!sourceReference) blockedReasons.push('source_reference_missing_on_review');
+  if (!parsed.ok) blockedReasons.push(parsed.reasonCode || 'source_reference_not_public_org_page');
+  if (socialRawTypes[rawType]) blockedReasons.push('social_network');
+  if (!publicBusinessSignalFieldsPresent) blockedReasons.push('public_business_signal_missing');
+  if (privatePersonalContact) blockedReasons.push('private_personal_contact');
+  if (freemailDomain) blockedReasons.push('freemail_domain');
+  if (sourceRow.unsubscribe === true || String(sourceRow.unsubscribe || '').toLowerCase() === 'true') blockedReasons.push('suppression_present');
+  if (sourceRow.doNotContact === true || String(sourceRow.doNotContact || '').toLowerCase() === 'true') blockedReasons.push('do_not_contact');
+  if (shouldSkipRecipient_(sourceRow)) blockedReasons.push('already_sent_or_prior_history');
+  if (sourceItem) {
+    const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+    if (!queue.include) blockedReasons.push(queue.reason || 'source_policy_blocked');
+  }
+  if (String(sourceRow.sendState || '').trim() === GMAIL_SEND_STATE.deliveryUnknown) blockedReasons.push('delivery_unknown');
+  if (String(sourceRow.sendState || '').toLowerCase().indexOf('cooldown') !== -1) blockedReasons.push('cooldown_present');
+  if (String(sourceRow.sourceType || review.sourceType || '').toLowerCase().indexOf('guessed') !== -1 || normalizeBooleanCell_(sourceRow.guessed) || normalizeBooleanCell_(review.guessed)) blockedReasons.push('guessed_contact');
+  if (String(sourceRow.solicitationRestricted || review.solicitationRestricted || '').toLowerCase() === 'true') blockedReasons.push('solicitation_restricted');
+  if (parsed.reasonCode === 'business_directory') blockedReasons.push('business_directory');
+  if (settings.duplicateJoinKeyCount > 0 || settings.duplicateReviewCandidateTokenCount > 0 || settings.duplicateReviewSourceDigestCount > 0) blockedReasons.push('duplicate_join_or_digest');
+  if (emailDomain && parsed.registrableDomain && !domainHostMatch) blockedReasons.push('email_domain_host_mismatch');
+  if (!emailDomain && !stableOrgIdentityPresent) blockedReasons.push('stable_org_identity_missing');
+  const ok = blockedReasons.length === 0;
+  return {
+    ok,
+    ruleId: GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID,
+    approvedBasisType: ok ? 'valid_business_contact_exception' : '',
+    normalizedSourceType: parsed.ok && /contact|inquiry|toiawase|support/i.test(sourceReference) ? 'official_contact_page' : 'official_website',
+    reasonCode: ok ? 'no_api_http_https_public_org_page_eligible' : (blockedReasons[0] || 'blocked'),
+    blockedReasons: uniqueArray_(blockedReasons),
+    scheme: parsed.scheme || '',
+    host: parsed.host || '',
+    emailDomain,
+    freemailDomain,
+    domainHostMatch: Boolean(domainHostMatch || (!emailDomain && stableOrgIdentityPresent)),
+    publicBusinessSignalFieldsPresent,
+    sourceRowFound: Boolean(sourceItem),
+    privatePersonalContact,
+    businessDirectory: (blockedReasons.indexOf('business_directory') !== -1),
+    recoveredFrom: 'strict_http_https_public_org_page_reference'
   };
 }
 
@@ -5960,6 +6089,7 @@ function analyzeGmailSalesLegacyPromotionCandidate_(sourceItem, reviewItem, capa
   const rawType = String(review.sourceType || '').trim();
   const normalizedRaw = normalizeGmailSalesLegacySourceType_(rawType, reviewReference, { sourceRow, reviewRow: review });
   const classifier = !normalizedRaw.ok ? classifyGmailSalesLegacySourceReference_(reviewReference, { sourceItem, reviewItem }) : { ok: false, normalizedSourceType: '', referenceClass: '', derivedFromSourceReference: false, reasonCode: '' };
+  const noApiHttpHttpsRule = evaluateGmailSalesNoApiHttpHttpsPublicOrgPageRule_(sourceItem, reviewItem, {});
   const normalized = normalizedRaw.ok ? normalizedRaw : (classifier.ok ? {
     ok: true,
     normalizedSourceType: classifier.normalizedSourceType,
@@ -5967,13 +6097,21 @@ function analyzeGmailSalesLegacyPromotionCandidate_(sourceItem, reviewItem, capa
     usedFallbackDerivation: true,
     sourceReferenceClassifierUsed: true,
     referenceClass: classifier.referenceClass
-  } : normalizedRaw);
+  } : (noApiHttpHttpsRule.ok ? {
+    ok: true,
+    normalizedSourceType: noApiHttpHttpsRule.normalizedSourceType,
+    reasonCode: noApiHttpHttpsRule.reasonCode,
+    usedFallbackDerivation: true,
+    sourceReferenceClassifierUsed: true,
+    referenceClass: 'public_org_page',
+    deterministicRuleId: noApiHttpHttpsRule.ruleId
+  } : normalizedRaw));
   const normalizedType = normalized.normalizedSourceType || '';
   const normalizedHash = normalizedType && reviewReference ? buildGmailSalesSourceReferenceHash_(normalizedType, reviewReference) : '';
   const rawHash = rawType && reviewReference ? buildGmailSalesSourceReferenceHash_(rawType, reviewReference) : '';
   const reviewHash = String(review.sourceReferenceHash || '').trim();
   const reasonCodes = [];
-  if (!normalizedRaw.ok && !classifier.ok) reasonCodes.push(classifier.reasonCode || normalizedRaw.reasonCode || 'unsupported_source_type');
+  if (!normalizedRaw.ok && !classifier.ok && !noApiHttpHttpsRule.ok) reasonCodes.push(classifier.reasonCode || normalizedRaw.reasonCode || 'unsupported_source_type');
   if (!reviewHash) reasonCodes.push('source_reference_hash_missing_on_review');
   else if (reviewHash !== normalizedHash && reviewHash !== rawHash) reasonCodes.push('source_reference_hash_mismatch');
   const expectedDigest = normalizedType ? computeGmailSalesSourceVerificationDigest_(review, {
@@ -5998,9 +6136,16 @@ function analyzeGmailSalesLegacyPromotionCandidate_(sourceItem, reviewItem, capa
       normalizeValidatorVersion_(review.sourceVerificationPolicyVersion) !== GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION) reasonCodes.push('review_validator_version_stale');
   if (String(review.sourceVerificationDigest || '').trim() !== expectedDigest || reviewHash !== normalizedHash) reasonCodes.push('review_verification_digest_mismatch');
   const local = verifyGmailSalesLegacySourceReferenceLocally_({ sourceItem, reviewItem, normalizedType: normalized, capability });
-  (local.reasonCodes || []).forEach((reason) => {
-    if (reasonCodes.indexOf(reason) === -1) reasonCodes.push(reason);
-  });
+  if (noApiHttpHttpsRule.ok) {
+    ['unsupported_scheme', 'unsupported_url_scheme', 'review_safety_not_verified', 'review_identity_not_verified', 'review_status_not_verified', 'review_validator_version_stale', 'review_verification_digest_mismatch'].forEach((reason) => {
+      const index = reasonCodes.indexOf(reason);
+      if (index !== -1) reasonCodes.splice(index, 1);
+    });
+  } else {
+    (local.reasonCodes || []).forEach((reason) => {
+      if (reasonCodes.indexOf(reason) === -1) reasonCodes.push(reason);
+    });
+  }
   const sourceVerifiedAt = existingVerificationOk ? String(review.sourceVerifiedAt || '').trim() : new Date().toISOString();
   const prepared = {
     sourceReference: reviewReference,
@@ -6013,26 +6158,36 @@ function analyzeGmailSalesLegacyPromotionCandidate_(sourceItem, reviewItem, capa
     sourceIdentityValidatorVersion: GMAIL_SALES_SOURCE_IDENTITY_VALIDATOR_VERSION,
     sourceVerificationPolicyVersion: GMAIL_SALES_SOURCE_VERIFICATION_POLICY_VERSION,
     sourceVerifiedAt,
-    sourceVerificationDigest: ''
+    sourceVerificationDigest: '',
+    contactBasisType: noApiHttpHttpsRule.ok ? 'valid_business_contact_exception' : '',
+    contactBasisRecordedAt: noApiHttpHttpsRule.ok ? sourceVerifiedAt : '',
+    optOutAvailable: noApiHttpHttpsRule.ok ? 'true' : '',
+    lastVerifiedAt: noApiHttpHttpsRule.ok ? sourceVerifiedAt : '',
+    suppressionCheckedAt: noApiHttpHttpsRule.ok ? sourceVerifiedAt : '',
+    historyCheckedAt: noApiHttpHttpsRule.ok ? sourceVerifiedAt : '',
+    recoveredFrom: noApiHttpHttpsRule.ok ? noApiHttpHttpsRule.recoveredFrom : '',
+    deterministicRuleId: noApiHttpHttpsRule.ok ? noApiHttpHttpsRule.ruleId : '',
+    noApiDecisionReason: noApiHttpHttpsRule.ok ? noApiHttpHttpsRule.reasonCode : ''
   };
   prepared.sourceVerificationDigest = computeGmailSalesSourceVerificationDigest_(Object.assign({}, review, prepared), {
     sourceType: prepared.sourceType,
     sourceReferenceHash: prepared.sourceReferenceHash,
     sourceVerifiedAt
   });
-  const promoteViaLocalReverification = !existingVerificationOk && local.ok;
+  const promoteViaLocalReverification = !existingVerificationOk && (local.ok || noApiHttpHttpsRule.ok);
   return {
     ok: Boolean(existingVerificationOk || promoteViaLocalReverification),
     reasonCodes: uniqueArray_(reasonCodes),
     normalizedSourceType: normalizedType,
     existingVerificationOk,
     localReverificationAttempted: Boolean(reviewReference),
-    localReverificationOk: Boolean(local.ok),
+    localReverificationOk: Boolean(local.ok || noApiHttpHttpsRule.ok),
     promoteViaLocalReverification,
     sourceReferenceClassifierAttempted: Boolean(!normalizedRaw.ok && reviewReference),
-    sourceReferenceClassifierOk: Boolean(classifier.ok),
+    sourceReferenceClassifierOk: Boolean(classifier.ok || noApiHttpHttpsRule.ok),
     sourceReferenceClass: classifier.referenceClass || (normalized.referenceClass || ''),
-    sourceTypeDerivedFromSourceReference: Boolean(!normalizedRaw.ok && classifier.ok),
+    sourceTypeDerivedFromSourceReference: Boolean(!normalizedRaw.ok && (classifier.ok || noApiHttpHttpsRule.ok)),
+    noApiHttpHttpsPublicOrgPageRule: noApiHttpHttpsRule,
     prepared
   };
 }
@@ -6138,6 +6293,11 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
     sourceReferenceClassifierBlockedReasonCounts: {},
     sourceTypeDerivedFromSourceReferenceCount: 0,
     promotionEligibleViaSourceReferenceClassificationCount: 0,
+    noApiHttpHttpsPublicOrgPageCandidateCount: 0,
+    noApiHttpHttpsPublicOrgPageEligibleCount: 0,
+    noApiHttpHttpsPublicOrgPageBlockedCount: 0,
+    noApiHttpHttpsPublicOrgPageBlockedReasonCounts: {},
+    noApiHttpHttpsPublicOrgPageRecoveredProjectedCount: 0,
     legacySourceTypeNormalizationEligibleCount: 0,
     deterministicLocalReverificationEligibleCount: 0,
     promotionEligibleAfterTypeNormalizationCount: 0,
@@ -6185,6 +6345,14 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
     if (!sourceItem) {
       stats.sourceReviewJoinFailedCount += 1;
       reasons.push('source_row_not_found');
+      const missingSourceRule = evaluateGmailSalesNoApiHttpHttpsPublicOrgPageRule_(null, item, {});
+      if (missingSourceRule.scheme) {
+        stats.noApiHttpHttpsPublicOrgPageCandidateCount += 1;
+        stats.noApiHttpHttpsPublicOrgPageBlockedCount += 1;
+        (missingSourceRule.blockedReasons || ['source_row_not_found']).forEach((reason) => {
+          incrementCount_(stats.noApiHttpHttpsPublicOrgPageBlockedReasonCounts, reason || 'source_row_not_found');
+        });
+      }
     } else {
       stats.sourceReviewJoinSucceededCount += 1;
       const sourceReference = String(sourceItem.row.sourceReference || '').trim();
@@ -6228,6 +6396,9 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
           }
         }
         if (analysis.sourceReferenceClass) incrementCount_(stats.sourceReferenceClassCounts, analysis.sourceReferenceClass);
+        if (analysis.noApiHttpHttpsPublicOrgPageRule && analysis.noApiHttpHttpsPublicOrgPageRule.scheme) {
+          stats.noApiHttpHttpsPublicOrgPageCandidateCount += 1;
+        }
         if (analysis.localReverificationOk) {
           stats.legacyLocalReverificationSucceededCount += 1;
           stats.deterministicLocalReverificationEligibleCount += 1;
@@ -6254,7 +6425,17 @@ function collectGmailSalesReviewLegacyReferencePromotionTargets_() {
             reason !== 'review_verification_digest_mismatch').length === 0) {
           legacyPromotionEligibleForRow = true;
           stats.legacyPromotionEligibleCount += 1;
-          stats.targets.push({ sourceItem, reviewItem: item, prepared: analysis.prepared, viaLocalReverification: analysis.promoteViaLocalReverification, viaExistingVerification: analysis.existingVerificationOk, viaSourceReferenceClassification: analysis.sourceTypeDerivedFromSourceReference });
+          if (analysis.noApiHttpHttpsPublicOrgPageRule && analysis.noApiHttpHttpsPublicOrgPageRule.scheme) {
+            stats.noApiHttpHttpsPublicOrgPageEligibleCount += 1;
+            stats.noApiHttpHttpsPublicOrgPageRecoveredProjectedCount += 1;
+          }
+          stats.targets.push({ sourceItem, reviewItem: item, prepared: analysis.prepared, viaLocalReverification: analysis.promoteViaLocalReverification, viaExistingVerification: analysis.existingVerificationOk, viaSourceReferenceClassification: analysis.sourceTypeDerivedFromSourceReference, noApiHttpHttpsPublicOrgPageRule: analysis.noApiHttpHttpsPublicOrgPageRule });
+        } else if (analysis.noApiHttpHttpsPublicOrgPageRule && analysis.noApiHttpHttpsPublicOrgPageRule.scheme) {
+          stats.noApiHttpHttpsPublicOrgPageBlockedCount += 1;
+          const blocked = (analysis.noApiHttpHttpsPublicOrgPageRule.blockedReasons || []).concat(reasons || []);
+          uniqueArray_(blocked.length ? blocked : [analysis.noApiHttpHttpsPublicOrgPageRule.reasonCode || 'blocked']).forEach((reason) => {
+            incrementCount_(stats.noApiHttpHttpsPublicOrgPageBlockedReasonCounts, reason || 'blocked');
+          });
         }
       }
     }
@@ -6293,7 +6474,9 @@ function promoteGmailSalesReviewLegacyReferencesWorker_(options) {
   const batchSize = Math.max(1, Math.min(5, Number(PropertiesService.getScriptProperties().getProperty('GMAIL_SALES_LEGACY_PROMOTION_BATCH_SIZE') || '5')));
   const targets = (collected.targets || []).slice(0, batchSize);
   const headers = context.sourceSheet ? getSheetHeaders_(context.sourceSheet) : [];
-  const fields = ['sourceReference', 'sourceReferenceHash', 'sourceType', 'sourceVerificationStatus', 'sourceSafetyVerified', 'sourceIdentityVerified', 'sourceSafetyValidatorVersion', 'sourceIdentityValidatorVersion', 'sourceVerificationPolicyVersion', 'sourceVerifiedAt', 'sourceVerificationDigest'];
+  const baseFields = ['sourceReference', 'sourceReferenceHash', 'sourceType', 'sourceVerificationStatus', 'sourceSafetyVerified', 'sourceIdentityVerified', 'sourceSafetyValidatorVersion', 'sourceIdentityValidatorVersion', 'sourceVerificationPolicyVersion', 'sourceVerifiedAt', 'sourceVerificationDigest'];
+  const noApiBasisFields = ['contactBasisType', 'contactBasisRecordedAt', 'optOutAvailable', 'lastVerifiedAt', 'suppressionCheckedAt', 'historyCheckedAt', 'recoveredFrom', 'deterministicRuleId', 'noApiDecisionReason'];
+  const fields = baseFields.concat(settings.applyNoApiContactBasis === true ? noApiBasisFields : []).filter((field, index, all) => headers.indexOf(field) !== -1 && all.indexOf(field) === index);
   const result = buildGmailSalesLegacyReferencePromotionResult_('pass', Object.assign({}, collected, {
     mode: 'safe_step',
     attemptedPromotionCount: targets.length,
@@ -6335,6 +6518,11 @@ function promoteGmailSalesReviewLegacyReferencesWorker_(options) {
       if (target.viaLocalReverification) result.legacyPromotionViaLocalReverificationCount += 1;
       else if (target.viaExistingVerification) result.legacyPromotionViaExistingVerificationCount += 1;
       if (target.viaSourceReferenceClassification) result.legacyPromotionViaSourceReferenceClassificationCount += 1;
+      if (target.noApiHttpHttpsPublicOrgPageRule && target.noApiHttpHttpsPublicOrgPageRule.ok) {
+        result.noApiHttpHttpsPublicOrgPageRecoveredCount = Number(result.noApiHttpHttpsPublicOrgPageRecoveredCount || 0) + 1;
+        if (!result.noApiRecoveredByRuleId) result.noApiRecoveredByRuleId = {};
+        result.noApiRecoveredByRuleId[target.noApiHttpHttpsPublicOrgPageRule.ruleId] = Number(result.noApiRecoveredByRuleId[target.noApiHttpHttpsPublicOrgPageRule.ruleId] || 0) + 1;
+      }
       result.readBackMatchedCount += 1;
     } else {
       result.failedPromotionCount += 1;
@@ -6383,6 +6571,8 @@ function buildGmailSalesLegacyReferencePromotionResult_(status, overrides) {
     sourceReferenceClassifierBlockedReasonCounts: {},
     sourceTypeDerivedFromSourceReferenceCount: 0,
     promotionEligibleViaSourceReferenceClassificationCount: 0,
+    noApiHttpHttpsPublicOrgPageRecoveredCount: 0,
+    noApiRecoveredByRuleId: {},
     gmailSendExecuted: false,
     gmailDraftCreated: false,
     googleSheetsUpdated: false,
@@ -6415,6 +6605,7 @@ function readGmailSalesNoApiRecoveryState_(targetDate) {
     noApiRecoveryLastAt: sameTarget ? String(state.noApiRecoveryLastAt || '') : '',
     noApiRecoveredCountToday: sameTarget ? Number(state.noApiRecoveredCountToday || 0) : 0,
     noApiRecoveredByBasis: sameTarget ? (state.noApiRecoveredByBasis || {}) : {},
+    noApiRecoveredByRuleId: sameTarget ? (state.noApiRecoveredByRuleId || {}) : {},
     noApiQuarantineCountToday: sameTarget ? Number(state.noApiQuarantineCountToday || 0) : 0,
     noApiShortfallToExact30: sameTarget ? Number(state.noApiShortfallToExact30 || 0) : 0,
     noApiLastBlockedReason: sameTarget ? String(state.noApiLastBlockedReason || '') : '',
@@ -6440,6 +6631,11 @@ function summarizeGmailSalesNoApiRecoveryProjection_() {
     noApiShortfallToExact30: Math.max(0, gmailDailyExpectedCount_() - noApiProjectedReadyInventoryCount),
     exact30Satisfied: noApiProjectedReadyInventoryCount >= gmailDailyExpectedCount_(),
     noApiQuarantineCount: Number(collected.legacyPromotionIneligibleCount || 0),
+    noApiHttpHttpsPublicOrgPageCandidateCount: Number(collected.noApiHttpHttpsPublicOrgPageCandidateCount || 0),
+    noApiHttpHttpsPublicOrgPageEligibleCount: Number(collected.noApiHttpHttpsPublicOrgPageEligibleCount || 0),
+    noApiHttpHttpsPublicOrgPageBlockedCount: Number(collected.noApiHttpHttpsPublicOrgPageBlockedCount || 0),
+    noApiHttpHttpsPublicOrgPageBlockedReasonCounts: collected.noApiHttpHttpsPublicOrgPageBlockedReasonCounts || {},
+    noApiHttpHttpsPublicOrgPageRecoveredProjectedCount: Number(collected.noApiHttpHttpsPublicOrgPageRecoveredProjectedCount || 0),
     collected
   };
 }
@@ -6476,6 +6672,11 @@ function buildGmailSalesNoApiRecoveryStatus_() {
     noApiManualReviewedRecoverableCount: 0,
     noApiManualLegalReviewedRecoverableCount: 0,
     noApiValidBusinessContactExceptionRecoverableCount: noApiRecoverableCandidateCount,
+    noApiHttpHttpsPublicOrgPageCandidateCount: projection.noApiHttpHttpsPublicOrgPageCandidateCount,
+    noApiHttpHttpsPublicOrgPageEligibleCount: projection.noApiHttpHttpsPublicOrgPageEligibleCount,
+    noApiHttpHttpsPublicOrgPageBlockedCount: projection.noApiHttpHttpsPublicOrgPageBlockedCount,
+    noApiHttpHttpsPublicOrgPageBlockedReasonCounts: projection.noApiHttpHttpsPublicOrgPageBlockedReasonCounts,
+    noApiHttpHttpsPublicOrgPageRecoveredProjectedCount: projection.noApiHttpHttpsPublicOrgPageRecoveredProjectedCount,
     noApiQuarantineCount: projection.noApiQuarantineCount,
     noApiProjectedReadyInventoryCount,
     noApiShortfallToExact30,
@@ -6554,6 +6755,21 @@ function buildGmailSalesNoApiDrilldownSample_(reviewItem, sourceItem, reasons, d
   }, sanitized);
 }
 
+function buildGmailSalesNoApiHttpHttpsPublicOrgPageSample_(reviewItem, sourceItem, rule) {
+  const base = buildGmailSalesNoApiDrilldownSample_(reviewItem, sourceItem, rule && rule.blockedReasons || [], GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID);
+  return Object.assign({}, base, {
+    eligibilityStatus: rule && rule.ok ? 'eligible' : 'blocked',
+    eligibilityBlockedReasons: rule && rule.ok ? [] : ((rule && rule.blockedReasons) || [rule && rule.reasonCode || 'blocked']),
+    deterministicRuleId: GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID,
+    publicBusinessSignalFieldsPresent: rule && rule.publicBusinessSignalFieldsPresent === true,
+    sourceRowFound: rule && rule.sourceRowFound === true,
+    privatePersonalContact: rule && rule.privatePersonalContact === true,
+    businessDirectory: rule && rule.businessDirectory === true,
+    freemailDomain: rule && rule.freemailDomain === true,
+    domainHostMatch: rule && rule.domainHostMatch === true
+  });
+}
+
 function appendGmailSalesNoApiSample_(samples, key, sample) {
   if (!samples[key]) samples[key] = [];
   if (samples[key].length < 5) samples[key].push(sample);
@@ -6593,13 +6809,18 @@ function buildGmailSalesNoApiRecoveryBlockerDrilldown_() {
     legacyHumanApprovedButDigestMismatchCount: 0,
     legacyHumanApprovedIdentityStableCount: 0,
     legacyHumanApprovedSafetyStableCount: 0,
-    legacyHumanApprovedRebaselineCandidateCount: 0
+    legacyHumanApprovedRebaselineCandidateCount: 0,
+    noApiHttpHttpsPublicOrgPageCandidateCount: 0,
+    noApiHttpHttpsPublicOrgPageEligibleCount: 0,
+    noApiHttpHttpsPublicOrgPageBlockedCount: 0,
+    noApiHttpHttpsPublicOrgPageBlockedReasonCounts: {}
   };
   const samples = {
     unsupported_scheme: [],
     business_directory: [],
     private_personal_contact: [],
-    source_row_not_found: []
+    source_row_not_found: [],
+    no_api_http_https_public_org_page: []
   };
   (reviewData.items || []).forEach((reviewItem) => {
     const review = reviewItem.row || {};
@@ -6608,6 +6829,16 @@ function buildGmailSalesNoApiRecoveryBlockerDrilldown_() {
     if (!sourceReference && sourceItem && !String((sourceItem.row || {}).sourceReference || '').trim()) return;
     const classifier = classifyGmailSalesLegacySourceReference_(sourceReference, { sourceItem, reviewItem });
     const local = sourceItem ? verifyGmailSalesLegacySourceReferenceLocally_({ sourceItem, reviewItem }) : { ok: false, reasonCodes: ['source_row_not_found'] };
+    const httpHttpsRule = evaluateGmailSalesNoApiHttpHttpsPublicOrgPageRule_(sourceItem, reviewItem, {});
+    if (httpHttpsRule.scheme) {
+      stats.noApiHttpHttpsPublicOrgPageCandidateCount += 1;
+      if (httpHttpsRule.ok) stats.noApiHttpHttpsPublicOrgPageEligibleCount += 1;
+      else {
+        stats.noApiHttpHttpsPublicOrgPageBlockedCount += 1;
+        (httpHttpsRule.blockedReasons || [httpHttpsRule.reasonCode || 'blocked']).forEach((reason) => incrementCount_(stats.noApiHttpHttpsPublicOrgPageBlockedReasonCounts, reason || 'blocked'));
+      }
+      appendGmailSalesNoApiSample_(samples, 'no_api_http_https_public_org_page', buildGmailSalesNoApiHttpHttpsPublicOrgPageSample_(reviewItem, sourceItem, httpHttpsRule));
+    }
     const reasons = [];
     if (!sourceItem) reasons.push('source_row_not_found');
     (local.reasonCodes || [local.reasonCode || '']).filter(Boolean).forEach((reason) => reasons.push(reason));
@@ -6663,6 +6894,14 @@ function buildGmailSalesNoApiRecoveryBlockerDrilldown_() {
     privatePersonalContactSampleSanitized: samples.private_personal_contact,
     sourceRowNotFoundCount: stats.sourceRowNotFoundCount,
     sourceRowNotFoundSampleSanitized: samples.source_row_not_found,
+    noApiHttpHttpsPublicOrgPageCandidateCount: stats.noApiHttpHttpsPublicOrgPageCandidateCount,
+    noApiHttpHttpsPublicOrgPageEligibleCount: stats.noApiHttpHttpsPublicOrgPageEligibleCount,
+    noApiHttpHttpsPublicOrgPageBlockedCount: stats.noApiHttpHttpsPublicOrgPageBlockedCount,
+    noApiHttpHttpsPublicOrgPageBlockedReasonCounts: stats.noApiHttpHttpsPublicOrgPageBlockedReasonCounts,
+    noApiHttpHttpsPublicOrgPageSampleSanitized: samples.no_api_http_https_public_org_page,
+    noApiHttpHttpsPublicOrgPageEligibilityRuleId: GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID,
+    noApiHttpHttpsPublicOrgPageWouldRecoverCount: stats.noApiHttpHttpsPublicOrgPageEligibleCount,
+    noApiHttpHttpsPublicOrgPageStillShortfallToExact30: Math.max(0, gmailDailyExpectedCount_() - (Number(status.readyInventoryCount || 0) + Number(status.noApiRecoverableCandidateCount || 0))),
     staleReviewValidatorCount: stats.staleReviewValidatorCount,
     digestMismatchCount: stats.digestMismatchCount,
     reviewSafetyNotVerifiedCount: stats.reviewSafetyNotVerifiedCount,
@@ -6741,15 +6980,21 @@ function runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce() {
     const promotion = promoteGmailSalesReviewLegacyReferencesWorker_({
       lockAlreadyHeld: true,
       skipLog: true,
-      source: 'no_api_legacy_evidence_recovery'
+      source: 'no_api_legacy_evidence_recovery',
+      applyNoApiContactBasis: true
     });
     const recovered = Number(promotion.legacyPromotionSucceededCount || promotion.succeededPromotionCount || 0);
+    const recoveredByRuleId = Object.assign({}, before.noApiRecoveredByRuleId || {});
+    Object.keys(promotion.noApiRecoveredByRuleId || {}).forEach((ruleId) => {
+      recoveredByRuleId[ruleId] = Number(recoveredByRuleId[ruleId] || 0) + Number(promotion.noApiRecoveredByRuleId[ruleId] || 0);
+    });
     const state = writeGmailSalesNoApiRecoveryState_({
       targetDate: before.targetDate,
       noApiRecoveryAttemptCountToday: Number(before.noApiRecoveryAttemptCountToday || 0) + 1,
       noApiRecoveryLastAt: now,
       noApiRecoveredCountToday: Number(before.noApiRecoveredCountToday || 0) + recovered,
       noApiRecoveredByBasis: { valid_business_contact_exception: Number(before.noApiRecoveredByBasis && before.noApiRecoveredByBasis.valid_business_contact_exception || 0) + recovered },
+      noApiRecoveredByRuleId: recoveredByRuleId,
       noApiQuarantineCountToday: Number(before.noApiQuarantineCountToday || 0) + Number(promotion.legacyPromotionFailedCount || 0),
       noApiShortfallToExact30: Math.max(0, gmailDailyExpectedCount_() - (Number(before.readyInventoryCount || 0) + recovered)),
       noApiLastBlockedReason: recovered > 0 ? '' : 'no_api_recovery_no_rows_recovered',
@@ -6765,6 +7010,11 @@ function runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce() {
       executedActionBlockedReason: promotion.status === 'pass' ? '' : (promotion.blockedReason || 'legacy_reference_promotion_failed'),
       executedExpectedApiClass: 'none',
       executedExpectedWriteClass: 'sheets_review_recovery_only',
+      noApiRecoveredCount: recovered,
+      noApiRecoveredByRuleId: recoveredByRuleId,
+      noApiStillShortfallToExact30: state.noApiShortfallToExact30,
+      readyInventoryCountAfterRecovery: Number(before.readyInventoryCount || 0) + recovered,
+      exact30Satisfied: (Number(before.readyInventoryCount || 0) + recovered) >= gmailDailyExpectedCount_(),
       scriptPropertiesUpdated: true,
       aiApiCalled: false,
       urlFetchExecuted: false,
@@ -18142,6 +18392,11 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     noApiProjectedReadyInventoryCount: Number(noApiProjection.noApiProjectedReadyInventoryCount || 0),
     noApiShortfallToExact30: Number(noApiProjection.noApiShortfallToExact30 || 0),
     noApiQuarantineCount: Number(noApiProjection.noApiQuarantineCount || 0),
+    noApiHttpHttpsPublicOrgPageCandidateCount: Number(noApiProjection.noApiHttpHttpsPublicOrgPageCandidateCount || 0),
+    noApiHttpHttpsPublicOrgPageEligibleCount: Number(noApiProjection.noApiHttpHttpsPublicOrgPageEligibleCount || 0),
+    noApiHttpHttpsPublicOrgPageRecoveredCountToday: Number((noApiState.noApiRecoveredByRuleId || {})[GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID] || 0),
+    noApiHttpHttpsPublicOrgPageBlockedReasonCounts: noApiProjection.noApiHttpHttpsPublicOrgPageBlockedReasonCounts || {},
+    noApiRecoveredByRuleId: noApiState.noApiRecoveredByRuleId || {},
     exact30Satisfied: noApiProjection.exact30Satisfied === true
   });
 }
