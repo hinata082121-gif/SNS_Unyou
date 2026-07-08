@@ -6850,6 +6850,7 @@ function buildGmailSalesNoApiRecoveryStatus_() {
   const noApiProjectedReadyInventoryCount = projection.noApiProjectedReadyInventoryCount;
   const noApiShortfallToExact30 = projection.noApiShortfallToExact30;
   const exact30Satisfied = projection.exact30Satisfied;
+  const noApiInventoryExhausted = noApiRecoverableCandidateCount <= 0 && readyInventoryCount < gmailDailyExpectedCount_();
   const safe = policy.noApiRecoveryRouteEnabled === true && noApiRecoverableCandidateCount > 0;
   const blockedReason = safe ? '' : (policy.noApiRecoveryRouteEnabled === true ? 'no_api_recoverable_inventory_insufficient' : 'no_api_recovery_route_disabled');
   return Object.assign({}, policy, state, summarizeGmailSalesLegacyReferencePromotionReadiness_(collected), {
@@ -6882,6 +6883,13 @@ function buildGmailSalesNoApiRecoveryStatus_() {
     noApiQuarantineCount: projection.noApiQuarantineCount,
     noApiProjectedReadyInventoryCount,
     noApiShortfallToExact30,
+    noApiInventoryExhausted,
+    noApiRecoveredTotalReadyInventory: readyInventoryCount,
+    noApiRemainingShortfallToExact30: noApiShortfallToExact30,
+    noApiNextSafePath: noApiInventoryExhausted ? 'add_new_non_private_non_freemail_public_business_inventory_or_manual_exception_review' : '',
+    noApiUnsafePathsSuppressed: ['paid_ai_api', 'gemini_grounding', 'urlfetch_grounding', 'private_personal_contact', 'freemail_contact', 'business_directory_default'],
+    sendBlockedReason: exact30Satisfied ? '' : 'exact30_not_satisfied',
+    manifestBlockedReason: exact30Satisfied ? '' : 'ready_inventory_below_exact30',
     exact30Satisfied,
     noApiRecoverySafeToExecute: safe,
     noApiRecoveryBlockedReason: blockedReason,
@@ -8580,6 +8588,7 @@ function inspectGmailSalesAiProviderConfiguration() {
   const provider = String(props.getProperty('GMAIL_SALES_AI_PROVIDER') || '').trim();
   const model = String(props.getProperty('GMAIL_SALES_AI_MODEL') || '').trim();
   const keyPresent = Boolean(props.getProperty('GMAIL_SALES_AI_API_KEY'));
+  const policy = getGmailSalesNoPaidAiApiPolicy_({ provider: provider.toLowerCase() });
   const sessionState = getGmailSalesAiSetupSessionState_();
   const blockedReasons = [];
   if (['openai', 'gemini'].indexOf(provider) === -1) blockedReasons.push('provider_not_configured');
@@ -8592,6 +8601,14 @@ function inspectGmailSalesAiProviderConfiguration() {
     provider,
     modelConfigured: Boolean(model),
     apiKeyPresent: keyPresent,
+    effectiveAiApiAllowed: policy.effectiveAiApiAllowed === true,
+    effectiveGroundingAllowed: policy.effectiveGroundingAllowed === true,
+    aiRecoverySuppressedByNoPaidPolicy: policy.aiRecoverySuppressedByNoPaidPolicy === true,
+    aiRecoverySuppressedReason: String(policy.aiRecoverySuppressedReason || ''),
+    aiProviderConfiguredButPolicyDisabled: keyPresent && policy.paidAiProviderBlocked === true,
+    aiProviderPolicyDisabledReason: policy.paidAiProviderBlocked === true ? 'no_paid_ai_until_first_revenue' : '',
+    recommendedOperatorAction: policy.paidAiProviderBlocked === true ? 'do_not_run_ai_provider_steps' : '',
+    aiApiCalled: false,
     dailyRequestLimit: Number(props.getProperty('GMAIL_SALES_AI_MAX_DAILY_REQUESTS') || '100'),
     dailyCostLimitYen: Number(props.getProperty('GMAIL_SALES_AI_MAX_DAILY_COST_YEN') || '100'),
     confidenceThreshold: Number(props.getProperty('GMAIL_SALES_AI_CONFIDENCE_THRESHOLD') || '0.95'),
@@ -9786,6 +9803,56 @@ function decorateGmailSalesEvidenceRecoveryActionResult_(actionResult, actionNam
   });
 }
 
+function alignGmailSalesNoPaidAiExhaustedRecoveryStatus_(result) {
+  if (!result || result.paidAiApiDisabledByPolicy !== true) return result;
+  const noApiRecoverableCount = Number(result.noApiRecoverableCandidateCount || result.legacyPromotionEligibleCount || result.promotionEligibleViaSourceReferenceClassificationCount || 0);
+  const exact30Satisfied = result.exact30Satisfied === true || Number(result.readyInventoryCount || 0) >= gmailDailyExpectedCount_();
+  const noApiInventoryExhausted = noApiRecoverableCount <= 0 && !exact30Satisfied;
+  if (!noApiInventoryExhausted) return result;
+  const waitAction = 'wait_for_no_api_recoverable_inventory_or_manual_exception_review';
+  const blockedReason = 'no_api_recoverable_inventory_insufficient';
+  Object.assign(result, {
+    effectiveAiApiAllowed: false,
+    effectiveGroundingAllowed: false,
+    aiRecoverySuppressedByNoPaidPolicy: true,
+    aiRecoverySuppressedReason: 'paid_ai_api_disabled_by_policy',
+    noApiInventoryExhausted: true,
+    noApiRecoveredTotalReadyInventory: Number(result.readyInventoryCount || 0),
+    noApiRemainingShortfallToExact30: Math.max(0, gmailDailyExpectedCount_() - Number(result.readyInventoryCount || 0)),
+    noApiNextSafePath: 'add_new_non_private_non_freemail_public_business_inventory_or_manual_exception_review',
+    noApiUnsafePathsSuppressed: ['paid_ai_api', 'gemini_grounding', 'urlfetch_grounding', 'private_personal_contact', 'freemail_contact', 'business_directory_default'],
+    sendBlockedReason: 'exact30_not_satisfied',
+    manifestBlockedReason: 'ready_inventory_below_exact30',
+    plannedNextAction: waitAction,
+    plannedNextActionReasonCode: blockedReason,
+    plannedExpectedApiClass: 'none',
+    plannedExpectedWriteClass: 'none',
+    plannedSafeToExecute: false,
+    safeToExecute: false,
+    operatorRecommendedNextFunction: '',
+    operatorRecommendedNextFunctionReason: '',
+    operatorShouldRunSafeStepNow: false,
+    operatorShouldWaitReason: blockedReason,
+    aiRetryRecommendedAction: waitAction,
+    aiRetrySafeToExecute: false,
+    expectedApiClass: 'none',
+    expectedWriteClass: 'none',
+    evidenceRecoveryAction: waitAction,
+    evidenceRecoveryActionReasonCode: blockedReason,
+    recommendedNextAction: waitAction,
+    actionStatus: 'blocked',
+    actionBlockedReason: blockedReason,
+    actionEstimatedCostYen: 0,
+    actionCostYen: 0,
+    groundingPromptRequestCountToday: 0,
+    dailyPromptRequestLimit: 0,
+    remainingGroundingPromptRequestCountToday: 0,
+    plannedGroundingPromptRequestCount: 0,
+    groundingPromptBudgetSufficient: true
+  });
+  return result;
+}
+
 function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
   const config = getGmailSalesAiConfig_();
   const context = getGmailSalesContactBasisReviewContext_();
@@ -9951,7 +10018,15 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
       noApiProjectedReadyInventoryCount: Number(noApi.noApiProjectedReadyInventoryCount || 0),
       noApiRecoverySafeToExecute: noApi.noApiRecoverySafeToExecute === true,
       noApiRecoveryBlockedReason: String(noApi.noApiRecoveryBlockedReason || ''),
-      noApiShortfallToExact30: Number(noApi.noApiShortfallToExact30 || 0)
+      noApiShortfallToExact30: Number(noApi.noApiShortfallToExact30 || 0),
+      noApiInventoryExhausted: noApi.noApiInventoryExhausted === true,
+      noApiRecoveredTotalReadyInventory: Number(noApi.noApiRecoveredTotalReadyInventory || 0),
+      noApiRemainingShortfallToExact30: Number(noApi.noApiRemainingShortfallToExact30 || 0),
+      noApiNextSafePath: String(noApi.noApiNextSafePath || ''),
+      noApiUnsafePathsSuppressed: noApi.noApiUnsafePathsSuppressed || [],
+      sendBlockedReason: String(noApi.sendBlockedReason || ''),
+      manifestBlockedReason: String(noApi.manifestBlockedReason || ''),
+      exact30Satisfied: noApi.exact30Satisfied === true
     }, summarizeGmailSalesLegacyReferencePromotionReadiness_(noApi));
     result.aiPendingBlockedByCooldown = false;
     result.aiRetrySafeToExecute = false;
@@ -10088,6 +10163,7 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
     result.operatorShouldRunSafeStepNow = Boolean(result.operatorRecommendedNextFunction);
     result.operatorShouldWaitReason = result.operatorShouldRunSafeStepNow ? '' : 'no_api_recoverable_inventory_insufficient';
   }
+  alignGmailSalesNoPaidAiExhaustedRecoveryStatus_(result);
   if (result.emptyDigestButReadyCount > 0) result.blockedReasons.push('empty_digest_but_ready');
   if (result.shortfallToThirty > 0) result.blockedReasons.push('ready_inventory_below_30');
   result.status = result.blockedReasons.length > 0 ? 'blocked' : 'pass';
@@ -10253,6 +10329,10 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     geminiApiAllowed: false,
     openAiApiAllowed: false,
     externalLlmApiAllowed: false,
+    effectiveAiApiAllowed: false,
+    effectiveGroundingAllowed: false,
+    aiRecoverySuppressedByNoPaidPolicy: true,
+    aiRecoverySuppressedReason: 'paid_ai_api_disabled_by_policy',
     noApiRecoveryRouteEnabled: true,
     paidAiProviderBlocked: false,
     noApiSource: 'sheets_legacy_and_local_evidence_only',
@@ -10265,6 +10345,13 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     noApiValidBusinessContactExceptionRecoverableCount: 0,
     noApiQuarantineCount: 0,
     noApiProjectedReadyInventoryCount: 0,
+    noApiInventoryExhausted: false,
+    noApiRecoveredTotalReadyInventory: 0,
+    noApiRemainingShortfallToExact30: 0,
+    noApiNextSafePath: '',
+    noApiUnsafePathsSuppressed: [],
+    sendBlockedReason: '',
+    manifestBlockedReason: '',
     exact30Satisfied: false,
     noApiRecoverySafeToExecute: false,
     noApiRecoveryBlockedReason: '',
@@ -10351,7 +10438,9 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     gmailDraftCreated: false,
     googleSheetsUpdated: false,
     scriptPropertiesUpdated: false,
-    triggerChanged: false
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
   }, overrides || {});
 }
 
@@ -16240,6 +16329,10 @@ function getGmailSalesNoPaidAiApiPolicy_(config) {
     geminiApiAllowed: !disabled,
     openAiApiAllowed: !disabled,
     externalLlmApiAllowed: !disabled,
+    effectiveAiApiAllowed: !disabled && (provider === 'gemini' || provider === 'openai'),
+    effectiveGroundingAllowed: !disabled && provider === 'gemini',
+    aiRecoverySuppressedByNoPaidPolicy: disabled,
+    aiRecoverySuppressedReason: disabled ? 'paid_ai_api_disabled_by_policy' : '',
     noApiRecoveryRouteEnabled: true,
     paidAiProviderBlocked: disabled && (provider === 'gemini' || provider === 'openai')
   };
@@ -18939,6 +19032,15 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     noApiSourceRowRelinkRecoveredCountToday: Number((noApiState.noApiRecoveredByRuleId || {})[GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID] || 0),
     noApiSourceRowRelinkBlockedReasonCounts: noApiProjection.noApiSourceRowRelinkBlockedReasonCounts || {},
     noApiRecoveredByRuleId: noApiState.noApiRecoveredByRuleId || {},
+    noApiInventoryExhausted: Number(noApiProjection.noApiRecoverableCandidateCount || 0) <= 0 && Number(noApiProjection.readyInventoryCount || 0) < gmailDailyExpectedCount_(),
+    noApiRecoveredTotalReadyInventory: Number(noApiProjection.readyInventoryCount || 0),
+    noApiRemainingShortfallToExact30: Number(noApiProjection.noApiShortfallToExact30 || 0),
+    noApiNextSafePath: Number(noApiProjection.noApiRecoverableCandidateCount || 0) <= 0 && Number(noApiProjection.readyInventoryCount || 0) < gmailDailyExpectedCount_()
+      ? 'add_new_non_private_non_freemail_public_business_inventory_or_manual_exception_review'
+      : '',
+    noApiUnsafePathsSuppressed: ['paid_ai_api', 'gemini_grounding', 'urlfetch_grounding', 'private_personal_contact', 'freemail_contact', 'business_directory_default'],
+    sendBlockedReason: noApiProjection.exact30Satisfied === true ? '' : 'exact30_not_satisfied',
+    manifestBlockedReason: noApiProjection.exact30Satisfied === true ? '' : 'ready_inventory_below_exact30',
     exact30Satisfied: noApiProjection.exact30Satisfied === true
   });
 }

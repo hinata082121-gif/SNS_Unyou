@@ -2888,6 +2888,20 @@ assert.equal(noapi1Status.plannedNextActionReasonCode, 'no_paid_ai_api_policy_ac
 assert.equal(noapi1Status.plannedExpectedApiClass, 'none');
 assert.equal(noapi1Status.plannedExpectedWriteClass, 'sheets_review_recovery_only');
 assert.equal(noapi1Status.operatorRecommendedNextFunction, 'runGmailSalesNoApiLegacyEvidenceRecoveryStepOnce');
+assert.equal(noapi1Status.effectiveAiApiAllowed, false);
+assert.equal(noapi1Status.effectiveGroundingAllowed, false);
+assert.equal(noapi1Status.aiRecoverySuppressedByNoPaidPolicy, true);
+assert.equal(noapi1Status.aiRecoverySuppressedReason, 'paid_ai_api_disabled_by_policy');
+const noapi1AiConfig = noapi1.inspectGmailSalesAiProviderConfiguration();
+assert.equal(noapi1AiConfig.providerConfigured, true);
+assert.equal(noapi1AiConfig.apiKeyPresent, true);
+assert.equal(noapi1AiConfig.configurationValid, true);
+assert.equal(noapi1AiConfig.effectiveAiApiAllowed, false);
+assert.equal(noapi1AiConfig.effectiveGroundingAllowed, false);
+assert.equal(noapi1AiConfig.aiProviderConfiguredButPolicyDisabled, true);
+assert.equal(noapi1AiConfig.aiProviderPolicyDisabledReason, 'no_paid_ai_until_first_revenue');
+assert.equal(noapi1AiConfig.recommendedOperatorAction, 'do_not_run_ai_provider_steps');
+assert.equal(noapi1AiConfig.aiApiCalled, false);
 assert.equal(noapi1.__state.urlFetchCount, 0);
 assert.equal(noapi1.__state.gmailSendCount, 0);
 assert.equal(noapi1.__state.draftCreateCount, 0);
@@ -2938,12 +2952,37 @@ assert.equal(noapi3Inspect.operatorRecommendedNextFunction, '');
 assert.equal(noapi3Inspect.operatorShouldRunSafeStepNow, false);
 assert.equal(noapi3Inspect.operatorShouldWaitReason, 'no_api_recoverable_inventory_insufficient');
 assert.equal(noapi3Inspect.noApiShortfallToExact30, 30);
+assert.equal(noapi3Inspect.effectiveAiApiAllowed, false);
+assert.equal(noapi3Inspect.effectiveGroundingAllowed, false);
+assert.equal(noapi3Inspect.aiRecoverySuppressedByNoPaidPolicy, true);
+assert.equal(noapi3Inspect.aiRecoverySuppressedReason, 'paid_ai_api_disabled_by_policy');
+assert.equal(noapi3Inspect.noApiInventoryExhausted, true);
+assert.equal(noapi3Inspect.noApiRecoveredTotalReadyInventory, 0);
+assert.equal(noapi3Inspect.noApiRemainingShortfallToExact30, 30);
+assert.equal(noapi3Inspect.noApiNextSafePath, 'add_new_non_private_non_freemail_public_business_inventory_or_manual_exception_review');
+assert.equal(noapi3Inspect.noApiUnsafePathsSuppressed.includes('paid_ai_api'), true);
+assert.equal(noapi3Inspect.noApiUnsafePathsSuppressed.includes('gemini_grounding'), true);
+assert.equal(noapi3Inspect.noApiUnsafePathsSuppressed.includes('urlfetch_grounding'), true);
+assert.equal(noapi3Inspect.sendBlockedReason, 'exact30_not_satisfied');
+assert.equal(noapi3Inspect.manifestBlockedReason, 'ready_inventory_below_exact30');
+assert.equal(noapi3Inspect.expectedApiClass, 'none');
+assert.equal(noapi3Inspect.expectedWriteClass, 'none');
+assert.equal(noapi3Inspect.evidenceRecoveryAction, 'wait_for_no_api_recoverable_inventory_or_manual_exception_review');
+assert.equal(noapi3Inspect.evidenceRecoveryActionReasonCode, 'no_api_recoverable_inventory_insufficient');
+assert.equal(noapi3Inspect.actionBlockedReason, 'no_api_recoverable_inventory_insufficient');
+assert.equal(noapi3Inspect.aiRetryRecommendedAction, 'wait_for_no_api_recoverable_inventory_or_manual_exception_review');
 const noapi3Status = noapi3.inspectGmailSalesNoApiRecoveryStatus({ skipLog: true });
 assert.equal(noapi3Status.noApiProjectedReadyInventoryCount, 0);
 assert.equal(noapi3Status.noApiShortfallToExact30, 30);
+assert.equal(noapi3Status.noApiInventoryExhausted, true);
+assert.equal(noapi3Status.sendBlockedReason, 'exact30_not_satisfied');
+assert.equal(noapi3Status.manifestBlockedReason, 'ready_inventory_below_exact30');
 const noapi3Usage = noapi3.inspectGmailSalesRecoveryUsageLedger();
 assert.equal(noapi3Usage.noApiProjectedReadyInventoryCount, 0);
 assert.equal(noapi3Usage.noApiShortfallToExact30, 30);
+assert.equal(noapi3Usage.noApiInventoryExhausted, true);
+assert.equal(noapi3Usage.sendBlockedReason, 'exact30_not_satisfied');
+assert.equal(noapi3Usage.manifestBlockedReason, 'ready_inventory_below_exact30');
 const noapi3Step = noapi3.runGmailSalesAutomatedEvidenceRecoveryStepOnce();
 assert.equal(noapi3Step.status, 'blocked');
 assert.equal(noapi3Step.executedActionBlockedReason, 'paid_ai_api_disabled_by_policy');
@@ -3306,6 +3345,82 @@ assert.equal(noapi8.__state.urlFetchCount, 0);
 assert.equal(noapi8.__state.gmailSendCount, 0);
 assert.equal(noapi8.__state.draftCreateCount, 0);
 assert.equal(noapi8.__state.triggerCreateCount, 0);
+
+const noapi9 = createContext();
+noapi9.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
+noapi9.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+noapi9.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+noapi9.__props.GMAIL_SALES_AI_API_KEY = 'x';
+installFiveAiPendingRows(noapi9);
+applyTodayTargetDate(noapi9);
+seedUrlFetchAuthorizationVerified(noapi9);
+noapi9.inspectGmailSalesContactBasisCoverage_ = () => ({
+  event: 'gmail_sales_contact_basis_coverage',
+  mode: 'read_only',
+  sourceCandidateCount: 30,
+  fieldsSupported: true,
+  approvedBasisCount: 11,
+  eligibleAfterBasisCheckCount: 11,
+  operationalCandidateReady: false,
+  blockedReasons: ['eligible_basis_count_below_30'],
+  gmailSendExecuted: false,
+  googleSheetsUpdated: false,
+  scriptPropertiesUpdated: false
+});
+const noapi9Status = noapi9.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(noapi9Status.readyInventoryCount, 11);
+assert.equal(noapi9Status.noApiRecoverableCandidateCount, 0);
+assert.equal(noapi9Status.noApiProjectedReadyInventoryCount, 11);
+assert.equal(noapi9Status.noApiShortfallToExact30, 19);
+assert.equal(noapi9Status.exact30Satisfied, false);
+assert.equal(noapi9Status.manifestReady, false);
+assert.equal(noapi9Status.noApiInventoryExhausted, true);
+assert.equal(noapi9Status.noApiRecoveredTotalReadyInventory, 11);
+assert.equal(noapi9Status.noApiRemainingShortfallToExact30, 19);
+assert.equal(noapi9Status.noApiNextSafePath, 'add_new_non_private_non_freemail_public_business_inventory_or_manual_exception_review');
+assert.equal(noapi9Status.noApiUnsafePathsSuppressed.includes('paid_ai_api'), true);
+assert.equal(noapi9Status.noApiUnsafePathsSuppressed.includes('gemini_grounding'), true);
+assert.equal(noapi9Status.noApiUnsafePathsSuppressed.includes('urlfetch_grounding'), true);
+assert.equal(noapi9Status.noApiUnsafePathsSuppressed.includes('private_personal_contact'), true);
+assert.equal(noapi9Status.noApiUnsafePathsSuppressed.includes('freemail_contact'), true);
+assert.equal(noapi9Status.noApiUnsafePathsSuppressed.includes('business_directory_default'), true);
+assert.equal(noapi9Status.plannedNextAction, 'wait_for_no_api_recoverable_inventory_or_manual_exception_review');
+assert.equal(noapi9Status.plannedNextActionReasonCode, 'no_api_recoverable_inventory_insufficient');
+assert.equal(noapi9Status.plannedExpectedApiClass, 'none');
+assert.equal(noapi9Status.plannedExpectedWriteClass, 'none');
+assert.equal(noapi9Status.plannedSafeToExecute, false);
+assert.equal(noapi9Status.operatorRecommendedNextFunction, '');
+assert.equal(noapi9Status.operatorRecommendedNextFunctionReason, '');
+assert.equal(noapi9Status.operatorShouldRunSafeStepNow, false);
+assert.equal(noapi9Status.operatorShouldWaitReason, 'no_api_recoverable_inventory_insufficient');
+assert.equal(noapi9Status.aiRetryRecommendedAction, 'wait_for_no_api_recoverable_inventory_or_manual_exception_review');
+assert.equal(noapi9Status.aiRetrySafeToExecute, false);
+assert.equal(noapi9Status.expectedApiClass, 'none');
+assert.equal(noapi9Status.expectedWriteClass, 'none');
+assert.equal(noapi9Status.evidenceRecoveryAction, 'wait_for_no_api_recoverable_inventory_or_manual_exception_review');
+assert.equal(noapi9Status.evidenceRecoveryActionReasonCode, 'no_api_recoverable_inventory_insufficient');
+assert.equal(noapi9Status.actionStatus, 'blocked');
+assert.equal(noapi9Status.actionBlockedReason, 'no_api_recoverable_inventory_insufficient');
+assert.equal(noapi9Status.actionEstimatedCostYen, 0);
+assert.equal(noapi9Status.actionCostYen, 0);
+assert.equal(noapi9Status.effectiveAiApiAllowed, false);
+assert.equal(noapi9Status.effectiveGroundingAllowed, false);
+assert.equal(noapi9Status.aiRecoverySuppressedByNoPaidPolicy, true);
+assert.equal(noapi9Status.aiRecoverySuppressedReason, 'paid_ai_api_disabled_by_policy');
+assert.equal(noapi9Status.sendBlockedReason, 'exact30_not_satisfied');
+assert.equal(noapi9Status.manifestBlockedReason, 'ready_inventory_below_exact30');
+assert.equal(noapi9Status.aiApiCalled, false);
+assert.equal(noapi9Status.urlFetchExecuted, false);
+assert.equal(noapi9.__state.urlFetchCount, 0);
+assert.equal(noapi9.__state.gmailSendCount, 0);
+assert.equal(noapi9.__state.draftCreateCount, 0);
+assert.equal(noapi9.__state.triggerCreateCount, 0);
+const noapi9NoApiStatus = noapi9.inspectGmailSalesNoApiRecoveryStatus({ skipLog: true });
+assert.equal(noapi9NoApiStatus.noApiInventoryExhausted, true);
+assert.equal(noapi9NoApiStatus.noApiRecoveredTotalReadyInventory, 11);
+assert.equal(noapi9NoApiStatus.noApiRemainingShortfallToExact30, 19);
+assert.equal(noapi9NoApiStatus.sendBlockedReason, 'exact30_not_satisfied');
+assert.equal(noapi9NoApiStatus.manifestBlockedReason, 'ready_inventory_below_exact30');
 
 assert.equal(g4292.__state.gmailSendCount, 0);
 assert.equal(g4292.__state.draftCreateCount, 0);
