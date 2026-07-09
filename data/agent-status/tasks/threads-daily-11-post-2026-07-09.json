@@ -1,0 +1,47 @@
+{
+  "id": "threads-daily-11-post-2026-07-09",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 11:00 ノウハウ投稿",
+  "category": "threads_daily_post",
+  "status": "blocked",
+  "phase": "投稿案確認・安全検査済み、実投稿は時間枠外で停止",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-07-09T13:04:27+09:00",
+  "updatedAt": "2026-07-09T13:04:27+09:00",
+  "summary": "2026-07-09 11:00枠のThreads投稿案は既存の当日投稿計画から確認し、安全検査は通過した。THREADS_PUBLISH_ENABLED=true、THREADS_DRY_RUN=false、API設定あり判定だったが、実行時刻が11:00枠の許容時間外だったため、投稿コマンドは outside_slot_window で停止し、投稿は行っていない。投稿本文全文・API秘密情報・個人情報はAgent Statusへ保存していない。",
+  "metrics": {
+    "cron": "0 11 * * *",
+    "scheduledTime": "11:00",
+    "executionTime": "2026-07-09T13:04:27+09:00",
+    "postPlanDate": "2026-07-09",
+    "postPlanSlot": "11:00",
+    "publishEnabled": true,
+    "dryRun": false,
+    "apiConfigured": true,
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": false,
+    "blockedReason": "outside_slot_window",
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "次回11:00枠は 10:55-11:30 JST の投稿許容時間内に実行し、実行直前に npm run threads:post:validate を通過した場合のみ npm run threads:post:11 で投稿する。時間枠外・API未設定・dry-run有効・安全検査NGの場合は投稿せず blocked または needs_review として記録する。",
+  "safeToAct": false,
+  "notes": [
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md を優先確認したが、対象日 2026-07-09 の予定は含まれていなかった",
+    "既存の data/threads/post-plans/2026-07-09.json の11:00枠を確認。本文全文はAgent Statusへ保存していない",
+    "npm run threads:post:validate は ok=true、禁止表現・過長・重複・個人情報・トークンログなし判定",
+    "npm run threads:post:11 は publishEnabled=true、dryRun=false、apiConfigured=true を確認したうえで outside_slot_window により投稿停止",
+    "自動返信・自動いいね・自動フォローは実行していない",
+    "Gmail送信、Google Sheets更新、Apps Scriptトリガー操作は実行していない",
+    "秘密情報、メールアドレス、営業先名、返信本文は表示・保存・コミットしていない"
+  ],
+  "artifacts": [
+    "data/agent-status/tasks/threads-daily-11-post-2026-07-09.json",
+    "data/threads/post-plans/2026-07-09.json",
+    "data/threads/published/2026-07-09-11.json"
+  ]
+}
