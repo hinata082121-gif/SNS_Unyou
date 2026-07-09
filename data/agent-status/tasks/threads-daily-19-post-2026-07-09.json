@@ -1,0 +1,49 @@
+{
+  "id": "threads-daily-19-post-2026-07-09",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 19:00 共感・導線投稿",
+  "category": "threads_daily_post",
+  "status": "needs_review",
+  "phase": "19:00枠は投稿済み、無料診断導線の不足を要確認",
+  "progress": 90,
+  "priority": "high",
+  "createdAt": "2026-07-09T19:02:10+09:00",
+  "updatedAt": "2026-07-09T19:02:10+09:00",
+  "summary": "2026-07-09 19:00枠のThreads投稿は、実行時点で既に公開済みログがあり、再投稿ガードにより追加投稿は行っていない。公開許可は有効、dry-runは無効、API接続設定も有効判定。既公開ログ上は投稿自体は成功しているが、当該投稿は本タスクで求める無料SNS診断への軽い導線を含まないため、投稿済みだが内容要件はneeds_reviewとして記録した。投稿本文全文・API秘密情報・個人情報はAgent Statusへ保存していない。",
+  "metrics": {
+    "cron": "0 19 * * *",
+    "scheduledTime": "19:00",
+    "executionTime": "2026-07-09T19:02:10+09:00",
+    "postPlanDate": "2026-07-09",
+    "postPlanSlot": "19:00",
+    "publishEnabled": true,
+    "dryRun": false,
+    "apiConfigured": true,
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": true,
+    "blockedReason": "already_published_on_recheck; missing_soft_cta_in_published_plan",
+    "includesSoftCta": false,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "次回19:00枠では、投稿前に当日19:00計画が共感・問いかけ・無料SNS診断への軽い導線を含むことを確認し、不足している場合は公開前に計画を差し替えて安全検査を通過させる。既に投稿済みの場合は再投稿せず、必要に応じて手動レビューで次回改善する。",
+  "safeToAct": true,
+  "notes": [
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md を優先確認したが、当日分は含まれていなかった",
+    "data/threads/post-plans/2026-07-09.json の19:00枠は既存計画として存在したが、無料SNS診断への軽い導線は含まれていなかった",
+    "npm run threads:post:validate は ok=true",
+    "npm run threads:post:19 は再実行時に already_published で停止し、追加投稿していない",
+    "公開済みログでは publishEnabled=true、dryRun=false、published=true を確認",
+    "自動返信・自動いいね・自動フォローは実行していない",
+    "Gmail送信、Google Sheets更新、Apps Scriptトリガー操作は実行していない",
+    "秘密情報、メールアドレス、営業先名、返信本文は表示・保存・コミットしていない"
+  ],
+  "artifacts": [
+    "data/agent-status/tasks/threads-daily-19-post-2026-07-09.json",
+    "data/threads/post-plans/2026-07-09.json",
+    "data/threads/published/2026-07-09-19.json"
+  ]
+}
