@@ -162,6 +162,37 @@ const GMAIL_CONTACT_BASIS_ALLOWED_TYPES = [
 ];
 const GMAIL_SALES_NO_API_HTTP_HTTPS_PUBLIC_ORG_PAGE_RULE_ID = 'no_api_http_https_public_org_page_v1';
 const GMAIL_SALES_NO_API_SOURCE_ROW_RELINK_RULE_ID = 'no_api_source_row_relink_by_stable_identity_v1';
+const GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_SHEET_NAME = '__ICHI_PUBLIC_BUSINESS_LEAD_IMPORT__';
+const GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID = 'no_api_public_business_lead_import_v1';
+const GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_HEADERS = [
+  'targetDate',
+  'businessName',
+  'businessCategory',
+  'publicEmail',
+  'officialWebsiteUrl',
+  'contactPageUrl',
+  'sourceUrl',
+  'instagramUrl',
+  'area',
+  'offerSegment',
+  'sourceType',
+  'operatorSourceReviewed',
+  'operatorPublicBusinessContactConfirmed',
+  'operatorNoDncConfirmed',
+  'operatorNoPrivateContactConfirmed',
+  'operatorNote',
+  'importStatus',
+  'importBlockedReason',
+  'importedAt',
+  'importedCandidateHashPrefix',
+  'deterministicRuleId'
+];
+const GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_ALLOWED_SOURCE_TYPES = [
+  'official_website',
+  'official_contact_page',
+  'official_instagram_profile_with_public_email',
+  'official_business_page'
+];
 const GMAIL_CONTACT_BASIS_REVIEW_TAB_PROPERTY = 'GMAIL_SALES_CONTACT_BASIS_REVIEW_TAB_NAME';
 const GMAIL_CONTACT_BASIS_REVIEW_TAB_DEFAULT = 'Gmail_Contact_Basis_Review';
 const GMAIL_CONTACT_BASIS_REVIEW_HEADERS = [
@@ -6851,6 +6882,7 @@ function buildGmailSalesNoApiRecoveryStatus_() {
   const noApiShortfallToExact30 = projection.noApiShortfallToExact30;
   const exact30Satisfied = projection.exact30Satisfied;
   const noApiInventoryExhausted = noApiRecoverableCandidateCount <= 0 && readyInventoryCount < gmailDailyExpectedCount_();
+  const publicImport = collectGmailSalesPublicBusinessLeadImportReadiness_();
   const safe = policy.noApiRecoveryRouteEnabled === true && noApiRecoverableCandidateCount > 0;
   const blockedReason = safe ? '' : (policy.noApiRecoveryRouteEnabled === true ? 'no_api_recoverable_inventory_insufficient' : 'no_api_recovery_route_disabled');
   return Object.assign({}, policy, state, summarizeGmailSalesLegacyReferencePromotionReadiness_(collected), {
@@ -6890,6 +6922,9 @@ function buildGmailSalesNoApiRecoveryStatus_() {
     noApiUnsafePathsSuppressed: ['paid_ai_api', 'gemini_grounding', 'urlfetch_grounding', 'private_personal_contact', 'freemail_contact', 'business_directory_default'],
     sendBlockedReason: exact30Satisfied ? '' : 'exact30_not_satisfied',
     manifestBlockedReason: exact30Satisfied ? '' : 'ready_inventory_below_exact30',
+    publicBusinessLeadImportEligibleCount: Number(publicImport.importEligibleCount || 0),
+    publicBusinessLeadImportProjectedReadyInventory: Number(publicImport.projectedReadyInventoryAfterImport || readyInventoryCount),
+    publicBusinessLeadImportShortfallToExact30: Number(publicImport.projectedShortfallAfterImport !== undefined ? publicImport.projectedShortfallAfterImport : noApiShortfallToExact30),
     exact30Satisfied,
     noApiRecoverySafeToExecute: safe,
     noApiRecoveryBlockedReason: blockedReason,
@@ -6908,6 +6943,453 @@ function buildGmailSalesNoApiRecoveryStatus_() {
     aiApiCalled: false,
     urlFetchExecuted: false
   });
+}
+
+function inspectGmailSalesPublicBusinessLeadImportReadiness() {
+  const result = inspectGmailSalesPublicBusinessLeadImportReadiness_({ skipLog: true });
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function inspectGmailSalesPublicBusinessLeadImportReadiness_(options) {
+  const result = buildGmailSalesPublicBusinessLeadImportReadinessResult_(collectGmailSalesPublicBusinessLeadImportReadiness_());
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function createGmailSalesPublicBusinessLeadImportSheetOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    const safeRest = buildGmailSalesPublicBusinessLeadImportReadinessResult_({ status: 'blocked', blockedReason: 'safe_rest_required' });
+    logGmailSalesJsonResult_(safeRest);
+    return safeRest;
+  }
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  if (!context.spreadsheet) {
+    const blocked = buildGmailSalesPublicBusinessLeadImportReadinessResult_({ status: 'blocked', blockedReason: 'spreadsheet_unavailable' });
+    logGmailSalesJsonResult_(blocked);
+    return blocked;
+  }
+  const existing = context.spreadsheet.getSheetByName(GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_SHEET_NAME);
+  const sheet = existing || context.spreadsheet.insertSheet(GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_SHEET_NAME);
+  const migration = ensureSheetHeaders_(sheet, GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_HEADERS);
+  const result = buildGmailSalesPublicBusinessLeadImportReadinessResult_(Object.assign({}, collectGmailSalesPublicBusinessLeadImportReadiness_(), {
+    event: 'gmail_sales_public_business_lead_import_sheet_create',
+    mode: 'safe_step',
+    status: migration.readBackPassed ? 'pass' : 'blocked',
+    blockedReason: migration.readBackPassed ? '' : 'header_read_back_failed',
+    importSheetPresent: true,
+    importSheetCreated: !existing,
+    importSheetHeaderColumnsAddedCount: migration.columnsAddedCount,
+    googleSheetsUpdated: !existing || migration.columnsAddedCount > 0
+  }));
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function runGmailSalesPublicBusinessLeadImportOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    const blockedSafeRest = buildGmailSalesPublicBusinessLeadImportResult_('blocked', { blockedReason: 'safe_rest_required' });
+    logGmailSalesJsonResult_(blockedSafeRest);
+    return blockedSafeRest;
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    const locked = buildGmailSalesPublicBusinessLeadImportResult_('blocked', { blockedReason: 'lock_unavailable' });
+    logGmailSalesJsonResult_(locked);
+    return locked;
+  }
+  try {
+    const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+    const before = collectGmailSalesPublicBusinessLeadImportReadiness_();
+    if (!context.sourceSheet || !before.importSheetPresent || before.proposedImportCount <= 0) {
+      const blocked = buildGmailSalesPublicBusinessLeadImportResult_('blocked', Object.assign({}, before, {
+        blockedReason: !context.sourceSheet ? 'source_sheet_missing' : (!before.importSheetPresent ? 'import_sheet_missing' : 'no_import_candidate_available'),
+        readyInventoryCountBeforeImport: Number(before.readyInventoryCount || 0),
+        readyInventoryCountAfterImport: Number(before.readyInventoryCount || 0),
+        shortfallToExact30BeforeImport: Number(before.shortfallToExact30 || 0),
+        shortfallToExact30AfterImport: Number(before.shortfallToExact30 || 0),
+        exact30SatisfiedAfterImport: before.exact30SatisfiedAfterProjectedImport === true
+      }));
+      delete blocked.importSheet;
+      delete blocked.eligibleItems;
+      logGmailSalesJsonResult_(blocked);
+      return blocked;
+    }
+    ensureSheetHeaders_(context.sourceSheet, GMAIL_SHEET_SYNC_OUTBOX_HEADERS.concat(['sourceReference', 'recoveredFrom', 'importedFrom', 'deterministicRuleId', 'noApiDecisionReason']));
+    ensureSheetHeaders_(before.importSheet, GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_HEADERS);
+    const sourceHeaders = getSheetHeaders_(context.sourceSheet);
+    const importHeaders = getSheetHeaders_(before.importSheet);
+    const targets = (before.eligibleItems || []).slice(0, before.proposedImportCount);
+    const now = new Date().toISOString();
+    const result = buildGmailSalesPublicBusinessLeadImportResult_('pass', Object.assign({}, before, {
+      mode: 'safe_step',
+      attemptedImportCount: targets.length,
+      readyInventoryCountBeforeImport: Number(before.readyInventoryCount || 0),
+      shortfallToExact30BeforeImport: Number(before.shortfallToExact30 || 0)
+    }));
+    delete result.importSheet;
+    delete result.eligibleItems;
+    targets.forEach((target) => {
+      const prepared = buildGmailSalesPublicBusinessLeadImportSourceRow_(target, now);
+      const rowIndex = context.sourceSheet.getLastRow() + 1;
+      context.sourceSheet.getRange(rowIndex, 1, 1, sourceHeaders.length).setValues([sourceHeaders.map((header) => prepared[header] === undefined ? '' : prepared[header])]);
+      SpreadsheetApp.flush();
+      const readBack = rowFromCells_(sourceHeaders, context.sourceSheet.getRange(rowIndex, 1, 1, sourceHeaders.length).getValues()[0]);
+      const matched = normalizeEmail_(readBack.email || readBack.contactEmail) === normalizeEmail_(prepared.email || prepared.contactEmail) &&
+        String(readBack.contactBasisType || '') === 'valid_business_contact_exception' &&
+        String(readBack.deterministicRuleId || '') === GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID;
+      if (matched) {
+        result.succeededImportCount += 1;
+        result.readBackMatchedCount += 1;
+        result.importedByBasis.valid_business_contact_exception = Number(result.importedByBasis.valid_business_contact_exception || 0) + 1;
+        result.importedByRuleId[GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID] = Number(result.importedByRuleId[GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID] || 0) + 1;
+        setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'importStatus', 'imported');
+        setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'importBlockedReason', '');
+        setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'importedAt', now);
+        setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'importedCandidateHashPrefix', target.candidateHashPrefix);
+        setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'deterministicRuleId', GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID);
+      } else {
+        result.failedImportCount += 1;
+        result.readBackMismatchCount += 1;
+        setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'importStatus', 'blocked');
+        setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'importBlockedReason', 'read_back_mismatch');
+      }
+    });
+    SpreadsheetApp.flush();
+    const afterReady = countGmailSalesAllowedContactBasisRows_((readSheetObjects_(context.sourceSheet).items || []));
+    result.readyInventoryCountAfterImport = afterReady;
+    result.shortfallToExact30AfterImport = Math.max(0, gmailDailyExpectedCount_() - afterReady);
+    result.exact30SatisfiedAfterImport = afterReady >= gmailDailyExpectedCount_();
+    result.manifestReady = inspectGmailSalesAutomatedEvidenceManifestStatus_().manifestReady === true;
+    result.sendBlockedReason = result.exact30SatisfiedAfterImport ? '' : 'exact30_not_satisfied';
+    result.manifestBlockedReason = result.exact30SatisfiedAfterImport ? '' : 'ready_inventory_below_exact30';
+    result.googleSheetsUpdated = result.succeededImportCount > 0 || result.failedImportCount > 0;
+    if (result.failedImportCount > 0) result.status = result.succeededImportCount > 0 ? 'partial' : 'blocked';
+    logGmailSalesJsonResult_(result);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function collectGmailSalesPublicBusinessLeadImportReadiness_() {
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const targetDateDefault = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { headers: [], items: [] };
+  const readyInventoryCount = countGmailSalesAllowedContactBasisRows_(sourceData.items || []);
+  const importSheet = context.spreadsheet ? context.spreadsheet.getSheetByName(GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_SHEET_NAME) : null;
+  const result = {
+    event: 'gmail_sales_public_business_lead_import_readiness',
+    mode: 'read_only',
+    status: 'blocked',
+    targetDate: targetDateDefault,
+    readyInventoryCount,
+    exactThirtyRequiredCount: gmailDailyExpectedCount_(),
+    shortfallToExact30: Math.max(0, gmailDailyExpectedCount_() - readyInventoryCount),
+    importSheet,
+    importSheetPresent: Boolean(importSheet),
+    importRowCount: 0,
+    importCandidateCount: 0,
+    importEligibleCount: 0,
+    importBlockedCount: 0,
+    importBlockedReasonCounts: {},
+    importDuplicateCount: 0,
+    importFreemailBlockedCount: 0,
+    importPrivateContactBlockedCount: 0,
+    importBusinessDirectoryBlockedCount: 0,
+    importDncSuppressionCooldownBlockedCount: 0,
+    importDomainAlignmentBlockedCount: 0,
+    proposedImportCount: 0,
+    projectedReadyInventoryAfterImport: readyInventoryCount,
+    projectedShortfallAfterImport: Math.max(0, gmailDailyExpectedCount_() - readyInventoryCount),
+    exact30SatisfiedAfterProjectedImport: readyInventoryCount >= gmailDailyExpectedCount_(),
+    deterministicRuleId: GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID,
+    eligibleItems: [],
+    blockedReason: ''
+  };
+  if (!context.sourceSheet) {
+    result.blockedReason = 'source_sheet_missing';
+    return result;
+  }
+  if (!importSheet) {
+    result.blockedReason = 'import_sheet_missing';
+    return result;
+  }
+  const importData = readSheetObjects_(importSheet);
+  result.importRowCount = (importData.items || []).length;
+  const sourceEmailLookup = buildGmailSalesSourceEmailLookup_(sourceData.items || []);
+  const importEmailCounts = {};
+  (importData.items || []).forEach((item) => {
+    const email = normalizeEmail_(item.row.publicEmail || item.row.email || item.row.contactEmail || '');
+    if (email) importEmailCounts[email] = Number(importEmailCounts[email] || 0) + 1;
+  });
+  (importData.items || []).forEach((item) => {
+    const evaluation = evaluateGmailSalesPublicBusinessLeadImportRow_(item, { currentDate: targetDateDefault, sourceEmailLookup, importEmailCounts });
+    if (evaluation.targetDate) result.targetDate = evaluation.targetDate;
+    if (evaluation.isCandidate) result.importCandidateCount += 1;
+    if (evaluation.ok) {
+      result.importEligibleCount += 1;
+      result.eligibleItems.push(Object.assign({}, evaluation, { row: item.row, rowIndex: item.rowIndex }));
+    } else if (evaluation.isCandidate) {
+      result.importBlockedCount += 1;
+      (evaluation.blockedReasons || ['blocked']).forEach((reason) => incrementCount_(result.importBlockedReasonCounts, reason || 'blocked'));
+    }
+    if ((evaluation.blockedReasons || []).indexOf('duplicate_identity') !== -1) result.importDuplicateCount += 1;
+    if ((evaluation.blockedReasons || []).indexOf('freemail_domain') !== -1) result.importFreemailBlockedCount += 1;
+    if ((evaluation.blockedReasons || []).indexOf('private_personal_contact') !== -1) result.importPrivateContactBlockedCount += 1;
+    if ((evaluation.blockedReasons || []).indexOf('business_directory') !== -1) result.importBusinessDirectoryBlockedCount += 1;
+    if ((evaluation.blockedReasons || []).indexOf('dnc_suppression_cooldown') !== -1) result.importDncSuppressionCooldownBlockedCount += 1;
+    if ((evaluation.blockedReasons || []).indexOf('domain_alignment_failed') !== -1) result.importDomainAlignmentBlockedCount += 1;
+  });
+  result.proposedImportCount = Math.min(result.shortfallToExact30, result.importEligibleCount);
+  result.projectedReadyInventoryAfterImport = readyInventoryCount + result.proposedImportCount;
+  result.projectedShortfallAfterImport = Math.max(0, gmailDailyExpectedCount_() - result.projectedReadyInventoryAfterImport);
+  result.exact30SatisfiedAfterProjectedImport = result.projectedReadyInventoryAfterImport >= gmailDailyExpectedCount_();
+  result.status = result.proposedImportCount > 0 ? 'pass' : 'blocked';
+  result.blockedReason = result.status === 'pass' ? '' : (result.importCandidateCount <= 0 ? 'import_candidate_missing' : 'no_import_eligible_candidate');
+  return result;
+}
+
+function buildGmailSalesPublicBusinessLeadImportReadinessResult_(collected) {
+  const value = collected || {};
+  const proposed = Number(value.proposedImportCount || 0);
+  return Object.assign({
+    event: value.event || 'gmail_sales_public_business_lead_import_readiness',
+    mode: value.mode || 'read_only',
+    status: value.status || (proposed > 0 ? 'pass' : 'blocked'),
+    targetDate: value.targetDate || '',
+    readyInventoryCount: Number(value.readyInventoryCount || 0),
+    exactThirtyRequiredCount: gmailDailyExpectedCount_(),
+    shortfallToExact30: Number(value.shortfallToExact30 || 0),
+    importSheetPresent: value.importSheetPresent === true,
+    importRowCount: Number(value.importRowCount || 0),
+    importCandidateCount: Number(value.importCandidateCount || 0),
+    importEligibleCount: Number(value.importEligibleCount || 0),
+    importBlockedCount: Number(value.importBlockedCount || 0),
+    importBlockedReasonCounts: value.importBlockedReasonCounts || {},
+    importDuplicateCount: Number(value.importDuplicateCount || 0),
+    importFreemailBlockedCount: Number(value.importFreemailBlockedCount || 0),
+    importPrivateContactBlockedCount: Number(value.importPrivateContactBlockedCount || 0),
+    importBusinessDirectoryBlockedCount: Number(value.importBusinessDirectoryBlockedCount || 0),
+    importDncSuppressionCooldownBlockedCount: Number(value.importDncSuppressionCooldownBlockedCount || 0),
+    importDomainAlignmentBlockedCount: Number(value.importDomainAlignmentBlockedCount || 0),
+    proposedImportCount: proposed,
+    projectedReadyInventoryAfterImport: Number(value.projectedReadyInventoryAfterImport !== undefined ? value.projectedReadyInventoryAfterImport : (value.readyInventoryCount || 0)),
+    projectedShortfallAfterImport: Number(value.projectedShortfallAfterImport !== undefined ? value.projectedShortfallAfterImport : (value.shortfallToExact30 || 0)),
+    exact30SatisfiedAfterProjectedImport: value.exact30SatisfiedAfterProjectedImport === true,
+    deterministicRuleId: GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID,
+    operatorRecommendedNextFunction: proposed > 0 ? 'runGmailSalesPublicBusinessLeadImportOnce' : '',
+    operatorShouldRunSafeStepNow: proposed > 0,
+    operatorShouldWaitReason: proposed > 0 ? '' : (value.blockedReason || 'no_import_eligible_candidate'),
+    plannedNextAction: proposed > 0 ? 'public_business_lead_import' : 'wait_for_public_business_lead_import_inventory',
+    plannedNextActionReasonCode: proposed > 0 ? 'public_business_lead_import_available' : (value.blockedReason || 'no_import_eligible_candidate'),
+    plannedExpectedApiClass: 'none',
+    plannedExpectedWriteClass: 'sheets_import_review_only',
+    plannedSafeToExecute: proposed > 0,
+    sendBlockedReason: Number(value.projectedReadyInventoryAfterImport || 0) >= gmailDailyExpectedCount_() ? '' : 'exact30_not_satisfied',
+    manifestBlockedReason: Number(value.projectedReadyInventoryAfterImport || 0) >= gmailDailyExpectedCount_() ? '' : 'ready_inventory_below_exact30',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: value.googleSheetsUpdated === true,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  }, {
+    importSheetCreated: value.importSheetCreated === true,
+    importSheetHeaderColumnsAddedCount: Number(value.importSheetHeaderColumnsAddedCount || 0)
+  });
+}
+
+function buildGmailSalesPublicBusinessLeadImportResult_(status, overrides) {
+  return Object.assign({
+    event: 'gmail_sales_public_business_lead_import',
+    mode: 'safe_step',
+    status,
+    targetDate: '',
+    attemptedImportCount: 0,
+    succeededImportCount: 0,
+    failedImportCount: 0,
+    rolledBackImportCount: 0,
+    readBackMatchedCount: 0,
+    readBackMismatchCount: 0,
+    importedByBasis: {},
+    importedByRuleId: {},
+    readyInventoryCountBeforeImport: 0,
+    readyInventoryCountAfterImport: 0,
+    shortfallToExact30BeforeImport: gmailDailyExpectedCount_(),
+    shortfallToExact30AfterImport: gmailDailyExpectedCount_(),
+    exact30SatisfiedAfterImport: false,
+    manifestReady: false,
+    sendBlockedReason: 'exact30_not_satisfied',
+    manifestBlockedReason: 'ready_inventory_below_exact30',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  }, overrides || {});
+}
+
+function evaluateGmailSalesPublicBusinessLeadImportRow_(item, settings) {
+  const row = item && item.row || {};
+  const sourceType = normalizeTextForComparison_(row.sourceType).replace(/[\s-]+/g, '_');
+  const email = normalizeEmail_(row.publicEmail || row.email || row.contactEmail || '');
+  const emailDomain = extractEmailDomain_(email);
+  const emailRegistrableDomain = extractGmailSalesRegistrableDomain_(emailDomain);
+  const targetDate = normalizeDateText_(row.targetDate || '');
+  const candidateHashPrefix = hashValue_([email, normalizeTextForComparison_(row.businessName), targetDate].join('|')).slice(0, 12);
+  const official = parseGmailSalesPublicBusinessLeadImportUrl_(row.officialWebsiteUrl);
+  const contact = parseGmailSalesPublicBusinessLeadImportUrl_(row.contactPageUrl);
+  const source = parseGmailSalesPublicBusinessLeadImportUrl_(row.sourceUrl);
+  const instagram = parseGmailSalesPublicBusinessLeadImportUrl_(row.instagramUrl);
+  const hosts = [official, contact, source].filter((entry) => entry.ok && entry.registrableDomain);
+  const domainAligned = Boolean(emailRegistrableDomain && hosts.some((entry) => entry.registrableDomain === emailRegistrableDomain));
+  const sourceUrlOrOfficialOk = official.ok || source.ok;
+  const freemailDomain = Boolean(emailDomain && isGmailSalesFreemailOrMobileDomain_(emailDomain));
+  const imported = String(row.importStatus || '').trim().toLowerCase() === 'imported';
+  const dncSuppressionCooldown = normalizeBooleanCell_(row.unsubscribe) || normalizeBooleanCell_(row.doNotContact) || normalizeBooleanCell_(row.suppression) || normalizeBooleanCell_(row.bounced) || normalizeBooleanCell_(row.deliveryUnknown) || String(row.sendState || '').toLowerCase().indexOf('cooldown') !== -1 || String(row.sentStatus || '').toLowerCase().indexOf('sent') !== -1 || String(row.replyStatus || '').toLowerCase().indexOf('replied') !== -1;
+  const privateContact = freemailDomain || normalizeBooleanCell_(row.privatePersonalContactFlag) || normalizeBooleanCell_(row.privatePersonal) || isLikelyPersonalEmail_(email);
+  const blockedReasons = [];
+  if (imported) blockedReasons.push('already_imported');
+  if (!targetDate || !isGmailSalesPublicBusinessImportTargetDateAllowed_(targetDate, settings && settings.currentDate)) blockedReasons.push('target_date_invalid');
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) blockedReasons.push('public_email_invalid');
+  if (!row.businessName) blockedReasons.push('business_name_missing');
+  if (freemailDomain) blockedReasons.push('freemail_domain');
+  if (privateContact) blockedReasons.push('private_personal_contact');
+  if (GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_ALLOWED_SOURCE_TYPES.indexOf(sourceType) === -1) blockedReasons.push(sourceType === 'business_directory' ? 'business_directory' : 'source_type_not_allowed');
+  if (sourceType === 'business_directory') blockedReasons.push('business_directory');
+  if (!row.officialWebsiteUrl && !row.contactPageUrl && !row.sourceUrl && !row.instagramUrl) blockedReasons.push('public_source_missing');
+  if (!sourceUrlOrOfficialOk) blockedReasons.push('source_or_official_http_https_required');
+  if (!domainAligned) blockedReasons.push('domain_alignment_failed');
+  if (!normalizeBooleanCell_(row.operatorSourceReviewed)) blockedReasons.push('operator_source_review_missing');
+  if (!normalizeBooleanCell_(row.operatorPublicBusinessContactConfirmed)) blockedReasons.push('operator_public_business_contact_confirmation_missing');
+  if (!normalizeBooleanCell_(row.operatorNoDncConfirmed)) blockedReasons.push('operator_no_dnc_confirmation_missing');
+  if (!normalizeBooleanCell_(row.operatorNoPrivateContactConfirmed)) blockedReasons.push('operator_no_private_contact_confirmation_missing');
+  if (dncSuppressionCooldown) blockedReasons.push('dnc_suppression_cooldown');
+  if (email && settings && settings.sourceEmailLookup && settings.sourceEmailLookup[email]) blockedReasons.push('duplicate_identity');
+  if (email && settings && settings.importEmailCounts && Number(settings.importEmailCounts[email] || 0) > 1) blockedReasons.push('duplicate_identity');
+  return {
+    ok: blockedReasons.length === 0,
+    isCandidate: Boolean(email || row.businessName || row.sourceUrl || row.officialWebsiteUrl || row.contactPageUrl || row.instagramUrl),
+    targetDate,
+    candidateHashPrefix,
+    emailDomainOnly: emailDomain,
+    officialWebsiteHost: official.host || '',
+    sourceHost: source.host || '',
+    instagramHost: instagram.host || '',
+    sourceType,
+    businessCategory: String(row.businessCategory || ''),
+    area: String(row.area || ''),
+    eligibilityStatus: blockedReasons.length === 0 ? 'eligible' : 'blocked',
+    blockedReasons: uniqueArray_(blockedReasons),
+    deterministicRuleId: GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID,
+    duplicateSignal: blockedReasons.indexOf('duplicate_identity') !== -1,
+    freemailDomain,
+    privateContact,
+    dncSuppressionCooldownSignal: dncSuppressionCooldown,
+    domainAlignmentStatus: domainAligned ? 'matched' : 'blocked'
+  };
+}
+
+function parseGmailSalesPublicBusinessLeadImportUrl_(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return { ok: false, host: '', registrableDomain: '', reasonCode: 'missing' };
+  const parsed = parseGmailSalesHttpHttpsReferenceForNoApi_(raw);
+  if (!parsed.ok) return { ok: false, host: parsed.host || '', registrableDomain: parsed.registrableDomain || '', reasonCode: parsed.reasonCode || 'invalid_url' };
+  return { ok: true, host: parsed.host || '', registrableDomain: parsed.registrableDomain || '', reasonCode: '' };
+}
+
+function isGmailSalesPublicBusinessImportTargetDateAllowed_(targetDate, currentDate) {
+  const current = normalizeDateText_(currentDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  return targetDate === current || targetDate === nextGmailSalesBusinessDate_(current);
+}
+
+function nextGmailSalesBusinessDate_(dateText) {
+  const date = new Date(String(dateText || '') + 'T00:00:00Z');
+  if (Number.isNaN(date.getTime())) return '';
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const next = new Date(date.getTime() + offset * 24 * 60 * 60 * 1000);
+    if (next.getUTCDay() !== 0) return Utilities.formatDate(next, 'UTC', 'yyyy-MM-dd');
+  }
+  return '';
+}
+
+function buildGmailSalesSourceEmailLookup_(sourceItems) {
+  const lookup = {};
+  (sourceItems || []).forEach((item) => {
+    const email = normalizeEmail_(item.row && (item.row.email || item.row.contactEmail));
+    if (email) lookup[email] = true;
+  });
+  return lookup;
+}
+
+function countGmailSalesAllowedContactBasisRows_(sourceItems) {
+  let count = 0;
+  (sourceItems || []).forEach((item) => {
+    if (hasAllowedGmailSalesContactBasis_(item.row || {})) count += 1;
+  });
+  return count;
+}
+
+function buildGmailSalesPublicBusinessLeadImportSourceRow_(target, importedAt) {
+  const row = target.row || {};
+  const sourceReference = String(row.officialWebsiteUrl || row.sourceUrl || row.contactPageUrl || row.instagramUrl || '').trim();
+  const sourceType = target.sourceType || normalizeTextForComparison_(row.sourceType).replace(/[\s-]+/g, '_');
+  const email = normalizeEmail_(row.publicEmail || '');
+  const targetDate = target.targetDate || normalizeDateText_(row.targetDate || '');
+  const sourceReferenceHash = sourceReference && sourceType ? buildGmailSalesSourceReferenceHash_(sourceType, sourceReference) : '';
+  return {
+    prospectId: 'public-import-' + target.candidateHashPrefix,
+    name: String(row.businessName || '').trim(),
+    businessType: String(row.businessCategory || '').trim(),
+    area: String(row.area || '').trim(),
+    email,
+    contactEmail: email,
+    publicSource: sourceReference ? 'operator reviewed public business contact' : '',
+    sourceUrl: sourceReference,
+    sourceReference,
+    issueHypothesis: String(row.offerSegment || '').trim(),
+    salesAngle: String(row.offerSegment || '').trim(),
+    status: 'ready',
+    sendDate: targetDate,
+    nextActionDate: targetDate,
+    dedupeKey: 'public-import|' + target.candidateHashPrefix,
+    sendBatchId: 'gmail-sales-' + targetDate,
+    sentAt: '',
+    sentBy: '',
+    sentStatus: '',
+    errorMessage: '',
+    replyStatus: '',
+    unsubscribe: '',
+    doNotContact: '',
+    lastCheckedAt: targetDate,
+    notes: 'manual_public_business_lead_import',
+    sendState: GMAIL_SEND_STATE.ready,
+    sendRunId: '',
+    sendReservedAt: '',
+    sendAttemptCount: 0,
+    approvedBatchId: '',
+    approvedCandidateDigest: '',
+    deliveryUncertainAt: '',
+    lastSendErrorCode: '',
+    contactBasisType: 'valid_business_contact_exception',
+    contactBasisRecordedAt: importedAt,
+    sourceType,
+    sourceReferenceHash,
+    optOutAvailable: 'true',
+    lastVerifiedAt: importedAt,
+    suppressionCheckedAt: importedAt,
+    historyCheckedAt: importedAt,
+    recoveredFrom: 'manual_public_business_lead_import',
+    importedFrom: 'manual_public_business_lead_import',
+    deterministicRuleId: GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID,
+    noApiDecisionReason: 'operator_confirmed_public_business_contact'
+  };
 }
 
 function inspectGmailSalesNoApiRecoveryBlockerDrilldown() {
@@ -10026,6 +10508,9 @@ function inspectGmailSalesAutomatedEvidenceRecoveryStatus_(options) {
       noApiUnsafePathsSuppressed: noApi.noApiUnsafePathsSuppressed || [],
       sendBlockedReason: String(noApi.sendBlockedReason || ''),
       manifestBlockedReason: String(noApi.manifestBlockedReason || ''),
+      publicBusinessLeadImportEligibleCount: Number(noApi.publicBusinessLeadImportEligibleCount || 0),
+      publicBusinessLeadImportProjectedReadyInventory: Number(noApi.publicBusinessLeadImportProjectedReadyInventory || 0),
+      publicBusinessLeadImportShortfallToExact30: Number(noApi.publicBusinessLeadImportShortfallToExact30 || 0),
       exact30Satisfied: noApi.exact30Satisfied === true
     }, summarizeGmailSalesLegacyReferencePromotionReadiness_(noApi));
     result.aiPendingBlockedByCooldown = false;
@@ -10352,6 +10837,9 @@ function buildGmailSalesAutomatedEvidenceRecoveryResult_(status, overrides) {
     noApiUnsafePathsSuppressed: [],
     sendBlockedReason: '',
     manifestBlockedReason: '',
+    publicBusinessLeadImportEligibleCount: 0,
+    publicBusinessLeadImportProjectedReadyInventory: 0,
+    publicBusinessLeadImportShortfallToExact30: 0,
     exact30Satisfied: false,
     noApiRecoverySafeToExecute: false,
     noApiRecoveryBlockedReason: '',
@@ -18897,6 +19385,7 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
   const paidAiPolicy = getGmailSalesNoPaidAiApiPolicy_(config);
   const noApiState = readGmailSalesNoApiRecoveryState_(targetDate);
   const noApiProjection = summarizeGmailSalesNoApiRecoveryProjection_();
+  const publicImport = collectGmailSalesPublicBusinessLeadImportReadiness_();
   const collection = collectGmailSalesRecoveryUsageOperations_(targetDate);
   const inferredRateLimit = inferGmailSalesAiProviderRateLimitFromLastRun_(targetDate);
   const inferredPermissionBlock = inferGmailSalesAiProviderPermissionBlockFromLastRun_(targetDate);
@@ -19041,7 +19530,18 @@ function summarizeGmailSalesRecoveryDailyUsage_(config) {
     noApiUnsafePathsSuppressed: ['paid_ai_api', 'gemini_grounding', 'urlfetch_grounding', 'private_personal_contact', 'freemail_contact', 'business_directory_default'],
     sendBlockedReason: noApiProjection.exact30Satisfied === true ? '' : 'exact30_not_satisfied',
     manifestBlockedReason: noApiProjection.exact30Satisfied === true ? '' : 'ready_inventory_below_exact30',
-    exact30Satisfied: noApiProjection.exact30Satisfied === true
+    publicBusinessLeadImportAttemptCountToday: Number(publicImport.proposedImportCount || 0),
+    publicBusinessLeadImportLastAt: '',
+    publicBusinessLeadImportedCountToday: 0,
+    publicBusinessLeadImportedByRuleId: {},
+    publicBusinessLeadImportBlockedReasonCounts: publicImport.importBlockedReasonCounts || {},
+    publicBusinessLeadImportProjectedReadyInventory: Number(publicImport.projectedReadyInventoryAfterImport || 0),
+    publicBusinessLeadImportShortfallToExact30: Number(publicImport.projectedShortfallAfterImport || 0),
+    publicBusinessLeadImportEligibleCount: Number(publicImport.importEligibleCount || 0),
+    exact30Satisfied: noApiProjection.exact30Satisfied === true,
+    gmailSendExecuted: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
   });
 }
 
