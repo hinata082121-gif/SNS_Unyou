@@ -1,0 +1,49 @@
+{
+  "id": "threads-weekly-analysis-2026-07-10",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads金曜20時 バズ投稿分析・投稿文改善",
+  "category": "threads_weekly_analysis",
+  "status": "needs_review",
+  "phase": "週次分析と翌週投稿計画を作成済み・人間確認待ち",
+  "progress": 95,
+  "priority": "high",
+  "createdAt": "2026-07-10T20:00:00+09:00",
+  "updatedAt": "2026-07-10T20:00:00+09:00",
+  "summary": "2026-07-04〜2026-07-10のThreads運用記録を、安全に確認できる件数のみで集計し、投稿構造の改善案と2026-07-13〜2026-07-19の翌週投稿計画を作成した。分析のみで投稿実行、返信、いいね、フォローは行っていない。投稿本文の丸コピー、外部認証情報、個人情報の保存はしていない。",
+  "metrics": {
+    "analyzedDays": 7,
+    "weeklyAnalysisCreated": true,
+    "nextWeekPlanCreated": true,
+    "publishAutoApply": false,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false,
+    "threadsTaskFilesChecked": 9,
+    "recordedPostedCount": 7,
+    "recordedBlockedCount": 2,
+    "recordedNeedsReviewCount": 3,
+    "recordedPlannedCount": 9,
+    "reactionCountAvailable": false,
+    "safeNumericMetricsOnly": true
+  },
+  "nextAction": "人間が翌週投稿案を確認。問題なければ翌週の11:00/19:00投稿で使用。",
+  "safeToAct": true,
+  "notes": [
+    "Agent Status上で安全に記録された件数のみ確認",
+    "投稿本文全文の大量出力なし",
+    "他者投稿の丸コピーなし",
+    "自動返信なし",
+    "自動いいねなし",
+    "自動フォローなし",
+    "Gmail送信なし",
+    "Google Sheets更新なし",
+    "Apps Script操作なし",
+    "認証情報や個人情報の表示・保存なし"
+  ],
+  "artifacts": [
+    "docs/threads/weekly-analysis/2026-07-10-threads-weekly-viral-analysis.md",
+    "docs/threads/post-plans/2026-07-13-to-2026-07-19-next-week-plan.md",
+    "data/agent-status/tasks/threads-weekly-analysis-2026-07-10.json"
+  ]
+}
