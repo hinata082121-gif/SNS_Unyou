@@ -11447,19 +11447,234 @@ function inspectGmailSalesApprovalSendReadiness_(options) {
     approvalSourcePropertyNames: ['APPROVED_BATCH_ID', 'APPROVED_BATCH_CHECKSUM', 'APPROVAL_EXPIRES_AT'],
     sendReadiness,
     sendBlockedReason,
-    operatorRecommendedNextFunction: sendReadiness ? 'runGmailSalesDailyAutomationTrigger' : '',
-    operatorRecommendedNextFunctionReason: sendReadiness ? 'exact30_manifest_approved_send_ready' : '',
+    operatorRecommendedNextFunction: sendReadiness ? 'runGmailSalesDailyAutomationTrigger' : (sendBlockedReason === 'approval_required' && manifestStatus.manifestReady === true ? 'inspectGmailSalesExplicitBatchApprovalPacket' : ''),
+    operatorRecommendedNextFunctionReason: sendReadiness ? 'exact30_manifest_approved_send_ready' : (sendBlockedReason === 'approval_required' && manifestStatus.manifestReady === true ? 'approval_required_manifest_ready' : ''),
     operatorShouldRunSafeStepNow: sendReadiness,
     operatorShouldWaitReason: sendReadiness ? '' : sendBlockedReason,
     plannedExpectedApiClass: 'none',
     plannedExpectedWriteClass: 'none',
     gmailSendExecuted: false,
     gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
     triggerChanged: false,
     aiApiCalled: false,
     urlFetchExecuted: false
   };
   if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function inspectGmailSalesExplicitBatchApprovalPacket() {
+  const result = inspectGmailSalesExplicitBatchApprovalPacket_({ skipLog: true });
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function inspectGmailSalesExplicitBatchApprovalPacket_(options) {
+  const result = buildGmailSalesExplicitBatchApprovalPacketResult_(collectGmailSalesExplicitBatchApprovalPacket_());
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function runGmailSalesExplicitBatchApprovalOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    const safeRest = buildGmailSalesExplicitBatchApprovalResult_('blocked', {
+      approvalBlockedReason: 'safe_rest_required',
+      sendBlockedReasonAfterApproval: 'safe_rest_required'
+    });
+    logGmailSalesJsonResult_(safeRest);
+    return safeRest;
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    const locked = buildGmailSalesExplicitBatchApprovalResult_('blocked', {
+      approvalBlockedReason: 'lock_unavailable',
+      sendBlockedReasonAfterApproval: 'lock_unavailable'
+    });
+    logGmailSalesJsonResult_(locked);
+    return locked;
+  }
+  try {
+    const packet = collectGmailSalesExplicitBatchApprovalPacket_();
+    if (packet.approvalPacketReady !== true) {
+      const blocked = buildGmailSalesExplicitBatchApprovalResult_('blocked', {
+        targetDate: packet.targetDate,
+        approvalBlockedReason: packet.approvalPacketBlockedReason || 'approval_packet_not_ready',
+        sendBlockedReasonAfterApproval: packet.approvalPacketBlockedReason || 'approval_packet_not_ready'
+      });
+      logGmailSalesJsonResult_(blocked);
+      return blocked;
+    }
+    props.setProperties({
+      APPROVED_BATCH_ID: packet.requiredApprovedBatchId,
+      APPROVED_BATCH_CHECKSUM: packet.requiredApprovedBatchChecksum,
+      APPROVAL_EXPIRES_AT: packet.suggestedApprovalExpiresAt
+    }, false);
+    const approvalReadiness = inspectGmailSalesApprovalSendReadiness_({ skipLog: true });
+    const approvalReadBackMatched = props.getProperty('APPROVED_BATCH_ID') === packet.requiredApprovedBatchId &&
+      props.getProperty('APPROVED_BATCH_CHECKSUM') === packet.requiredApprovedBatchChecksum &&
+      props.getProperty('APPROVAL_EXPIRES_AT') === packet.suggestedApprovalExpiresAt;
+    const passed = approvalReadBackMatched && approvalReadiness.sendReadiness === true;
+    const result = buildGmailSalesExplicitBatchApprovalResult_(passed ? 'pass' : 'blocked', {
+      targetDate: packet.targetDate,
+      approvedBatchId: packet.requiredApprovedBatchId,
+      approvedBatchChecksum: packet.requiredApprovedBatchChecksum,
+      approvalExpiresAt: packet.suggestedApprovalExpiresAt,
+      scriptPropertiesUpdated: true,
+      approvalReadBackMatched,
+      approvalPresent: approvalReadiness.approvalPresent === true,
+      approvalTargetDateMatched: approvalReadiness.approvalTargetDateMatched === true,
+      approvalManifestDigestMatched: approvalReadiness.approvalManifestDigestMatched === true,
+      approvalOperatorConfirmed: approvalReadiness.approvalOperatorConfirmed === true,
+      sendReadinessAfterApproval: approvalReadiness.sendReadiness === true,
+      sendBlockedReasonAfterApproval: approvalReadiness.sendBlockedReason || '',
+      operatorRecommendedNextFunction: approvalReadiness.sendReadiness === true ? 'runGmailSalesDailyAutomationTrigger' : '',
+      operatorRecommendedNextFunctionReason: approvalReadiness.sendReadiness === true ? 'exact30_manifest_approved_send_ready' : '',
+      operatorShouldRunSafeStepNow: approvalReadiness.sendReadiness === true,
+      nextAction: approvalReadiness.sendReadiness === true ? 'daily_send_ready' : 'approval_readiness_blocked'
+    });
+    logGmailSalesJsonResult_(result);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function collectGmailSalesExplicitBatchApprovalPacket_() {
+  const readiness = collectGmailSalesManifestBuildReadiness_();
+  const targetDate = normalizeDateText_(readiness.targetDate || getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const batchId = buildSendBatchId_(targetDate);
+  const config = Object.assign({}, getConfig_(), { currentJstDate: targetDate, sendDate: targetDate, sendBatchId: batchId });
+  let validation = { readyRows: [] };
+  try {
+    validation = validateOutboxRows_(loadCandidateRows_(config), config);
+  } catch (error) {
+    validation = { readyRows: [] };
+  }
+  const requiredChecksum = calculateBatchApprovalChecksum_(config, batchId, validation.readyRows);
+  const blockedReasons = [];
+  if (Number(readiness.readyInventoryCount || 0) !== gmailDailyExpectedCount_()) blockedReasons.push('ready_inventory_not_exact30');
+  if (readiness.exact30Satisfied !== true) blockedReasons.push('exact30_not_satisfied');
+  if (Number(readiness.manifestCount || 0) !== gmailDailyExpectedCount_()) blockedReasons.push('manifest_count_not_exact30');
+  if (Number(readiness.manifestUniqueCount || 0) !== gmailDailyExpectedCount_()) blockedReasons.push('manifest_unique_count_not_exact30');
+  if (Number(readiness.manifestDuplicateCount || 0) !== 0) blockedReasons.push('duplicate_candidate');
+  if (readiness.manifestTargetDateMatched !== true) blockedReasons.push('manifest_target_date_mismatch');
+  if (readiness.manifestStale === true) blockedReasons.push('manifest_stale');
+  if (readiness.manifestReady !== true) blockedReasons.push('manifest_not_ready');
+  if (Number(readiness.currentManifestMaxSendCount || 0) !== gmailDailyExpectedCount_()) blockedReasons.push('manifest_max_send_count_not_exact30');
+  if (String(batchId || '').trim() === '') blockedReasons.push('approved_batch_id_missing');
+  if (String(requiredChecksum || '').trim() === '') blockedReasons.push('approved_batch_checksum_missing');
+  (readiness.blockedReasons || []).forEach((reason) => {
+    if ([
+      'suppression_match',
+      'already_sent_candidate',
+      'invalid_email',
+      'opt_out_missing',
+      'personalization_invalid',
+      'candidate_validation_errors',
+      'duplicate_candidate',
+      'validated_ready_rows_below_exact30'
+    ].indexOf(String(reason || '')) !== -1) blockedReasons.push(String(reason));
+  });
+  const uniqueBlocked = uniqueArray_(blockedReasons);
+  return Object.assign({}, readiness, {
+    targetDate,
+    requiredApprovedBatchId: batchId,
+    requiredApprovedBatchChecksum: requiredChecksum,
+    suggestedApprovalExpiresAt: buildGmailSalesApprovalExpiryForDate_(targetDate),
+    approvalPacketReady: uniqueBlocked.length === 0,
+    approvalPacketBlockedReason: uniqueBlocked[0] || '',
+    approvalPacketBlockedReasons: uniqueBlocked
+  });
+}
+
+function buildGmailSalesApprovalExpiryForDate_(targetDate) {
+  const normalized = normalizeDateText_(targetDate);
+  return normalized ? normalized + 'T23:59:59+09:00' : '';
+}
+
+function buildGmailSalesExplicitBatchApprovalPacketResult_(value) {
+  const packet = value || {};
+  const ready = packet.approvalPacketReady === true;
+  return {
+    event: 'gmail_sales_explicit_batch_approval_packet',
+    mode: 'read_only',
+    status: ready ? 'pass' : 'blocked',
+    targetDate: String(packet.targetDate || ''),
+    readyInventoryCount: Number(packet.readyInventoryCount || 0),
+    exactThirtyRequiredCount: gmailDailyExpectedCount_(),
+    exact30Satisfied: packet.exact30Satisfied === true,
+    manifestReady: packet.manifestReady === true,
+    manifestCount: Number(packet.manifestCount || 0),
+    manifestUniqueCount: Number(packet.manifestUniqueCount || 0),
+    manifestDuplicateCount: Number(packet.manifestDuplicateCount || 0),
+    manifestTargetDateMatched: packet.manifestTargetDateMatched === true,
+    manifestStale: packet.manifestStale === true,
+    currentManifestMaxSendCount: Number(packet.currentManifestMaxSendCount || 0),
+    approvalSource: 'explicit_batch_approval_properties',
+    requiredApprovalPropertyNames: ['APPROVED_BATCH_ID', 'APPROVED_BATCH_CHECKSUM', 'APPROVAL_EXPIRES_AT'],
+    requiredApprovedBatchId: String(packet.requiredApprovedBatchId || ''),
+    requiredApprovedBatchChecksum: String(packet.requiredApprovedBatchChecksum || ''),
+    suggestedApprovalExpiresAt: String(packet.suggestedApprovalExpiresAt || ''),
+    approvalPacketReady: ready,
+    approvalPacketBlockedReason: ready ? '' : String(packet.approvalPacketBlockedReason || 'approval_packet_not_ready'),
+    humanReviewRequired: true,
+    humanReviewChecklist: [
+      'exact30_manifest_confirmed',
+      'duplicate_zero_confirmed',
+      'dnc_suppression_delivery_unknown_cooldown_zero_confirmed',
+      'allowed_basis_only_confirmed',
+      'public_business_leads_confirmed',
+      'send_date_confirmed'
+    ],
+    operatorRecommendedNextFunction: ready ? 'runGmailSalesExplicitBatchApprovalOnce' : '',
+    operatorRecommendedNextFunctionReason: ready ? 'explicit_batch_approval_packet_ready' : '',
+    operatorShouldRunSafeStepNow: ready,
+    operatorShouldWaitReason: ready ? '' : String(packet.approvalPacketBlockedReason || 'approval_packet_not_ready'),
+    plannedExpectedApiClass: 'none',
+    plannedExpectedWriteClass: 'script_properties_approval_only',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  };
+}
+
+function buildGmailSalesExplicitBatchApprovalResult_(status, overrides) {
+  const result = Object.assign({
+    event: 'gmail_sales_explicit_batch_approval',
+    mode: 'safe_step',
+    status,
+    targetDate: '',
+    approvedBatchId: '',
+    approvedBatchChecksum: '',
+    approvalExpiresAt: '',
+    scriptPropertiesUpdated: false,
+    approvalReadBackMatched: false,
+    approvalPresent: false,
+    approvalTargetDateMatched: false,
+    approvalManifestDigestMatched: false,
+    approvalOperatorConfirmed: false,
+    sendReadinessAfterApproval: false,
+    sendBlockedReasonAfterApproval: '',
+    operatorRecommendedNextFunction: '',
+    operatorRecommendedNextFunctionReason: '',
+    operatorShouldRunSafeStepNow: false,
+    nextAction: '',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  }, overrides || {});
+  result.event = 'gmail_sales_explicit_batch_approval';
+  result.mode = 'safe_step';
+  result.status = status;
   return result;
 }
 
