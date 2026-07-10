@@ -11163,6 +11163,22 @@ function collectGmailSalesManifestBuildReadiness_() {
   const manifestCheck = validateApprovedSendManifest_(manifest, config, batchId, selectedItems);
   const suppression = loadSuppressionLedgerFromProperties_();
   const preSendSummary = countSameDayPreSendBlocks_(selectedItems, config, batchId, manifestCheck, suppression);
+  const projectedDigests = Array.isArray(manifest.candidateDigests) ? manifest.candidateDigests.map((value) => String(value || '').trim()).filter(Boolean) : [];
+  const projectedUniqueDigests = uniqueArray_(projectedDigests);
+  const projectedManifestDuplicateCount = Math.max(0, projectedDigests.length - projectedUniqueDigests.length);
+  const currentManifestDuplicateIdentityCount = Number(manifestStatus.manifestDuplicateCount || 0);
+  const readyInventoryDuplicateIdentityCount = Math.max(0, Number(preSendSummary.duplicateCount || 0) - projectedManifestDuplicateCount);
+  let importSheetAlreadyImportedCount = 0;
+  try {
+    const importSheet = context.spreadsheet ? context.spreadsheet.getSheetByName(GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_SHEET_NAME) : null;
+    if (importSheet) {
+      (readSheetObjects_(importSheet).items || []).forEach((item) => {
+        if (String(item.row.importStatus || '').trim().toLowerCase() === 'imported') importSheetAlreadyImportedCount += 1;
+      });
+    }
+  } catch (error) {
+    importSheetAlreadyImportedCount = 0;
+  }
   const blockedReasons = [];
   if (!context.sourceSheet) blockedReasons.push('source_sheet_missing');
   if (readyInventoryCount !== gmailDailyExpectedCount_()) blockedReasons.push('ready_inventory_not_exact30');
@@ -11170,7 +11186,7 @@ function collectGmailSalesManifestBuildReadiness_() {
   if (validation.errors.length > 0) blockedReasons.push('candidate_validation_errors');
   if (selectedItems.length !== gmailDailyExpectedCount_()) blockedReasons.push('manifest_candidate_count_not_30');
   if (!suppression.loaded) blockedReasons.push('suppression_ledger_missing');
-  if (preSendSummary.duplicateCount > 0) blockedReasons.push('duplicate_candidate');
+  if (projectedManifestDuplicateCount > 0) blockedReasons.push('duplicate_candidate');
   if (preSendSummary.suppressedCount > 0) blockedReasons.push('suppression_match');
   if (preSendSummary.alreadySentCount > 0) blockedReasons.push('already_sent_candidate');
   if (preSendSummary.invalidEmailCount > 0) blockedReasons.push('invalid_email');
@@ -11197,10 +11213,16 @@ function collectGmailSalesManifestBuildReadiness_() {
     currentManifestMaxSendCount: manifestStatus.currentManifestMaxSendCount,
     attemptedManifestCount: selectedItems.length,
     projectedManifestCount: Number(manifest.candidateCount || 0),
-    projectedManifestUniqueCount: uniqueArray_(manifest.candidateDigests || []).length,
-    projectedManifestDuplicateCount: Math.max(0, (manifest.candidateDigests || []).length - uniqueArray_(manifest.candidateDigests || []).length),
+    projectedManifestUniqueCount: projectedUniqueDigests.length,
+    projectedManifestDuplicateCount,
     projectedManifestTargetDateMatched: String(manifest.targetDate || '') === targetDate,
     projectedManifestMaxSendCount: Number(manifest.maxSendCount || 0),
+    duplicateCheckScope: 'projected_manifest_selection',
+    projectedManifestDuplicateIdentityCount: projectedManifestDuplicateCount,
+    currentManifestDuplicateIdentityCount,
+    readyInventoryDuplicateIdentityCount,
+    importSheetAlreadyImportedCount,
+    duplicateCandidateBlockedByProjectedManifestOnly: projectedManifestDuplicateCount > 0,
     manifestBuildEligible,
     manifestBuildBlockedReason: uniqueBlocked[0] || '',
     blockedReasons: uniqueBlocked,
@@ -11243,6 +11265,12 @@ function buildGmailSalesManifestBuildReadinessResult_(value) {
     projectedManifestDuplicateCount: Number(summary.projectedManifestDuplicateCount || 0),
     projectedManifestTargetDateMatched: summary.projectedManifestTargetDateMatched === true,
     projectedManifestMaxSendCount: Number(summary.projectedManifestMaxSendCount || 0),
+    duplicateCheckScope: String(summary.duplicateCheckScope || 'projected_manifest_selection'),
+    projectedManifestDuplicateIdentityCount: Number(summary.projectedManifestDuplicateIdentityCount || 0),
+    currentManifestDuplicateIdentityCount: Number(summary.currentManifestDuplicateIdentityCount || 0),
+    readyInventoryDuplicateIdentityCount: Number(summary.readyInventoryDuplicateIdentityCount || 0),
+    importSheetAlreadyImportedCount: Number(summary.importSheetAlreadyImportedCount || 0),
+    duplicateCandidateBlockedByProjectedManifestOnly: summary.duplicateCandidateBlockedByProjectedManifestOnly === true,
     operatorRecommendedNextFunction: eligible ? 'runGmailSalesManifestBuildOnce' : '',
     operatorShouldRunSafeStepNow: eligible,
     plannedExpectedApiClass: 'none',

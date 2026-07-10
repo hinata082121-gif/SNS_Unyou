@@ -352,6 +352,101 @@ function installPublicBusinessLeadImportSheet(context, rows) {
   return sheet;
 }
 
+function installManifestPendingFixture(context, options = {}) {
+  context.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
+  context.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+  context.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+  const targetDate = applyTodayTargetDate(context);
+  context.getConfig_ = () => ({
+    currentJstDate: targetDate,
+    sendDate: targetDate,
+    sendBatchId: `gmail-sales-${targetDate}`,
+    sendBatchIdPrefix: 'gmail-sales',
+    sheetId: '',
+    sheetName: '',
+    replySignature: 'ICHI Social',
+    maxSendAttempts: 3
+  });
+  context.loadSuppressionLedgerFromProperties_ = () => ({
+    loaded: true,
+    recipientHashes: {},
+    domainHashes: {},
+    businessFingerprints: {},
+    entries: []
+  });
+  const rowCount = Number(options.rowCount || 30);
+  const sourceRows = Array.from({ length: rowCount }, (_, index) => {
+    const n = index + 1;
+    const duplicateOfFirst = options.duplicateEmail === true && n === rowCount;
+    const identity = duplicateOfFirst ? 1 : n;
+    return Object.assign({}, makeSourceRows(1)[0], {
+      prospectId: `manifest-prospect-${identity}`,
+      name: `masked-manifest-business-${identity}`,
+      email: `manifest${identity}@manifest-${identity}.example.invalid`,
+      contactEmail: `manifest${identity}@manifest-${identity}.example.invalid`,
+      sourceUrl: `https://manifest-${identity}.example.invalid/`,
+      sourceType: 'official_website',
+      sourceReference: `https://manifest-${identity}.example.invalid/`,
+      sourceReferenceHash: `manifest-source-hash-${identity}`,
+      contactBasisType: 'valid_business_contact_exception',
+      contactBasisRecordedAt: '2026-07-10T00:00:00.000Z',
+      optOutAvailable: 'true',
+      lastVerifiedAt: '2026-07-10T00:00:00.000Z',
+      suppressionCheckedAt: '2026-07-10T00:00:00.000Z',
+      historyCheckedAt: '2026-07-10T00:00:00.000Z',
+      deterministicRuleId: n > 11 ? 'no_api_public_business_lead_import_v1' : 'existing_safe_inventory',
+      status: 'ready',
+      sendDate: targetDate,
+      sendBatchId: `gmail-sales-${targetDate}`,
+      sendState: options.deliveryUnknown === true && n === 1 ? 'DELIVERY_UNKNOWN' : 'READY',
+      doNotContact: options.doNotContact === true && n === 1 ? 'true' : '',
+      sentStatus: '',
+      replyStatus: '',
+      subject: '',
+      body: ''
+    });
+  });
+  installSheets(context, sourceRows, []);
+  context.inspectGmailSalesContactBasisCoverage_ = () => ({
+    event: 'gmail_sales_contact_basis_coverage',
+    mode: 'read_only',
+    sourceCandidateCount: rowCount,
+    fieldsSupported: true,
+    approvedBasisCount: rowCount,
+    eligibleAfterBasisCheckCount: rowCount,
+    operationalCandidateReady: rowCount >= 30,
+    blockedReasons: rowCount >= 30 ? [] : ['eligible_basis_count_below_30'],
+    gmailSendExecuted: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false
+  });
+  context.__props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify({
+    schemaVersion: 1,
+    mode: 'normal_daily',
+    sourceType: 'normal_daily',
+    targetDate: '2026-01-01',
+    batchId: 'gmail-sales-2026-01-01',
+    candidateCount: 1,
+    maxSendCount: 1,
+    approvalStatus: 'approved',
+    approvalType: 'automatic_strict_gate',
+    targetAutoApproved: true,
+    humanReviewCompleted: false,
+    humanReviewedCount: 0,
+    candidateDigests: ['stale-digest']
+  });
+  if (options.importedRows) {
+    installPublicBusinessLeadImportSheet(context, Array.from({ length: Number(options.importedRows || 0) }, (_, index) => ({
+      targetDate,
+      businessName: `masked-imported-${index + 1}`,
+      publicEmail: `imported${index + 1}@imported-${index + 1}.example.invalid`,
+      importStatus: 'imported'
+    })));
+  }
+  seedUrlFetchAuthorizationVerified(context);
+  return { targetDate, sourceRows };
+}
+
 function setSheetValueByHeader(sheet, rowIndex, headerName, value) {
   const columnIndex = sheet.values[0].indexOf(headerName) + 1;
   assert.equal(columnIndex > 0, true);
@@ -3607,83 +3702,7 @@ assert.equal(import1.__state.draftCreateCount, 0);
 assert.equal(import1.__state.triggerCreateCount, 0);
 
 const manifestPending = createContext();
-manifestPending.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
-manifestPending.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
-manifestPending.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
-const manifestTargetDate = applyTodayTargetDate(manifestPending);
-manifestPending.getConfig_ = () => ({
-  currentJstDate: manifestTargetDate,
-  sendDate: manifestTargetDate,
-  sendBatchId: `gmail-sales-${manifestTargetDate}`,
-  sendBatchIdPrefix: 'gmail-sales',
-  sheetId: '',
-  sheetName: '',
-  replySignature: 'ICHI Social',
-  maxSendAttempts: 3
-});
-manifestPending.loadSuppressionLedgerFromProperties_ = () => ({
-  loaded: true,
-  recipientHashes: {},
-  domainHashes: {},
-  businessFingerprints: {},
-  entries: []
-});
-const manifestRows = Array.from({ length: 30 }, (_, index) => {
-  const n = index + 1;
-  return Object.assign({}, makeSourceRows(1)[0], {
-    prospectId: `manifest-prospect-${n}`,
-    name: `masked-manifest-business-${n}`,
-    email: `manifest${n}@manifest-${n}.example.invalid`,
-    contactEmail: `manifest${n}@manifest-${n}.example.invalid`,
-    sourceUrl: `https://manifest-${n}.example.invalid/`,
-    sourceType: 'official_website',
-    sourceReference: `https://manifest-${n}.example.invalid/`,
-    sourceReferenceHash: `manifest-source-hash-${n}`,
-    contactBasisType: 'valid_business_contact_exception',
-    contactBasisRecordedAt: '2026-07-10T00:00:00.000Z',
-    optOutAvailable: 'true',
-    lastVerifiedAt: '2026-07-10T00:00:00.000Z',
-    suppressionCheckedAt: '2026-07-10T00:00:00.000Z',
-    historyCheckedAt: '2026-07-10T00:00:00.000Z',
-    deterministicRuleId: n > 11 ? 'no_api_public_business_lead_import_v1' : 'existing_safe_inventory',
-    status: 'ready',
-    sendDate: manifestTargetDate,
-    sendBatchId: `gmail-sales-${manifestTargetDate}`,
-    sendState: 'READY',
-    subject: '',
-    body: ''
-  });
-});
-installSheets(manifestPending, manifestRows, []);
-manifestPending.inspectGmailSalesContactBasisCoverage_ = () => ({
-  event: 'gmail_sales_contact_basis_coverage',
-  mode: 'read_only',
-  sourceCandidateCount: 30,
-  fieldsSupported: true,
-  approvedBasisCount: 30,
-  eligibleAfterBasisCheckCount: 30,
-  operationalCandidateReady: true,
-  blockedReasons: [],
-  gmailSendExecuted: false,
-  googleSheetsUpdated: false,
-  scriptPropertiesUpdated: false
-});
-manifestPending.__props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify({
-  schemaVersion: 1,
-  mode: 'normal_daily',
-  sourceType: 'normal_daily',
-  targetDate: '2026-01-01',
-  batchId: 'gmail-sales-2026-01-01',
-  candidateCount: 1,
-  maxSendCount: 1,
-  approvalStatus: 'approved',
-  approvalType: 'automatic_strict_gate',
-  targetAutoApproved: true,
-  humanReviewCompleted: false,
-  humanReviewedCount: 0,
-  candidateDigests: ['stale-digest']
-});
-seedUrlFetchAuthorizationVerified(manifestPending);
+installManifestPendingFixture(manifestPending, { importedRows: 19 });
 const manifestPendingStatus = manifestPending.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
 assert.equal(manifestPendingStatus.readyInventoryCount, 30);
 assert.equal(manifestPendingStatus.exact30Satisfied, true);
@@ -3712,6 +3731,12 @@ assert.equal(manifestReadiness.status, 'pass');
 assert.equal(manifestReadiness.readyInventoryCount, 30);
 assert.equal(manifestReadiness.exact30Satisfied, true);
 assert.equal(manifestReadiness.manifestBuildEligible, true);
+assert.equal(manifestReadiness.blockedReasons.includes('duplicate_candidate'), false);
+assert.equal(manifestReadiness.duplicateCheckScope, 'projected_manifest_selection');
+assert.equal(manifestReadiness.projectedManifestDuplicateIdentityCount, 0);
+assert.equal(manifestReadiness.currentManifestDuplicateIdentityCount, 0);
+assert.equal(manifestReadiness.importSheetAlreadyImportedCount, 19);
+assert.equal(manifestReadiness.duplicateCandidateBlockedByProjectedManifestOnly, false);
 assert.equal(manifestReadiness.operatorRecommendedNextFunction, 'runGmailSalesManifestBuildOnce');
 assert.equal(manifestReadiness.plannedExpectedApiClass, 'none');
 assert.equal(manifestReadiness.plannedExpectedWriteClass, 'sheets_manifest_build_only');
@@ -3752,6 +3777,60 @@ const manifestLogsJson = JSON.stringify(manifestPending.__state.logs);
 ].forEach((forbidden) => {
   assert.equal(manifestLogsJson.includes(forbidden), false);
 });
+
+const manifestDuplicate = createContext();
+installManifestPendingFixture(manifestDuplicate);
+const originalDuplicateManifestBuilder = manifestDuplicate.buildSameDayAutomaticManifest_;
+manifestDuplicate.buildSameDayAutomaticManifest_ = (items, config, batchId) => {
+  const manifest = originalDuplicateManifestBuilder(items, config, batchId);
+  manifest.candidateDigests[29] = manifest.candidateDigests[0];
+  manifest.candidateCount = 30;
+  manifest.maxSendCount = 30;
+  return manifest;
+};
+const manifestDuplicateReadiness = manifestDuplicate.inspectGmailSalesManifestBuildReadiness_({ skipLog: true });
+assert.equal(manifestDuplicateReadiness.status, 'blocked');
+assert.equal(manifestDuplicateReadiness.manifestBuildEligible, false);
+assert.equal(manifestDuplicateReadiness.manifestBuildBlockedReason, 'duplicate_candidate');
+assert.equal(manifestDuplicateReadiness.blockedReasons.includes('duplicate_candidate'), true);
+assert.equal(manifestDuplicateReadiness.projectedManifestDuplicateCount, 1);
+assert.equal(manifestDuplicateReadiness.projectedManifestDuplicateIdentityCount, 1);
+assert.equal(manifestDuplicateReadiness.duplicateCandidateBlockedByProjectedManifestOnly, true);
+assert.equal(manifestDuplicateReadiness.operatorRecommendedNextFunction, '');
+assert.equal(manifestDuplicate.__state.gmailSendCount, 0);
+assert.equal(manifestDuplicate.__state.draftCreateCount, 0);
+assert.equal(manifestDuplicate.__state.triggerCreateCount, 0);
+assert.equal(manifestDuplicate.__state.urlFetchCount, 0);
+
+const manifestShort = createContext();
+installManifestPendingFixture(manifestShort, { rowCount: 29 });
+const manifestShortReadiness = manifestShort.inspectGmailSalesManifestBuildReadiness_({ skipLog: true });
+assert.equal(manifestShortReadiness.status, 'blocked');
+assert.equal(manifestShortReadiness.manifestBuildEligible, false);
+assert.equal(manifestShortReadiness.operatorRecommendedNextFunction, '');
+assert.equal(manifestShortReadiness.blockedReasons.includes('ready_inventory_not_exact30'), true);
+assert.equal(manifestShortReadiness.blockedReasons.includes('duplicate_candidate'), false);
+
+const manifestSuppression = createContext();
+installManifestPendingFixture(manifestSuppression);
+const suppressedRecipientHash = manifestSuppression.hashValue_('manifest1@manifest-1.example.invalid');
+manifestSuppression.loadSuppressionLedgerFromProperties_ = () => ({
+  loaded: true,
+  recipientHashes: { [suppressedRecipientHash]: true },
+  domainHashes: {},
+  businessFingerprints: {},
+  entries: []
+});
+const manifestSuppressionReadiness = manifestSuppression.inspectGmailSalesManifestBuildReadiness_({ skipLog: true });
+assert.equal(manifestSuppressionReadiness.status, 'blocked');
+assert.equal(manifestSuppressionReadiness.manifestBuildEligible, false);
+assert.equal(manifestSuppressionReadiness.operatorRecommendedNextFunction, '');
+assert.equal(manifestSuppressionReadiness.blockedReasons.includes('suppression_match'), true);
+assert.equal(manifestSuppressionReadiness.blockedReasons.includes('duplicate_candidate'), false);
+assert.equal(manifestSuppression.__state.gmailSendCount, 0);
+assert.equal(manifestSuppression.__state.draftCreateCount, 0);
+assert.equal(manifestSuppression.__state.triggerCreateCount, 0);
+assert.equal(manifestSuppression.__state.urlFetchCount, 0);
 
 assert.equal(g4292.__state.gmailSendCount, 0);
 assert.equal(g4292.__state.draftCreateCount, 0);
