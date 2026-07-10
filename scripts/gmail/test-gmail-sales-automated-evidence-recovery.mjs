@@ -61,6 +61,7 @@ class FakeSheet {
   getLastRow() { return this.values.length; }
   getLastColumn() { return this.values[0] ? this.values[0].length : 0; }
   getProtections() { return []; }
+  getDataRange() { return new FakeRange(this, 1, 1, this.getLastRow(), this.getLastColumn(), this.state); }
   getRange(row, col, numRows = 1, numCols = 1) { return new FakeRange(this, row, col, numRows, numCols, this.state); }
   getCell(row, col) { return ((this.values[row - 1] || [])[col - 1]) || ''; }
   setCell(row, col, value) {
@@ -211,7 +212,10 @@ function createContext() {
       getProjectTriggers: () => []
     },
     MailApp: { sendEmail: () => { state.gmailSendCount += 1; } },
-    GmailApp: { createDraft: () => { state.draftCreateCount += 1; } },
+    GmailApp: {
+      createDraft: () => { state.draftCreateCount += 1; },
+      search: () => []
+    },
     UrlFetchApp: { fetch: () => { state.urlFetchCount += 1; return { getResponseCode: () => 200, getContentText: () => '{}' }; } },
     Utilities: {
       formatDate: formatDateForTimezone,
@@ -3601,6 +3605,153 @@ assert.equal(import1.__state.urlFetchCount, 0);
 assert.equal(import1.__state.gmailSendCount, 0);
 assert.equal(import1.__state.draftCreateCount, 0);
 assert.equal(import1.__state.triggerCreateCount, 0);
+
+const manifestPending = createContext();
+manifestPending.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
+manifestPending.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
+manifestPending.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+const manifestTargetDate = applyTodayTargetDate(manifestPending);
+manifestPending.getConfig_ = () => ({
+  currentJstDate: manifestTargetDate,
+  sendDate: manifestTargetDate,
+  sendBatchId: `gmail-sales-${manifestTargetDate}`,
+  sendBatchIdPrefix: 'gmail-sales',
+  sheetId: '',
+  sheetName: '',
+  replySignature: 'ICHI Social',
+  maxSendAttempts: 3
+});
+manifestPending.loadSuppressionLedgerFromProperties_ = () => ({
+  loaded: true,
+  recipientHashes: {},
+  domainHashes: {},
+  businessFingerprints: {},
+  entries: []
+});
+const manifestRows = Array.from({ length: 30 }, (_, index) => {
+  const n = index + 1;
+  return Object.assign({}, makeSourceRows(1)[0], {
+    prospectId: `manifest-prospect-${n}`,
+    name: `masked-manifest-business-${n}`,
+    email: `manifest${n}@manifest-${n}.example.invalid`,
+    contactEmail: `manifest${n}@manifest-${n}.example.invalid`,
+    sourceUrl: `https://manifest-${n}.example.invalid/`,
+    sourceType: 'official_website',
+    sourceReference: `https://manifest-${n}.example.invalid/`,
+    sourceReferenceHash: `manifest-source-hash-${n}`,
+    contactBasisType: 'valid_business_contact_exception',
+    contactBasisRecordedAt: '2026-07-10T00:00:00.000Z',
+    optOutAvailable: 'true',
+    lastVerifiedAt: '2026-07-10T00:00:00.000Z',
+    suppressionCheckedAt: '2026-07-10T00:00:00.000Z',
+    historyCheckedAt: '2026-07-10T00:00:00.000Z',
+    deterministicRuleId: n > 11 ? 'no_api_public_business_lead_import_v1' : 'existing_safe_inventory',
+    status: 'ready',
+    sendDate: manifestTargetDate,
+    sendBatchId: `gmail-sales-${manifestTargetDate}`,
+    sendState: 'READY',
+    subject: '',
+    body: ''
+  });
+});
+installSheets(manifestPending, manifestRows, []);
+manifestPending.inspectGmailSalesContactBasisCoverage_ = () => ({
+  event: 'gmail_sales_contact_basis_coverage',
+  mode: 'read_only',
+  sourceCandidateCount: 30,
+  fieldsSupported: true,
+  approvedBasisCount: 30,
+  eligibleAfterBasisCheckCount: 30,
+  operationalCandidateReady: true,
+  blockedReasons: [],
+  gmailSendExecuted: false,
+  googleSheetsUpdated: false,
+  scriptPropertiesUpdated: false
+});
+manifestPending.__props.APPROVED_SEND_MANIFEST_JSON = JSON.stringify({
+  schemaVersion: 1,
+  mode: 'normal_daily',
+  sourceType: 'normal_daily',
+  targetDate: '2026-01-01',
+  batchId: 'gmail-sales-2026-01-01',
+  candidateCount: 1,
+  maxSendCount: 1,
+  approvalStatus: 'approved',
+  approvalType: 'automatic_strict_gate',
+  targetAutoApproved: true,
+  humanReviewCompleted: false,
+  humanReviewedCount: 0,
+  candidateDigests: ['stale-digest']
+});
+seedUrlFetchAuthorizationVerified(manifestPending);
+const manifestPendingStatus = manifestPending.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(manifestPendingStatus.readyInventoryCount, 30);
+assert.equal(manifestPendingStatus.exact30Satisfied, true);
+assert.equal(manifestPendingStatus.manifestReady, false);
+assert.equal(manifestPendingStatus.exact30ManifestBuildPending, true);
+assert.equal(manifestPendingStatus.checkpointState, 'MANIFEST_BUILD_PENDING');
+assert.equal(manifestPendingStatus.nextAction, 'MANIFEST_BUILD_PENDING');
+assert.equal(manifestPendingStatus.evidenceRecoveryAction, 'manifest_build_pending');
+assert.equal(manifestPendingStatus.evidenceRecoveryActionReasonCode, 'exact30_ready_manifest_build_required');
+assert.equal(manifestPendingStatus.actionBlockedReason, 'manifest_build_pending');
+assert.equal(manifestPendingStatus.expectedApiClass, 'none');
+assert.equal(manifestPendingStatus.expectedWriteClass, 'sheets_manifest_build_only');
+assert.equal(manifestPendingStatus.plannedExpectedApiClass, 'none');
+assert.equal(manifestPendingStatus.plannedExpectedWriteClass, 'sheets_manifest_build_only');
+assert.equal(manifestPendingStatus.operatorRecommendedNextFunction, 'runGmailSalesManifestBuildOnce');
+assert.equal(manifestPendingStatus.operatorRecommendedNextFunctionReason, 'exact30_ready_manifest_build_required');
+assert.equal(manifestPendingStatus.operatorShouldRunSafeStepNow, true);
+assert.equal(manifestPendingStatus.operatorShouldWaitReason, '');
+assert.equal(JSON.stringify(manifestPendingStatus).includes('grounded_official_source_discovery'), false);
+assert.equal(JSON.stringify(manifestPendingStatus).includes('free_tier_grounding_daily_candidate_limit_reached'), false);
+assert.equal(JSON.stringify(manifestPendingStatus).includes('gemini_grounding'), false);
+const manifestReadiness = manifestPending.inspectGmailSalesManifestBuildReadiness_({ skipLog: true });
+assert.equal(manifestReadiness.event, 'gmail_sales_manifest_build_readiness');
+assert.equal(manifestReadiness.mode, 'read_only');
+assert.equal(manifestReadiness.status, 'pass');
+assert.equal(manifestReadiness.readyInventoryCount, 30);
+assert.equal(manifestReadiness.exact30Satisfied, true);
+assert.equal(manifestReadiness.manifestBuildEligible, true);
+assert.equal(manifestReadiness.operatorRecommendedNextFunction, 'runGmailSalesManifestBuildOnce');
+assert.equal(manifestReadiness.plannedExpectedApiClass, 'none');
+assert.equal(manifestReadiness.plannedExpectedWriteClass, 'sheets_manifest_build_only');
+assert.equal(manifestReadiness.gmailSendExecuted, false);
+assert.equal(manifestReadiness.gmailDraftCreated, false);
+assert.equal(manifestReadiness.aiApiCalled, false);
+assert.equal(manifestReadiness.urlFetchExecuted, false);
+const manifestBeforeWrites = manifestPending.__state.propertyWriteCount;
+const manifestStep = manifestPending.runGmailSalesManifestBuildOnce();
+assert.equal(manifestStep.event, 'gmail_sales_manifest_build');
+assert.equal(manifestStep.status, 'pass');
+assert.equal(manifestStep.readyInventoryCount, 30);
+assert.equal(manifestStep.attemptedManifestCount, 30);
+assert.equal(manifestStep.manifestCount, 30);
+assert.equal(manifestStep.manifestUniqueCount, 30);
+assert.equal(manifestStep.manifestDuplicateCount, 0);
+assert.equal(manifestStep.manifestTargetDateMatched, true);
+assert.equal(manifestStep.manifestStale, false);
+assert.equal(manifestStep.currentManifestMaxSendCount, 30);
+assert.equal(manifestStep.manifestReady, true);
+assert.equal(manifestStep.nextAction, 'manifest_review_or_approval_pending');
+assert.equal(manifestStep.gmailSendExecuted, false);
+assert.equal(manifestStep.gmailDraftCreated, false);
+assert.equal(manifestStep.triggerChanged, false);
+assert.equal(manifestStep.aiApiCalled, false);
+assert.equal(manifestStep.urlFetchExecuted, false);
+assert.equal(manifestPending.__state.propertyWriteCount > manifestBeforeWrites, true);
+assert.equal(manifestPending.__state.gmailSendCount, 0);
+assert.equal(manifestPending.__state.draftCreateCount, 0);
+assert.equal(manifestPending.__state.triggerCreateCount, 0);
+assert.equal(manifestPending.__state.urlFetchCount, 0);
+const manifestLogsJson = JSON.stringify(manifestPending.__state.logs);
+[
+  'manifest1@',
+  '/contact',
+  'AIza',
+  'sk-'
+].forEach((forbidden) => {
+  assert.equal(manifestLogsJson.includes(forbidden), false);
+});
 
 assert.equal(g4292.__state.gmailSendCount, 0);
 assert.equal(g4292.__state.draftCreateCount, 0);
