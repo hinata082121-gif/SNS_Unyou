@@ -11678,6 +11678,272 @@ function buildGmailSalesExplicitBatchApprovalResult_(status, overrides) {
   return result;
 }
 
+function inspectGmailSalesLiveSendControlReadiness() {
+  const result = inspectGmailSalesLiveSendControlReadiness_({ skipLog: true });
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function inspectGmailSalesLiveSendControlReadiness_(options) {
+  const result = buildGmailSalesLiveSendControlReadinessResult_(collectGmailSalesLiveSendControlReadiness_());
+  if (!(options && options.skipLog)) logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function enableGmailSalesOneTimeLiveSendOnce() {
+  const props = PropertiesService.getScriptProperties();
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    const locked = buildGmailSalesOneTimeLiveSendEnableResult_('blocked', {
+      blockedReason: 'lock_unavailable'
+    });
+    logGmailSalesJsonResult_(locked);
+    return locked;
+  }
+  try {
+    const readiness = collectGmailSalesLiveSendControlReadiness_();
+    const blocked = [];
+    if (readiness.sendReadiness !== true) blocked.push(readiness.sendBlockedReason || 'send_readiness_not_ready');
+    if (!readiness.nextSendWindowStart || !readiness.nextSendWindowEnd) blocked.push('send_window_not_configured');
+    if (!readiness.requiredApprovedBatchId || !readiness.requiredApprovedBatchChecksum) blocked.push('approval_packet_not_ready');
+    if (readiness.manifestReady !== true) blocked.push('manifest_not_ready');
+    if (readiness.manifestCount !== gmailDailyExpectedCount_()) blocked.push('manifest_count_not_exact30');
+    if (readiness.manifestUniqueCount !== gmailDailyExpectedCount_()) blocked.push('manifest_unique_count_not_exact30');
+    if (readiness.manifestDuplicateCount !== 0) blocked.push('duplicate_candidate');
+    if (readiness.manifestTargetDateMatched !== true) blocked.push('manifest_target_date_mismatch');
+    if (readiness.manifestStale === true) blocked.push('manifest_stale');
+    const uniqueBlocked = uniqueArray_(blocked.filter(Boolean));
+    if (uniqueBlocked.length > 0) {
+      const result = buildGmailSalesOneTimeLiveSendEnableResult_('blocked', Object.assign({}, readiness, {
+        blockedReason: uniqueBlocked[0],
+        blockedReasons: uniqueBlocked
+      }));
+      logGmailSalesJsonResult_(result);
+      return result;
+    }
+    props.setProperties({
+      AUTOMATION_MASTER_ENABLED: 'true',
+      AUTO_SEND_ENABLED: 'true',
+      LIVE_SEND_ENABLED: 'true',
+      LIVE_SEND_TARGET_DATE: readiness.targetDate,
+      LIVE_SEND_BATCH_ID: readiness.requiredApprovedBatchId,
+      LIVE_SEND_BATCH_CHECKSUM: readiness.requiredApprovedBatchChecksum,
+      LIVE_SEND_EXPIRES_AT: readiness.nextSendWindowEnd,
+      LIVE_SEND_MAX_COUNT: String(gmailDailyExpectedCount_()),
+      LIVE_SEND_ONE_TIME: 'true'
+    }, false);
+    const after = collectGmailSalesLiveSendControlReadiness_();
+    const tokenMatched = after.oneTimeLiveSendTokenPresent === true &&
+      after.oneTimeLiveSendTokenTargetDateMatched === true &&
+      after.oneTimeLiveSendTokenManifestDigestMatched === true;
+    const result = buildGmailSalesOneTimeLiveSendEnableResult_(tokenMatched ? 'pass' : 'blocked', Object.assign({}, after, {
+      liveSendEnabled: after.liveSendEnabled === true,
+      oneTimeLiveSendTokenWritten: tokenMatched,
+      oneTimeLiveSendTokenExpiresAt: after.oneTimeLiveSendTokenExpiresAt,
+      operatorRecommendedNextFunction: after.sendWindowOpen === true ? 'runGmailSalesDailyAutomationTrigger' : '',
+      operatorRecommendedNextFunctionReason: after.sendWindowOpen === true ? 'one_time_live_send_enabled_window_open' : '',
+      operatorShouldRunSafeStepNow: after.sendWindowOpen === true,
+      nextAction: after.sendWindowOpen === true ? 'daily_send_ready' : 'wait_for_send_window',
+      scriptPropertiesUpdated: true
+    }));
+    logGmailSalesJsonResult_(result);
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function collectGmailSalesLiveSendControlReadiness_() {
+  const props = PropertiesService.getScriptProperties();
+  const config = getConfig_();
+  const approval = inspectGmailSalesApprovalSendReadiness_({ skipLog: true });
+  const packet = collectGmailSalesExplicitBatchApprovalPacket_();
+  const windowStatus = getGmailSalesDailySendWindowConfig_(props);
+  const windowSchedule = buildGmailSalesSendWindowSchedule_(windowStatus);
+  const token = inspectGmailSalesOneTimeLiveSendToken_(props, approval.targetDate, packet.requiredApprovedBatchChecksum);
+  const autoSendEnabled = props.getProperty('AUTO_SEND_ENABLED') === 'true';
+  const liveSendEnabled = props.getProperty('LIVE_SEND_ENABLED') === 'true';
+  const blockedReasons = [];
+  if (approval.sendReadiness !== true) blockedReasons.push(approval.sendBlockedReason || 'send_readiness_not_ready');
+  if (!autoSendEnabled) blockedReasons.push('auto_send_disabled');
+  if (!liveSendEnabled) blockedReasons.push('live_send_disabled');
+  if (windowSchedule.configured !== true) blockedReasons.push(windowStatus.blockedReason || 'send_window_not_configured');
+  if (windowSchedule.configured === true && windowSchedule.sendWindowOpen !== true) blockedReasons.push('outside_send_window');
+  const uniqueBlocked = uniqueArray_(blockedReasons.filter(Boolean));
+  let recommendedFunction = '';
+  let recommendedReason = '';
+  let shouldRun = false;
+  let waitReason = uniqueBlocked[0] || '';
+  if (approval.sendReadiness === true) {
+    if (windowSchedule.sendWindowOpen !== true) {
+      waitReason = 'outside_send_window';
+    } else if (!autoSendEnabled || !liveSendEnabled || token.valid !== true) {
+      recommendedFunction = 'enableGmailSalesOneTimeLiveSendOnce';
+      recommendedReason = 'live_send_control_enable_required';
+      waitReason = !autoSendEnabled ? 'auto_send_disabled' : (!liveSendEnabled ? 'live_send_disabled' : 'one_time_live_send_token_missing');
+    } else {
+      recommendedFunction = 'runGmailSalesDailyAutomationTrigger';
+      recommendedReason = 'one_time_live_send_enabled_window_open';
+      shouldRun = true;
+      waitReason = '';
+    }
+  }
+  return {
+    event: 'gmail_sales_live_send_control_readiness',
+    mode: 'read_only',
+    status: uniqueBlocked.length === 0 && token.valid === true ? 'pass' : 'blocked',
+    targetDate: approval.targetDate || config.currentJstDate,
+    readyInventoryCount: approval.readyInventoryCount,
+    manifestReady: approval.manifestReady,
+    manifestCount: approval.manifestCount,
+    manifestUniqueCount: approval.manifestUniqueCount,
+    manifestDuplicateCount: approval.manifestDuplicateCount,
+    manifestTargetDateMatched: approval.manifestTargetDateMatched,
+    manifestStale: approval.manifestStale,
+    approvalPresent: approval.approvalPresent,
+    approvalTargetDateMatched: approval.approvalTargetDateMatched,
+    approvalManifestDigestMatched: approval.approvalManifestDigestMatched,
+    approvalOperatorConfirmed: approval.approvalOperatorConfirmed,
+    sendReadiness: approval.sendReadiness,
+    sendBlockedReason: approval.sendBlockedReason,
+    autoSendEnabled,
+    autoSendDisabledReason: autoSendEnabled ? '' : 'auto_send_disabled',
+    liveSendEnabled,
+    liveSendDisabledReason: liveSendEnabled ? '' : 'live_send_disabled',
+    sendWindowOpen: windowSchedule.sendWindowOpen,
+    outsideSendWindow: windowSchedule.configured === true && windowSchedule.sendWindowOpen !== true,
+    sendWindowTimezone: windowSchedule.timezone,
+    sendWindowStart: windowStatus.start || '',
+    sendWindowEnd: windowStatus.end || '',
+    nextSendWindowStart: windowSchedule.nextSendWindowStart,
+    nextSendWindowEnd: windowSchedule.nextSendWindowEnd,
+    oneTimeLiveSendTokenPresent: token.present,
+    oneTimeLiveSendTokenTargetDateMatched: token.targetDateMatched,
+    oneTimeLiveSendTokenManifestDigestMatched: token.manifestDigestMatched,
+    oneTimeLiveSendTokenExpiresAt: token.expiresAt,
+    oneTimeLiveSendTokenValid: token.valid,
+    liveSendResetAfterRunExpected: config.autoResetLiveSendAfterRun !== false,
+    blockedReasons: uniqueBlocked,
+    requiredApprovedBatchId: packet.requiredApprovedBatchId,
+    requiredApprovedBatchChecksum: packet.requiredApprovedBatchChecksum,
+    operatorRecommendedNextFunction: recommendedFunction,
+    operatorRecommendedNextFunctionReason: recommendedReason,
+    operatorShouldRunSafeStepNow: shouldRun,
+    operatorShouldWaitReason: waitReason,
+    plannedExpectedApiClass: 'none',
+    plannedExpectedWriteClass: shouldRun ? 'none' : 'script_properties_live_send_only',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  };
+}
+
+function buildGmailSalesSendWindowSchedule_(windowStatus) {
+  const timezone = Session.getScriptTimeZone() || GMAIL_SALES_TIMEZONE_DEFAULT;
+  if (!windowStatus || windowStatus.configured !== true) {
+    return {
+      configured: false,
+      timezone,
+      sendWindowOpen: false,
+      nextSendWindowStart: '',
+      nextSendWindowEnd: ''
+    };
+  }
+  const now = new Date();
+  const currentDate = Utilities.formatDate(now, timezone, 'yyyy-MM-dd');
+  const currentParts = Utilities.formatDate(now, timezone, 'HH:mm').split(':');
+  const currentMinutes = Number(currentParts[0]) * 60 + Number(currentParts[1]);
+  const startMinutes = Number(windowStatus.startMinutes || 0);
+  const endMinutes = Number(windowStatus.endMinutes || 0);
+  const sendWindowOpen = currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+  let windowDate = currentDate;
+  if (currentMinutes > endMinutes) {
+    windowDate = Utilities.formatDate(new Date(now.getTime() + 24 * 60 * 60 * 1000), timezone, 'yyyy-MM-dd');
+  }
+  const startText = String(windowStatus.start || GMAIL_SALES_SEND_WINDOW_START_DEFAULT);
+  const endText = String(windowStatus.end || GMAIL_SALES_SEND_WINDOW_END_DEFAULT);
+  return {
+    configured: true,
+    timezone,
+    sendWindowOpen,
+    nextSendWindowStart: windowDate + 'T' + startText + ':00+09:00',
+    nextSendWindowEnd: windowDate + 'T' + endText + ':00+09:00'
+  };
+}
+
+function inspectGmailSalesOneTimeLiveSendToken_(props, targetDate, manifestChecksum) {
+  const tokenTargetDate = String(props.getProperty('LIVE_SEND_TARGET_DATE') || '').trim();
+  const tokenBatchId = String(props.getProperty('LIVE_SEND_BATCH_ID') || '').trim();
+  const tokenChecksum = String(props.getProperty('LIVE_SEND_BATCH_CHECKSUM') || '').trim();
+  const tokenExpiresAt = String(props.getProperty('LIVE_SEND_EXPIRES_AT') || '').trim();
+  const tokenMaxCount = Number(props.getProperty('LIVE_SEND_MAX_COUNT') || '0');
+  const tokenOneTime = props.getProperty('LIVE_SEND_ONE_TIME') === 'true';
+  const present = Boolean(tokenTargetDate || tokenBatchId || tokenChecksum || tokenExpiresAt || tokenMaxCount || tokenOneTime);
+  const targetDateMatched = tokenTargetDate === targetDate;
+  const manifestDigestMatched = tokenChecksum === manifestChecksum;
+  const notExpired = isApprovalNotExpired_(tokenExpiresAt);
+  const maxCountMatched = tokenMaxCount === gmailDailyExpectedCount_();
+  return {
+    present,
+    targetDateMatched,
+    manifestDigestMatched,
+    expiresAt: tokenExpiresAt,
+    notExpired,
+    maxCountMatched,
+    valid: present && targetDateMatched && manifestDigestMatched && notExpired && maxCountMatched && tokenOneTime
+  };
+}
+
+function buildGmailSalesLiveSendControlReadinessResult_(summary) {
+  return Object.assign({}, summary || {}, {
+    event: 'gmail_sales_live_send_control_readiness',
+    mode: 'read_only',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  });
+}
+
+function buildGmailSalesOneTimeLiveSendEnableResult_(status, overrides) {
+  const result = Object.assign({
+    event: 'gmail_sales_one_time_live_send_enable',
+    mode: 'safe_step',
+    status,
+    targetDate: '',
+    liveSendEnabled: false,
+    oneTimeLiveSendTokenWritten: false,
+    oneTimeLiveSendTokenTargetDateMatched: false,
+    oneTimeLiveSendTokenManifestDigestMatched: false,
+    oneTimeLiveSendTokenExpiresAt: '',
+    nextSendWindowStart: '',
+    nextSendWindowEnd: '',
+    sendWindowOpen: false,
+    outsideSendWindow: false,
+    operatorRecommendedNextFunction: '',
+    operatorRecommendedNextFunctionReason: '',
+    operatorShouldRunSafeStepNow: false,
+    nextAction: '',
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  }, overrides || {});
+  result.event = 'gmail_sales_one_time_live_send_enable';
+  result.mode = 'safe_step';
+  result.status = status;
+  result.gmailSendExecuted = false;
+  result.gmailDraftCreated = false;
+  result.triggerChanged = false;
+  result.aiApiCalled = false;
+  result.urlFetchExecuted = false;
+  return result;
+}
+
 function planGmailSalesAutomatedEvidenceRecoveryNextAction_(status) {
   if (status && status.manifestReady === true) return GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.ready;
   if (Number(status && status.readyInventoryCount || 0) >= gmailDailyExpectedCount_()) return GMAIL_SALES_AUTOMATED_EVIDENCE_RECOVERY_STATES.manifestBuildPending;
@@ -27827,8 +28093,16 @@ function resetLiveSendAfterRun_(config, options) {
     return;
   }
   const props = PropertiesService.getScriptProperties();
-  props.setProperty('LIVE_SEND_ENABLED', 'false');
-  props.setProperty('AUTO_SEND_ENABLED', 'false');
+  props.setProperties({
+    LIVE_SEND_ENABLED: 'false',
+    AUTO_SEND_ENABLED: 'false',
+    LIVE_SEND_TARGET_DATE: '',
+    LIVE_SEND_BATCH_ID: '',
+    LIVE_SEND_BATCH_CHECKSUM: '',
+    LIVE_SEND_EXPIRES_AT: '',
+    LIVE_SEND_MAX_COUNT: '',
+    LIVE_SEND_ONE_TIME: 'false'
+  }, false);
   appendSafeLog_({ event: 'live_send_reset_after_run' });
 }
 

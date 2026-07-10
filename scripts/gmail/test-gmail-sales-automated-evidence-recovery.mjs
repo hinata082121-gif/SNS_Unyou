@@ -356,6 +356,9 @@ function installManifestPendingFixture(context, options = {}) {
   context.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
   context.__props.GMAIL_SALES_AI_PROVIDER = 'gemini';
   context.__props.GMAIL_SALES_AI_MODEL = 'gemini-2.5-flash-lite';
+  context.__props.GMAIL_SALES_TIMEZONE = 'Asia/Tokyo';
+  context.__props.GMAIL_SALES_SEND_WINDOW_START = '11:55';
+  context.__props.GMAIL_SALES_SEND_WINDOW_END = '12:15';
   const targetDate = applyTodayTargetDate(context);
   context.getConfig_ = () => ({
     currentJstDate: targetDate,
@@ -366,6 +369,7 @@ function installManifestPendingFixture(context, options = {}) {
     sheetName: 'Source',
     replySignature: 'ICHI Social',
     maxSendAttempts: 3,
+    autoResetLiveSendAfterRun: true,
     dailySendLimit: 30,
     requireExplicitBatchApproval: true,
     approvedBatchId: String(context.__props.APPROVED_BATCH_ID || '').trim(),
@@ -3897,6 +3901,71 @@ assert.equal(manifestPending.__state.gmailSendCount, 0);
 assert.equal(manifestPending.__state.draftCreateCount, 0);
 assert.equal(manifestPending.__state.triggerCreateCount, 0);
 assert.equal(manifestPending.__state.urlFetchCount, 0);
+manifestPending.__props.GMAIL_SALES_SEND_WINDOW_START = '12:30';
+manifestPending.__props.GMAIL_SALES_SEND_WINDOW_END = '12:45';
+const liveControlOutside = manifestPending.inspectGmailSalesLiveSendControlReadiness_({ skipLog: true });
+assert.equal(liveControlOutside.event, 'gmail_sales_live_send_control_readiness');
+assert.equal(liveControlOutside.mode, 'read_only');
+assert.equal(liveControlOutside.sendReadiness, true);
+assert.equal(liveControlOutside.autoSendEnabled, false);
+assert.equal(liveControlOutside.liveSendEnabled, false);
+assert.equal(liveControlOutside.sendWindowOpen, false);
+assert.equal(liveControlOutside.outsideSendWindow, true);
+assert.equal(liveControlOutside.blockedReasons.includes('auto_send_disabled'), true);
+assert.equal(liveControlOutside.blockedReasons.includes('live_send_disabled'), true);
+assert.equal(liveControlOutside.blockedReasons.includes('outside_send_window'), true);
+assert.equal(Boolean(liveControlOutside.nextSendWindowStart), true);
+assert.equal(Boolean(liveControlOutside.nextSendWindowEnd), true);
+assert.equal(liveControlOutside.operatorShouldWaitReason, 'outside_send_window');
+assert.equal(liveControlOutside.operatorShouldRunSafeStepNow, false);
+assert.equal(liveControlOutside.gmailSendExecuted, false);
+assert.equal(liveControlOutside.gmailDraftCreated, false);
+assert.equal(liveControlOutside.triggerChanged, false);
+const liveWriteCountBefore = manifestPending.__state.propertyWriteCount;
+const oneTimeEnable = manifestPending.enableGmailSalesOneTimeLiveSendOnce();
+assert.equal(oneTimeEnable.event, 'gmail_sales_one_time_live_send_enable');
+assert.equal(oneTimeEnable.mode, 'safe_step');
+assert.equal(oneTimeEnable.status, 'pass');
+assert.equal(oneTimeEnable.liveSendEnabled, true);
+assert.equal(oneTimeEnable.oneTimeLiveSendTokenWritten, true);
+assert.equal(oneTimeEnable.oneTimeLiveSendTokenTargetDateMatched, true);
+assert.equal(oneTimeEnable.oneTimeLiveSendTokenManifestDigestMatched, true);
+assert.equal(Boolean(oneTimeEnable.oneTimeLiveSendTokenExpiresAt), true);
+assert.equal(oneTimeEnable.sendWindowOpen, false);
+assert.equal(oneTimeEnable.outsideSendWindow, true);
+assert.equal(oneTimeEnable.operatorRecommendedNextFunction, '');
+assert.equal(oneTimeEnable.operatorShouldRunSafeStepNow, false);
+assert.equal(oneTimeEnable.nextAction, 'wait_for_send_window');
+assert.equal(manifestPending.__state.propertyWriteCount - liveWriteCountBefore, 9);
+assert.equal(manifestPending.__state.gmailSendCount, 0);
+assert.equal(manifestPending.__state.draftCreateCount, 0);
+assert.equal(manifestPending.__state.triggerCreateCount, 0);
+assert.equal(manifestPending.__state.urlFetchCount, 0);
+manifestPending.__props.GMAIL_SALES_SEND_WINDOW_START = '11:55';
+manifestPending.__props.GMAIL_SALES_SEND_WINDOW_END = '12:15';
+const liveControlInside = manifestPending.inspectGmailSalesLiveSendControlReadiness_({ skipLog: true });
+assert.equal(liveControlInside.sendWindowOpen, true);
+assert.equal(liveControlInside.oneTimeLiveSendTokenPresent, true);
+assert.equal(liveControlInside.oneTimeLiveSendTokenTargetDateMatched, true);
+assert.equal(liveControlInside.oneTimeLiveSendTokenManifestDigestMatched, true);
+assert.equal(liveControlInside.oneTimeLiveSendTokenValid, true);
+assert.equal(liveControlInside.operatorRecommendedNextFunction, 'runGmailSalesDailyAutomationTrigger');
+assert.equal(liveControlInside.operatorRecommendedNextFunctionReason, 'one_time_live_send_enabled_window_open');
+assert.equal(liveControlInside.operatorShouldRunSafeStepNow, true);
+manifestPending.__props.LIVE_SEND_BATCH_CHECKSUM = 'wrong-checksum';
+const liveControlMismatch = manifestPending.inspectGmailSalesLiveSendControlReadiness_({ skipLog: true });
+assert.equal(liveControlMismatch.oneTimeLiveSendTokenManifestDigestMatched, false);
+assert.equal(liveControlMismatch.oneTimeLiveSendTokenValid, false);
+manifestPending.__props.LIVE_SEND_BATCH_CHECKSUM = oneTimeEnable.requiredApprovedBatchChecksum || approvalPacket.requiredApprovedBatchChecksum;
+manifestPending.__props.LIVE_SEND_EXPIRES_AT = '2000-01-01T00:00:00.000Z';
+const liveControlExpired = manifestPending.inspectGmailSalesLiveSendControlReadiness_({ skipLog: true });
+assert.equal(liveControlExpired.oneTimeLiveSendTokenValid, false);
+manifestPending.resetLiveSendAfterRun_(manifestPending.getConfig_(), { dryRun: false });
+assert.equal(manifestPending.__props.AUTO_SEND_ENABLED, 'false');
+assert.equal(manifestPending.__props.LIVE_SEND_ENABLED, 'false');
+assert.equal(manifestPending.__props.LIVE_SEND_TARGET_DATE, '');
+assert.equal(manifestPending.__props.LIVE_SEND_BATCH_CHECKSUM, '');
+assert.equal(manifestPending.__props.LIVE_SEND_ONE_TIME, 'false');
 const manifestLogsJson = JSON.stringify(manifestPending.__state.logs);
 [
   'manifest1@',
