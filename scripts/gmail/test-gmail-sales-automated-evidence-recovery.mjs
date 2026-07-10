@@ -362,10 +362,15 @@ function installManifestPendingFixture(context, options = {}) {
     sendDate: targetDate,
     sendBatchId: `gmail-sales-${targetDate}`,
     sendBatchIdPrefix: 'gmail-sales',
-    sheetId: '',
-    sheetName: '',
+    sheetId: 'mock-sheet-id',
+    sheetName: 'Source',
     replySignature: 'ICHI Social',
-    maxSendAttempts: 3
+    maxSendAttempts: 3,
+    dailySendLimit: 30,
+    requireExplicitBatchApproval: true,
+    approvedBatchId: String(context.__props.APPROVED_BATCH_ID || '').trim(),
+    approvedBatchChecksum: String(context.__props.APPROVED_BATCH_CHECKSUM || '').trim(),
+    approvalExpiresAt: String(context.__props.APPROVAL_EXPIRES_AT || '').trim()
   });
   context.loadSuppressionLedgerFromProperties_ = () => ({
     loaded: true,
@@ -3768,6 +3773,72 @@ assert.equal(manifestPending.__state.gmailSendCount, 0);
 assert.equal(manifestPending.__state.draftCreateCount, 0);
 assert.equal(manifestPending.__state.triggerCreateCount, 0);
 assert.equal(manifestPending.__state.urlFetchCount, 0);
+const approvalMissingReadiness = manifestPending.inspectGmailSalesApprovalSendReadiness_({ skipLog: true });
+assert.equal(approvalMissingReadiness.event, 'gmail_sales_approval_send_readiness');
+assert.equal(approvalMissingReadiness.mode, 'read_only');
+assert.equal(approvalMissingReadiness.manifestReady, true);
+assert.equal(approvalMissingReadiness.manifestCount, 30);
+assert.equal(approvalMissingReadiness.manifestUniqueCount, 30);
+assert.equal(approvalMissingReadiness.manifestDuplicateCount, 0);
+assert.equal(approvalMissingReadiness.manifestTargetDateMatched, true);
+assert.equal(approvalMissingReadiness.manifestStale, false);
+assert.equal(approvalMissingReadiness.approvalRequired, true);
+assert.equal(approvalMissingReadiness.approvalPresent, false);
+assert.equal(approvalMissingReadiness.sendReadiness, false);
+assert.equal(approvalMissingReadiness.sendBlockedReason, 'approval_required');
+assert.equal(approvalMissingReadiness.operatorRecommendedNextFunction, '');
+assert.equal(approvalMissingReadiness.operatorShouldRunSafeStepNow, false);
+const manifestReadyStatus = manifestPending.inspectGmailSalesAutomatedEvidenceRecoveryStatus_({ skipLog: true });
+assert.equal(manifestReadyStatus.exact30ManifestReady, true);
+assert.equal(manifestReadyStatus.readyForApprovalOrSendReadiness, true);
+assert.equal(manifestReadyStatus.checkpointState, 'READY');
+assert.equal(manifestReadyStatus.nextAction, 'READY');
+assert.equal(manifestReadyStatus.evidenceRecoveryAction, 'approval_or_send_readiness_pending');
+assert.equal(manifestReadyStatus.evidenceRecoveryActionReasonCode, 'manifest_ready_approval_or_send_required');
+assert.equal(manifestReadyStatus.actionBlockedReason, 'approval_or_send_readiness_pending');
+assert.equal(manifestReadyStatus.plannedExpectedApiClass, 'none');
+assert.equal(manifestReadyStatus.plannedExpectedWriteClass, 'none');
+assert.equal(manifestReadyStatus.expectedApiClass, 'none');
+assert.equal(manifestReadyStatus.expectedWriteClass, 'none');
+assert.equal(manifestReadyStatus.sendBlockedReason, 'approval_required');
+assert.equal(manifestReadyStatus.manifestBlockedReason, '');
+assert.equal(manifestReadyStatus.operatorRecommendedNextFunction, 'inspectGmailSalesApprovalSendReadiness');
+assert.equal(manifestReadyStatus.operatorShouldRunSafeStepNow, false);
+assert.equal(manifestReadyStatus.operatorShouldWaitReason, 'approval_required');
+assert.equal(JSON.stringify(manifestReadyStatus).includes('grounded_official_source_discovery'), false);
+assert.equal(JSON.stringify(manifestReadyStatus).includes('free_tier_grounding_daily_candidate_limit_reached'), false);
+assert.equal(JSON.stringify(manifestReadyStatus).includes('gemini_grounding'), false);
+const approvalConfig = manifestPending.getConfig_();
+const approvalBatchId = manifestPending.buildSendBatchId_(approvalConfig.sendDate);
+const approvalRows = manifestPending.loadCandidateRows_(approvalConfig);
+const approvalValidation = manifestPending.validateOutboxRows_(approvalRows, approvalConfig);
+const approvalChecksum = manifestPending.calculateBatchApprovalChecksum_(approvalConfig, approvalBatchId, approvalValidation.readyRows);
+manifestPending.__props.APPROVED_BATCH_ID = 'gmail-sales-2099-01-01';
+manifestPending.__props.APPROVED_BATCH_CHECKSUM = approvalChecksum;
+manifestPending.__props.APPROVAL_EXPIRES_AT = '2099-01-01T00:00:00.000Z';
+assert.equal(manifestPending.inspectGmailSalesApprovalSendReadiness_({ skipLog: true }).sendBlockedReason, 'approval_target_date_mismatch');
+manifestPending.__props.APPROVED_BATCH_ID = approvalBatchId;
+manifestPending.__props.APPROVED_BATCH_CHECKSUM = 'wrong-checksum';
+manifestPending.__props.APPROVAL_EXPIRES_AT = '2099-01-01T00:00:00.000Z';
+assert.equal(manifestPending.inspectGmailSalesApprovalSendReadiness_({ skipLog: true }).sendBlockedReason, 'approval_manifest_digest_mismatch');
+manifestPending.__props.APPROVED_BATCH_ID = approvalBatchId;
+manifestPending.__props.APPROVED_BATCH_CHECKSUM = approvalChecksum;
+manifestPending.__props.APPROVAL_EXPIRES_AT = '2000-01-01T00:00:00.000Z';
+assert.equal(manifestPending.inspectGmailSalesApprovalSendReadiness_({ skipLog: true }).sendBlockedReason, 'approval_operator_confirmation_missing');
+manifestPending.__props.APPROVED_BATCH_ID = approvalBatchId;
+manifestPending.__props.APPROVED_BATCH_CHECKSUM = approvalChecksum;
+manifestPending.__props.APPROVAL_EXPIRES_AT = '2099-01-01T00:00:00.000Z';
+const approvalReady = manifestPending.inspectGmailSalesApprovalSendReadiness_({ skipLog: true });
+assert.equal(approvalReady.sendReadiness, true);
+assert.equal(approvalReady.sendBlockedReason, '');
+assert.equal(approvalReady.operatorRecommendedNextFunction, 'runGmailSalesDailyAutomationTrigger');
+assert.equal(approvalReady.operatorRecommendedNextFunctionReason, 'exact30_manifest_approved_send_ready');
+assert.equal(approvalReady.operatorShouldRunSafeStepNow, true);
+assert.equal(approvalReady.gmailSendExecuted, false);
+assert.equal(approvalReady.gmailDraftCreated, false);
+assert.equal(approvalReady.triggerChanged, false);
+assert.equal(approvalReady.aiApiCalled, false);
+assert.equal(approvalReady.urlFetchExecuted, false);
 const manifestLogsJson = JSON.stringify(manifestPending.__state.logs);
 [
   'manifest1@',
