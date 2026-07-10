@@ -4,13 +4,13 @@
   "avatar": "ops-monitor",
   "title": "2026-07-10 Gmail翌日outbox30件準備",
   "category": "gmail_outbox",
-  "status": "needs_review",
-  "phase": "翌日outbox30件作成済み・Sheet同期dry-run/手動反映待ち",
-  "progress": 80,
+  "status": "blocked",
+  "phase": "2026-07-10用outbox/TSVはPreflight未達で送信停止",
+  "progress": 85,
   "priority": "high",
   "createdAt": "2026-07-10T00:00:00.000Z",
-  "updatedAt": "2026-07-09T17:22:22.000+09:00",
-  "summary": "2026-07-10分のGmail outbox30件とSheets貼り付け用ファイルを確認済み。安全なSheets自動反映経路は未実行のため、Sheet反映とPreflight確認はneeds_review。",
+  "updatedAt": "2026-07-10T04:26:34.000Z",
+  "summary": "2026-07-10用outbox/TSVはローカル30件作成済みだが、Sheet ready行30件とApps Script Preflightを確認できないため送信停止。",
   "artifacts": [
     "docs/hermes-gmail-daily-monitoring-2026-06-03.md"
   ],
@@ -44,7 +44,7 @@
     "sheetSynced": false,
     "sheetReflectionAvailable": false,
     "sheetReadyRowsExpected": 30,
-    "preflightPending": true,
+    "preflightPending": false,
     "manualPasteRequired": true,
     "gmailSendExecuted": false,
     "googleSheetsUpdatedByThisScript": false,
@@ -58,10 +58,16 @@
     "expectedReadyRows": 30,
     "readyStateCompleted": false,
     "appsScriptTriggerChanged": false,
-    "instagramActionExecuted": false
+    "instagramActionExecuted": false,
+    "sheetPasted": false,
+    "preflightPassed": false,
+    "preflightBlockedReason": "version_not_configured, apps_script_preflight_not_verified, sheet_ready_rows_not_verified",
+    "processed": 0,
+    "failed": 0,
+    "safeToSendAgain": false
   },
-  "nextAction": "Sheet同期設定を確認するか、生成済みTSVをGmail送信対象シートへ反映し、PreflightでreadyRows=30を確認する",
-  "safeToAct": true,
+  "nextAction": "2026-07-10分はApps Script PreflightとSheet ready行30件が確認できるまで送信しない",
+  "safeToAct": false,
   "notes": [
     "Gmail送信なし",
     "Google Sheets直接更新なし",
@@ -69,6 +75,7 @@
     "送信済み行をreadyへ戻さない",
     "outbox本体とTSV本文はGit追加禁止",
     "メールアドレス・営業先名・本文全文は表示しない",
-    ".env/.env.localは読まない運用制約のため、既存prepare系スクリプトは今回再実行せず、作成済みoutboxの安全な件数のみ確認"
+    ".env/.env.localは読まない運用制約のため、既存prepare系スクリプトは今回再実行せず、作成済みoutboxの安全な件数のみ確認",
+    "再送信禁止"
   ]
 }
