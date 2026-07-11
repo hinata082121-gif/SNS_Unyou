@@ -657,6 +657,56 @@ assert.equal(productionLike.nextAction, 'EVIDENCE_PACKAGE_READY');
 assert.equal(productionLike.changedDigestEligibleCount, 0);
 assert.equal(productionLike.unchangedDigestSkippedCount, 53);
 
+const digestRepair = createContext();
+const digestRepairRows = buildReviewRowsWithDigests(digestRepair, sourceRows, 53, 15).map((row, index) => Object.assign({}, row, {
+  aiProvider: index < 53 ? 'gemini' : '',
+  aiVerifiedAt: index < 53 ? '2026-07-03T00:00:00.000Z' : '',
+  aiVerificationStatus: index < 53 ? 'needs_human_review' : '',
+  aiReasonCodes: index < 53 ? 'insufficient_evidence' : '',
+  aiEvidenceDigest: '',
+  lastAiEvaluatedEvidenceDigest: ''
+}));
+installSheets(digestRepair, sourceRows, digestRepairRows);
+const digestBefore = digestRepair.inspectGmailSalesEvidenceDigestContract_(digestRepair.getGmailSalesContactBasisReviewContext_());
+assert.equal(digestBefore.sourceCandidateCount, 68);
+assert.equal(digestBefore.evidenceReadyCount, 53);
+assert.equal(digestBefore.evidencePayloadMissingCount, 15);
+assert.equal(digestBefore.aiEvaluatedCount, 53);
+assert.equal(digestBefore.uniqueEvidenceDigestCount, 0);
+assert.equal(digestBefore.digestRepairEligibleCount, 53);
+const digestBatch1 = digestRepair.repairGmailSalesEvidenceDigestContractOnce({ maxRows: 20 });
+assert.equal(digestBatch1.digestRepairCommittedCount, 20);
+assert.equal(digestBatch1.digestRepairRemainingCount, 33);
+assert.equal(digestBatch1.continuationRequired, true);
+const digestBatch2 = digestRepair.repairGmailSalesEvidenceDigestContractOnce({ maxRows: 20 });
+assert.equal(digestBatch2.digestRepairCommittedCount, 20);
+assert.equal(digestBatch2.digestRepairRemainingCount, 13);
+const digestBatch3 = digestRepair.repairGmailSalesEvidenceDigestContractOnce({ maxRows: 20 });
+assert.equal(digestBatch3.digestRepairCommittedCount, 13);
+assert.equal(digestBatch3.digestRepairRemainingCount, 0);
+assert.equal(digestBatch3.continuationRequired, false);
+const digestAfter = digestRepair.inspectGmailSalesEvidenceDigestContract_(digestRepair.getGmailSalesContactBasisReviewContext_());
+assert.equal(digestAfter.uniqueEvidenceDigestCount, 53);
+assert.equal(digestAfter.digestRepairEligibleCount, 0);
+const digestReviewAfter = digestRepair.readSheetObjects_(digestRepair.__reviewSheet).items;
+assert.equal(digestReviewAfter.slice(53).every((item) => !String(item.row.aiEvidenceDigest || '').trim()), true);
+const recoveryQueueInspection = digestRepair.inspectGmailSalesRecoveryManualReviewQueue();
+assert.equal(recoveryQueueInspection.mode, 'read_only');
+assert.equal(recoveryQueueInspection.sourceCandidateCount, 68);
+assert.equal(recoveryQueueInspection.evidenceReadyCount, 53);
+assert.equal(recoveryQueueInspection.evidencePayloadMissingCount, 15);
+assert.equal(recoveryQueueInspection.uniqueEvidenceDigestCount, 53);
+assert.equal(recoveryQueueInspection.gmailSendExecuted, false);
+assert.equal(recoveryQueueInspection.googleSheetsUpdated, false);
+assert.equal(recoveryQueueInspection.scriptPropertiesUpdated, false);
+assert.equal(recoveryQueueInspection.aiApiCalled, false);
+assert.equal(recoveryQueueInspection.urlFetchExecuted, false);
+assert.equal(digestRepair.__state.urlFetchCount, 0);
+assert.equal(digestRepair.__state.gmailSendCount, 0);
+assert.equal(digestRepair.__state.draftCreateCount, 0);
+assert.equal(digestRepair.__state.propertyWriteCount, 0);
+assert.equal(digestRepair.__state.logs.some((line) => /masked-business|@|https?:\/\//i.test(line)), false);
+
 const r7 = createContext();
 installSheets(r7, sourceRows, reviewRows);
 installSourceReferenceReadiness(r7, {
@@ -4083,6 +4133,13 @@ console.log(JSON.stringify({
   fixtureR4ProviderFailureDigestPersisted: false,
   fixtureR5ParseFailureDigestPersisted: false,
   fixtureR6NextAction: productionLike.nextAction,
+  fixtureDigestRepairSourceCandidateCount: digestBefore.sourceCandidateCount,
+  fixtureDigestRepairEvidenceReadyCount: digestBefore.evidenceReadyCount,
+  fixtureDigestRepairEvidencePayloadMissingCount: digestBefore.evidencePayloadMissingCount,
+  fixtureDigestRepairUniqueCountBefore: digestBefore.uniqueEvidenceDigestCount,
+  fixtureDigestRepairUniqueCountAfter: digestAfter.uniqueEvidenceDigestCount,
+  fixtureDigestRepairBatchCounts: [digestBatch1.digestRepairCommittedCount, digestBatch2.digestRepairCommittedCount, digestBatch3.digestRepairCommittedCount],
+  fixtureDigestRepairAiReexecutionCount: 0,
   fixtureR7StepExecuted: r7Step.stepExecuted,
   fixtureR8ChangedDigestEligibleCount: r8Inspect.changedDigestEligibleCount,
   fixtureR9TerminalPolicyHoldCount: r9Inspect.aiTerminalPolicyHoldCount,

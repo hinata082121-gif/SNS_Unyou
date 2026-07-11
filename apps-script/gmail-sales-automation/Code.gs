@@ -74,6 +74,8 @@ const GMAIL_DAILY_SOURCE_MIN_SYNC_COUNT = 30;
 const GMAIL_DAILY_SOURCE_RECOMMENDED_SYNC_COUNT = 45;
 const GMAIL_DAILY_SOURCE_SYNC_SOFT_DEADLINE_MS = 180000;
 const GMAIL_DAILY_SOURCE_SYNC_COMMIT_START_DEADLINE_MS = 150000;
+const GMAIL_SALES_EVIDENCE_DIGEST_REPAIR_MAX_ROWS = 20;
+const GMAIL_SALES_EVIDENCE_DIGEST_REPAIR_TIME_BUDGET_MS = 45000;
 const GMAIL_SALES_SEND_WINDOW_START_PROPERTY = 'GMAIL_SALES_SEND_WINDOW_START';
 const GMAIL_SALES_SEND_WINDOW_END_PROPERTY = 'GMAIL_SALES_SEND_WINDOW_END';
 const GMAIL_SALES_SEND_WINDOW_START_DEFAULT = '11:45';
@@ -4989,6 +4991,201 @@ function inspectGmailSalesManualReviewStatus() {
   return result;
 }
 
+function inspectGmailSalesRecoveryManualReviewQueue() {
+  const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const manual = inspectGmailSalesManualReviewStatus();
+  const digest = inspectGmailSalesEvidenceDigestContract_(context);
+  const props = PropertiesService.getScriptProperties();
+  let manifest = {};
+  try {
+    manifest = JSON.parse(String(props.getProperty('APPROVED_SEND_MANIFEST_JSON') || '{}')) || {};
+  } catch (error) {
+    manifest = {};
+  }
+  const readyInventoryCount = Number(manual.readyInventoryCount || 0);
+  let recommendedNextAction = 'wait_for_manual_review';
+  let recommendedNextFunction = '';
+  let safeToExecute = false;
+  if (digest.digestConflictCount > 0) {
+    recommendedNextAction = 'inspect_evidence_digest_conflicts';
+  } else if (digest.digestRepairEligibleCount > 0) {
+    recommendedNextAction = 'repair_evidence_digest_contract';
+    recommendedNextFunction = 'repairGmailSalesEvidenceDigestContractOnce';
+    safeToExecute = true;
+  } else if (Number(manual.manualApprovedPendingApplyCount || 0) > 0) {
+    recommendedNextAction = 'apply_manual_review_decisions';
+    recommendedNextFunction = 'applyGmailSalesManualReviewDecisionsOnce';
+    safeToExecute = true;
+  } else if (Number(manual.manualReviewCandidateCount || 0) < 1 && digest.evidenceReadyCount > 0) {
+    recommendedNextAction = 'prepare_manual_review_queue';
+    recommendedNextFunction = 'prepareGmailSalesManualReviewQueueOnce';
+    safeToExecute = true;
+  } else if (readyInventoryCount >= gmailDailyExpectedCount_()) {
+    recommendedNextAction = 'build_exact_30_manifest';
+    recommendedNextFunction = 'prepareGmailSalesDailyBatchForTodayOnce';
+    safeToExecute = true;
+  }
+  const blockedReasons = [];
+  if (!context.reviewSheet || !context.sourceSheet) blockedReasons.push(context.blockedReason || 'review_or_source_sheet_missing');
+  if (digest.digestConflictCount > 0) blockedReasons.push('evidence_digest_conflict');
+  if (digest.evidencePayloadMissingCount > 0) blockedReasons.push('evidence_payload_missing');
+  if (readyInventoryCount < gmailDailyExpectedCount_()) blockedReasons.push('ready_inventory_below_30');
+  const result = {
+    event: 'gmail_sales_recovery_manual_review_queue',
+    mode: 'read_only',
+    status: blockedReasons.length > 0 ? 'blocked' : 'pass',
+    sourceCandidateCount: digest.sourceCandidateCount,
+    evidenceReadyCount: digest.evidenceReadyCount,
+    evidencePayloadMissingCount: digest.evidencePayloadMissingCount,
+    aiEvaluatedCount: digest.aiEvaluatedCount,
+    uniqueEvidenceDigestCount: digest.uniqueEvidenceDigestCount,
+    digestRepairEligibleCount: digest.digestRepairEligibleCount,
+    digestConflictCount: digest.digestConflictCount,
+    manualReviewQueueCount: Number(manual.manualReviewCandidateCount || 0),
+    manualApprovedPendingApplyCount: Number(manual.manualApprovedPendingApplyCount || 0),
+    manualRejectedCount: Number(manual.manualRejectedCount || 0),
+    manualNeedsMoreEvidenceCount: Number(manual.manualNeedsMoreEvidenceCount || 0),
+    manualBlockedCount: Number(manual.manualBlockedCount || 0),
+    manualBlockedReasonCounts: manual.manualBlockedReasonCounts || {},
+    contactBasisCount: Number(manual.approvedBasisCount || 0),
+    readyInventoryCount,
+    manifestCandidateCount: Number(manifest.candidateCount || 0),
+    remainingToExact30: Math.max(0, gmailDailyExpectedCount_() - readyInventoryCount),
+    recommendedNextAction,
+    recommendedNextFunction,
+    safeToExecute,
+    blockedReasons: uniqueArray_(blockedReasons),
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  };
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function repairGmailSalesEvidenceDigestContractOnce(options) {
+  const settings = options || {};
+  const maxRows = Math.max(1, Math.min(GMAIL_SALES_EVIDENCE_DIGEST_REPAIR_MAX_ROWS, Number(settings.maxRows || GMAIL_SALES_EVIDENCE_DIGEST_REPAIR_MAX_ROWS)));
+  const timeBudgetMs = Math.max(1000, Math.min(GMAIL_SALES_EVIDENCE_DIGEST_REPAIR_TIME_BUDGET_MS, Number(settings.timeBudgetMs || GMAIL_SALES_EVIDENCE_DIGEST_REPAIR_TIME_BUDGET_MS)));
+  const startedAtMs = Date.now();
+  const result = {
+    event: 'gmail_sales_evidence_digest_contract_repair',
+    mode: 'write',
+    status: 'pass',
+    blockedReason: '',
+    maxRows,
+    timeBudgetMs,
+    sourceCandidateCount: 0,
+    evidenceReadyCount: 0,
+    evidencePayloadMissingCount: 0,
+    aiEvaluatedCount: 0,
+    uniqueEvidenceDigestCountBefore: 0,
+    uniqueEvidenceDigestCountAfter: 0,
+    digestRepairEligibleCount: 0,
+    digestRepairAttemptedCount: 0,
+    digestRepairCommittedCount: 0,
+    digestRepairRemainingCount: 0,
+    digestConflictCount: 0,
+    rollbackExecuted: false,
+    continuationRequired: false,
+    aiReviewReexecutedCount: 0,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  };
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    result.status = 'blocked';
+    result.blockedReason = 'safe_rest_required';
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    result.status = 'blocked';
+    result.blockedReason = 'lock_unavailable';
+    logGmailSalesJsonResult_(result);
+    return result;
+  }
+  try {
+    const context = getGmailSalesContactBasisReviewContext_();
+    if (!context.ok) {
+      result.status = 'blocked';
+      result.blockedReason = context.blockedReason;
+      return result;
+    }
+    const before = inspectGmailSalesEvidenceDigestContract_(context);
+    const requiredDigestHeaders = ['aiEvidenceDigest', 'lastAiEvaluatedEvidenceDigest'];
+    const digestSchemaValid = requiredDigestHeaders.every((header) => before.sourceData.headers.indexOf(header) !== -1 && before.reviewData.headers.indexOf(header) !== -1);
+    if (!digestSchemaValid) {
+      result.status = 'blocked';
+      result.blockedReason = 'evidence_digest_schema_missing';
+      return result;
+    }
+    result.sourceCandidateCount = before.sourceCandidateCount;
+    result.evidenceReadyCount = before.evidenceReadyCount;
+    result.evidencePayloadMissingCount = before.evidencePayloadMissingCount;
+    result.aiEvaluatedCount = before.aiEvaluatedCount;
+    result.uniqueEvidenceDigestCountBefore = before.uniqueEvidenceDigestCount;
+    result.digestRepairEligibleCount = before.digestRepairEligibleCount;
+    result.digestConflictCount = before.digestConflictCount;
+    if (before.digestConflictCount > 0) {
+      result.status = 'blocked';
+      result.blockedReason = 'evidence_digest_conflict';
+      return result;
+    }
+    const targets = before.repairTargets.slice(0, maxRows).filter(() => Date.now() - startedAtMs < timeBudgetMs);
+    const snapshots = [];
+    targets.forEach((target) => {
+      snapshots.push({ sheet: context.sourceSheet, headers: before.sourceData.headers, snapshot: snapshotFields_(context.sourceSheet, before.sourceData.headers, target.sourceItem.rowIndex, ['aiEvidenceDigest', 'lastAiEvaluatedEvidenceDigest']) });
+      snapshots.push({ sheet: context.reviewSheet, headers: before.reviewData.headers, snapshot: snapshotFields_(context.reviewSheet, before.reviewData.headers, target.reviewItem.rowIndex, ['aiEvidenceDigest', 'lastAiEvaluatedEvidenceDigest']) });
+      setCellByHeader_(context.sourceSheet, before.sourceData.headers, target.sourceItem.rowIndex, 'aiEvidenceDigest', target.canonicalDigest);
+      setCellByHeader_(context.sourceSheet, before.sourceData.headers, target.sourceItem.rowIndex, 'lastAiEvaluatedEvidenceDigest', target.canonicalDigest);
+      setCellByHeader_(context.reviewSheet, before.reviewData.headers, target.reviewItem.rowIndex, 'aiEvidenceDigest', target.canonicalDigest);
+      setCellByHeader_(context.reviewSheet, before.reviewData.headers, target.reviewItem.rowIndex, 'lastAiEvaluatedEvidenceDigest', target.canonicalDigest);
+    });
+    result.digestRepairAttemptedCount = targets.length;
+    if (targets.length > 0) {
+      SpreadsheetApp.flush();
+      result.googleSheetsUpdated = true;
+    }
+    const readBackPassed = targets.every((target) => {
+      const values = [
+        getCellByHeader_(context.sourceSheet, before.sourceData.headers, target.sourceItem.rowIndex, 'aiEvidenceDigest'),
+        getCellByHeader_(context.sourceSheet, before.sourceData.headers, target.sourceItem.rowIndex, 'lastAiEvaluatedEvidenceDigest'),
+        getCellByHeader_(context.reviewSheet, before.reviewData.headers, target.reviewItem.rowIndex, 'aiEvidenceDigest'),
+        getCellByHeader_(context.reviewSheet, before.reviewData.headers, target.reviewItem.rowIndex, 'lastAiEvaluatedEvidenceDigest')
+      ];
+      return values.every((value) => constantTimeEquals_(String(value || '').trim(), target.canonicalDigest));
+    });
+    if (!readBackPassed) {
+      snapshots.forEach((entry) => restoreFields_(entry.sheet, entry.headers, entry.snapshot));
+      SpreadsheetApp.flush();
+      result.status = 'blocked';
+      result.blockedReason = 'evidence_digest_read_back_mismatch';
+      result.rollbackExecuted = true;
+      return result;
+    }
+    result.digestRepairCommittedCount = targets.length;
+    const after = inspectGmailSalesEvidenceDigestContract_(context);
+    result.uniqueEvidenceDigestCountAfter = after.uniqueEvidenceDigestCount;
+    result.digestRepairRemainingCount = after.digestRepairEligibleCount;
+    result.continuationRequired = after.digestRepairEligibleCount > 0;
+    return result;
+  } finally {
+    lock.releaseLock();
+    logGmailSalesJsonResult_(result);
+  }
+}
+
 function applyGmailSalesManualReviewDecisionsOnce() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
@@ -5082,10 +5279,6 @@ function applyGmailSalesManualReviewDecisionsOnce() {
     }
     updates.forEach((update) => setManualReviewApplyStatus_(context.reviewSheet, reviewData.headers, manualMap, update.reviewItem.rowIndex, 'applied_manual', ''));
     const coverage = inspectGmailSalesContactBasisCoverage_({});
-    let prepare = null;
-    if (coverage.eligibleAfterBasisCheckCount >= gmailDailyExpectedCount_()) {
-      prepare = prepareDailyPipeline_({ source: 'manual_review_apply' });
-    }
     const result = buildGmailSalesContactBasisReviewResult_('gmail_sales_manual_review_decisions_apply', updates.length > 0 ? 'pass' : 'blocked', {
       blockedReason: updates.length > 0 ? '' : 'no_valid_manual_approved_reviews',
       mode: 'write',
@@ -5099,12 +5292,14 @@ function applyGmailSalesManualReviewDecisionsOnce() {
       rollbackExecuted: false,
       approvedBasisCountAfterApply: coverage.approvedBasisCount,
       readyInventoryCountAfterApply: coverage.eligibleAfterBasisCheckCount,
-      manifestGenerated: Boolean(prepare && prepare.manifestGenerated),
-      currentDayManifestCount: prepare ? Number(prepare.manifestCandidateCount || prepare.selectedCount || 0) : 0,
-      currentManifestMaxSendCount: prepare && prepare.manifestGenerated ? gmailDailyExpectedCount_() : 0,
+      manifestGenerated: false,
+      currentDayManifestCount: 0,
+      currentManifestMaxSendCount: 0,
       shortfallCount: Math.max(0, gmailDailyExpectedCount_() - coverage.eligibleAfterBasisCheckCount),
-      googleSheetsUpdated: updates.length > 0 || Boolean(prepare && prepare.googleSheetsUpdated),
-      scriptPropertiesUpdated: Boolean(prepare && prepare.scriptPropertiesUpdated),
+      recommendedNextAction: coverage.eligibleAfterBasisCheckCount >= gmailDailyExpectedCount_() ? 'build_exact_30_manifest' : 'continue_manual_review',
+      recommendedNextFunction: coverage.eligibleAfterBasisCheckCount >= gmailDailyExpectedCount_() ? 'prepareGmailSalesDailyBatchForTodayOnce' : 'inspectGmailSalesRecoveryManualReviewQueue',
+      googleSheetsUpdated: updates.length > 0,
+      scriptPropertiesUpdated: false,
       aiApiCalled: false,
       urlFetchCalled: false,
       gmailSendExecuted: false,
@@ -21381,6 +21576,123 @@ function isManualReviewOptOutConfirmed_(value) {
   return String(value || '').trim().toLowerCase() === 'true';
 }
 
+function inspectGmailSalesEvidenceDigestContract_(context) {
+  const result = {
+    sourceCandidateCount: 0,
+    evidenceReadyCount: 0,
+    evidencePayloadMissingCount: 0,
+    aiEvaluatedCount: 0,
+    uniqueEvidenceDigestCount: 0,
+    digestRepairEligibleCount: 0,
+    digestConflictCount: 0,
+    repairTargets: [],
+    sourceData: { headers: [], items: [] },
+    reviewData: { headers: [], items: [] }
+  };
+  if (!context || !context.sourceSheet || !context.reviewSheet) return result;
+  const config = getGmailSalesAiConfig_();
+  const sourceData = readSheetObjects_(context.sourceSheet);
+  const reviewData = readSheetObjects_(context.reviewSheet);
+  result.sourceData = sourceData;
+  result.reviewData = reviewData;
+  result.sourceCandidateCount = sourceData.items.length;
+  const reviewById = {};
+  reviewData.items.forEach((item) => {
+    const id = String(item.row.reviewId || '').trim();
+    if (id) reviewById[id] = item;
+  });
+  const uniqueDigests = {};
+  sourceData.items.forEach((sourceItem) => {
+    const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+    if (!queue.include) return;
+    const evidence = collectGmailSalesContactBasisEvidence_(sourceItem.row, queue.row);
+    const payload = buildMinimizedAiEvidencePayload_(evidence, config);
+    const canonicalDigest = String(evidence.canonicalEvidenceDigest || evidence.evidenceDigest || '').trim();
+    if (!canonicalDigest || !validateGmailSalesAiPayloadMinimized_(payload)) {
+      result.evidencePayloadMissingCount += 1;
+      return;
+    }
+    result.evidenceReadyCount += 1;
+    const reviewItem = reviewById[queue.row.reviewId];
+    if (!reviewItem) return;
+    const persisted = inspectGmailSalesPersistedAiEvaluation_(sourceItem.row, reviewItem.row, canonicalDigest);
+    if (persisted.conflict) {
+      result.digestConflictCount += 1;
+      return;
+    }
+    if (!persisted.evaluated) return;
+    result.aiEvaluatedCount += 1;
+    if (persisted.digestPresent) uniqueDigests[canonicalDigest] = true;
+    if (persisted.repairRequired) {
+      result.repairTargets.push({ sourceItem, reviewItem, canonicalDigest });
+    }
+  });
+  result.uniqueEvidenceDigestCount = Object.keys(uniqueDigests).length;
+  result.digestRepairEligibleCount = result.repairTargets.length;
+  return result;
+}
+
+function inspectGmailSalesPersistedAiEvaluation_(sourceRow, reviewRow, canonicalDigest) {
+  const source = sourceRow || {};
+  const review = reviewRow || {};
+  const digestValues = [
+    source.lastAiEvaluatedEvidenceDigest,
+    source.aiEvidenceDigest,
+    review.lastAiEvaluatedEvidenceDigest,
+    review.aiEvidenceDigest
+  ].map((value) => String(value || '').trim());
+  const present = digestValues.filter(Boolean);
+  const conflict = present.some((value) => !constantTimeEquals_(value, canonicalDigest));
+  const digestPresent = present.some((value) => constantTimeEquals_(value, canonicalDigest));
+  const provider = String(review.aiProvider || source.aiProvider || '').trim().toLowerCase();
+  const verifiedAt = String(review.aiVerifiedAt || source.aiVerifiedAt || '').trim();
+  const verificationStatus = String(review.aiVerificationStatus || source.aiVerificationStatus || '').trim().toLowerCase();
+  const reasonText = normalizeTextForComparison_([
+    review.aiReasonCodes,
+    review.aiRiskFlags,
+    review.applyErrorCode
+  ].join(' '));
+  const failedProviderMarkers = [
+    'provider_failure',
+    'provider_error',
+    'http_4',
+    'http_5',
+    'permission',
+    'quota',
+    'rate_limit',
+    'budget_exceeded',
+    'response_missing',
+    'response_invalid',
+    'parse_failure',
+    'transport_error',
+    'unprocessed'
+  ];
+  const providerEvaluationMarker = provider && provider !== 'deterministic' && provider !== 'rules' && provider !== 'disabled' &&
+    Boolean(verifiedAt) &&
+    ['needs_human_review', 'approved_ai'].indexOf(verificationStatus) !== -1 &&
+    !includesAny_(reasonText, failedProviderMarkers);
+  const evaluated = !conflict && (digestPresent || providerEvaluationMarker);
+  return {
+    evaluated,
+    conflict,
+    digestPresent,
+    repairRequired: evaluated && digestValues.some((value) => !value)
+  };
+}
+
+function validateGmailSalesManualReviewEvidenceDigestContract_(sourceItem, review) {
+  if (!sourceItem) return { ok: false, errorCode: 'source_row_not_found' };
+  const queue = buildContactBasisReviewQueueRow_(sourceItem, new Date().toISOString());
+  if (!queue.include) return { ok: false, errorCode: queue.reason || 'source_review_join_mismatch' };
+  const evidence = collectGmailSalesContactBasisEvidence_(sourceItem.row, queue.row);
+  const canonicalDigest = String(evidence.canonicalEvidenceDigest || evidence.evidenceDigest || '').trim();
+  if (!canonicalDigest) return { ok: false, errorCode: 'manual_evidence_digest_missing' };
+  const persistedDigest = String(review.lastAiEvaluatedEvidenceDigest || review.aiEvidenceDigest || '').trim();
+  if (!persistedDigest) return { ok: false, errorCode: 'manual_evidence_digest_missing' };
+  if (!constantTimeEquals_(persistedDigest, canonicalDigest)) return { ok: false, errorCode: 'manual_evidence_digest_mismatch' };
+  return { ok: true, canonicalDigest };
+}
+
 function classifyGmailSalesManualReviewCandidate_(review, sourceByKey) {
   const sourceItem = sourceByKey[String(review.sourceRowKey || '').trim()];
   if (!sourceItem) return { ok: false, reasonCode: 'source_row_not_found' };
@@ -21418,6 +21730,8 @@ function validateManualGmailSalesReviewDecision_(review, manualMap, sourceByKey)
   if (!queue.include || queue.row.sourceRowDigest !== String(review.sourceRowDigest || '').trim()) {
     return { ok: false, errorCode: 'source_review_join_mismatch' };
   }
+  const digestContract = validateGmailSalesManualReviewEvidenceDigestContract_(sourceItem, review);
+  if (!digestContract.ok) return digestContract;
   const validation = validateApprovedContactBasisReview_(Object.assign({}, review, {
     approvedBasisType,
     evidenceNotes: reason,
@@ -22234,6 +22548,68 @@ function generateGmailSalesWeeklyReportOnce() {
   return runGmailSalesWeeklyReportAndOptimization();
 }
 
+function runGmailSalesRecoveryPreparationStepOnce() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    const blocked = {
+      event: 'gmail_sales_recovery_preparation_step',
+      mode: 'bounded_write',
+      status: 'blocked',
+      blockedReason: 'safe_rest_required',
+      phaseExecuted: '',
+      gmailSendExecuted: false,
+      gmailDraftCreated: false,
+      googleSheetsUpdated: false,
+      scriptPropertiesUpdated: false,
+      triggerChanged: false,
+      aiApiCalled: false,
+      urlFetchExecuted: false
+    };
+    logGmailSalesJsonResult_(blocked);
+    return blocked;
+  }
+  const before = inspectGmailSalesRecoveryManualReviewQueue();
+  let phaseExecuted = '';
+  let phaseResult = null;
+  if (Number(before.digestConflictCount || 0) > 0) {
+    phaseExecuted = 'inspect_evidence_digest_conflicts';
+  } else if (Number(before.digestRepairEligibleCount || 0) > 0) {
+    phaseExecuted = 'repair_evidence_digest_contract';
+    phaseResult = repairGmailSalesEvidenceDigestContractOnce();
+  } else if (Number(before.manualReviewQueueCount || 0) < 1 && Number(before.evidenceReadyCount || 0) > 0) {
+    phaseExecuted = 'prepare_manual_review_queue';
+    phaseResult = prepareGmailSalesManualReviewQueueOnce();
+  } else if (Number(before.manualApprovedPendingApplyCount || 0) > 0) {
+    phaseExecuted = 'apply_manual_review_decisions';
+    phaseResult = applyGmailSalesManualReviewDecisionsOnce();
+  } else if (Number(before.readyInventoryCount || 0) >= gmailDailyExpectedCount_()) {
+    phaseExecuted = 'build_exact_30_manifest';
+    phaseResult = prepareGmailSalesDailyBatchForTodayOnce();
+  } else {
+    phaseExecuted = 'wait_for_manual_review';
+  }
+  const result = {
+    event: 'gmail_sales_recovery_preparation_step',
+    mode: 'bounded_write',
+    status: phaseResult ? String(phaseResult.status || 'pass') : 'blocked',
+    blockedReason: phaseResult ? String(phaseResult.blockedReason || '') : (Number(before.digestConflictCount || 0) > 0 ? 'evidence_digest_conflict' : 'manual_review_required'),
+    phaseExecuted,
+    phaseExecutionCount: phaseResult ? 1 : 0,
+    continuationRequired: Boolean(phaseResult && phaseResult.continuationRequired) || phaseExecuted === 'wait_for_manual_review',
+    recommendedNextFunction: 'inspectGmailSalesRecoveryManualReviewQueue',
+    aiReviewReexecutedCount: 0,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: Boolean(phaseResult && phaseResult.googleSheetsUpdated),
+    scriptPropertiesUpdated: Boolean(phaseResult && phaseResult.scriptPropertiesUpdated),
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  };
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
 function runGmailSalesJuly3IntegratedPreparationOnce() {
   const config = getConfig_();
   const targetDate = config.currentJstDate;
@@ -22267,46 +22643,24 @@ function runGmailSalesJuly3IntegratedPreparationOnce() {
     appendSafeLog_(blocked);
     return blocked;
   }
-  const schemaRepair = repairGmailSalesReviewAndContactBasisSchemaOnce();
-  const firstApply = applyGmailSalesApprovedReviewResultsOnce();
-  const batchReview = runGmailSalesEvidenceReadyBatchReviewForRecoveryOnce();
-  const secondApply = applyGmailSalesApprovedReviewResultsOnce();
-  const coverage = inspectGmailSalesContactBasisCoverage_({});
-  const inventory = buildCurrentGmailSalesReadyInventoryForDate_(targetDate);
-  let prepare = null;
-  if (inventory.readyInventoryCount >= gmailDailyExpectedCount_()) {
-    prepare = prepareDailyPipeline_({ source: 'july3_integrated_preparation' });
-  }
-  const readiness = inspectGmailSalesCurrentDaySendReadiness();
-  const blockedReasons = [];
-  if (schemaRepair.status !== 'pass') blockedReasons.push(schemaRepair.blockedReason || 'schema_repair_failed');
-  if (coverage.eligibleAfterBasisCheckCount < gmailDailyExpectedCount_()) blockedReasons.push('eligible_basis_count_below_30');
-  if (!prepare || prepare.status === 'blocked') blockedReasons.push(prepare && prepare.blockedReason || 'current_day_manifest_not_created');
-  if (!readiness.currentDaySendReadinessValid) blockedReasons.push.apply(blockedReasons, readiness.blockedReasons || []);
+  const step = runGmailSalesRecoveryPreparationStepOnce();
   const result = {
     event: 'gmail_sales_july3_integrated_preparation',
-    status: uniqueArray_(blockedReasons).length === 0 ? 'pass' : 'partial',
+    status: step.status === 'pass' ? 'partial' : 'blocked',
     targetDate,
-    schemaRepairCompleted: schemaRepair.status === 'pass',
-    approvedReviewApplyCompleted: firstApply.status === 'pass' || secondApply.status === 'pass' || Number(firstApply.approvedReviewCandidateCount || 0) === 0,
-    batchReviewCompleted: batchReview.status === 'pass' || batchReview.blockedReason === 'ai_disabled' || batchReview.blockedReason === 'ai_provider_not_configured',
-    contactBasisCoverageValid: coverage.eligibleAfterBasisCheckCount >= gmailDailyExpectedCount_(),
-    approvedBasisCount: coverage.approvedBasisCount,
-    eligibleAfterBasisCheckCount: coverage.eligibleAfterBasisCheckCount,
-    readyInventoryCount: inventory.readyInventoryCount,
-    reserveInventoryCount: Math.max(0, inventory.readyInventoryCount - gmailDailyExpectedCount_()),
-    currentDayManifestCount: readiness.currentDayManifestCount,
-    currentDayManifestUniqueCount: readiness.currentDayManifestUniqueCount,
-    currentDayManifestDuplicateCount: readiness.currentDayManifestDuplicateCount,
-    currentManifestMaxSendCount: readiness.currentDayManifestCount > 0 ? Number((JSON.parse(String(props.getProperty('APPROVED_SEND_MANIFEST_JSON') || '{}')).maxSendCount) || 0) : 0,
-    remainingDailyQuota: readiness.remainingDailyQuota,
-    currentDaySendReadinessValid: readiness.currentDaySendReadinessValid,
-    blockedReasons: uniqueArray_(blockedReasons),
-    recommendedNextAction: uniqueArray_(blockedReasons).length === 0 ? 'enable_gmail_sales_production_recovery' : 'resume_integrated_preparation',
-    googleSheetsUpdated: Boolean((schemaRepair.googleSheetsUpdated || firstApply.googleSheetsUpdated || batchReview.googleSheetsUpdated || secondApply.googleSheetsUpdated || (prepare && prepare.googleSheetsUpdated))),
-    scriptPropertiesUpdated: Boolean(prepare && prepare.scriptPropertiesUpdated),
-    aiApiCalled: Boolean(batchReview.aiApiCalled),
+    boundedPhaseExecuted: step.phaseExecuted,
+    phaseExecutionCount: Number(step.phaseExecutionCount || 0),
+    continuationRequired: true,
+    blockedReasons: step.blockedReason ? [step.blockedReason] : [],
+    recommendedNextAction: 'inspect_recovery_manual_review_queue',
+    recommendedNextFunction: 'inspectGmailSalesRecoveryManualReviewQueue',
+    googleSheetsUpdated: Boolean(step.googleSheetsUpdated),
+    scriptPropertiesUpdated: Boolean(step.scriptPropertiesUpdated),
+    aiApiCalled: false,
+    aiReviewReexecutedCount: 0,
     gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    urlFetchExecuted: false,
     triggerChanged: false
   };
   appendSafeLog_(result);

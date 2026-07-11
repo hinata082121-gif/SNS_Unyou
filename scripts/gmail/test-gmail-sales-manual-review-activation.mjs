@@ -210,8 +210,16 @@ assert.ok(code.includes('logGmailSalesJsonResult_(result)'));
 [
   'prepareGmailSalesManualReviewQueueOnce',
   'applyGmailSalesManualReviewDecisionsOnce',
-  'inspectGmailSalesManualReviewStatus'
+  'inspectGmailSalesManualReviewStatus',
+  'inspectGmailSalesRecoveryManualReviewQueue',
+  'repairGmailSalesEvidenceDigestContractOnce',
+  'runGmailSalesRecoveryPreparationStepOnce'
 ].forEach((name) => assert.ok(code.includes(`function ${name}`), `${name} missing`));
+assert.ok(code.includes('validateGmailSalesManualReviewEvidenceDigestContract_'));
+assert.ok(code.includes("manual_evidence_digest_missing"));
+assert.ok(code.includes("manual_evidence_digest_mismatch"));
+assert.ok(code.includes("recommendedNextAction: coverage.eligibleAfterBasisCheckCount >= gmailDailyExpectedCount_() ? 'build_exact_30_manifest' : 'continue_manual_review'"));
+assert.ok(code.includes('aiReviewReexecutedCount: 0'));
 
 const sendCallSites = (code.match(/MailApp\.sendEmail\s*\(/g) || []).length;
 assert.equal(sendCallSites, 1);
