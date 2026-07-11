@@ -4,15 +4,16 @@
   "avatar": "ops-monitor",
   "title": "2026-07-11 Gmail翌日outbox30件準備",
   "category": "gmail_outbox",
-  "status": "needs_review",
-  "phase": "翌日outbox30件作成済み・Sheet反映/Preflight確認待ち",
+  "status": "blocked",
+  "phase": "2026-07-11用outbox/TSVはPreflight未確認のため送信停止",
   "progress": 85,
   "priority": "high",
   "createdAt": "2026-07-11T00:00:00.000Z",
-  "updatedAt": "2026-07-10T08:21:50.000Z",
-  "summary": "2026-07-11分のGmail outbox30件、Sheets用JSON30件、TSV30行を安全な件数のみ確認。既存prepare-tomorrow-outboxはloadLocalEnv()を呼ぶため今回の.env/.env.local非参照制約により再実行せず、既存成果物の安全な件数検証とAgent Status更新のみ実施。安全なSheets自動反映経路は未確認のため、Sheet反映とPreflight確認はneeds_review。",
+  "updatedAt": "2026-07-11T03:11:54.000Z",
+  "summary": "2026-07-11用outbox/TSVはローカル30件準備済みだが、Sheet反映/ready行確認/Apps Script Preflightを確認できないため本番送信はblocked。",
   "artifacts": [
-    "docs/hermes-gmail-daily-monitoring-2026-06-03.md"
+    "docs/hermes-gmail-daily-monitoring-2026-06-03.md",
+    "docs/gmail/2026-07-11-gmail-noon-send-check.md"
   ],
   "metrics": {
     "executionDate": "2026-07-10",
@@ -67,10 +68,12 @@
     "preflightPassed": false,
     "processed": 0,
     "failed": 0,
+    "skipped": 30,
+    "blockedReason": "apps_script_preflight_not_verified",
     "safeToSendAgain": false
   },
-  "nextAction": "2026-07-11分はoutbox30件とSheets用30行をローカル作成済み。安全なSheet反映経路または手動貼り付け後、PreflightでreadyRows=30等を確認する。条件が揃うまで本番送信しない。",
-  "safeToAct": true,
+  "nextAction": "2026-07-11分はPreflight/Sheet ready行/Sheet接続/同一sendBatchId未送信が確認できるまで本番送信しない。再送信禁止。",
+  "safeToAct": false,
   "notes": [
     "Gmail送信なし",
     "runDailyGmailSalesSend()実行なし",
@@ -81,6 +84,7 @@
     "outbox本体・Sheets用JSON/TSV本文はGit追加禁止",
     "メールアドレス・営業先名・本文全文は表示しない",
     ".env/.env.local非参照制約のため、loadLocalEnv()を呼ぶ既存prepare-tomorrow-outboxは再実行しない",
-    "安全な件数のみ確認"
+    "安全な件数のみ確認",
+    "再送信禁止"
   ]
 }
