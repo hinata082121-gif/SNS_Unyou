@@ -1,0 +1,48 @@
+{
+  "id": "threads-daily-19-post-2026-07-12",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "Threads 19:00 共感・導線投稿",
+  "category": "threads_daily_post",
+  "status": "blocked",
+  "phase": "投稿案準備・安全検査完了・公開コマンド実行・時間外ガードで投稿停止",
+  "progress": 100,
+  "priority": "high",
+  "createdAt": "2026-07-12T01:04:52+09:00",
+  "updatedAt": "2026-07-12T01:04:52+09:00",
+  "summary": "2026-07-12 19:00枠のThreads投稿は、共感・問いかけ・無料SNS診断への自然な導線を含む案として準備し、安全検査を通過した。公開許可は有効、dry-runは無効、API接続設定も有効判定。ただし実行時刻が19:00枠の許可ウィンドウ外だったため、既存の安全コマンドが outside_slot_window で投稿を停止した。投稿本文全文・API秘密情報・個人情報はAgent Statusへ保存していない。",
+  "metrics": {
+    "cron": "0 19 * * *",
+    "scheduledTime": "19:00",
+    "executionTime": "2026-07-12T01:04:52+09:00",
+    "postPlanDate": "2026-07-12",
+    "postPlanSlot": "19:00",
+    "publishEnabled": true,
+    "dryRun": false,
+    "apiConfigured": true,
+    "postPrepared": true,
+    "postValidated": true,
+    "posted": false,
+    "blockedReason": "outside_slot_window",
+    "includesSoftCta": true,
+    "autoReplyEnabled": false,
+    "autoLikeEnabled": false,
+    "autoFollowEnabled": false
+  },
+  "nextAction": "19:00枠の許可ウィンドウ（18:55-19:30 JST）内に npm run threads:post:19 を再実行する。投稿済みログが作成されている場合は再投稿せず、already_published ガードを優先する。",
+  "safeToAct": true,
+  "notes": [
+    "docs/threads/post-plans/threads-post-plan-2026-06-week1.md を優先確認したが当日日付はなかったため、data/threads/post-plans/2026-07-12.json の19:00枠を共感・問いかけ・無料SNS診断導線寄りに整えた",
+    "投稿テーマは予約導線の見えにくさ。本文全文はAgent Statusへ保存していない",
+    "npm run threads:post:validate は ok=true。禁止表現、長すぎる投稿、重複、個人情報、トークンログは検出なし",
+    "npm run threads:post:19 は publishEnabled=true、dryRun=false、apiConfigured=true を確認したうえで outside_slot_window により投稿停止",
+    "自動返信・自動いいね・自動フォローは実行していない",
+    "Gmail送信、Google Sheets更新、Apps Scriptトリガー操作は実行していない",
+    "秘密情報、メールアドレス、営業先名、返信本文は表示・保存・コミットしていない"
+  ],
+  "artifacts": [
+    "data/agent-status/tasks/threads-daily-19-post-2026-07-12.json",
+    "data/threads/post-plans/2026-07-12.json",
+    "data/threads/published/2026-07-12-19.json"
+  ]
+}

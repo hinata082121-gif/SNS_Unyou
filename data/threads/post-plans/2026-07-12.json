@@ -1,0 +1,46 @@
+{
+  "date": "2026-07-12",
+  "strategyVersion": "casual-viral-formats-v1",
+  "posts": [
+    {
+      "date": "2026-07-12",
+      "time": "11:00",
+      "theme": "姿勢改善の言い換え",
+      "text": "普通\n「姿勢改善します」\n\n少し日常寄り\n「鏡を見た時の首の位置、少し前に出ている気がする方へ」\n\n悩みや状況を場面にすると、目に止まりやすくなります。",
+      "cta": "",
+      "contentPillar": "rewrite_demo",
+      "format": "rewrite_demo",
+      "hookType": "before_after",
+      "tone": "casual_practical",
+      "targetIndustry": "整体",
+      "hasQuestion": false,
+      "hasDirectSalesCta": false,
+      "slotRole": "useful_midday_idea",
+      "contentKey": "rewrite_demo-035",
+      "media": {
+        "type": "none",
+        "items": []
+      }
+    },
+    {
+      "date": "2026-07-12",
+      "time": "19:00",
+      "theme": "予約導線の見えにくさ",
+      "text": "投稿は続けているのに予約につながりにくい時、投稿内容だけでなく「見た人が次に何をすればいいか」が少し分かりにくいことがあります。予約リンク、料金の目安、初めての方向け案内。どこから見直すと良さそうですか？",
+      "cta": "気になる方は、無料SNS診断で導線だけ気軽に確認できます。",
+      "contentPillar": "soft_cta",
+      "format": "relatable_question",
+      "hookType": "relatable",
+      "tone": "casual_supportive",
+      "targetIndustry": "小規模店舗",
+      "hasQuestion": true,
+      "hasDirectSalesCta": false,
+      "slotRole": "evening_conversation",
+      "contentKey": "soft_cta-2026-07-12-19",
+      "media": {
+        "type": "none",
+        "items": []
+      }
+    }
+  ]
+}
