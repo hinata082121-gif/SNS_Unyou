@@ -142,6 +142,44 @@ function evaluateReadiness(eligibility, manifest) {
   };
 }
 
+function makeApprovedJoinRepairFixture() {
+  return Array.from({ length: 87 }, (_, index) => ({
+    id: `join-${index + 1}`,
+    approved: index < 30,
+    joined: index < 9 || index >= 30,
+    repairable: index >= 9 && index < 24,
+    ambiguous: index >= 24 && index < 27,
+    digestMismatch: index >= 27 && index < 30,
+    evidencePayloadPresent: true,
+    digestConflict: index >= 30 && index < 68,
+    payloadMissing: index >= 68 && index < 83
+  }));
+}
+
+function inspectApprovedJoinFixture(rows) {
+  const approved = rows.filter((row) => row.approved);
+  const failed = approved.filter((row) => !row.joined);
+  return {
+    rawApprovedCount: approved.length,
+    joinedApprovedCount: approved.filter((row) => row.joined).length,
+    joinFailedApprovedCount: failed.length,
+    repairableJoinCount: failed.filter((row) => row.repairable && row.evidencePayloadPresent && !row.digestMismatch).length,
+    ambiguousJoinCount: failed.filter((row) => row.ambiguous).length,
+    unrecoverableJoinCount: failed.filter((row) => !row.repairable && !row.ambiguous).length,
+    digestConflictCount: rows.filter((row) => row.digestConflict).length,
+    evidencePayloadMissingCount: rows.filter((row) => row.payloadMissing).length
+  };
+}
+
+function repairApprovedJoinFixture(rows, options = {}) {
+  const before = inspectApprovedJoinFixture(rows);
+  const targets = rows.filter((row) => row.approved && !row.joined && row.repairable && !row.digestMismatch).slice(0, 10);
+  if (options.readBackMismatch) return { rows, committed: 0, rollback: true, continuation: before.repairableJoinCount > 0 };
+  const ids = new Set(targets.map((row) => row.id));
+  const next = rows.map((row) => ids.has(row.id) ? { ...row, joined: true, repairable: false } : row);
+  return { rows: next, committed: targets.length, rollback: false, continuation: inspectApprovedJoinFixture(next).repairableJoinCount > 0 };
+}
+
 const sunday = businessContext('2026-07-12');
 assert.equal(sunday.isWeeklyReportDay, true);
 assert.equal(sunday.isSalesDay, false);
@@ -205,6 +243,36 @@ assert.equal(evaluateReadiness(twentyNineEligibility, {
   targetDate: '2026-07-13', batchId: 'gmail-sales-2026-07-13', candidateCount: 30, expired: false, digestMatch: true
 }).readinessValid, false);
 
+const joinRepairFixture = makeApprovedJoinRepairFixture();
+const joinBreakdown = inspectApprovedJoinFixture(joinRepairFixture);
+assert.equal(joinBreakdown.rawApprovedCount, 30);
+assert.equal(joinBreakdown.joinedApprovedCount, 9);
+assert.equal(joinBreakdown.joinFailedApprovedCount, 21);
+assert.equal(joinBreakdown.repairableJoinCount, 15);
+assert.equal(joinBreakdown.ambiguousJoinCount, 3);
+assert.equal(joinBreakdown.unrecoverableJoinCount, 3);
+assert.equal(joinBreakdown.digestConflictCount, 38);
+assert.equal(joinBreakdown.evidencePayloadMissingCount, 15);
+const firstRepair = repairApprovedJoinFixture(joinRepairFixture);
+assert.equal(firstRepair.committed, 10);
+assert.equal(firstRepair.continuation, true);
+assert.equal(inspectApprovedJoinFixture(firstRepair.rows).joinedApprovedCount, 19);
+const secondRepair = repairApprovedJoinFixture(firstRepair.rows);
+assert.equal(secondRepair.committed, 5);
+assert.equal(secondRepair.continuation, false);
+assert.equal(inspectApprovedJoinFixture(secondRepair.rows).joinedApprovedCount, 24);
+assert.equal(repairApprovedJoinFixture(secondRepair.rows).committed, 0);
+const rollbackRepair = repairApprovedJoinFixture(joinRepairFixture, { readBackMismatch: true });
+assert.equal(rollbackRepair.rollback, true);
+assert.equal(inspectApprovedJoinFixture(rollbackRepair.rows).joinedApprovedCount, 9);
+const fullRepairFixture = joinRepairFixture.map((row) => row.approved && !row.joined ? { ...row, repairable: true, ambiguous: false, digestMismatch: false } : row);
+let fullRepair = repairApprovedJoinFixture(fullRepairFixture);
+fullRepair = repairApprovedJoinFixture(fullRepair.rows);
+fullRepair = repairApprovedJoinFixture(fullRepair.rows);
+assert.equal(inspectApprovedJoinFixture(fullRepair.rows).joinedApprovedCount, 30);
+const zeroRepairFixture = joinRepairFixture.map((row) => row.approved && !row.joined ? { ...row, repairable: false, ambiguous: true } : row);
+assert.equal(repairApprovedJoinFixture(zeroRepairFixture).committed, 0);
+
 const reports = [];
 assert.equal(persistWeeklyReport(reports, '2026-07-06', '2026-07-11'), true);
 assert.equal(persistWeeklyReport(reports, '2026-07-06', '2026-07-11'), false);
@@ -218,6 +286,9 @@ assert.equal(reports[0].dataInsufficient, true);
   'prepareGmailSalesManifestForDate_',
   'inspectGmailSalesNextSalesDayReadiness',
   'inspectGmailSalesCurrentEligibilityBreakdown',
+  'inspectGmailSalesApprovedJoinFailureBreakdown',
+  'repairGmailSalesApprovedSourceReviewJoinsOnce',
+  'analyzeGmailSalesApprovedJoinFailures_',
   'evaluateGmailSalesManifestEligibility_',
   'runGmailSalesRecoveryPreparationStepOnce',
   'persistGmailSalesWeeklyReport_',
@@ -233,6 +304,10 @@ assert.ok(code.includes("recommendedNextAction = 'replace_expired_manifest'"));
 assert.ok(code.includes("recommendedNextAction = 'replenish_safe_eligible_inventory'"));
 assert.ok(code.includes('currentManifestValid && currentEligibilityValid'));
 assert.ok(code.includes('buildGmailSalesStrictContactSourceRowKey_'));
+assert.ok(code.includes("slice(0, 10).filter(() => Date.now() - startedAt < 45000)"));
+assert.ok(code.includes("['sourceRowKey', 'sourceRowDigest']"));
+const approvedJoinRepairBody = code.slice(code.indexOf('function repairGmailSalesApprovedSourceReviewJoinsOnce'), code.indexOf('function inspectGmailSalesJoinedEvidenceEligibility_'));
+assert.equal(approvedJoinRepairBody.includes("'sourceEvidenceDigest'"), false);
 assert.ok(code.includes('selectedManifestDigestConflictCount = 0'));
 assert.ok(code.includes("'reserve_inventory_zero', 'no_replacement_candidate_available'"));
 assert.equal((code.match(/MailApp\.sendEmail\s*\(/g) || []).length, 1);
@@ -256,6 +331,9 @@ console.log(JSON.stringify({
   productionCurrentEligibleCount: productionEligibility.currentEligibleCount,
   productionCurrentEligibleShortfallCount: productionEligibility.shortfallCount,
   productionSourceJoinFailedCount: productionEligibility.sourceJoinFailedCount,
+  approvedJoinFailedCount: joinBreakdown.joinFailedApprovedCount,
+  approvedJoinRepairableCount: joinBreakdown.repairableJoinCount,
+  approvedJoinAmbiguousCount: joinBreakdown.ambiguousJoinCount,
   staleManifestExact30Valid: staleReadiness.exact30Valid,
   freshManifestReadinessValid: freshReadiness.readinessValid,
   twentyNineReadinessValid: false,

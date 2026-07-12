@@ -23598,6 +23598,241 @@ function buildGmailSalesStrictContactSourceRowKey_(row) {
   return stable ? hashValue_('stable|' + stable) : '';
 }
 
+function analyzeGmailSalesApprovedJoinFailures_(businessDate, options) {
+  const settings = options || {};
+  const config = Object.assign({}, getConfig_(), {
+    sendDate: normalizeDateText_(businessDate),
+    sendBatchId: buildSendBatchId_(normalizeDateText_(businessDate))
+  });
+  const source = settings.sourceRows
+    ? { loaded: true, rows: settings.sourceRows }
+    : loadDailyPipelineSourceRows_(config);
+  const context = settings.context || getGmailSalesContactBasisReviewContext_({ allowMissing: true });
+  const reviewItems = settings.reviewRows || (context.reviewSheet ? readSheetObjects_(context.reviewSheet).items : []);
+  const result = {
+    sourceLoaded: Boolean(source.loaded),
+    rawApprovedCount: 0,
+    joinedApprovedCount: 0,
+    joinFailedApprovedCount: 0,
+    repairableJoinCount: 0,
+    ambiguousJoinCount: 0,
+    unrecoverableJoinCount: 0,
+    joinFailureReasonCounts: {},
+    duplicateSourceStableIdCount: 0,
+    duplicateReviewStableIdCount: 0,
+    missingSourceCandidateIdCount: 0,
+    missingReviewCandidateIdCount: 0,
+    evidenceDigestMismatchCount: 0,
+    legacySchemaUnmappedCount: 0,
+    approvedDigestConflictCount: 0,
+    approvedEvidencePayloadMissingCount: 0,
+    approvedEvidenceValidCount: 0,
+    approvedJoinFailedCount: 0,
+    repairTargets: []
+  };
+  if (!source.loaded) {
+    incrementCount_(result.joinFailureReasonCounts, source.blockedReason || 'source_load_failed');
+    return result;
+  }
+  const sourceItems = source.rows || [];
+  const sourceStableCounts = {};
+  const reviewStableCounts = {};
+  sourceItems.forEach((item) => {
+    const key = buildGmailSalesStrictContactSourceRowKey_(item.row || {});
+    if (key) sourceStableCounts[key] = Number(sourceStableCounts[key] || 0) + 1;
+  });
+  (reviewItems || []).forEach((item) => {
+    const key = String((item.row || item).sourceRowKey || '').trim();
+    if (key) reviewStableCounts[key] = Number(reviewStableCounts[key] || 0) + 1;
+    else result.missingReviewCandidateIdCount += 1;
+  });
+  result.duplicateSourceStableIdCount = Object.keys(sourceStableCounts).filter((key) => sourceStableCounts[key] > 1).length;
+  result.duplicateReviewStableIdCount = Object.keys(reviewStableCounts).filter((key) => reviewStableCounts[key] > 1).length;
+  let suppression = { loaded: false, entries: [] };
+  try {
+    suppression = loadSuppressionLedgerFromProperties_();
+  } catch (error) {
+    incrementCount_(result.joinFailureReasonCounts, 'suppression_ledger_unavailable');
+  }
+  const approvedRecipientCounts = {};
+  sourceItems.forEach((item) => {
+    const row = item.row || {};
+    if (!hasAllowedGmailSalesContactBasis_(row)) return;
+    const emailHash = hashValue_(normalizeEmail_(row.email || row.contactEmail || ''));
+    approvedRecipientCounts[emailHash] = Number(approvedRecipientCounts[emailHash] || 0) + 1;
+  });
+  sourceItems.forEach((item) => {
+    const row = item.row || {};
+    if (!hasAllowedGmailSalesContactBasis_(row)) return;
+    result.rawApprovedCount += 1;
+    const stableKey = buildGmailSalesStrictContactSourceRowKey_(row);
+    if (!stableKey) result.missingSourceCandidateIdCount += 1;
+    const direct = stableKey ? (reviewItems || []).filter((reviewItem) => String((reviewItem.row || reviewItem).sourceRowKey || '').trim() === stableKey) : [];
+    const expectedSourceDigest = stableKey ? computeGmailSalesStableSourceIdentityDigest_(row, { sourceRowKey: stableKey }) : '';
+    if (direct.length === 1 && expectedSourceDigest && constantTimeEquals_(String((direct[0].row || direct[0]).sourceRowDigest || '').trim(), expectedSourceDigest)) {
+      result.joinedApprovedCount += 1;
+      const evidence = inspectGmailSalesJoinedEvidenceEligibility_(row, direct[0].row || direct[0], expectedSourceDigest, expectedSourceDigest);
+      if (evidence.digestConflict) result.approvedDigestConflictCount += 1;
+      if (evidence.payloadMissing) result.approvedEvidencePayloadMissingCount += 1;
+      if (!evidence.digestConflict && !evidence.payloadMissing && !evidence.stale) result.approvedEvidenceValidCount += 1;
+      return;
+    }
+    result.joinFailedApprovedCount += 1;
+    result.approvedJoinFailedCount += 1;
+    let reason = !stableKey ? 'source_candidate_id_missing' : (sourceStableCounts[stableKey] > 1 ? 'duplicate_source_id' : (direct.length > 1 ? 'duplicate_review_id' : 'source_id_not_found'));
+    const sourceType = String(row.sourceType || '').trim();
+    const sourceReference = String(row.sourceReference || row.sourceUrl || row.publicSource || '').trim();
+    const sourceReferenceHash = String(row.sourceReferenceHash || (sourceType && sourceReference ? buildGmailSalesSourceReferenceHash_(sourceType, sourceReference) : '')).trim();
+    const sourceEvidenceDigest = computeGmailSalesSourceEvidenceDigest_(row, { sourceType, sourceReferenceHash });
+    const candidates = (reviewItems || []).filter((reviewItem) => {
+      const review = reviewItem.row || reviewItem;
+      return Boolean(sourceType && sourceReferenceHash && sourceEvidenceDigest &&
+        String(review.sourceType || '').trim() === sourceType &&
+        String(review.sourceReferenceHash || '').trim() === sourceReferenceHash &&
+        String(review.sourceEvidenceDigest || '').trim() === sourceEvidenceDigest);
+    });
+    if (candidates.length > 1) reason = 'ambiguous_match';
+    else if (candidates.length === 0) {
+      const referenceMatches = (reviewItems || []).filter((reviewItem) => String((reviewItem.row || reviewItem).sourceReferenceHash || '').trim() === sourceReferenceHash);
+      if (!sourceReferenceHash) reason = 'source_reference_mismatch';
+      else if (referenceMatches.length === 1 && !String((referenceMatches[0].row || referenceMatches[0]).sourceEvidenceDigest || '').trim()) reason = 'evidence_digest_missing';
+      else if (referenceMatches.length === 1) reason = 'evidence_digest_mismatch';
+      else if (referenceMatches.length > 1) reason = 'ambiguous_match';
+      else if (!stableKey) reason = 'legacy_schema_unmapped';
+    }
+    const recipientHash = hashValue_(normalizeEmail_(row.email || row.contactEmail || ''));
+    const state = normalizeSendState_(row);
+    const policySafe = suppression.loaded && !isSuppressedByLedger_(row, suppression) &&
+      !normalizeBooleanCell_(row.suppression) && !normalizeBooleanCell_(row.unsubscribe) && !normalizeBooleanCell_(row.doNotContact) &&
+      !hasSheetSentHistory_(row) && !String(row.replyStatus || '').trim() && state !== GMAIL_SEND_STATE.deliveryUnknown &&
+      approvedRecipientCounts[recipientHash] === 1;
+    if (candidates.length === 1 && stableKey && sourceStableCounts[stableKey] === 1 && expectedSourceDigest && policySafe) {
+      const review = candidates[0].row || candidates[0];
+      const evidence = inspectGmailSalesJoinedEvidenceEligibility_(row, review, expectedSourceDigest, expectedSourceDigest);
+      if (!evidence.digestConflict && !evidence.payloadMissing && !evidence.stale) {
+        result.repairTargets.push({ sourceItem: item, reviewItem: candidates[0], sourceRowKey: stableKey, sourceRowDigest: expectedSourceDigest });
+        result.repairableJoinCount += 1;
+        incrementCount_(result.joinFailureReasonCounts, 'candidate_id_format_mismatch');
+        return;
+      }
+      if (evidence.digestConflict) result.approvedDigestConflictCount += 1;
+      if (evidence.payloadMissing) result.approvedEvidencePayloadMissingCount += 1;
+    }
+    if (reason === 'evidence_digest_mismatch') result.evidenceDigestMismatchCount += 1;
+    if (reason === 'legacy_schema_unmapped') result.legacySchemaUnmappedCount += 1;
+    if (reason === 'ambiguous_match' || reason === 'duplicate_source_id' || reason === 'duplicate_review_id') result.ambiguousJoinCount += 1;
+    else result.unrecoverableJoinCount += 1;
+    incrementCount_(result.joinFailureReasonCounts, reason || 'other');
+  });
+  return result;
+}
+
+function inspectGmailSalesApprovedJoinFailureBreakdown() {
+  const business = getGmailSalesBusinessDateContext_();
+  const analysis = analyzeGmailSalesApprovedJoinFailures_(business.currentBusinessDate, {});
+  const eligibility = evaluateGmailSalesManifestEligibility_(business.currentBusinessDate, {});
+  const projected = eligibility.currentEligibleCount + analysis.repairableJoinCount;
+  const result = {
+    event: 'gmail_sales_approved_join_failure_breakdown',
+    mode: 'read_only',
+    targetBusinessDate: business.currentBusinessDate,
+    rawApprovedCount: analysis.rawApprovedCount,
+    joinedApprovedCount: analysis.joinedApprovedCount,
+    joinFailedApprovedCount: analysis.joinFailedApprovedCount,
+    repairableJoinCount: analysis.repairableJoinCount,
+    ambiguousJoinCount: analysis.ambiguousJoinCount,
+    unrecoverableJoinCount: analysis.unrecoverableJoinCount,
+    joinFailureReasonCounts: analysis.joinFailureReasonCounts,
+    duplicateSourceStableIdCount: analysis.duplicateSourceStableIdCount,
+    duplicateReviewStableIdCount: analysis.duplicateReviewStableIdCount,
+    missingSourceCandidateIdCount: analysis.missingSourceCandidateIdCount,
+    missingReviewCandidateIdCount: analysis.missingReviewCandidateIdCount,
+    evidenceDigestMismatchCount: analysis.evidenceDigestMismatchCount,
+    legacySchemaUnmappedCount: analysis.legacySchemaUnmappedCount,
+    approvedDigestConflictCount: analysis.approvedDigestConflictCount,
+    approvedEvidencePayloadMissingCount: analysis.approvedEvidencePayloadMissingCount,
+    approvedEvidenceValidCount: analysis.approvedEvidenceValidCount,
+    approvedJoinFailedCount: analysis.approvedJoinFailedCount,
+    currentEligibleCount: eligibility.currentEligibleCount,
+    projectedEligibleCountAfterSafeRepair: projected,
+    projectedShortfallAfterSafeRepair: Math.max(0, gmailDailyExpectedCount_() - projected),
+    recommendedNextAction: analysis.repairableJoinCount > 0 ? 'repair_safe_approved_source_review_joins' : 'resolve_remaining_join_failures_or_replenish',
+    recommendedNextFunction: analysis.repairableJoinCount > 0 ? 'repairGmailSalesApprovedSourceReviewJoinsOnce' : '',
+    safeToRepair: analysis.repairableJoinCount > 0,
+    gmailSendExecuted: false,
+    gmailDraftCreated: false,
+    googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false,
+    triggerChanged: false,
+    aiApiCalled: false,
+    urlFetchExecuted: false
+  };
+  logGmailSalesJsonResult_(result);
+  return result;
+}
+
+function repairGmailSalesApprovedSourceReviewJoinsOnce(options) {
+  const settings = options || {};
+  const startedAt = Date.now();
+  const result = {
+    event: 'gmail_sales_approved_source_review_join_repair', mode: 'write', status: 'pass', blockedReason: '',
+    approvedJoinFailureCountBefore: 0, repairEligibleCount: 0, repairAttemptedCount: 0, repairCommittedCount: 0,
+    repairSkippedAmbiguousCount: 0, repairFailedCount: 0, approvedJoinFailureCountAfter: 0,
+    currentEligibleCountBefore: 0, currentEligibleCountAfter: 0, projectedShortfallAfter: gmailDailyExpectedCount_(),
+    rollbackExecuted: false, continuationRequired: false, recommendedNextFunction: '', googleSheetsUpdated: false,
+    scriptPropertiesUpdated: false, gmailSendExecuted: false, aiApiCalled: false, urlFetchExecuted: false, triggerChanged: false
+  };
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('AUTO_SEND_ENABLED') !== 'false' || props.getProperty('LIVE_SEND_ENABLED') !== 'false') {
+    result.status = 'blocked'; result.blockedReason = 'safe_rest_required'; logGmailSalesJsonResult_(result); return result;
+  }
+  const lock = settings.lockAlreadyHeld === true ? null : LockService.getScriptLock();
+  if (lock && !lock.tryLock(30000)) { result.status = 'blocked'; result.blockedReason = 'lock_unavailable'; logGmailSalesJsonResult_(result); return result; }
+  try {
+    const business = getGmailSalesBusinessDateContext_();
+    const context = getGmailSalesContactBasisReviewContext_();
+    if (!context.ok) { result.status = 'blocked'; result.blockedReason = context.blockedReason; return result; }
+    const beforeEligibility = evaluateGmailSalesManifestEligibility_(business.currentBusinessDate, {});
+    const before = analyzeGmailSalesApprovedJoinFailures_(business.currentBusinessDate, { context });
+    result.approvedJoinFailureCountBefore = before.joinFailedApprovedCount;
+    result.repairEligibleCount = before.repairableJoinCount;
+    result.repairSkippedAmbiguousCount = before.ambiguousJoinCount;
+    result.currentEligibleCountBefore = beforeEligibility.currentEligibleCount;
+    const targets = before.repairTargets.slice(0, 10).filter(() => Date.now() - startedAt < 45000);
+    const reviewHeaders = getSheetHeaders_(context.reviewSheet);
+    const snapshots = targets.map((target) => snapshotFields_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, ['sourceRowKey', 'sourceRowDigest']));
+    targets.forEach((target) => {
+      result.repairAttemptedCount += 1;
+      setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceRowKey', target.sourceRowKey);
+      setCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceRowDigest', target.sourceRowDigest);
+    });
+    if (targets.length > 0) SpreadsheetApp.flush();
+    const readBackPassed = targets.every((target) =>
+      String(getCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceRowKey') || '').trim() === target.sourceRowKey &&
+      String(getCellByHeader_(context.reviewSheet, reviewHeaders, target.reviewItem.rowIndex, 'sourceRowDigest') || '').trim() === target.sourceRowDigest);
+    if (!readBackPassed) {
+      snapshots.forEach((snapshot) => restoreFields_(context.reviewSheet, reviewHeaders, snapshot));
+      SpreadsheetApp.flush();
+      result.status = 'blocked'; result.blockedReason = 'join_repair_read_back_failed'; result.rollbackExecuted = true;
+      result.repairFailedCount = result.repairAttemptedCount; return result;
+    }
+    result.repairCommittedCount = targets.length;
+    result.googleSheetsUpdated = targets.length > 0;
+    const after = analyzeGmailSalesApprovedJoinFailures_(business.currentBusinessDate, { context });
+    const afterEligibility = evaluateGmailSalesManifestEligibility_(business.currentBusinessDate, {});
+    result.approvedJoinFailureCountAfter = after.joinFailedApprovedCount;
+    result.currentEligibleCountAfter = afterEligibility.currentEligibleCount;
+    result.projectedShortfallAfter = Math.max(0, gmailDailyExpectedCount_() - afterEligibility.currentEligibleCount);
+    result.continuationRequired = after.repairableJoinCount > 0;
+    result.recommendedNextFunction = result.continuationRequired ? 'repairGmailSalesApprovedSourceReviewJoinsOnce' :
+      (afterEligibility.currentEligibleCount === gmailDailyExpectedCount_() ? 'prepareGmailSalesManifestForBusinessDateOnce' : 'inspectGmailSalesApprovedJoinFailureBreakdown');
+    return result;
+  } finally {
+    if (lock) lock.releaseLock();
+    logGmailSalesJsonResult_(result);
+  }
+}
+
 function inspectGmailSalesJoinedEvidenceEligibility_(sourceRow, reviewRow, expectedSourceDigest, persistedSourceDigest) {
   const source = sourceRow || {};
   const review = reviewRow || {};
