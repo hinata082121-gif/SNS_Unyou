@@ -70,6 +70,78 @@ function persistWeeklyReport(store, weekStart, weekEnd) {
   return true;
 }
 
+function makeProductionEligibilityFixture(currentEligibleCount = 11) {
+  const rows = [];
+  for (let index = 0; index < 30; index += 1) {
+    let exclusion = '';
+    if (index >= currentEligibleCount) {
+      const offset = index - currentEligibleCount;
+      exclusion = offset < 8 ? 'missing_subject_or_body' : (offset < 13 ? 'suppression_or_do_not_contact' : 'prior_sent');
+    }
+    rows.push({ id: `approved-${index}`, rawApproved: true, rawReady: true, joined: true, evidenceValid: true, unique: true, exclusion });
+  }
+  for (let index = 0; index < 38; index += 1) rows.push({ id: `conflict-${index}`, joined: true, digestConflict: true });
+  for (let index = 0; index < 15; index += 1) rows.push({ id: `payload-${index}`, joined: true, payloadMissing: true });
+  while (rows.length < 87) rows.push({ id: `join-failed-${rows.length}`, joined: false });
+  return rows;
+}
+
+function evaluateEligibility(rows) {
+  const exclusionReasonCounts = {};
+  const increment = (reason) => { exclusionReasonCounts[reason] = (exclusionReasonCounts[reason] || 0) + 1; };
+  const eligible = [];
+  for (const row of rows) {
+    if (!row.joined) {
+      increment('source_review_join_missing');
+      continue;
+    }
+    if (row.digestConflict) {
+      increment('evidence_digest_conflict');
+      continue;
+    }
+    if (row.payloadMissing) {
+      increment('evidence_payload_missing');
+      continue;
+    }
+    if (!row.rawApproved) {
+      increment('contact_basis_missing');
+      continue;
+    }
+    if (row.exclusion) {
+      increment(row.exclusion);
+      continue;
+    }
+    eligible.push(row);
+  }
+  return {
+    sourceCandidateCount: rows.length,
+    rawApprovedCount: rows.filter((row) => row.rawApproved).length,
+    rawReadyInventoryCount: rows.filter((row) => row.rawReady).length,
+    currentEligibleCount: eligible.length,
+    currentEligibleUniqueCount: eligible.filter((row) => row.unique).length,
+    currentEligibleDigestValidCount: eligible.filter((row) => row.evidenceValid).length,
+    currentEligibleEvidenceCompleteCount: eligible.filter((row) => row.evidenceValid).length,
+    digestConflictCount: rows.filter((row) => row.digestConflict).length,
+    evidencePayloadMissingCount: rows.filter((row) => row.payloadMissing).length,
+    sourceJoinFailedCount: rows.filter((row) => !row.joined).length,
+    shortfallCount: Math.max(0, 30 - eligible.length),
+    exclusionReasonCounts
+  };
+}
+
+function evaluateReadiness(eligibility, manifest) {
+  const currentManifestValid = manifest.targetDate === '2026-07-13' && manifest.batchId === 'gmail-sales-2026-07-13' && manifest.expired !== true && manifest.digestMatch === true;
+  const currentEligibilityValid = eligibility.currentEligibleCount >= 30 && eligibility.currentEligibleUniqueCount >= 30 && eligibility.currentEligibleDigestValidCount >= 30;
+  return {
+    manifestReady: currentManifestValid && currentEligibilityValid,
+    exact30Valid: currentManifestValid && currentEligibilityValid && manifest.candidateCount === 30,
+    evidenceContractValid: currentManifestValid && currentEligibilityValid,
+    readinessValid: currentManifestValid && currentEligibilityValid,
+    staleManifestRowCount: currentManifestValid ? 0 : manifest.candidateCount,
+    recommendedNextAction: currentEligibilityValid ? 'prepare_current_business_day_manifest' : 'replenish_safe_eligible_inventory'
+  };
+}
+
 const sunday = businessContext('2026-07-12');
 assert.equal(sunday.isWeeklyReportDay, true);
 assert.equal(sunday.isSalesDay, false);
@@ -98,6 +170,41 @@ assert.equal(prepareManifest(makeCandidates(29), '2026-07-13').created, false);
 assert.equal(prepareManifest(makeCandidates(29), '2026-07-13').shortfall, 1);
 assert.equal(prepareManifest(candidates, '2026-07-13', 29).sendReady, false);
 
+const productionEligibility = evaluateEligibility(makeProductionEligibilityFixture(11));
+assert.equal(productionEligibility.sourceCandidateCount, 87);
+assert.equal(productionEligibility.rawApprovedCount, 30);
+assert.equal(productionEligibility.rawReadyInventoryCount, 30);
+assert.equal(productionEligibility.currentEligibleCount, 11);
+assert.equal(productionEligibility.shortfallCount, 19);
+assert.equal(productionEligibility.digestConflictCount, 38);
+assert.equal(productionEligibility.evidencePayloadMissingCount, 15);
+assert.equal(productionEligibility.sourceJoinFailedCount, 4);
+assert.equal(Object.values(productionEligibility.exclusionReasonCounts).reduce((sum, count) => sum + count, 0), 76);
+const staleReadiness = evaluateReadiness(productionEligibility, {
+  targetDate: '2026-07-03',
+  batchId: 'gmail-sales-2026-07-03',
+  candidateCount: 30,
+  expired: true,
+  digestMatch: false
+});
+assert.equal(staleReadiness.manifestReady, false);
+assert.equal(staleReadiness.exact30Valid, false);
+assert.equal(staleReadiness.evidenceContractValid, false);
+assert.equal(staleReadiness.readinessValid, false);
+assert.equal(staleReadiness.staleManifestRowCount, 30);
+assert.equal(staleReadiness.recommendedNextAction, 'replenish_safe_eligible_inventory');
+const exactThirtyEligibility = evaluateEligibility(makeProductionEligibilityFixture(30));
+const freshReadiness = evaluateReadiness(exactThirtyEligibility, {
+  targetDate: '2026-07-13', batchId: 'gmail-sales-2026-07-13', candidateCount: 30, expired: false, digestMatch: true
+});
+assert.equal(exactThirtyEligibility.currentEligibleCount, 30);
+assert.equal(freshReadiness.readinessValid, true);
+const twentyNineEligibility = evaluateEligibility(makeProductionEligibilityFixture(29));
+assert.equal(twentyNineEligibility.currentEligibleCount, 29);
+assert.equal(evaluateReadiness(twentyNineEligibility, {
+  targetDate: '2026-07-13', batchId: 'gmail-sales-2026-07-13', candidateCount: 30, expired: false, digestMatch: true
+}).readinessValid, false);
+
 const reports = [];
 assert.equal(persistWeeklyReport(reports, '2026-07-06', '2026-07-11'), true);
 assert.equal(persistWeeklyReport(reports, '2026-07-06', '2026-07-11'), false);
@@ -110,6 +217,8 @@ assert.equal(reports[0].dataInsufficient, true);
   'prepareGmailSalesManifestForBusinessDateOnce',
   'prepareGmailSalesManifestForDate_',
   'inspectGmailSalesNextSalesDayReadiness',
+  'inspectGmailSalesCurrentEligibilityBreakdown',
+  'evaluateGmailSalesManifestEligibility_',
   'runGmailSalesRecoveryPreparationStepOnce',
   'persistGmailSalesWeeklyReport_',
   'generateGmailSalesWeeklyReportOnce'
@@ -121,6 +230,9 @@ assert.equal(currentReadinessBody.includes('run_gmail_sales_july3_integrated_pre
 assert.ok(currentReadinessBody.includes('prepare_next_sales_day_manifest'));
 assert.ok(code.includes("GMAIL_SALES_WEEKLY_REPORT_SHEET_NAME = 'Gmail_Sales_Weekly_Report'"));
 assert.ok(code.includes("recommendedNextAction = 'replace_expired_manifest'"));
+assert.ok(code.includes("recommendedNextAction = 'replenish_safe_eligible_inventory'"));
+assert.ok(code.includes('currentManifestValid && currentEligibilityValid'));
+assert.ok(code.includes('buildGmailSalesStrictContactSourceRowKey_'));
 assert.ok(code.includes('selectedManifestDigestConflictCount = 0'));
 assert.ok(code.includes("'reserve_inventory_zero', 'no_replacement_candidate_available'"));
 assert.equal((code.match(/MailApp\.sendEmail\s*\(/g) || []).length, 1);
@@ -139,6 +251,14 @@ console.log(JSON.stringify({
   selectedManifestDigestConflictCount: manifest.selectedDigestConflictCount,
   selectedManifestEvidenceMissingCount: manifest.selectedEvidenceMissingCount,
   reserveInventoryCount: manifest.reserveCount,
+  productionRawApprovedCount: productionEligibility.rawApprovedCount,
+  productionRawReadyInventoryCount: productionEligibility.rawReadyInventoryCount,
+  productionCurrentEligibleCount: productionEligibility.currentEligibleCount,
+  productionCurrentEligibleShortfallCount: productionEligibility.shortfallCount,
+  productionSourceJoinFailedCount: productionEligibility.sourceJoinFailedCount,
+  staleManifestExact30Valid: staleReadiness.exact30Valid,
+  freshManifestReadinessValid: freshReadiness.readinessValid,
+  twentyNineReadinessValid: false,
   weeklyReportPersistedCount: reports.length,
   totalSent: reports[0].totalSent,
   julyRevenueTargetYen: reports[0].julyRevenueTargetYen,

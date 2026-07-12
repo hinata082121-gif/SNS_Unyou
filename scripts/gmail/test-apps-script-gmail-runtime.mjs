@@ -51,6 +51,15 @@ const CONTACT_BASIS_HEADERS = [
   'suppressionCheckedAt',
   'historyCheckedAt'
 ];
+const ELIGIBILITY_REVIEW_HEADERS = [
+  'sourceRowKey',
+  'sourceRowDigest',
+  'aiEvidenceDigest',
+  'lastAiEvaluatedEvidenceDigest',
+  'evidencePayloadMissing',
+  'evidenceDigestConflict',
+  'evidenceStale'
+];
 const OUTBOX_HEADERS = [
   'prospectId',
   'name',
@@ -3192,13 +3201,31 @@ function installDailyPipelineSourceState(env, options = {}) {
   env.triggers = [{ handler: 'runGmailSalesProductionControlLoop' }];
   env.rows = [];
   env.workbook.sheets.sales.rows = [HEADERS];
+  const sourceRows = Array.from({ length: sourceCount }, (_, index) => Object.assign({}, buildSourceOutboxRow(index + 1), {
+    lastCheckedAt: targetDate
+  }));
   env.workbook.sheets['Gmail営業候補プール'] = new MockSheet('Gmail営業候補プール', [
     SOURCE_HEADERS,
-    ...Array.from({ length: sourceCount }, (_, index) => sourceRowToCells(Object.assign({}, buildSourceOutboxRow(index + 1), {
-      lastCheckedAt: targetDate
-    })))
+    ...sourceRows.map(sourceRowToCells)
   ]);
   env.workbook.sheets['Gmail営業候補プール'].env = env;
+  const reviewRows = sourceRows.map((row) => {
+    const sourceRowKey = env.context.hashValue_(`stable|${row.prospectId}`);
+    return {
+      sourceRowKey,
+      sourceRowDigest: env.context.computeGmailSalesStableSourceIdentityDigest_(row, { sourceRowKey }),
+      aiEvidenceDigest: `fixture-evidence-${row.prospectId}`,
+      lastAiEvaluatedEvidenceDigest: `fixture-evidence-${row.prospectId}`,
+      evidencePayloadMissing: 'FALSE',
+      evidenceDigestConflict: 'FALSE',
+      evidenceStale: 'FALSE'
+    };
+  });
+  env.workbook.sheets.Gmail_Contact_Basis_Review = new MockSheet('Gmail_Contact_Basis_Review', [
+    ELIGIBILITY_REVIEW_HEADERS,
+    ...reviewRows.map((row) => ELIGIBILITY_REVIEW_HEADERS.map((header) => row[header] ?? ''))
+  ]);
+  env.workbook.sheets.Gmail_Contact_Basis_Review.env = env;
   delete env.props.APPROVED_SEND_MANIFEST_JSON;
   env.props.GMAIL_DAILY_AUTOMATION_STATE_JSON = JSON.stringify({
     targetDate: '',
