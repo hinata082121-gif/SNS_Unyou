@@ -23728,7 +23728,7 @@ function analyzeGmailSalesApprovedJoinFailures_(businessDate, options) {
 }
 
 function inspectGmailSalesApprovedJoinFailureBreakdown() {
-  const business = getGmailSalesBusinessDateContext_();
+  const business = getGmailSalesBusinessDayContext_(getConfig_().currentJstDate);
   const analysis = analyzeGmailSalesApprovedJoinFailures_(business.currentBusinessDate, {});
   const eligibility = evaluateGmailSalesManifestEligibility_(business.currentBusinessDate, {});
   const projected = eligibility.currentEligibleCount + analysis.repairableJoinCount;
@@ -23789,7 +23789,7 @@ function repairGmailSalesApprovedSourceReviewJoinsOnce(options) {
   const lock = settings.lockAlreadyHeld === true ? null : LockService.getScriptLock();
   if (lock && !lock.tryLock(30000)) { result.status = 'blocked'; result.blockedReason = 'lock_unavailable'; logGmailSalesJsonResult_(result); return result; }
   try {
-    const business = getGmailSalesBusinessDateContext_();
+    const business = getGmailSalesBusinessDayContext_(getConfig_().currentJstDate);
     const context = getGmailSalesContactBasisReviewContext_();
     if (!context.ok) { result.status = 'blocked'; result.blockedReason = context.blockedReason; return result; }
     const beforeEligibility = evaluateGmailSalesManifestEligibility_(business.currentBusinessDate, {});
