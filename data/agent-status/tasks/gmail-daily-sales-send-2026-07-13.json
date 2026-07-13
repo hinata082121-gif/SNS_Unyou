@@ -1,0 +1,47 @@
+{
+  "id": "gmail-daily-sales-send-2026-07-13",
+  "agent": "Hermes",
+  "avatar": "ops-monitor",
+  "title": "2026-07-13 Gmail営業30件送信",
+  "category": "gmail_send",
+  "status": "blocked",
+  "phase": "2026-07-13 Gmail営業30件送信はPreflight未達で停止",
+  "progress": 55,
+  "priority": "high",
+  "createdAt": "2026-07-13T00:00:00.000Z",
+  "updatedAt": "2026-07-13T03:11:07.000Z",
+  "summary": "2026-07-13分のGmail営業30件送信は、既存安全確認フローがversion_not_configuredで停止し、Apps Script PreflightとGoogle Sheets ready行30件を確認できなかったため本番送信せずblocked。",
+  "artifacts": [
+    "docs/gmail/2026-07-13-gmail-noon-send-check.md"
+  ],
+  "metrics": {
+    "sendDate": "2026-07-13",
+    "sendBatchId": "gmail-sales-2026-07-13",
+    "targetSendCount": 30,
+    "preflightStatus": "blocked",
+    "readyCount": null,
+    "remainingQuota": null,
+    "sheetConnected": null,
+    "blockedReason": "version_not_configured, apps_script_preflight_not_verified, sheet_ready_rows_not_verified, sheet_connected_not_verified, send_batch_unsent_not_verified, duplicate_check_not_verified, suppression_check_not_verified, subject_body_check_not_verified, unsubscribe_notice_check_not_verified, safety_reset_not_verified",
+    "gmailSendExecuted": false,
+    "processed": 0,
+    "sentCount": 0,
+    "failedCount": 0,
+    "skipped": 30,
+    "batchMarkedSent": false,
+    "liveSendResetAfterRun": false,
+    "safeToSendAgain": false
+  },
+  "nextAction": "Apps Script側で運用ステータス、runPreflightDiagnosticsOnly()、runPreflightCheckOnly()を実行し、安全条件が全て満たされるまで本番送信しない。",
+  "safeToAct": false,
+  "notes": [
+    "Gmail本番送信なし",
+    "Google Sheets送信済み更新なし",
+    "同一sendBatchId再送信なし",
+    "自動返信なし",
+    "Instagram操作なし",
+    "Apps Scriptトリガー操作なし",
+    "メールアドレス・営業先名・本文全文・返信本文・送信ログ本体・秘密情報は記録しない",
+    "git add . 未使用"
+  ]
+}
