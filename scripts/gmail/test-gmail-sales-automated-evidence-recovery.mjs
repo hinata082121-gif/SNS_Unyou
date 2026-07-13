@@ -284,7 +284,7 @@ function installSheets(context, sourceRows, reviewRows = []) {
     'aiAutoApproved', 'aiRequiresHumanReview', 'lastAiEvaluatedEvidenceDigest', 'contactBasisType',
     'contactBasisRecordedAt', 'lastVerifiedAt', 'suppressionCheckedAt', 'historyCheckedAt',
     'contactBasisSourceType', 'contactBasisSourceReferenceHash', 'recoveredFrom', 'deterministicRuleId',
-    'noApiDecisionReason', 'email', 'contactEmail', 'name',
+    'noApiDecisionReason', 'prospectId', 'dedupeKey', 'email', 'contactEmail', 'name', 'subject', 'body',
     'publicSource', 'sentStatus', 'replyStatus', 'sendState', 'doNotContact', 'unsubscribe',
     'privatePersonalContactFlag', 'guessed', 'solicitationRestricted'
   ]));
@@ -3635,9 +3635,13 @@ assert.equal(importMissingReadiness.urlFetchExecuted, false);
 
 const import1 = createContext();
 import1.__props.GMAIL_SALES_PAID_AI_API_DISABLED_BY_POLICY = 'true';
-const importSourceRows = makeSourceRows(11).map((row, index) => Object.assign({}, row, {
+const importSourceRows = makeSourceRows(30).map((row, index) => Object.assign({}, row, {
+  prospectId: `import-source-${index + 1}`,
+  dedupeKey: `import-source-dedupe-${index + 1}`,
   email: `ready${index + 1}@ready-${index + 1}.example.invalid`,
   contactEmail: `ready${index + 1}@ready-${index + 1}.example.invalid`,
+  subject: `masked subject ${index + 1}`,
+  body: `${row.name} 様\n安全なご案内です。\n今後のご案内が不要な場合はご返信不要です。`,
   sourceType: 'official_website',
   sourceReferenceHash: `ready-hash-${index + 1}`,
   contactBasisType: 'valid_business_contact_exception',
@@ -3647,8 +3651,22 @@ const importSourceRows = makeSourceRows(11).map((row, index) => Object.assign({}
   suppressionCheckedAt: '2026-07-03T00:00:00.000Z',
   historyCheckedAt: '2026-07-03T00:00:00.000Z'
 }));
-installSheets(import1, importSourceRows, []);
-const eligibleImportRows = Array.from({ length: 24 }, (_, index) => {
+const importReviewRows = importSourceRows.slice(0, 9).map((row) => {
+  const sourceRowKey = import1.hashValue_(`stable|${row.prospectId || row.dedupeKey}`);
+  return {
+    sourceRowKey,
+    sourceRowDigest: import1.computeGmailSalesStableSourceIdentityDigest_(row, { sourceRowKey }),
+    aiEvidenceDigest: `fixture-${sourceRowKey}`,
+    lastAiEvaluatedEvidenceDigest: `fixture-${sourceRowKey}`
+  };
+});
+installSheets(import1, importSourceRows, importReviewRows);
+import1.loadSuppressionLedgerFromProperties_ = () => ({ loaded: true, recipientHashes: {}, domainHashes: {}, businessFingerprints: {}, entries: [] });
+const importSourceReadBack = import1.readSheetObjects_(import1.__sourceSheet).items[0].row;
+const importReviewReadBack = import1.readSheetObjects_(import1.__reviewSheet).items[0].row;
+assert.equal(import1.buildGmailSalesStrictContactSourceRowKey_(importSourceReadBack), importReviewReadBack.sourceRowKey);
+assert.equal(import1.computeGmailSalesStableSourceIdentityDigest_(importSourceReadBack, { sourceRowKey: importReviewReadBack.sourceRowKey }), importReviewReadBack.sourceRowDigest);
+const eligibleImportRows = Array.from({ length: 11 }, (_, index) => {
   const n = index + 1;
   return {
     targetDate: '2026-07-04',
@@ -3667,38 +3685,37 @@ const eligibleImportRows = Array.from({ length: 24 }, (_, index) => {
     operatorNoPrivateContactConfirmed: 'TRUE'
   };
 });
-const blockedImportRows = [
-  Object.assign({}, eligibleImportRows[0], { publicEmail: 'masked@gmail.com', officialWebsiteUrl: 'https://gmail-import.example.invalid/', sourceUrl: 'https://gmail-import.example.invalid/contact' }),
-  Object.assign({}, eligibleImportRows[1], { publicEmail: 'hello@private-import.example.invalid', privatePersonalContactFlag: 'true', officialWebsiteUrl: 'https://private-import.example.invalid/', sourceUrl: 'https://private-import.example.invalid/contact' }),
-  Object.assign({}, eligibleImportRows[2], { publicEmail: 'hello@directory-import.example.invalid', sourceType: 'business_directory', officialWebsiteUrl: 'https://directory-import.example.invalid/', sourceUrl: 'https://directory-import.example.invalid/contact' }),
-  Object.assign({}, eligibleImportRows[3], { publicEmail: 'hello@dnc-import.example.invalid', doNotContact: 'true', officialWebsiteUrl: 'https://dnc-import.example.invalid/', sourceUrl: 'https://dnc-import.example.invalid/contact' }),
-  Object.assign({}, eligibleImportRows[4], { publicEmail: 'hello@mismatch-import.example.invalid', officialWebsiteUrl: 'https://other-import.example.invalid/', sourceUrl: 'https://other-import.example.invalid/contact' }),
-  Object.assign({}, eligibleImportRows[5], { publicEmail: 'ready1@ready-1.example.invalid', officialWebsiteUrl: 'https://ready-1.example.invalid/', sourceUrl: 'https://ready-1.example.invalid/contact' }),
-  Object.assign({}, eligibleImportRows[6], { publicEmail: 'hello@missing-flags.example.invalid', officialWebsiteUrl: 'https://missing-flags.example.invalid/', sourceUrl: 'https://missing-flags.example.invalid/contact', operatorPublicBusinessContactConfirmed: '' })
-];
+const blockedImportRows = Array.from({ length: 19 }, (_, index) => Object.assign({}, eligibleImportRows[index % eligibleImportRows.length], {
+  targetDate: '2026-06-01',
+  publicEmail: `ready${index + 1}@ready-${index + 1}.example.invalid`,
+  officialWebsiteUrl: `https://ready-${index + 1}.example.invalid/`,
+  sourceUrl: `https://ready-${index + 1}.example.invalid/contact`,
+  importStatus: 'imported'
+}));
 installPublicBusinessLeadImportSheet(import1, eligibleImportRows.concat(blockedImportRows));
 const importBeforeWrites = import1.__state.propertyWriteCount + import1.__state.sheetWriteCount + import1.__state.urlFetchCount + import1.__state.gmailSendCount + import1.__state.draftCreateCount + import1.__state.triggerCreateCount;
 const importReadiness = import1.inspectGmailSalesPublicBusinessLeadImportReadiness_({ skipLog: true });
 assert.equal(importReadiness.status, 'pass');
 assert.equal(importReadiness.targetDate, '2026-07-04');
-assert.equal(importReadiness.readyInventoryCount, 11);
+assert.equal(importReadiness.readyInventoryCount, 30);
+assert.equal(importReadiness.rawReadyInventoryCount, 30);
+assert.equal(importReadiness.currentEligibleCount, 9);
+assert.equal(importReadiness.currentEligibleShortfallCount, 21);
 assert.equal(importReadiness.exactThirtyRequiredCount, 30);
-assert.equal(importReadiness.shortfallToExact30, 19);
+assert.equal(importReadiness.shortfallToExact30, 21);
 assert.equal(importReadiness.importSheetPresent, true);
-assert.equal(importReadiness.importRowCount, 31);
-assert.equal(importReadiness.importCandidateCount, 31);
-assert.equal(importReadiness.importEligibleCount, 25);
-assert.equal(importReadiness.importBlockedCount, 6);
-assert.equal(importReadiness.importFreemailBlockedCount >= 1, true);
-assert.equal(importReadiness.importPrivateContactBlockedCount >= 1, true);
-assert.equal(importReadiness.importBusinessDirectoryBlockedCount >= 1, true);
-assert.equal(importReadiness.importDncSuppressionCooldownBlockedCount >= 1, true);
-assert.equal(importReadiness.importDomainAlignmentBlockedCount >= 1, true);
-assert.equal(importReadiness.importDuplicateCount >= 1, true);
-assert.equal(importReadiness.proposedImportCount, 19);
-assert.equal(importReadiness.projectedReadyInventoryAfterImport, 30);
-assert.equal(importReadiness.projectedShortfallAfterImport, 0);
-assert.equal(importReadiness.exact30SatisfiedAfterProjectedImport, true);
+assert.equal(importReadiness.importRowCount, 30);
+assert.equal(importReadiness.importCandidateCount, 30);
+assert.equal(importReadiness.importEligibleCount, 11);
+assert.equal(importReadiness.importBlockedCount, 19);
+assert.equal(importReadiness.importBlockedReasonCounts.already_imported, 19);
+assert.equal(importReadiness.importBlockedReasonCounts.target_date_invalid, 19);
+assert.equal(importReadiness.importBlockedReasonCounts.duplicate_identity, 19);
+assert.equal(importReadiness.proposedImportCount, 11);
+assert.equal(importReadiness.projectedPotentialEligibleCountAfterReview, 20);
+assert.equal(importReadiness.projectedCurrentEligibleCountAfterImport, 9);
+assert.equal(importReadiness.projectedCurrentEligibleShortfallAfterImport, 21);
+assert.equal(importReadiness.exact30SatisfiedAfterProjectedImport, false);
 assert.equal(importReadiness.deterministicRuleId, 'no_api_public_business_lead_import_v1');
 assert.equal(importReadiness.operatorRecommendedNextFunction, 'runGmailSalesPublicBusinessLeadImportOnce');
 assert.equal(importReadiness.plannedExpectedApiClass, 'none');
@@ -3712,37 +3729,54 @@ assert.equal(importReadiness.triggerChanged, false);
 assert.equal(importReadiness.aiApiCalled, false);
 assert.equal(importReadiness.urlFetchExecuted, false);
 assert.equal(import1.__state.propertyWriteCount + import1.__state.sheetWriteCount + import1.__state.urlFetchCount + import1.__state.gmailSendCount + import1.__state.draftCreateCount + import1.__state.triggerCreateCount, importBeforeWrites);
+const zeroShortfallReadiness = import1.buildGmailSalesPublicBusinessLeadImportReadinessResult_({
+  currentEligibleCount: 30, currentEligibleShortfallCount: 0, importEligibleCount: 11, proposedImportCount: Math.min(11, 0, 30)
+});
+assert.equal(zeroShortfallReadiness.proposedImportCount, 0);
+assert.equal(zeroShortfallReadiness.plannedSafeToExecute, false);
+const zeroEligibleReadiness = import1.buildGmailSalesPublicBusinessLeadImportReadinessResult_({
+  currentEligibleCount: 9, currentEligibleShortfallCount: 21, importEligibleCount: 0, proposedImportCount: Math.min(0, 21, 30)
+});
+assert.equal(zeroEligibleReadiness.proposedImportCount, 0);
+assert.equal(zeroEligibleReadiness.plannedSafeToExecute, false);
 const importStep = import1.runGmailSalesPublicBusinessLeadImportOnce();
 assert.equal(importStep.status, 'pass');
-assert.equal(importStep.attemptedImportCount, 19);
-assert.equal(importStep.succeededImportCount, 19);
+assert.equal(importStep.attemptedImportCount, 11);
+assert.equal(importStep.succeededImportCount, 11);
 assert.equal(importStep.failedImportCount, 0);
-assert.equal(importStep.readBackMatchedCount, 19);
-assert.equal(importStep.importedByBasis.valid_business_contact_exception, 19);
-assert.equal(importStep.importedByRuleId.no_api_public_business_lead_import_v1, 19);
-assert.equal(importStep.readyInventoryCountBeforeImport, 11);
+assert.equal(importStep.readBackMatchedCount, 11);
+assert.equal(importStep.importedByBasis.pending_review, 11);
+assert.equal(importStep.importedByRuleId.no_api_public_business_lead_import_v1, 11);
+assert.equal(importStep.readyInventoryCountBeforeImport, 30);
 assert.equal(importStep.readyInventoryCountAfterImport, 30);
-assert.equal(importStep.shortfallToExact30BeforeImport, 19);
-assert.equal(importStep.shortfallToExact30AfterImport, 0);
-assert.equal(importStep.exact30SatisfiedAfterImport, true);
+assert.equal(importStep.shortfallToExact30BeforeImport, 21);
+assert.equal(importStep.currentEligibleCountAfterImport, 9);
+assert.equal(importStep.shortfallToExact30AfterImport, 21);
+assert.equal(importStep.exact30SatisfiedAfterImport, false);
+assert.equal(importStep.manifestReady, false);
 assert.equal(importStep.gmailSendExecuted, false);
 assert.equal(importStep.gmailDraftCreated, false);
 assert.equal(importStep.triggerChanged, false);
 assert.equal(importStep.aiApiCalled, false);
 assert.equal(importStep.urlFetchExecuted, false);
 const importSourceAfter = import1.readSheetObjects_(import1.__sourceSheet).items;
-assert.equal(importSourceAfter.filter((item) => String(item.row.deterministicRuleId || '') === 'no_api_public_business_lead_import_v1').length, 19);
+assert.equal(importSourceAfter.filter((item) => String(item.row.deterministicRuleId || '') === 'no_api_public_business_lead_import_v1').length, 11);
 assert.equal(importSourceAfter.filter((item) => String(item.row.contactBasisType || '') === 'valid_business_contact_exception').length, 30);
+assert.equal(importSourceAfter.filter((item) => String(item.row.deterministicRuleId || '') === 'no_api_public_business_lead_import_v1' && String(item.row.contactBasisType || '') === '').length, 11);
+const importBuilderBody = code.slice(code.indexOf('function buildGmailSalesPublicBusinessLeadImportSourceRow_'), code.indexOf('function inspectGmailSalesNoApiRecoveryBlockerDrilldown'));
+assert.equal(importBuilderBody.includes("contactBasisType: 'valid_business_contact_exception'"), false);
+assert.equal(importBuilderBody.includes('APPROVED_SEND_MANIFEST_JSON'), false);
+assert.equal(importBuilderBody.includes('UrlFetchApp'), false);
 const importSheetAfter = import1.readSheetObjects_(import1.__spreadsheet.getSheetByName('__ICHI_PUBLIC_BUSINESS_LEAD_IMPORT__')).items;
-assert.equal(importSheetAfter.filter((item) => String(item.row.importStatus || '') === 'imported').length, 19);
+assert.equal(importSheetAfter.filter((item) => String(item.row.importStatus || '') === 'imported').length, 30);
 const importNoApiStatus = import1.inspectGmailSalesNoApiRecoveryStatus({ skipLog: true });
-assert.equal(importNoApiStatus.publicBusinessLeadImportEligibleCount, 6);
-assert.equal(importNoApiStatus.publicBusinessLeadImportProjectedReadyInventory, 30);
-assert.equal(importNoApiStatus.publicBusinessLeadImportShortfallToExact30, 0);
+assert.equal(importNoApiStatus.publicBusinessLeadImportEligibleCount, 0);
+assert.equal(importNoApiStatus.publicBusinessLeadImportProjectedReadyInventory, 9);
+assert.equal(importNoApiStatus.publicBusinessLeadImportShortfallToExact30, 21);
 const importUsage = import1.inspectGmailSalesRecoveryUsageLedger();
-assert.equal(importUsage.publicBusinessLeadImportEligibleCount, 6);
-assert.equal(importUsage.publicBusinessLeadImportProjectedReadyInventory, 30);
-assert.equal(importUsage.publicBusinessLeadImportShortfallToExact30, 0);
+assert.equal(importUsage.publicBusinessLeadImportEligibleCount, 0);
+assert.equal(importUsage.publicBusinessLeadImportProjectedReadyInventory, 9);
+assert.equal(importUsage.publicBusinessLeadImportShortfallToExact30, 21);
 assert.equal(importUsage.aiApiCalled, false);
 assert.equal(importUsage.urlFetchExecuted, false);
 const importLogsJson = JSON.stringify(import1.__state.logs);

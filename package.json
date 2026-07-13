@@ -56,6 +56,7 @@
     "gmail:sales:contact-basis-review:test": "node scripts/gmail/test-gmail-sales-contact-basis-review.mjs",
     "gmail:sales:ai-contact-basis:test": "node scripts/gmail/test-gmail-sales-ai-contact-basis.mjs",
     "gmail:sales:automated-evidence-recovery:test": "node scripts/gmail/test-gmail-sales-automated-evidence-recovery.mjs",
+    "gmail:sales:public-business-lead-import-shortfall:test": "node scripts/gmail/test-gmail-sales-automated-evidence-recovery.mjs",
     "gmail:sales:evidence-enrichment:test": "node scripts/gmail/test-gmail-sales-official-evidence-enrichment.mjs",
     "gmail:sales:enrichment-readiness:test": "node scripts/gmail/test-gmail-sales-official-evidence-enrichment.mjs",
     "gmail:sales:source-digest-repair:test": "node scripts/gmail/test-gmail-sales-official-evidence-enrichment.mjs",

@@ -7273,12 +7273,12 @@ function runGmailSalesPublicBusinessLeadImportOnce() {
       SpreadsheetApp.flush();
       const readBack = rowFromCells_(sourceHeaders, context.sourceSheet.getRange(rowIndex, 1, 1, sourceHeaders.length).getValues()[0]);
       const matched = normalizeEmail_(readBack.email || readBack.contactEmail) === normalizeEmail_(prepared.email || prepared.contactEmail) &&
-        String(readBack.contactBasisType || '') === 'valid_business_contact_exception' &&
+        String(readBack.contactBasisType || '') === '' &&
         String(readBack.deterministicRuleId || '') === GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID;
       if (matched) {
         result.succeededImportCount += 1;
         result.readBackMatchedCount += 1;
-        result.importedByBasis.valid_business_contact_exception = Number(result.importedByBasis.valid_business_contact_exception || 0) + 1;
+        result.importedByBasis.pending_review = Number(result.importedByBasis.pending_review || 0) + 1;
         result.importedByRuleId[GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID] = Number(result.importedByRuleId[GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID] || 0) + 1;
         setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'importStatus', 'imported');
         setCellByHeader_(before.importSheet, importHeaders, target.rowIndex, 'importBlockedReason', '');
@@ -7293,13 +7293,17 @@ function runGmailSalesPublicBusinessLeadImportOnce() {
       }
     });
     SpreadsheetApp.flush();
-    const afterReady = countGmailSalesAllowedContactBasisRows_((readSheetObjects_(context.sourceSheet).items || []));
-    result.readyInventoryCountAfterImport = afterReady;
-    result.shortfallToExact30AfterImport = Math.max(0, gmailDailyExpectedCount_() - afterReady);
-    result.exact30SatisfiedAfterImport = afterReady >= gmailDailyExpectedCount_();
-    result.manifestReady = inspectGmailSalesAutomatedEvidenceManifestStatus_().manifestReady === true;
-    result.sendBlockedReason = result.exact30SatisfiedAfterImport ? '' : 'exact30_not_satisfied';
-    result.manifestBlockedReason = result.exact30SatisfiedAfterImport ? '' : 'ready_inventory_below_exact30';
+    const afterSourceItems = readSheetObjects_(context.sourceSheet).items || [];
+    const afterEligibility = evaluateGmailSalesManifestEligibility_(before.targetDate, { sourceRows: afterSourceItems });
+    result.readyInventoryCountAfterImport = countGmailSalesAllowedContactBasisRows_(afterSourceItems);
+    result.currentEligibleCountAfterImport = Number(afterEligibility.currentEligibleCount || 0);
+    result.shortfallToExact30AfterImport = Math.max(0, gmailDailyExpectedCount_() - result.currentEligibleCountAfterImport);
+    result.exact30SatisfiedAfterImport = result.currentEligibleCountAfterImport >= gmailDailyExpectedCount_();
+    result.manifestReady = false;
+    result.sendBlockedReason = 'manual_review_required';
+    result.manifestBlockedReason = 'imported_candidates_require_evidence_and_contact_basis_review';
+    result.recommendedNextAction = 'inspect_current_eligibility_after_import';
+    result.recommendedNextFunction = 'inspectGmailSalesCurrentEligibilityBreakdown';
     result.googleSheetsUpdated = result.succeededImportCount > 0 || result.failedImportCount > 0;
     if (result.failedImportCount > 0) result.status = result.succeededImportCount > 0 ? 'partial' : 'blocked';
     logGmailSalesJsonResult_(result);
@@ -7311,9 +7315,12 @@ function runGmailSalesPublicBusinessLeadImportOnce() {
 
 function collectGmailSalesPublicBusinessLeadImportReadiness_() {
   const context = getGmailSalesContactBasisReviewContext_({ allowMissing: true });
-  const targetDateDefault = normalizeDateText_(getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
+  const business = getGmailSalesBusinessDayContext_();
+  const targetDateDefault = normalizeDateText_(business.currentBusinessDate || getConfig_().currentJstDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyy-MM-dd'));
   const sourceData = context.sourceSheet ? readSheetObjects_(context.sourceSheet) : { headers: [], items: [] };
   const readyInventoryCount = countGmailSalesAllowedContactBasisRows_(sourceData.items || []);
+  let eligibility = evaluateGmailSalesManifestEligibility_(targetDateDefault, { sourceRows: sourceData.items || [] });
+  const currentEligibleShortfallCount = Math.max(0, gmailDailyExpectedCount_() - Number(eligibility.currentEligibleCount || 0));
   const importSheet = context.spreadsheet ? context.spreadsheet.getSheetByName(GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_SHEET_NAME) : null;
   const result = {
     event: 'gmail_sales_public_business_lead_import_readiness',
@@ -7321,8 +7328,16 @@ function collectGmailSalesPublicBusinessLeadImportReadiness_() {
     status: 'blocked',
     targetDate: targetDateDefault,
     readyInventoryCount,
+    rawReadyInventoryCount: readyInventoryCount,
+    eligibilityRawReadyInventoryCount: Number(eligibility.readyInventoryRawCount || 0),
+    currentEligibleCount: Number(eligibility.currentEligibleCount || 0),
+    currentEligibleUniqueCount: Number(eligibility.currentEligibleUniqueCount || 0),
+    currentEligibleShortfallCount,
+    sourceJoinFailedCount: Number(eligibility.sourceJoinFailedCount || 0),
+    digestConflictCount: Number(eligibility.digestConflictCount || 0),
+    evidencePayloadMissingCount: Number(eligibility.evidencePayloadMissingCount || 0),
     exactThirtyRequiredCount: gmailDailyExpectedCount_(),
-    shortfallToExact30: Math.max(0, gmailDailyExpectedCount_() - readyInventoryCount),
+    shortfallToExact30: currentEligibleShortfallCount,
     importSheet,
     importSheetPresent: Boolean(importSheet),
     importRowCount: 0,
@@ -7337,9 +7352,13 @@ function collectGmailSalesPublicBusinessLeadImportReadiness_() {
     importDncSuppressionCooldownBlockedCount: 0,
     importDomainAlignmentBlockedCount: 0,
     proposedImportCount: 0,
-    projectedReadyInventoryAfterImport: readyInventoryCount,
-    projectedShortfallAfterImport: Math.max(0, gmailDailyExpectedCount_() - readyInventoryCount),
-    exact30SatisfiedAfterProjectedImport: readyInventoryCount >= gmailDailyExpectedCount_(),
+    projectedReadyInventoryAfterImport: Number(eligibility.currentEligibleCount || 0),
+    projectedSourceInventoryAfterImport: sourceData.items.length,
+    projectedPotentialEligibleCountAfterReview: Number(eligibility.currentEligibleCount || 0),
+    projectedCurrentEligibleCountAfterImport: Number(eligibility.currentEligibleCount || 0),
+    projectedCurrentEligibleShortfallAfterImport: currentEligibleShortfallCount,
+    projectedShortfallAfterImport: currentEligibleShortfallCount,
+    exact30SatisfiedAfterProjectedImport: Number(eligibility.currentEligibleCount || 0) >= gmailDailyExpectedCount_(),
     deterministicRuleId: GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID,
     eligibleItems: [],
     blockedReason: ''
@@ -7356,16 +7375,17 @@ function collectGmailSalesPublicBusinessLeadImportReadiness_() {
   result.importRowCount = (importData.items || []).length;
   const sourceEmailLookup = buildGmailSalesSourceEmailLookup_(sourceData.items || []);
   const importEmailCounts = {};
+  const eligibleTargetDates = {};
   (importData.items || []).forEach((item) => {
     const email = normalizeEmail_(item.row.publicEmail || item.row.email || item.row.contactEmail || '');
     if (email) importEmailCounts[email] = Number(importEmailCounts[email] || 0) + 1;
   });
   (importData.items || []).forEach((item) => {
     const evaluation = evaluateGmailSalesPublicBusinessLeadImportRow_(item, { currentDate: targetDateDefault, sourceEmailLookup, importEmailCounts });
-    if (evaluation.targetDate) result.targetDate = evaluation.targetDate;
     if (evaluation.isCandidate) result.importCandidateCount += 1;
     if (evaluation.ok) {
       result.importEligibleCount += 1;
+      if (evaluation.targetDate) eligibleTargetDates[evaluation.targetDate] = true;
       result.eligibleItems.push(Object.assign({}, evaluation, { row: item.row, rowIndex: item.rowIndex }));
     } else if (evaluation.isCandidate) {
       result.importBlockedCount += 1;
@@ -7378,10 +7398,28 @@ function collectGmailSalesPublicBusinessLeadImportReadiness_() {
     if ((evaluation.blockedReasons || []).indexOf('dnc_suppression_cooldown') !== -1) result.importDncSuppressionCooldownBlockedCount += 1;
     if ((evaluation.blockedReasons || []).indexOf('domain_alignment_failed') !== -1) result.importDomainAlignmentBlockedCount += 1;
   });
-  result.proposedImportCount = Math.min(result.shortfallToExact30, result.importEligibleCount);
-  result.projectedReadyInventoryAfterImport = readyInventoryCount + result.proposedImportCount;
-  result.projectedShortfallAfterImport = Math.max(0, gmailDailyExpectedCount_() - result.projectedReadyInventoryAfterImport);
-  result.exact30SatisfiedAfterProjectedImport = result.projectedReadyInventoryAfterImport >= gmailDailyExpectedCount_();
+  const targetDates = Object.keys(eligibleTargetDates);
+  if (targetDates.length === 1 && targetDates[0] !== result.targetDate) {
+    result.targetDate = targetDates[0];
+    eligibility = evaluateGmailSalesManifestEligibility_(result.targetDate, { sourceRows: sourceData.items || [] });
+    result.rawReadyInventoryCount = readyInventoryCount;
+    result.eligibilityRawReadyInventoryCount = Number(eligibility.readyInventoryRawCount || 0);
+    result.currentEligibleCount = Number(eligibility.currentEligibleCount || 0);
+    result.currentEligibleUniqueCount = Number(eligibility.currentEligibleUniqueCount || 0);
+    result.currentEligibleShortfallCount = Math.max(0, gmailDailyExpectedCount_() - result.currentEligibleCount);
+    result.shortfallToExact30 = result.currentEligibleShortfallCount;
+    result.sourceJoinFailedCount = Number(eligibility.sourceJoinFailedCount || 0);
+    result.digestConflictCount = Number(eligibility.digestConflictCount || 0);
+    result.evidencePayloadMissingCount = Number(eligibility.evidencePayloadMissingCount || 0);
+  }
+  result.proposedImportCount = Math.min(result.currentEligibleShortfallCount, result.importEligibleCount, gmailDailyExpectedCount_());
+  result.projectedReadyInventoryAfterImport = result.currentEligibleCount;
+  result.projectedSourceInventoryAfterImport = sourceData.items.length + result.proposedImportCount;
+  result.projectedPotentialEligibleCountAfterReview = Math.min(gmailDailyExpectedCount_(), result.currentEligibleCount + result.proposedImportCount);
+  result.projectedCurrentEligibleCountAfterImport = result.currentEligibleCount;
+  result.projectedCurrentEligibleShortfallAfterImport = result.currentEligibleShortfallCount;
+  result.projectedShortfallAfterImport = result.currentEligibleShortfallCount;
+  result.exact30SatisfiedAfterProjectedImport = result.currentEligibleCount >= gmailDailyExpectedCount_();
   result.status = result.proposedImportCount > 0 ? 'pass' : 'blocked';
   result.blockedReason = result.status === 'pass' ? '' : (result.importCandidateCount <= 0 ? 'import_candidate_missing' : 'no_import_eligible_candidate');
   return result;
@@ -7396,6 +7434,14 @@ function buildGmailSalesPublicBusinessLeadImportReadinessResult_(collected) {
     status: value.status || (proposed > 0 ? 'pass' : 'blocked'),
     targetDate: value.targetDate || '',
     readyInventoryCount: Number(value.readyInventoryCount || 0),
+    rawReadyInventoryCount: Number(value.rawReadyInventoryCount !== undefined ? value.rawReadyInventoryCount : (value.readyInventoryCount || 0)),
+    eligibilityRawReadyInventoryCount: Number(value.eligibilityRawReadyInventoryCount || 0),
+    currentEligibleCount: Number(value.currentEligibleCount || 0),
+    currentEligibleUniqueCount: Number(value.currentEligibleUniqueCount || 0),
+    currentEligibleShortfallCount: Number(value.currentEligibleShortfallCount !== undefined ? value.currentEligibleShortfallCount : (value.shortfallToExact30 || 0)),
+    sourceJoinFailedCount: Number(value.sourceJoinFailedCount || 0),
+    digestConflictCount: Number(value.digestConflictCount || 0),
+    evidencePayloadMissingCount: Number(value.evidencePayloadMissingCount || 0),
     exactThirtyRequiredCount: gmailDailyExpectedCount_(),
     shortfallToExact30: Number(value.shortfallToExact30 || 0),
     importSheetPresent: value.importSheetPresent === true,
@@ -7412,6 +7458,10 @@ function buildGmailSalesPublicBusinessLeadImportReadinessResult_(collected) {
     importDomainAlignmentBlockedCount: Number(value.importDomainAlignmentBlockedCount || 0),
     proposedImportCount: proposed,
     projectedReadyInventoryAfterImport: Number(value.projectedReadyInventoryAfterImport !== undefined ? value.projectedReadyInventoryAfterImport : (value.readyInventoryCount || 0)),
+    projectedSourceInventoryAfterImport: Number(value.projectedSourceInventoryAfterImport || 0),
+    projectedPotentialEligibleCountAfterReview: Number(value.projectedPotentialEligibleCountAfterReview !== undefined ? value.projectedPotentialEligibleCountAfterReview : (value.currentEligibleCount || 0)),
+    projectedCurrentEligibleCountAfterImport: Number(value.projectedCurrentEligibleCountAfterImport !== undefined ? value.projectedCurrentEligibleCountAfterImport : (value.currentEligibleCount || 0)),
+    projectedCurrentEligibleShortfallAfterImport: Number(value.projectedCurrentEligibleShortfallAfterImport !== undefined ? value.projectedCurrentEligibleShortfallAfterImport : (value.currentEligibleShortfallCount || 0)),
     projectedShortfallAfterImport: Number(value.projectedShortfallAfterImport !== undefined ? value.projectedShortfallAfterImport : (value.shortfallToExact30 || 0)),
     exact30SatisfiedAfterProjectedImport: value.exact30SatisfiedAfterProjectedImport === true,
     deterministicRuleId: GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID,
@@ -7423,8 +7473,8 @@ function buildGmailSalesPublicBusinessLeadImportReadinessResult_(collected) {
     plannedExpectedApiClass: 'none',
     plannedExpectedWriteClass: 'sheets_import_review_only',
     plannedSafeToExecute: proposed > 0,
-    sendBlockedReason: Number(value.projectedReadyInventoryAfterImport || 0) >= gmailDailyExpectedCount_() ? '' : 'exact30_not_satisfied',
-    manifestBlockedReason: Number(value.projectedReadyInventoryAfterImport || 0) >= gmailDailyExpectedCount_() ? '' : 'ready_inventory_below_exact30',
+    sendBlockedReason: Number(value.currentEligibleCount || 0) >= gmailDailyExpectedCount_() ? '' : 'exact30_not_satisfied',
+    manifestBlockedReason: Number(value.currentEligibleCount || 0) >= gmailDailyExpectedCount_() ? '' : 'current_eligible_inventory_below_exact30',
     gmailSendExecuted: false,
     gmailDraftCreated: false,
     googleSheetsUpdated: value.googleSheetsUpdated === true,
@@ -7590,11 +7640,11 @@ function buildGmailSalesPublicBusinessLeadImportSourceRow_(target, importedAt) {
     sourceReference,
     issueHypothesis: String(row.offerSegment || '').trim(),
     salesAngle: String(row.offerSegment || '').trim(),
-    status: 'ready',
-    sendDate: targetDate,
+    status: 'needs_review',
+    sendDate: '',
     nextActionDate: targetDate,
     dedupeKey: 'public-import|' + target.candidateHashPrefix,
-    sendBatchId: 'gmail-sales-' + targetDate,
+    sendBatchId: '',
     sentAt: '',
     sentBy: '',
     sentStatus: '',
@@ -7604,7 +7654,7 @@ function buildGmailSalesPublicBusinessLeadImportSourceRow_(target, importedAt) {
     doNotContact: '',
     lastCheckedAt: targetDate,
     notes: 'manual_public_business_lead_import',
-    sendState: GMAIL_SEND_STATE.ready,
+    sendState: '',
     sendRunId: '',
     sendReservedAt: '',
     sendAttemptCount: 0,
@@ -7612,18 +7662,18 @@ function buildGmailSalesPublicBusinessLeadImportSourceRow_(target, importedAt) {
     approvedCandidateDigest: '',
     deliveryUncertainAt: '',
     lastSendErrorCode: '',
-    contactBasisType: 'valid_business_contact_exception',
-    contactBasisRecordedAt: importedAt,
+    contactBasisType: '',
+    contactBasisRecordedAt: '',
     sourceType,
     sourceReferenceHash,
-    optOutAvailable: 'true',
+    optOutAvailable: '',
     lastVerifiedAt: importedAt,
     suppressionCheckedAt: importedAt,
     historyCheckedAt: importedAt,
     recoveredFrom: 'manual_public_business_lead_import',
     importedFrom: 'manual_public_business_lead_import',
     deterministicRuleId: GMAIL_SALES_PUBLIC_BUSINESS_LEAD_IMPORT_RULE_ID,
-    noApiDecisionReason: 'operator_confirmed_public_business_contact'
+    noApiDecisionReason: 'operator_confirmed_public_source_pending_contact_basis_review'
   };
 }
 
