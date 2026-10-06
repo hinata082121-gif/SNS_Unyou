@@ -384,16 +384,16 @@ function SectionHeading({
 function Header() {
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-white/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6 lg:px-8">
         <a
           href="#"
           aria-label={`${SITE_NAME}（${SITE_LABEL}）トップへ`}
           className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus"
         >
-          <p className="text-base font-black leading-none text-primary">
+          <p className="text-sm font-black leading-none text-primary sm:text-base">
             {SITE_NAME}
           </p>
-          <p className="mt-1 text-xs font-medium text-secondary">
+          <p className="mt-1 hidden text-xs font-medium text-secondary sm:block">
             {SITE_LABEL}
           </p>
         </a>
