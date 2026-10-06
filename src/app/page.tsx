@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { ContactLink } from "@/components/contact-link";
+import { MobileNav } from "@/components/mobile-nav";
 import {
   CONTACT_EMAIL,
   SITE_LABEL,
@@ -392,13 +393,13 @@ function Header() {
           <p className="text-base font-black leading-none text-primary">
             {SITE_NAME}
           </p>
-          <p className="mt-1 text-[11px] font-medium text-secondary">
+          <p className="mt-1 text-xs font-medium text-secondary">
             {SITE_LABEL}
           </p>
         </a>
         <nav
           aria-label="主要ナビゲーション"
-          className="hidden items-center gap-7 md:flex"
+          className="hidden items-center gap-7 lg:flex"
         >
           {navItems.map((item) => (
             <a
@@ -410,12 +411,15 @@ function Header() {
             </a>
           ))}
         </nav>
-        <ConsultationLink
-          className="min-w-28 px-4 sm:min-w-32"
-          eventLocation="header"
-        >
-          無料相談
-        </ConsultationLink>
+        <div className="flex items-center gap-2">
+          <ConsultationLink
+            className="min-w-28 px-4 sm:min-w-32"
+            eventLocation="header"
+          >
+            無料相談
+          </ConsultationLink>
+          <MobileNav items={[...navItems, { label: "お問い合わせ", href: createContactHref() }]} />
+        </div>
       </div>
     </header>
   );
@@ -460,7 +464,7 @@ function HeroDashboard() {
       <div className="mt-5 rounded-lg bg-muted p-4">
         <div className="flex items-center justify-between gap-4">
           <p className="text-sm font-bold text-primary">投稿文の品質確認中</p>
-          <p className="font-number text-xs font-bold text-muted-text">80%</p>
+          <p className="font-number text-xs font-bold text-secondary">80%</p>
         </div>
         <div className="mt-3 h-2 rounded-full bg-line">
           <div className="h-2 w-4/5 rounded-full bg-black" />
@@ -556,18 +560,18 @@ function Problem() {
 
 function Pricing() {
   return (
-    <section id="pricing" className="bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="pricing" className="scroll-mt-20 bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading
           title="料金プラン"
           body="目的や運用量に合わせて選べる3つのプラン。まずは比較しやすいよう、主要な違いを一覧で整理しています。"
         />
-        <div className="-mx-4 overflow-x-auto px-4 pb-4 sm:mx-0 sm:px-0 lg:overflow-visible">
-          <div className="flex snap-x snap-mandatory gap-4 lg:grid lg:grid-cols-3 lg:items-stretch">
+        <div>
+          <div className="grid gap-4 lg:grid-cols-3 lg:items-stretch">
             {pricingPlans.map((plan) => (
               <article
                 key={plan.name}
-                className={`relative flex min-w-[82vw] snap-center flex-col rounded-xl border p-5 sm:min-w-[360px] lg:min-w-0 ${
+                className={`relative flex flex-col rounded-xl border p-5 ${
                   plan.highlighted
                     ? "border-black bg-black text-white"
                     : "border-card-border bg-card text-primary"
@@ -709,7 +713,7 @@ function ListBlock({
 
 function Solution() {
   return (
-    <section id="solution" className="bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="solution" className="scroll-mt-20 bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading
           title="効率化と人の確認で、続けやすい運用へ"
@@ -772,7 +776,7 @@ function PricingReport() {
 
 function Workflow() {
   return (
-    <section id="workflow" className="bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="workflow" className="scroll-mt-20 bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <SectionHeading title="ご契約から運用開始までの流れ" />
         <div className="relative grid gap-4 lg:grid-cols-5">
@@ -885,7 +889,7 @@ function Trust() {
 
 function FAQ() {
   return (
-    <section id="faq" className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
+    <section id="faq" className="scroll-mt-20 bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
       <div className="mx-auto max-w-4xl">
         <SectionHeading title="よくある質問" />
         <div className="space-y-3">
@@ -981,7 +985,7 @@ function ChooseService() {
     <section id="choose-service" className="scroll-mt-20 bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8" aria-labelledby="choose-service-title">
       <div className="mx-auto max-w-6xl">
         <div className="max-w-3xl">
-          <p className="text-xs font-bold tracking-widest text-muted-text">ICHI Social × ICHI AI Works</p>
+          <p className="text-xs font-bold tracking-widest text-secondary">ICHI Social × ICHI AI Works</p>
           <h2 id="choose-service-title" className="mt-3 text-2xl font-black leading-snug text-primary sm:text-4xl">SNS発信の進め方で選ぶ</h2>
           <p className="mt-4 text-base leading-8 text-secondary">自分で投稿を作るか、運用を任せるか。目的に合わせて、それぞれのサービスをご案内します。</p>
         </div>
