@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 const operatorRows = [
   ["サービス名", "ICHI Social"],
   ["運営者", "佐々木陽向"],
+  ["所在地", "〒115-0052 東京都北区赤羽北2-1-15"],
   ["連絡先", CONTACT_EMAIL],
   ["事業内容", "小規模事業者向けSNS運用支援"],
   ["対応内容", "投稿企画、原稿作成、投稿代行、月次レポート、改善提案"],
@@ -31,9 +32,9 @@ export default function OperatorPage() {
           ))}
         </dl>
       </LegalSection>
-      <LegalSection title="住所・電話番号について">
+      <LegalSection title="電話番号について">
         <p>
-          住所および電話番号は、現時点ではサイト上に掲載していません。契約や請求等で必要な場合は、契約時に個別に開示します。
+          電話番号は、現時点ではサイト上に掲載していません。契約や請求等で必要な場合は、契約時に個別に開示します。
         </p>
       </LegalSection>
     </LegalPage>
