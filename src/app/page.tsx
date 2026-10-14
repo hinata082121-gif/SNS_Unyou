@@ -986,21 +986,16 @@ function ChooseService() {
       <div className="mx-auto max-w-6xl">
         <div className="max-w-3xl">
           <p className="text-xs font-bold tracking-widest text-secondary">ICHI Social × ICHI AI Works</p>
-          <h2 id="choose-service-title" className="mt-3 text-2xl font-black leading-snug text-primary sm:text-4xl">SNS発信の進め方で選ぶ</h2>
-          <p className="mt-4 text-base leading-8 text-secondary">自分で投稿を作るか、運用を任せるか。目的に合わせて、それぞれのサービスをご案内します。</p>
+          <h2 id="choose-service-title" className="mt-3 text-2xl font-black leading-snug text-primary sm:text-4xl">ICHIのサービス</h2>
+          <p className="mt-4 text-base leading-8 text-secondary">社内業務を整理するツールの開発と、SNS運用の支援をご案内します。</p>
         </div>
         <div className="mt-8 grid gap-4 md:grid-cols-2">
           <article className="rounded-xl border border-card-border bg-white p-6 sm:p-8">
-            <p className="text-xs font-bold text-muted-text">自分で投稿を作りたい方</p>
+            <p className="text-xs font-bold text-muted-text">社内業務を整理したい方</p>
             <h3 className="mt-3 text-xl font-black text-primary">ICHI AI Works</h3>
-            <p className="mt-4 text-sm leading-7 text-secondary">「ひとり広報AIキット」は、小規模事業者が自分で発信を考えるための買い切りPDF・Excel・TXT教材として準備中です。自動投稿、投稿代行、個別の運用サービスは含まれません。</p>
-            <p className="mt-3 text-sm leading-7 text-secondary">成人向け手芸・ハンドメイド教室を個人で運営する方向けに、無料mini試用を初回最大3名で利用テストを行います。募集・受付状況はInstagramでご確認ください。</p>
-            <details className="mt-4 rounded-lg border border-line bg-muted p-4 text-sm leading-7 text-secondary">
-              <summary className="cursor-pointer font-bold text-primary">無料mini試用の条件を見る</summary>
-              <p className="mt-3">ご自身のInstagramを運用し、投稿画像を用意できる方が対象です。PCでExcel 2021またはMicrosoft 365とChatGPTを使います。7日間の使用後に5問の感想をお願いします。無料・謝礼なしで、好意的なレビューや公開投稿は不要です。</p>
-              <p className="mt-2">応募はInstagram DMで条件を確認します。実際のExcelとスマートフォンでの検証はまだ完了していません。条件を確認したうえで、試用のご案内をお送りします。</p>
-            </details>
-            <a href="https://www.instagram.com/ichi_aiworks/" target="_blank" rel="noopener noreferrer" className="mt-6 inline-flex min-h-12 items-center rounded-lg border border-black px-5 text-sm font-bold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">AI WorksのInstagramを見る ↗</a>
+            <p className="mt-4 text-sm leading-7 text-secondary">中小企業向けに、日々の業務を整理し、社内の確認や引き継ぎを進めやすくするツールを開発しています。第一弾は「見積・返答待ち管理ツール」です。現在開発中です。</p>
+            <p className="mt-3 text-sm leading-7 text-secondary">案件の担当者、次の対応、期限、やり取りの履歴を整理するためのツールです。現在の管理方法や困りごと、導入への関心をお聞かせください。</p>
+            <a href="mailto:ichiaiworks@gmail.com" className="mt-6 inline-flex min-h-12 items-center rounded-lg border border-black px-5 text-sm font-bold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">業務の困りごとを相談する</a>
           </article>
           <article className="rounded-xl border border-card-border bg-white p-6 sm:p-8">
             <p className="text-xs font-bold text-muted-text">投稿や運用を任せたい方</p>
@@ -1009,7 +1004,7 @@ function ChooseService() {
             <a href={createContactHref()} className="mt-6 inline-flex min-h-12 items-center rounded-lg bg-black px-5 text-sm font-bold text-white hover:bg-soft-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">ICHI Socialに相談する</a>
           </article>
         </div>
-        <p className="mt-6 text-sm leading-7 text-secondary">サービスごとに窓口は異なります。AI Worksのお問い合わせは上記InstagramのDMへ、ICHI Socialのご相談はこのサイトの問い合わせ先へお送りください。</p>
+        <p className="mt-6 text-sm leading-7 text-secondary">サービスごとに窓口は異なります。AI Worksについてはメールで現在の業務や困りごとをご相談ください。ICHI Socialのご相談はこのサイトの問い合わせ先へお送りください。</p>
       </div>
     </section>
   );
