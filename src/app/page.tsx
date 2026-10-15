@@ -1007,7 +1007,17 @@ function ChooseService() {
             <p className="text-xs font-bold text-muted-text">Webサイトを整えたい方</p>
             <h3 className="mt-3 text-xl font-black text-primary">HP・LP制作／運用支援</h3>
             <p className="mt-4 text-sm leading-7 text-secondary">ホームページやランディングページの制作、既存ページの文章・画像の更新をご相談いただけます。スマホでの表示や、お問い合わせまでの導線も確認します。</p>
-            <p className="mt-3 text-sm leading-7 text-secondary">案件ごとに現在の環境とご希望の内容を確認し、対応範囲を合意したうえで進めます。費用は個別にお見積もりします。</p>
+            <p className="mt-3 text-sm leading-7 text-secondary">案件ごとに現在の環境とご希望の内容を確認し、対応範囲を合意したうえで進めます。</p>
+            <div className="mt-4 rounded-lg border border-line bg-muted p-4 text-sm leading-7 text-secondary">
+              <p className="font-bold text-primary">HP・LP制作の料金（税込）</p>
+              <p className="mt-2 font-bold text-primary">先着3社限定</p>
+              <p>LP制作 95,000円／HP制作 180,000円／月額更新 10,000円</p>
+              <p className="mt-2 font-bold text-primary">通常料金</p>
+              <p>LP制作 110,000円／HP制作 200,000円／月額更新 11,000円</p>
+              <p className="mt-2">先着3社はHP・LPを合算した契約成立順です。対象3社の月額更新10,000円は、月額更新のご契約を継続中は据え置きます。ICHI Socialの初期設計費の先着3社とは別枠です。</p>
+              <p className="mt-2">LPは1ページ・6セクションまで、HPは5ページまで。制作修正は2往復、文章・画像などの素材はお客様からご支給いただきます。</p>
+              <p className="mt-2">月額更新は1サイトにつき月2回・合計60分まで（連絡・確認を含む）。常時監視と障害復旧は対象外です。外部サービス費用は別途、追加機能は個別にお見積もりします。</p>
+            </div>
             <a href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("【ICHI】HP・LP制作の相談")}`} className="mt-6 inline-flex min-h-12 items-center rounded-lg border border-black px-5 text-sm font-bold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">HP・LP制作を相談する</a>
           </article>
         </div>
