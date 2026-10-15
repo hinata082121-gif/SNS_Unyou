@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Image from "next/image";
 import { ContactLink } from "@/components/contact-link";
 import { MobileNav } from "@/components/mobile-nav";
 import {
@@ -1020,6 +1021,63 @@ function ChooseService() {
             </div>
             <a href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("【ICHI】HP・LP制作の相談")}`} className="mt-6 inline-flex min-h-12 items-center rounded-lg border border-black px-5 text-sm font-bold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">HP・LP制作を相談する</a>
           </article>
+        </div>
+        <div className="mt-12 border-t border-line pt-10">
+          <h3 className="text-xl font-black text-primary sm:text-2xl">HP・LP デザインサンプル</h3>
+          <p className="mt-3 text-sm leading-7 text-secondary">3業種のHPとLPをそれぞれご覧いただけます。すべて架空のデザインサンプルであり、実案件の制作実績ではありません。</p>
+          <div className="mt-6 grid gap-6 lg:grid-cols-3">
+            {[
+              {
+                industry: "美容室「凪」",
+                samples: [
+                  { type: "HP", src: "/samples/salon_hp.webp", alt: "架空の美容室「凪」のホームページのデザインサンプル全体" },
+                  { type: "LP", src: "/samples/salon_lp.webp", alt: "架空の美容室「凪」のランディングページのデザインサンプル全体" },
+                ],
+              },
+              {
+                industry: "建築「余白設計室」",
+                samples: [
+                  { type: "HP", src: "/samples/architecture_hp.webp", alt: "架空の建築事務所「余白設計室」のホームページのデザインサンプル全体" },
+                  { type: "LP", src: "/samples/architecture_lp.webp", alt: "架空の建築事務所「余白設計室」のランディングページのデザインサンプル全体" },
+                ],
+              },
+              {
+                industry: "日本茶「山と茶」",
+                samples: [
+                  { type: "HP", src: "/samples/tea_hp.webp", alt: "架空の日本茶ブランド「山と茶」のホームページのデザインサンプル全体" },
+                  { type: "LP", src: "/samples/tea_lp.webp", alt: "架空の日本茶ブランド「山と茶」のランディングページのデザインサンプル全体" },
+                ],
+              },
+            ].map((group) => (
+              <div key={group.industry} className="rounded-xl border border-card-border bg-white p-4 sm:p-5">
+                <h4 className="text-base font-bold text-primary">{group.industry}</h4>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+                  {group.samples.map((sample) => (
+                    <a
+                      key={sample.type}
+                      href={sample.src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${group.industry}の${sample.type}デザインサンプルを画像で拡大する`}
+                      className="block rounded-lg border border-line p-3 transition hover:border-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                    >
+                      <p className="mb-2 text-sm font-bold text-primary">{sample.type}</p>
+                      <Image
+                        src={sample.src}
+                        alt={sample.alt}
+                        width={1024}
+                        height={1536}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-72 w-full bg-muted object-contain"
+                      />
+                      <span className="mt-2 block text-xs font-bold text-secondary">全体画像を拡大して見る ↗</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         <p className="mt-6 text-sm leading-7 text-secondary">サービスごとに窓口は異なります。AI Worksについてはメールで現在の業務や困りごとをご相談ください。ICHI SocialとHP・LP制作のご相談はこのサイトの問い合わせ先へお送りください。</p>
       </div>
