@@ -987,9 +987,9 @@ function ChooseService() {
         <div className="max-w-3xl">
           <p className="text-xs font-bold tracking-widest text-secondary">ICHI Social × ICHI AI Works</p>
           <h2 id="choose-service-title" className="mt-3 text-2xl font-black leading-snug text-primary sm:text-4xl">ICHIのサービス</h2>
-          <p className="mt-4 text-base leading-8 text-secondary">社内業務を整理するツールの開発と、SNS運用の支援をご案内します。</p>
+          <p className="mt-4 text-base leading-8 text-secondary">社内業務を整理するツールの開発、SNS運用の支援、HP・LP制作と運用支援をご案内します。</p>
         </div>
-        <div className="mt-8 grid gap-4 md:grid-cols-2">
+        <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <article className="rounded-xl border border-card-border bg-white p-6 sm:p-8">
             <p className="text-xs font-bold text-muted-text">社内業務を整理したい方</p>
             <h3 className="mt-3 text-xl font-black text-primary">ICHI AI Works</h3>
@@ -1003,8 +1003,15 @@ function ChooseService() {
             <p className="mt-4 text-sm leading-7 text-secondary">投稿案の作成から運用の相談まで、このサイトでご案内しているサービスです。まずは無料投稿案3本についてご相談いただけます。</p>
             <a href={createContactHref()} className="mt-6 inline-flex min-h-12 items-center rounded-lg bg-black px-5 text-sm font-bold text-white hover:bg-soft-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">ICHI Socialに相談する</a>
           </article>
+          <article className="rounded-xl border border-card-border bg-white p-6 sm:p-8">
+            <p className="text-xs font-bold text-muted-text">Webサイトを整えたい方</p>
+            <h3 className="mt-3 text-xl font-black text-primary">HP・LP制作／運用支援</h3>
+            <p className="mt-4 text-sm leading-7 text-secondary">ホームページやランディングページの制作、既存ページの文章・画像の更新をご相談いただけます。スマホでの表示や、お問い合わせまでの導線も確認します。</p>
+            <p className="mt-3 text-sm leading-7 text-secondary">案件ごとに現在の環境とご希望の内容を確認し、対応範囲を合意したうえで進めます。費用は個別にお見積もりします。</p>
+            <a href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("【ICHI】HP・LP制作の相談")}`} className="mt-6 inline-flex min-h-12 items-center rounded-lg border border-black px-5 text-sm font-bold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">HP・LP制作を相談する</a>
+          </article>
         </div>
-        <p className="mt-6 text-sm leading-7 text-secondary">サービスごとに窓口は異なります。AI Worksについてはメールで現在の業務や困りごとをご相談ください。ICHI Socialのご相談はこのサイトの問い合わせ先へお送りください。</p>
+        <p className="mt-6 text-sm leading-7 text-secondary">サービスごとに窓口は異なります。AI Worksについてはメールで現在の業務や困りごとをご相談ください。ICHI SocialとHP・LP制作のご相談はこのサイトの問い合わせ先へお送りください。</p>
       </div>
     </section>
   );
