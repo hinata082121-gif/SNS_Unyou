@@ -1,1109 +1,256 @@
-import type { ReactNode } from "react";
-import Image from "next/image";
-import { ContactLink } from "@/components/contact-link";
-import { MobileNav } from "@/components/mobile-nav";
-import {
-  CONTACT_EMAIL,
-  SITE_LABEL,
-  SITE_NAME,
-  createContactHref,
-} from "@/lib/site";
+import type { Metadata } from "next";
+import { RedesignEffects } from "@/components/redesign-effects";
+import "./redesign.css";
 
-const navItems = [
-  { label: "AI Worksとの違い", href: "#choose-service" },
-  { label: "サービス内容", href: "#solution" },
-  { label: "料金", href: "#pricing" },
-  { label: "運用フロー", href: "#workflow" },
-  { label: "FAQ", href: "#faq" },
-];
-
-const footerLinks = [
-  ...navItems,
-  { label: "プライバシーポリシー", href: "/privacy" },
-  { label: "運営者情報", href: "/operator" },
-  { label: "サービス提供条件", href: "/terms" },
-];
-
-const problems = [
-  {
-    label: "01 / 継続",
-    title: "投稿が続かない",
-    body: "忙しくて、SNS投稿が後回しになってしまう。",
+export const metadata: Metadata = {
+  title: {
+    absolute: "ICHI｜小規模事業者のためのSNS運用・業務整理・HP制作",
   },
-  {
-    label: "02 / 企画",
-    title: "ネタがない",
-    body: "毎月何を投稿すればよいか分からず、発信が止まる。",
+  description:
+    "ICHIは、小規模事業者・個人事業主・中小企業向けに、SNS運用代行（ICHI Social）、業務整理ツールの開発（ICHI AI Works）、HP・LP制作支援を行う事業です。",
+  alternates: {
+    canonical: "/",
   },
-  {
-    label: "03 / 改善",
-    title: "効果が見えない",
-    body: "反応は見ているが、次の改善に繋がっていない。",
-  },
-  {
-    label: "04 / 予算",
-    title: "外注は高い",
-    body: "本格的なSNS代理店は予算的に厳しい。",
-  },
-];
-
-const pricingPlans = [
-  {
-    name: "ライト",
-    price: "¥38,000",
-    tag: "まず始めたい個人・小規模向け",
-    features: [
-      "1SNS対応",
-      "投稿企画 月8本",
-      "投稿文作成",
-      "月次レポート",
-      "チャット相談",
-    ],
-    cta: "ライトで相談する",
-    highlighted: false,
-  },
-  {
-    name: "スタンダード",
-    price: "¥78,000",
-    tag: "投稿代行と改善提案まで任せたい方向け",
-    features: [
-      "2SNS対応",
-      "投稿フル代行 月16本",
-      "コメント監視",
-      "月次レポート＋改善提案",
-      "リサーチ補助",
-      "運用フロー最適化",
-    ],
-    cta: "スタンダードで相談する",
-    highlighted: true,
-  },
-  {
-    name: "プレミアム",
-    price: "¥140,000",
-    tag: "集客・採用を本格化したい方向け",
-    features: [
-      "3SNSまで対応",
-      "投稿フル代行 月30本〜",
-      "エンゲージメント運用",
-      "月1回の戦略MTG",
-      "成果連動オプション相談可",
-      "改善施策の優先提案",
-    ],
-    cta: "プレミアムで相談する",
-    highlighted: false,
-  },
-];
-
-const planEventMap: Record<string, "light" | "standard" | "premium"> = {
-  ライト: "light",
-  スタンダード: "standard",
-  プレミアム: "premium",
 };
 
-const pricingDetails = [
-  {
-    name: "ライト詳細",
-    suited: [
-      "SNS運用を始めたい",
-      "投稿ネタを安定して作りたい",
-      "まずは低コストで試したい",
-    ],
-    included: ["月8本の投稿企画", "投稿文作成", "簡易レポート", "チャット相談"],
-    notes: [
-      "投稿作業は顧客側実施、または簡易代行は要相談",
-      "撮影・高度な画像制作は含まない",
-    ],
-  },
-  {
-    name: "スタンダード詳細",
-    suited: [
-      "投稿作成から投稿代行まで任せたい",
-      "2つのSNSを継続的に運用したい",
-      "月次改善まで回したい",
-    ],
-    included: [
-      "月16本の投稿フル代行",
-      "2SNS対応",
-      "コメント監視",
-      "月次レポート",
-      "改善提案",
-      "競合・投稿テーマのリサーチ補助",
-    ],
-    notes: ["DM完全代行、炎上対応、広告運用は標準外"],
-  },
-  {
-    name: "プレミアム詳細",
-    suited: [
-      "採用・集客を本格化したい",
-      "投稿量を増やしたい",
-      "戦略MTGも含めて相談したい",
-    ],
-    included: [
-      "月30本以上の投稿フル代行",
-      "3SNSまで対応",
-      "エンゲージメント運用",
-      "月1回の戦略MTG",
-      "優先的な改善提案",
-    ],
-    notes: ["成果連動は個別相談", "広告費・撮影費・高度な動画編集は別途"],
-  },
-];
+const AIWORKS_MAILTO =
+  "mailto:hinata082121@gmail.com?subject=%E3%80%90ICHI%20AI%20Works%E3%80%91%E6%A5%AD%E5%8B%99%E3%81%AE%E5%9B%B0%E3%82%8A%E3%81%94%E3%81%A8%E7%9B%B8%E8%AB%87&body=%E3%81%AF%E3%81%98%E3%82%81%E3%81%BE%E3%81%97%E3%81%A6%E3%80%82ICHI%20AI%20Works%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6%E7%9B%B8%E8%AB%87%E3%81%97%E3%81%BE%E3%81%99%E3%80%82%0A%0A%E2%96%A0%20%E4%BC%9A%E7%A4%BE%E5%90%8D%E3%83%BB%E5%B1%8B%E5%8F%B7%EF%BC%9A%0A%E2%96%A0%20%E3%81%8A%E5%90%8D%E5%89%8D%EF%BC%9A%0A%E2%96%A0%20%E7%8F%BE%E5%9C%A8%E3%81%AE%E7%AE%A1%E7%90%86%E6%96%B9%E6%B3%95%EF%BC%88%E8%A6%8B%E7%A9%8D%E3%83%BB%E8%BF%94%E7%AD%94%E5%BE%85%E3%81%A1%E3%81%AE%E7%AE%A1%E7%90%86%E3%81%AA%E3%81%A9%EF%BC%89%EF%BC%9A%0A%E2%96%A0%20%E5%9B%B0%E3%82%8A%E3%81%94%E3%81%A8%E3%83%BB%E3%81%94%E7%9B%B8%E8%AB%87%E5%86%85%E5%AE%B9%EF%BC%9A%0A";
 
-const operationRoles = [
-  {
-    title: "リサーチ",
-    body: "競合・トレンド・過去投稿を確認し、投稿テーマの材料を整理します。",
-  },
-  {
-    title: "原稿作成",
-    body: "業種やトンマナに合わせて、投稿文や見出し案を作成します。",
-  },
-  {
-    title: "運用管理",
-    body: "月間投稿カレンダー、確認状況、定期タスクを整理します。",
-  },
-  {
-    title: "レポート",
-    body: "投稿結果を整理し、次月の改善方針につなげます。",
-  },
-  {
-    title: "人の確認",
-    body: "AI任せにせず、投稿前の最終確認と方針判断を行います。",
-  },
-];
+const HPLP_MAILTO =
+  "mailto:hinata082121@gmail.com?subject=%E3%80%90HP%E3%83%BBLP%E5%88%B6%E4%BD%9C%E3%80%91%E7%9B%B8%E8%AB%87&body=%E3%81%AF%E3%81%98%E3%82%81%E3%81%BE%E3%81%97%E3%81%A6%E3%80%82HP%E3%83%BBLP%E5%88%B6%E4%BD%9C%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6%E7%9B%B8%E8%AB%87%E3%81%97%E3%81%BE%E3%81%99%E3%80%82%0A%0A%E2%96%A0%20%E5%BA%97%E8%88%97%E5%90%8D%E3%83%BB%E4%BC%9A%E7%A4%BE%E5%90%8D%EF%BC%9A%0A%E2%96%A0%20%E3%81%8A%E5%90%8D%E5%89%8D%EF%BC%9A%0A%E2%96%A0%20%E3%81%94%E5%B8%8C%E6%9C%9B%EF%BC%88HP%E5%88%B6%E4%BD%9C%EF%BC%8FLP%E5%88%B6%E4%BD%9C%EF%BC%8F%E6%9B%B4%E6%96%B0%E3%83%BB%E9%81%8B%E7%94%A8%EF%BC%89%EF%BC%9A%0A%E2%96%A0%20%E7%8F%BE%E5%9C%A8%E3%81%AE%E3%82%B5%E3%82%A4%E3%83%88URL%EF%BC%88%E3%81%82%E3%82%8C%E3%81%B0%EF%BC%89%EF%BC%9A%0A%E2%96%A0%20%E3%81%94%E7%9B%B8%E8%AB%87%E5%86%85%E5%AE%B9%EF%BC%9A%0A";
 
-const pricingReports = [
-  {
-    title: "価格の考え方",
-    body: "AIを活用して調査・原稿作成・レポート作成の工数を圧縮し、必要な部分に人の確認を集中させることで、継続しやすい価格を目指しています。",
-  },
-  {
-    title: "ライトプランの設計意図",
-    body: "投稿を止めないための最低限の運用支援です。企画・原稿・月次レポートを中心に、まずSNS運用の土台を整えたい方向けです。",
-  },
-  {
-    title: "スタンダードプランの設計意図",
-    body: "投稿代行と改善提案まで含めた主力プランです。2SNSを継続的に運用し、毎月の数字をもとに改善を回していきます。",
-  },
-  {
-    title: "プレミアムプランの設計意図",
-    body: "採用・集客・キャンペーン運用まで踏み込むプランです。月1回の戦略MTGを行い、より実行力のある改善施策を提案します。",
-  },
-  {
-    title: "初期設計費について",
-    body: "通常はアカウント診断、投稿方針の整理、トンマナ設計、競合調査、運用基盤のセットアップを行うため、初期設計費として¥120,000を設定しています。ローンチ初期は実績作成のため、先着3社限定で無料にしています。",
-  },
-  {
-    title: "対応範囲",
-    body: "投稿企画、投稿文作成、投稿カレンダー作成、簡易レポート、改善提案、チャット相談に対応します。",
-  },
-  {
-    title: "対応外範囲",
-    body: "撮影、高度な動画編集、SNS広告運用、炎上対応、DM完全代行、法務判断が必要な投稿確認は標準プラン外です。必要に応じて別途相談となります。",
-  },
-];
-
-const workflowSteps = [
-  {
-    number: "01",
-    title: "無料相談",
-    body: "現在のSNS運用状況、目的、課題を確認します。",
-  },
-  {
-    number: "02",
-    title: "アカウント診断",
-    body: "投稿頻度、プロフィール、過去投稿、競合状況を確認します。",
-  },
-  {
-    number: "03",
-    title: "投稿方針・トンマナ設計",
-    body: "誰に、何を、どのような言葉で届けるかを整理します。",
-  },
-  {
-    number: "04",
-    title: "投稿カレンダー作成",
-    body: "月間の投稿テーマ、投稿本数、公開タイミングを設計します。",
-  },
-  {
-    number: "05",
-    title: "運用開始・月次改善",
-    body: "投稿実行後、毎月レポートを作成し、改善案を提案します。",
-  },
-];
-
-const reportMetrics = [
-  { label: "投稿本数", value: "16本", bar: "70%" },
-  { label: "インプレッション", value: "28,400", bar: "88%" },
-  { label: "いいね数", value: "780", bar: "62%" },
-  { label: "保存数", value: "126", bar: "46%" },
-  { label: "プロフィールアクセス", value: "340", bar: "55%" },
-];
-
-const trustItems = [
-  {
-    title: "投稿前確認",
-    body: "原則、投稿前に確認フローを挟みます。",
-  },
-  {
-    title: "NG表現管理",
-    body: "業種ごとのNGワード・トンマナを管理します。",
-  },
-  {
-    title: "月次改善",
-    body: "投稿して終わりではなく、毎月改善案を提示します。",
-  },
-  {
-    title: "AI丸投げではない",
-    body: "下書きや分析にはAIツールも活用しますが、投稿前に人が確認します。",
-  },
-  {
-    title: "小規模対応",
-    body: "個人・店舗・中小企業向けに、無理なく続けられる設計です。",
-  },
-];
-
-const faqs = [
-  {
-    question: "投稿画像も作ってもらえますか？",
-    answer:
-      "簡易的な画像構成案やCanva等での制作補助は対応可能です。撮影や高度なデザイン制作は別途相談です。",
-  },
-  {
-    question: "Instagram以外も対応できますか？",
-    answer:
-      "X、Instagram、TikTok、YouTube Shortsなど、目的に応じて相談可能です。",
-  },
-  {
-    question: "最低契約期間はありますか？",
-    answer: "効果検証のため、原則3ヶ月からを推奨しています。",
-  },
-  {
-    question: "AIで作った投稿をそのまま出しますか？",
-    answer:
-      "いいえ。下書きや分析にはAIツールも活用しますが、投稿前に人が確認します。",
-  },
-  {
-    question: "炎上対応やDM返信も含まれますか？",
-    answer:
-      "炎上対応・DM完全代行は標準プラン外です。返信案の作成は相談可能です。",
-  },
-  {
-    question: "契約前に相談できますか？",
-    answer:
-      "はい。まずは無料相談で、現在のSNS状況と目的を確認します。",
-  },
-  {
-    question: "問い合わせはどこからできますか？",
-    answer:
-      "現在はメールで無料相談を受け付けています。各CTAボタンから必要事項を記入して送信できます。",
-  },
-  {
-    question: "成果は保証されますか？",
-    answer:
-      "フォロワー数や売上の増加を保証するものではありません。投稿の継続、内容改善、月次レポートを通じて運用改善を支援します。",
-  },
-  {
-    question: "専用の問い合わせフォームはありますか？",
-    answer:
-      "初期段階ではメールで受け付けています。今後、必要に応じて専用フォームを整備予定です。",
-  },
-];
-
-function ConsultationLink({
-  children,
-  variant = "primary",
-  className = "",
-  plan = "未定",
-  eventLocation,
-  eventPlan = "general",
-}: {
-  children: ReactNode;
-  variant?: "primary" | "secondary" | "inverse";
-  className?: string;
-  plan?: string;
-  eventLocation: string;
-  eventPlan?: "general" | "light" | "standard" | "premium";
-}) {
-  const base =
-    "inline-flex min-h-12 items-center justify-center rounded-lg px-5 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
-  const variants = {
-    primary: "bg-black text-white hover:bg-soft-black",
-    secondary:
-      "border border-card-border bg-white text-primary hover:border-black hover:bg-muted",
-    inverse:
-      "border border-white bg-white text-black hover:bg-line focus-visible:outline-white",
-  };
-
+export default function HomePage() {
   return (
-    <ContactLink
-      href={createContactHref(plan)}
-      eventLocation={eventLocation}
-      eventPlan={eventPlan}
-      eventLabel={String(children)}
-      aria-label={`${String(children)}、メールで問い合わせる`}
-      className={`${base} ${variants[variant]} ${className}`}
-    >
-      {children}
-    </ContactLink>
-  );
-}
-
-function SectionHeading({
-  eyebrow,
-  title,
-  body,
-  align = "center",
-}: {
-  eyebrow?: string;
-  title: string;
-  body?: string;
-  align?: "center" | "left";
-}) {
-  return (
-    <div
-      className={`mb-9 max-w-3xl sm:mb-12 ${
-        align === "center" ? "mx-auto text-center" : ""
-      }`}
-    >
-      {eyebrow ? (
-        <p className="mb-3 font-number text-xs font-bold uppercase tracking-[0.16em] text-muted-text">
-          {eyebrow}
-        </p>
-      ) : null}
-      <h2 className="text-balance text-2xl font-black leading-[1.35] tracking-normal text-primary sm:text-4xl">
-        {title}
-      </h2>
-      {body ? (
-        <p className="mt-4 max-w-2xl text-base leading-8 text-secondary">
-          {body}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function Header() {
-  return (
-    <header className="sticky top-0 z-50 border-b border-line bg-white/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6 lg:px-8">
-        <a
-          href="#"
-          aria-label={`${SITE_NAME}（${SITE_LABEL}）トップへ`}
-          className="shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus"
-        >
-          <p className="text-sm font-black leading-none text-primary sm:text-base">
-            {SITE_NAME}
-          </p>
-          <p className="mt-1 hidden text-xs font-medium text-secondary sm:block">
-            {SITE_LABEL}
-          </p>
-        </a>
-        <nav
-          aria-label="主要ナビゲーション"
-          className="hidden items-center gap-7 lg:flex"
-        >
-          {navItems.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className="text-sm font-bold text-secondary transition hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus"
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
-        <div className="flex items-center gap-2">
-          <ConsultationLink
-            className="min-w-28 px-4 sm:min-w-32"
-            eventLocation="header"
-          >
-            無料相談
-          </ConsultationLink>
-          <MobileNav items={[...navItems, { label: "お問い合わせ", href: createContactHref() }]} />
+    <div className="rd-root">
+      <RedesignEffects variant="top" />
+      <div className="rd-progress" aria-hidden="true" />
+      <header className="rd-header">
+        <div className="rd-wrap rd-header-in">
+          <a className="rd-logo" href="/">
+            ICHI<small>ICHI PROJECT</small>
+          </a>
+          <nav className="rd-nav" aria-label="メインナビゲーション">
+            <a href="/social">SNS運用（Social）</a>
+            <a href="#aiworks">AI Works</a>
+            <a href="#hplp">HP・LP制作</a>
+            <a href="#operator">運営者情報</a>
+          </nav>
         </div>
-      </div>
-    </header>
-  );
-}
+      </header>
 
-function HeroDashboard() {
-  return (
-    <div className="rounded-xl border border-card-border bg-card p-4 sm:p-5">
-      <div className="mb-5 flex items-start justify-between gap-4 border-b border-line pb-5">
-        <div>
-          <p className="text-sm font-black text-primary">今月の運用サマリー</p>
-          <p className="mt-1 text-xs leading-6 text-muted-text">
-            下書き作成 → 人が確認 → 投稿予約
-          </p>
-        </div>
-        <span className="inline-flex items-center gap-2 rounded-full border border-line px-3 py-1 text-xs font-bold text-secondary">
-          <span className="size-2 rounded-full bg-black" aria-hidden="true" />
-          作成済み
-        </span>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          ["投稿予定", "16件"],
-          ["改善提案", "5件"],
-          ["月次レポート", "作成済み"],
-          ["次月テーマ案", "12件"],
-          ["確認待ち", "3件"],
-        ].map(([label, value], index) => (
-          <div
-            key={label}
-            className={`rounded-lg border border-line bg-white p-4 ${
-              index === 4 ? "col-span-2" : ""
-            }`}
-          >
-            <p className="text-xs font-bold text-muted-text">{label}</p>
-            <p className="mt-2 font-number text-2xl font-black text-primary">
-              {value}
-            </p>
+      <div className="rd-wrap">
+        <div className="rd-hero">
+          <div className="rd-hero-bg" aria-hidden="true">
+            一
           </div>
-        ))}
-      </div>
-      <div className="mt-5 rounded-lg bg-muted p-4">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-sm font-bold text-primary">投稿文の品質確認中</p>
-          <p className="font-number text-xs font-bold text-secondary">80%</p>
-        </div>
-        <div className="mt-3 h-2 rounded-full bg-line">
-          <div className="h-2 w-4/5 rounded-full bg-black" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Hero() {
-  return (
-    <section className="overflow-hidden bg-background">
-      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:py-24">
-        <div>
-          <p className="mb-5 inline-flex rounded-full border border-line px-4 py-2 text-sm font-bold text-secondary">
-            {SITE_LABEL}
-          </p>
-          <h1 className="text-balance text-4xl font-black leading-[1.18] tracking-normal text-primary sm:text-5xl lg:text-[56px]">
-            SNS運用を、止めない。
-            <br />
-            発信を整え、
-            <br />
-            毎月改善する。
-          </h1>
-          <p className="mt-6 max-w-2xl text-base leading-8 text-secondary sm:text-lg">
-            小規模事業者・個人事業主向けに、投稿企画・原稿作成・投稿代行・月次レポートまでを一括サポート。効率的な制作体制と人の確認を組み合わせ、続けやすいSNS運用を実現します。
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <ConsultationLink eventLocation="hero">
-              無料相談する
-            </ConsultationLink>
-            <a
-              href="#pricing"
-              className="inline-flex min-h-12 items-center justify-center rounded-lg border border-card-border bg-white px-5 text-sm font-bold text-primary transition hover:border-black hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-            >
-              料金プランを見る
-            </a>
-          </div>
-          <p className="mt-4 text-sm leading-7 text-muted-text">
-            フォーム入力なしで、メールから簡単に相談できます。
-          </p>
-        </div>
-        <HeroDashboard />
-      </div>
-      <div className="mx-auto max-w-6xl px-4 pb-14 sm:px-6 lg:px-8">
-        <div className="grid gap-3 border-y border-line py-5 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            "初期設計費 先着3社 ¥0",
-            "月額 ¥38,000〜",
-            "月次レポート対応",
-            "投稿前に人が確認",
-            "Gmailで無料相談受付中",
-          ].map((item) => (
-            <p
-              key={item}
-              className="flex items-center gap-3 text-sm font-bold text-primary"
-            >
-              <span className="size-1.5 rounded-full bg-black" aria-hidden="true" />
-              {item}
-            </p>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Problem() {
-  return (
-    <section className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading title="SNS運用、こんな状態で止まっていませんか？" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {problems.map((item) => (
-            <article
-              key={item.title}
-              className="rounded-xl border border-card-border bg-card p-5"
-            >
-              <p className="font-number text-xs font-bold uppercase tracking-[0.12em] text-muted-text">
-                {item.label}
-              </p>
-              <h3 className="mt-5 text-lg font-black text-primary">
-                {item.title}
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-secondary">{item.body}</p>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Pricing() {
-  return (
-    <section id="pricing" className="scroll-mt-20 bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading
-          title="料金プラン"
-          body="目的や運用量に合わせて選べる3つのプラン。まずは比較しやすいよう、主要な違いを一覧で整理しています。"
-        />
-        <div>
-          <div className="grid gap-4 lg:grid-cols-3 lg:items-stretch">
-            {pricingPlans.map((plan) => (
-              <article
-                key={plan.name}
-                className={`relative flex flex-col rounded-xl border p-5 ${
-                  plan.highlighted
-                    ? "border-black bg-black text-white"
-                    : "border-card-border bg-card text-primary"
-                }`}
-              >
-                {plan.highlighted ? (
-                  <span className="absolute right-4 top-4 rounded-full border border-white/30 px-3 py-1 text-xs font-bold text-white">
-                    おすすめ
-                  </span>
-                ) : null}
-                <h3 className="text-xl font-black">{plan.name}</h3>
-                <p
-                  className={`mt-3 min-h-12 text-sm leading-6 ${
-                    plan.highlighted ? "text-neutral-200" : "text-secondary"
-                  }`}
-                >
-                  {plan.tag}
-                </p>
-                <p className="mt-5">
-                  <span className="font-number text-4xl font-black tracking-normal">
-                    {plan.price}
-                  </span>
-                  <span
-                    className={`ml-2 text-sm font-bold ${
-                      plan.highlighted ? "text-neutral-300" : "text-muted-text"
-                    }`}
-                  >
-                    / 月
-                  </span>
-                </p>
-                <ul className="mt-6 space-y-3">
-                  {plan.features.map((feature) => (
-                    <li key={feature} className="flex gap-3 text-sm">
-                      <span
-                        className={`mt-1 size-1.5 shrink-0 rounded-full ${
-                          plan.highlighted ? "bg-white" : "bg-black"
-                        }`}
-                        aria-hidden="true"
-                      />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <ConsultationLink
-                  className="mt-6 w-full"
-                  variant={plan.highlighted ? "inverse" : "primary"}
-                  plan={plan.name}
-                  eventLocation="pricing"
-                  eventPlan={planEventMap[plan.name]}
-                >
-                  {plan.cta}
-                </ConsultationLink>
-              </article>
-            ))}
-          </div>
-        </div>
-        <div className="mt-6 rounded-xl border border-black bg-white p-5 sm:p-6">
-          <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-center">
-            <div>
-              <p className="text-sm font-bold text-secondary">
-                アカウント診断・戦略設計・トンマナ設計・運用基盤セットアップを含みます。
-              </p>
-              <p className="mt-2 text-base font-black text-primary">
-                通常 初期設計フィー{" "}
-                <span className="font-number">¥120,000</span>
-              </p>
-            </div>
-            <p className="rounded-lg bg-black px-4 py-3 text-center text-lg font-black text-white">
-              先着3社限定：初期設計費{" "}
-              <span className="font-number">¥0</span>
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PricingDetail() {
-  return (
-    <section className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading
-          title="各プランの詳細"
-          body="比較カードでは概要を確認し、詳細カードでは向いている方・含まれるもの・注意点を整理しています。"
-        />
-        <div className="space-y-5">
-          {pricingDetails.map((detail) => (
-            <article
-              key={detail.name}
-              className="rounded-xl border border-card-border bg-card p-5 sm:p-6"
-            >
-              <div className="grid gap-6 lg:grid-cols-[0.8fr_1fr_1fr]">
-                <div>
-                  <p className="font-number text-xs font-bold uppercase tracking-[0.14em] text-muted-text">
-                    Plan Detail
-                  </p>
-                  <h3 className="mt-3 text-xl font-black text-primary">
-                    {detail.name}
-                  </h3>
-                </div>
-                <ListBlock title="向いている人" items={detail.suited} />
-                <ListBlock title="含まれるもの" items={detail.included} />
-              </div>
-              <div className="mt-5 rounded-lg border border-line bg-muted p-4">
-                <ListBlock title="注意" items={detail.notes} compact />
-              </div>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ListBlock({
-  title,
-  items,
-  compact = false,
-}: {
-  title: string;
-  items: string[];
-  compact?: boolean;
-}) {
-  return (
-    <div>
-      <h4 className="text-sm font-black text-primary">{title}</h4>
-      <ul className={compact ? "mt-3 space-y-2" : "mt-3 space-y-3"}>
-        {items.map((item) => (
-          <li key={item} className="flex gap-3 text-sm leading-7 text-secondary">
-            <span className="mt-3 size-1.5 shrink-0 rounded-full bg-black" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function Solution() {
-  return (
-    <section id="solution" className="scroll-mt-20 bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading
-          title="効率化と人の確認で、続けやすい運用へ"
-          body="リサーチ・原稿作成・レポート作成は効率化し、投稿前の確認や方針判断は人が行います。スピードと品質管理を両立する運用体制です。"
-        />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {operationRoles.map((item, index) => (
-            <article
-              key={item.title}
-              className="rounded-xl border border-card-border bg-card p-5"
-            >
-              <p className="font-number text-xs font-black text-muted-text">
-                {String(index + 1).padStart(2, "0")}
-              </p>
-              <h3 className="mt-4 text-lg font-black text-primary">
-                {item.title}
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-secondary">{item.body}</p>
-            </article>
-          ))}
-        </div>
-        <p className="mx-auto mt-6 max-w-3xl rounded-lg border border-line bg-muted p-4 text-center text-sm leading-7 text-secondary">
-          裏側では、リサーチ・原稿作成・レポート作成にAIツールを活用し、最終確認は人が行います。
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function PricingReport() {
-  return (
-    <section className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading
-          title="なぜ、この価格で提供できるのか"
-          body="料金の内訳と対応範囲をあらかじめ共有し、安心して検討できる状態をつくります。"
-        />
-        <div className="grid gap-4 md:grid-cols-2">
-          {pricingReports.map((item, index) => (
-            <article
-              key={item.title}
-              className={`rounded-xl border border-card-border bg-card p-5 ${
-                index === pricingReports.length - 1 ? "md:col-span-2" : ""
-              }`}
-            >
-              <p className="font-number text-xs font-black text-muted-text">
-                {String(index + 1).padStart(2, "0")}
-              </p>
-              <h3 className="mt-3 text-base font-black text-primary">
-                {item.title}
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-secondary">{item.body}</p>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Workflow() {
-  return (
-    <section id="workflow" className="scroll-mt-20 bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading title="ご契約から運用開始までの流れ" />
-        <div className="relative grid gap-4 lg:grid-cols-5">
-          <div
-            className="absolute left-0 right-0 top-10 hidden h-px bg-line lg:block"
-            aria-hidden="true"
-          />
-          {workflowSteps.map((step) => (
-            <article
-              key={step.number}
-              className="relative rounded-xl border border-card-border bg-card p-5"
-            >
-              <p className="font-number text-4xl font-black text-primary">
-                {step.number}
-              </p>
-              <h3 className="mt-4 text-base font-black text-primary">
-                {step.title}
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-secondary">{step.body}</p>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function MonthlyReport() {
-  return (
-    <section className="bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading
-          title="毎月、数字と改善案をレポートで共有"
-          body="数値の確認だけで終わらず、次月の投稿方針まで整理します。"
-        />
-        <div className="rounded-xl border border-card-border bg-card p-5 sm:p-6">
-          <div className="mb-6 flex flex-col gap-2 border-b border-line pb-5 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="font-number text-xs font-bold uppercase tracking-[0.16em] text-muted-text">
-                Sample Monthly Report
-              </p>
-              <h3 className="mt-2 text-xl font-black text-primary">
-                月次レポートサンプル
-              </h3>
-            </div>
-            <p className="text-sm font-bold text-secondary">対象月：2026年5月</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {reportMetrics.map((metric) => (
-              <div
-                key={metric.label}
-                className="rounded-lg border border-line bg-white p-4"
-              >
-                <p className="text-xs font-bold text-muted-text">{metric.label}</p>
-                <p className="mt-2 font-number text-3xl font-black text-primary">
-                  {metric.value}
-                </p>
-                <div className="mt-3 h-1.5 rounded-full bg-line">
-                  <div
-                    className="h-1.5 rounded-full bg-black"
-                    style={{ width: metric.bar }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-5 grid gap-4 lg:grid-cols-3">
-            {[
-              ["反応が良かった投稿", "Before/After投稿、キャンペーン告知、スタッフ紹介"],
-              ["次月の改善方針", "保存されやすいノウハウ投稿を増やす"],
-              ["次月の投稿テーマ案", "12件作成済み"],
-            ].map(([title, body]) => (
-              <div key={title} className="rounded-lg border border-line p-5">
-                <h3 className="text-base font-black text-primary">{title}</h3>
-                <p className="mt-3 text-sm leading-7 text-secondary">{body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Trust() {
-  return (
-    <section className="bg-background px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-6xl">
-        <SectionHeading title="安心して任せられる運用体制" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          {trustItems.map((item, index) => (
-            <article
-              key={item.title}
-              className="rounded-xl border border-card-border bg-card p-5"
-            >
-              <p className="font-number text-xs font-black text-muted-text">
-                {String(index + 1).padStart(2, "0")}
-              </p>
-              <h3 className="mt-4 text-base font-black text-primary">
-                {item.title}
-              </h3>
-              <p className="mt-3 text-sm leading-7 text-secondary">{item.body}</p>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FAQ() {
-  return (
-    <section id="faq" className="scroll-mt-20 bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-4xl">
-        <SectionHeading title="よくある質問" />
-        <div className="space-y-3">
-          {faqs.map((faq) => (
-            <details
-              key={faq.question}
-              className="group rounded-xl border border-card-border bg-card p-5"
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-base font-black text-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-focus">
-                {faq.question}
-                <span
-                  aria-hidden="true"
-                  className="grid size-7 shrink-0 place-items-center rounded-full border border-line text-primary transition group-open:rotate-45"
-                >
-                  +
+          <div className="rd-hero-inner">
+            <p className="rd-kicker">小規模事業者・個人事業主・中小企業の方へ</p>
+            <h1>
+              <span className="rd-hline">
+                <span>小さな事業の「発信」と「業務」を、</span>
+              </span>
+              <span className="rd-hline">
+                <span>
+                  <span className="rd-hl">止めない</span>ための3つの支援。
                 </span>
-              </summary>
-              <p className="mt-4 text-sm leading-7 text-secondary">{faq.answer}</p>
-            </details>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FinalCTA() {
-  return (
-    <section className="bg-black px-4 py-16 text-white sm:px-6 sm:py-20 lg:px-8">
-      <div className="mx-auto max-w-4xl text-center">
-        <h2 className="text-balance text-2xl font-black tracking-normal sm:text-4xl">
-          まずは、今のSNS運用状況を無料で確認します。
-        </h2>
-        <p className="mx-auto mt-5 max-w-2xl text-base leading-8 text-neutral-200">
-          投稿が止まっている、何を発信すればよいか分からない、外注費を抑えて運用を始めたい。そんな方に向けて、現在のSNS状況を確認し、最適な始め方をご提案します。
-        </p>
-        <div className="mt-8 flex flex-col items-center gap-4">
-          <ConsultationLink variant="inverse" eventLocation="final-cta">
-            無料相談する
-          </ConsultationLink>
-          <p className="rounded-lg border border-white/20 px-4 py-2 text-sm font-bold text-white">
-            先着3社限定：通常{" "}
-            <span className="font-number">¥120,000</span>{" "}
-            の初期設計費を無料
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function Footer() {
-  return (
-    <footer className="bg-off-black px-4 py-10 text-white sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[1fr_auto]">
-        <div>
-          <p className="text-lg font-black">{SITE_NAME}</p>
-          <p className="mt-2 text-sm text-neutral-300">{SITE_LABEL}</p>
-          <p className="mt-4 text-xs text-neutral-400">
-            © 2026 {SITE_NAME}. All rights reserved.
-          </p>
-        </div>
-        <nav aria-label="フッターナビゲーション" className="flex flex-wrap gap-4">
-          {footerLinks.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              className="text-sm font-bold text-neutral-300 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
-            >
-              {item.label}
-            </a>
-          ))}
-          <ContactLink
-            href={createContactHref()}
-            eventLocation="footer"
-            eventPlan="general"
-            eventLabel="お問い合わせ"
-            className="text-sm font-bold text-neutral-300 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
-          >
-            お問い合わせ
-          </ContactLink>
-        </nav>
-      </div>
-      <p className="mx-auto mt-8 max-w-6xl text-xs leading-6 text-neutral-500">
-        メールで無料相談受付中：{CONTACT_EMAIL}
-      </p>
-    </footer>
-  );
-}
-
-function ChooseService() {
-  return (
-    <section id="choose-service" className="scroll-mt-20 bg-muted px-4 py-16 sm:px-6 sm:py-20 lg:px-8" aria-labelledby="choose-service-title">
-      <div className="mx-auto max-w-6xl">
-        <div className="max-w-3xl">
-          <p className="text-xs font-bold tracking-widest text-secondary">ICHI Social × ICHI AI Works</p>
-          <h2 id="choose-service-title" className="mt-3 text-2xl font-black leading-snug text-primary sm:text-4xl">ICHIのサービス</h2>
-          <p className="mt-4 text-base leading-8 text-secondary">社内業務を整理するツールの開発、SNS運用の支援、HP・LP制作と運用支援をご案内します。</p>
-        </div>
-        <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <article className="rounded-xl border border-card-border bg-white p-6 sm:p-8">
-            <p className="text-xs font-bold text-muted-text">社内業務を整理したい方</p>
-            <h3 className="mt-3 text-xl font-black text-primary">ICHI AI Works</h3>
-            <p className="mt-4 text-sm leading-7 text-secondary">中小企業向けに、日々の業務を整理し、社内の確認や引き継ぎを進めやすくするツールを開発しています。第一弾は「見積・返答待ち管理ツール」です。現在開発中です。</p>
-            <p className="mt-3 text-sm leading-7 text-secondary">案件の担当者、次の対応、期限、やり取りの履歴を整理するためのツールです。現在の管理方法や困りごと、導入への関心をお聞かせください。</p>
-            <a href="mailto:ichiaiworks@gmail.com" className="mt-6 inline-flex min-h-12 items-center rounded-lg border border-black px-5 text-sm font-bold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">業務の困りごとを相談する</a>
-          </article>
-          <article className="rounded-xl border border-card-border bg-white p-6 sm:p-8">
-            <p className="text-xs font-bold text-muted-text">投稿や運用を任せたい方</p>
-            <h3 className="mt-3 text-xl font-black text-primary">ICHI Social</h3>
-            <p className="mt-4 text-sm leading-7 text-secondary">投稿案の作成から運用の相談まで、このサイトでご案内しているサービスです。まずは無料投稿案3本についてご相談いただけます。</p>
-            <a href={createContactHref()} className="mt-6 inline-flex min-h-12 items-center rounded-lg bg-black px-5 text-sm font-bold text-white hover:bg-soft-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">ICHI Socialに相談する</a>
-          </article>
-          <article className="rounded-xl border border-card-border bg-white p-6 sm:p-8">
-            <p className="text-xs font-bold text-muted-text">Webサイトを整えたい方</p>
-            <h3 className="mt-3 text-xl font-black text-primary">HP・LP制作／運用支援</h3>
-            <p className="mt-4 text-sm leading-7 text-secondary">ホームページやランディングページの制作、既存ページの文章・画像の更新をご相談いただけます。スマホでの表示や、お問い合わせまでの導線も確認します。</p>
-            <p className="mt-3 text-sm leading-7 text-secondary">案件ごとに現在の環境とご希望の内容を確認し、対応範囲を合意したうえで進めます。</p>
-            <div className="mt-4 rounded-lg border border-line bg-muted p-4 text-sm leading-7 text-secondary">
-              <p className="font-bold text-primary">HP・LP制作の料金（税込）</p>
-              <p className="mt-2 font-bold text-primary">先着3社限定</p>
-              <p>LP制作 95,000円／HP制作 180,000円／月額更新 10,000円</p>
-              <p className="mt-2 font-bold text-primary">通常料金</p>
-              <p>LP制作 110,000円／HP制作 200,000円／月額更新 11,000円</p>
-              <p className="mt-2">先着3社はHP・LPを合算した契約成立順です。対象3社の月額更新10,000円は、月額更新のご契約を継続中は据え置きます。ICHI Socialの初期設計費の先着3社とは別枠です。</p>
-              <p className="mt-2">LPは1ページ・6セクションまで、HPは5ページまで。制作修正は2往復、文章・画像などの素材はお客様からご支給いただきます。</p>
-              <p className="mt-2">月額更新は1サイトにつき月2回・合計60分まで（連絡・確認を含む）。常時監視と障害復旧は対象外です。外部サービス費用は別途、追加機能は個別にお見積もりします。</p>
-            </div>
-            <a href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("【ICHI】HP・LP制作の相談")}`} className="mt-6 inline-flex min-h-12 items-center rounded-lg border border-black px-5 text-sm font-bold text-primary hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">HP・LP制作を相談する</a>
-          </article>
-        </div>
-        <div className="mt-12 border-t border-line pt-10">
-          <h3 className="text-xl font-black text-primary sm:text-2xl">HP・LP デザインサンプル</h3>
-          <p className="mt-3 text-sm leading-7 text-secondary">3業種のHPとLPをそれぞれご覧いただけます。すべて架空のデザインサンプルであり、実案件の制作実績ではありません。</p>
-          <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            {[
-              {
-                industry: "美容室「凪」",
-                samples: [
-                  { type: "HP", src: "/samples/salon_hp.webp", alt: "架空の美容室「凪」のホームページのデザインサンプル全体" },
-                  { type: "LP", src: "/samples/salon_lp.webp", alt: "架空の美容室「凪」のランディングページのデザインサンプル全体" },
-                ],
-              },
-              {
-                industry: "建築「余白設計室」",
-                samples: [
-                  { type: "HP", src: "/samples/architecture_hp.webp", alt: "架空の建築事務所「余白設計室」のホームページのデザインサンプル全体" },
-                  { type: "LP", src: "/samples/architecture_lp.webp", alt: "架空の建築事務所「余白設計室」のランディングページのデザインサンプル全体" },
-                ],
-              },
-              {
-                industry: "日本茶「山と茶」",
-                samples: [
-                  { type: "HP", src: "/samples/tea_hp.webp", alt: "架空の日本茶ブランド「山と茶」のホームページのデザインサンプル全体" },
-                  { type: "LP", src: "/samples/tea_lp.webp", alt: "架空の日本茶ブランド「山と茶」のランディングページのデザインサンプル全体" },
-                ],
-              },
-            ].map((group) => (
-              <div key={group.industry} className="rounded-xl border border-card-border bg-white p-4 sm:p-5">
-                <h4 className="text-base font-bold text-primary">{group.industry}</h4>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                  {group.samples.map((sample) => (
-                    <a
-                      key={sample.type}
-                      href={sample.src}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`${group.industry}の${sample.type}デザインサンプルを画像で拡大する`}
-                      className="block rounded-lg border border-line p-3 transition hover:border-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                    >
-                      <p className="mb-2 text-sm font-bold text-primary">{sample.type}</p>
-                      <Image
-                        src={sample.src}
-                        alt={sample.alt}
-                        width={1024}
-                        height={1536}
-                        loading="lazy"
-                        decoding="async"
-                        className="h-72 w-full bg-muted object-contain"
-                      />
-                      <span className="mt-2 block text-xs font-bold text-secondary">全体画像を拡大して見る ↗</span>
-                    </a>
-                  ))}
-                </div>
+              </span>
+            </h1>
+            <p className="rd-lead">
+              ICHIは、SNS運用の代行、社内業務を整理するツールの開発、ホームページ・LPの制作支援を行う事業です。効率化できるところは効率化し、判断と確認は人が行う。その進め方で、無理なく続けられる形をご提案します。
+            </p>
+            <div className="rd-hero-meta" aria-label="ICHIの特徴">
+              <div>
+                <b>人が確認する</b>
+                <span>投稿前の確認と方針判断は人が担います</span>
               </div>
-            ))}
+              <div>
+                <b>範囲を先に共有</b>
+                <span>できること・できないことを最初にお伝えします</span>
+              </div>
+              <div>
+                <b>直接やり取り</b>
+                <span>運営者本人が一貫して対応します</span>
+              </div>
+            </div>
           </div>
         </div>
-        <p className="mt-6 text-sm leading-7 text-secondary">サービスごとに窓口は異なります。AI Worksについてはメールで現在の業務や困りごとをご相談ください。ICHI SocialとHP・LP制作のご相談はこのサイトの問い合わせ先へお送りください。</p>
-      </div>
-    </section>
-  );
-}
 
-export default function Home() {
-  return (
-    <>
-      <Header />
-      <main>
-        <Hero />
-        <ChooseService />
-        <Problem />
-        <Pricing />
-        <PricingDetail />
-        <Solution />
-        <PricingReport />
-        <Workflow />
-        <MonthlyReport />
-        <Trust />
-        <FAQ />
-        <FinalCTA />
-      </main>
-      <Footer />
-    </>
+        <section
+          className="rd-section"
+          id="services"
+          aria-labelledby="services-title"
+        >
+          <div className="rd-sec-head rd-reveal">
+            <div>
+              <p className="rd-sec-label">01 — SERVICES</p>
+              <h2 className="rd-sec-title" id="services-title">
+                ICHIのサービス
+              </h2>
+            </div>
+            <p className="rd-sec-sub">
+              ご相談の内容に合わせて、窓口は3つに分かれています。まずは
+              SNS運用代行からご相談ください。
+            </p>
+          </div>
+
+          <div className="rd-cards" id="serviceCards">
+            <article className="rd-card rd-main rd-reveal rd-d1">
+              <div className="rd-card-num">
+                <span>SERVICE 01</span>
+                <i>01</i>
+              </div>
+              <span className="rd-tag">まずはこちら｜SNS運用代行</span>
+              <h3>
+                ICHI Social<small>SNS運用代行</small>
+              </h3>
+              <p>
+                投稿企画・原稿作成・投稿代行・月次レポートまでを一括サポートする、小規模事業者・個人事業主向けのSNS運用代行です。契約の前に、
+                <strong>無料で投稿案3本</strong>をお作りします。
+              </p>
+              <ul>
+                <li>投稿企画・原稿作成</li>
+                <li>投稿代行・月次レポート</li>
+                <li>投稿前に人が確認</li>
+              </ul>
+              <div className="rd-divider" />
+              <p className="rd-price">
+                月額 <b>¥38,000</b>〜<br />
+                <span style={{ fontWeight: 600, fontSize: 13 }}>
+                  初期設計費 先着3社無料
+                </span>
+              </p>
+              <a className="rd-btn rd-btn-primary" href="/social">
+                <span>ICHI Socialの詳細を見る</span>
+                <span className="rd-arr" aria-hidden="true">
+                  →
+                </span>
+              </a>
+            </article>
+
+            <article className="rd-card rd-reveal rd-d2" id="aiworks">
+              <div className="rd-card-num">
+                <span>SERVICE 02</span>
+                <i>02</i>
+              </div>
+              <span className="rd-tag">開発中｜業務整理ツール</span>
+              <h3>
+                ICHI AI Works<small>業務整理ツール</small>
+              </h3>
+              <p>
+                中小企業向けに、日々の業務を整理し、社内の確認や引き継ぎを進めやすくするツールを開発しています。第一弾は「見積・返答待ち管理ツール」です。現在開発中です。
+              </p>
+              <p>
+                案件の担当者、次の対応、期限、やり取りの履歴を整理するためのツールです。現在の管理方法や困りごと、導入への関心をお聞かせください。
+              </p>
+              <div className="rd-divider" />
+              <a className="rd-btn rd-btn-ghost" href={AIWORKS_MAILTO}>
+                <span>業務の困りごとを相談する</span>
+                <span className="rd-arr" aria-hidden="true">
+                  →
+                </span>
+              </a>
+              <p className="rd-note">
+                ボタンを押すと、件名・本文が入った状態でメールアプリが開きます。
+              </p>
+            </article>
+
+            <article className="rd-card rd-reveal rd-d3" id="hplp">
+              <div className="rd-card-num">
+                <span>SERVICE 03</span>
+                <i>03</i>
+              </div>
+              <span className="rd-tag">HP・LP制作／運用支援</span>
+              <h3>
+                HP・LP制作<small>制作・更新支援</small>
+              </h3>
+              <p>
+                ホームページやランディングページの制作、既存ページの文章・画像の更新をご相談いただけます。スマホでの表示や、お問い合わせまでの導線も確認します。案件ごとに現在の環境とご希望の内容を確認し、対応範囲を合意したうえで進めます。
+              </p>
+              <div className="rd-divider" />
+              <p className="rd-price">
+                LP制作 <b>¥95,000</b>〜<br />
+                HP制作 <b>¥180,000</b>〜<br />
+                <span style={{ fontWeight: 600, fontSize: 13 }}>
+                  （税込・先着3社料金）
+                </span>
+              </p>
+              <a className="rd-btn rd-btn-ghost" href={HPLP_MAILTO}>
+                <span>HP・LP制作を相談する</span>
+                <span className="rd-arr" aria-hidden="true">
+                  →
+                </span>
+              </a>
+              <p className="rd-note">
+                通常料金は LP制作 110,000円／HP制作
+                200,000円／月額更新 11,000円（税込）。先着3社はHP・LPを合算した契約成立順で、ICHI
+                Socialの初期設計費の先着3社とは別枠です。詳細条件はご相談時にご案内します。ボタンを押すと、件名・本文が入った状態でメールアプリが開きます。
+              </p>
+            </article>
+          </div>
+
+          <div className="rd-service-foot rd-reveal">
+            <span>迷ったら、まずは SNS運用の無料相談からどうぞ。</span>
+            <a href="/social">無料投稿案3本について →</a>
+          </div>
+
+          <div className="rd-flow rd-reveal" aria-label="進め方">
+            <div className="rd-flow-item">
+              <b>
+                <span>1</span> 相談・確認
+              </b>
+              <p>現在の状況と目的をうかがい、対応範囲を先に共有します。</p>
+            </div>
+            <div className="rd-flow-item">
+              <b>
+                <span>2</span> 設計・提案
+              </b>
+              <p>無理なく続けられる形に整理し、進め方をご提案します。</p>
+            </div>
+            <div className="rd-flow-item">
+              <b>
+                <span>3</span> 実行・改善
+              </b>
+              <p>人が確認しながら進め、結果を見て次を整えます。</p>
+            </div>
+          </div>
+        </section>
+
+        <section
+          className="rd-section"
+          id="operator"
+          style={{ paddingTop: 8 }}
+        >
+          <div className="rd-operator rd-reveal">
+            <h2>運営者について</h2>
+            <p>
+              ICHIは、運営者・佐々木陽向が一人ひとりの事業者さまと直接やり取りしながら運営しています。大きな代理店のような分業体制ではありません。その分、料金と対応範囲をあらかじめ正直に共有し、できること・できないことを先にお伝えする進め方を大切にしています。
+            </p>
+            <p style={{ marginTop: 12 }}>
+              所在地：〒115-0052 東京都北区赤羽北2-1-15／連絡先：
+              <a href="mailto:hinata082121@gmail.com">
+                hinata082121@gmail.com
+              </a>
+              （オンライン対応）
+              <br />
+              ※電話番号はサイト上に掲載していません。契約や請求等で必要な場合は、契約時に個別に開示します。
+            </p>
+          </div>
+        </section>
+      </div>
+
+      <footer className="rd-footer">
+        <div className="rd-wrap">
+          <div className="rd-fnav">
+            <a href="/social">ICHI Social（SNS運用代行）</a>
+            <a href="#aiworks">ICHI AI Works</a>
+            <a href="#hplp">HP・LP制作</a>
+            <a href="#operator">運営者情報</a>
+          </div>
+          <p>
+            © ICHI（運営者：佐々木陽向）／お問い合わせ：hinata082121@gmail.com
+          </p>
+        </div>
+      </footer>
+    </div>
   );
 }
